@@ -1,0 +1,42 @@
+project_root: ${oc.env:DATACOACH_ROOT,/home/pengyue/Codespace/DataCoach}
+
+camera_server:
+  bind: tcp://*:5558
+  jpeg_quality: 85
+  loop_sleep_s: 0.001
+  cameras:
+    - id: cam_0
+      backend: realsense
+      serial: null
+      width: 640
+      height: 480
+      fps: 30
+      enabled: true
+    - id: cam_1
+      backend: opencv
+      device: /dev/video0
+      backend_api: v4l2
+      width: 640
+      height: 480
+      fps: 30
+      enabled: true
+
+data_collector:
+  task_name: rollout
+  demo_index: 0
+  save_video: true
+  camera_fps: 20
+  cameras:
+    - id: cam_0
+    - id: cam_1
+  storage_path: ${project_root}/data/raw_data
+
+receive_lerobot_data:
+  port: /dev/ttyACM0
+  robot_id: my_leader_arm2
+  urdf_path: ${project_root}/third_party/lerobot/src/lerobot/so101_new_calib.urdf
+  target_frame_name: gripper_frame_link
+  calibrate: false
+  interval: 0.02
+  send_ip: 127.0.0.1
+  send_port: 7005

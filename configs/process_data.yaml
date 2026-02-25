@@ -1,0 +1,8 @@
+project_root: ${oc.env:DATACOACH_ROOT,/home/pengyue/Codespace/DataCoach}
+
+task_name: rollout
+raw_data_path: ${project_root}/data/raw_data
+processed_data_path: ${project_root}/data/processed_data
+formatted_data_path: ${project_root}/data/formatted_data
+fps: 50
+mode: video  # or image

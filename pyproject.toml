@@ -1,0 +1,45 @@
+# DataCoach/pyproject.toml
+[project]
+name = "datacoach-env"
+version = "0.0.1"
+# requires-python = ">=3.11"
+requires-python = ">=3.11,<3.13"
+
+
+
+dependencies = [
+   "huggingface-hub>=0.34.2,<0.36.0",# "huggingface-hub>=0.36.0",
+   "lerobot>=0.4.0",
+   "openpi @ file:/home/jolia/DataCoach/third_party/openpi",
+   "pandas>=2.3.3",
+    "torch==2.7.1",
+    "torchvision", 
+    "torchaudio",
+]
+
+[tool.setuptools]
+packages = []
+
+[tool.uv]
+environments = ["sys_platform == 'linux'"]
+
+[tool.uv.sources]
+# torch = { index = "pytorch-nightly" }
+# torchvision = { index = "pytorch-nightly" }
+# torchaudio = { index = "pytorch-nightly" }
+
+[[tool.uv.index]]
+name = "pytorch-nightly"
+url = "https://download.pytorch.org/whl/nightly/cu128"
+[dependency-groups]
+dev = [
+    "ipykernel>=7.1.0",
+    "ipywidgets>=8.1.8",
+    "matplotlib>=3.10.8",
+    "pre-commit>=4.5.1",
+    "pynvml>=13.0.1",
+    "pytest>=9.0.2",
+    "ruff>=0.14.14",
+]
+
+

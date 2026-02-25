@@ -1,0 +1,16 @@
+# datacoach/conf/lerobot/train.yaml
+dataset:
+  repo_id: lewis/pick_pen
+
+policy:
+  type: act
+  device: ${constants.DEFAULT_POLICY_DEVICE}
+  batch_size: ${constants.DEFAULT_BATCH_SIZE}
+  steps: ${constants.DEFAULT_STEPS}
+  optimizer_lr: ${constants.DEFAULT_OPTIMIZER_LR}
+  wandb_enable: ${constants.DEFAULT_WANDB_ENABLE}
+
+output_dir: outputs/train/pick_pen
+job_name: pick_pen
+
+fps: 50
