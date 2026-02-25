@@ -1,3 +1,0 @@
-[submodule "ros_workspace"]
-	path = ros_workspace
-	url = git@github.com:NYUSH-ML/ros_workspace.git
