@@ -1,166 +1,209 @@
 # DragDataCoach
 
-`DragDataCoach` uses an **offline drag-record + replay-collect** workflow:
-1. Drag the A1 arm and record a ROS bag.
-2. Replay that bag.
-3. During replay, DataCoach captures:
-   - `cam_0` third-person video (RealSense)
-   - `cam_1` hand-eye video (regular video device)
-   - arm trajectory/state streams
+DragDataCoach 的核心流程是：
+1. 人手拖拽机械臂，录制 bag。
+2. 用 bag 回放轨迹。
+3. 回放期间采集双相机视频 + 机械臂状态，生成数据集。
 
-Each processed demo outputs:
-- two aligned videos (`cam_0_rgb_video.mp4`, `cam_1_rgb_video.mp4`)
-- aligned trajectory/state files (`states.pkl`, `commanded_states.pkl`, `trajectory.csv`)
+本仓库已经把流程封装成 `just` 命令，避免手敲长指令。
 
-## Third-party A1_SDK
+---
 
-Copy external SDK into this repo (as pure third-party, decoupled from DataCoach logic):
+## 1. 安装 `just`
+
+本机推荐安装方式（已验证可用）：
+
+```bash
+sudo snap install just --classic
+just --version
+```
+
+---
+
+## 2. 一次性准备
+
+### 2.1 同步 A1 SDK 到 third-party
 
 ```bash
 scripts/collect_data/sync_a1_sdk.sh /home/eric/A1_SDK
 ```
 
-It syncs into:
+会同步到：
 
 ```bash
 third_party/A1_SDK
 ```
 
-## Environment
-
-Use:
+### 2.2 环境检查
 
 ```bash
-scripts/collect_data/dragdatacoach.sh which-python
-scripts/collect_data/dragdatacoach.sh doctor
+just doctor
+just which-python
 ```
 
-By default it now selects local env:
-
-```bash
-.conda/envs/dragdatacoach/bin/python
-```
-
-Detailed setup guide:
-
+环境文档：
 - [Environment Setup](docs/SETUP_ENV.md)
 - [A1 Serial Setup (udev)](docs/SETUP_UDEV.md)
 
-`lerobot` is optional unless you run `scripts/process_data/convert_data_to_lerobot.py`.
+---
 
-## Quick Start (Your Workflow)
-
-### 0) Terminal prerequisites (must pass before running)
-
-In terminals that run DataCoach Python scripts, ensure:
+## 3. `just` 命令总览
 
 ```bash
-# optional: inspect selected interpreter
-scripts/collect_data/dragdatacoach.sh which-python
-
-# ROS + A1 message path
-source /opt/ros/noetic/setup.bash
-source third_party/A1_SDK/install/setup.bash
+just --list
 ```
 
-If not sourced, `run_drag_replay_collection.py` will fail to import ROS/A1 message modules.
+常用命令：
+- `just launch-driver [serial]`
+- `just launch-ee-record [serial]`
+- `just drag-start`
+- `just drag-stop`
+- `just gripper-keyboard`
+- `just gripper-stop`
+- `just record-start [tag]`
+- `just record-stop`
+- `just launch-tracker`
+- `just replay <bag> [rate] [gripper_mode]`
+- `just replay-arm-only <bag> [rate]`
+- `just collect`
+- `just latest-bag`
+- `just bag-info <bag>`
+- `just camera-test`
 
-### 1) Start A1 driver
+---
+
+## 4. 相机连接测试
+
+先测相机再开采集：
 
 ```bash
-scripts/collect_data/dragdatacoach.sh launch-driver
+just camera-test
 ```
 
-Equivalent raw command:
+等价直跑脚本：
 
 ```bash
-source third_party/A1_SDK/install/setup.bash
-roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=/dev/ttyACM0
+PY=$(scripts/collect_data/dragdatacoach.sh which-python)
+$PY scripts/collect_data/test_camera_connections.py --config configs/drag_replay.yaml
 ```
 
-### 2) Start drag mode
+默认会保存探测图到 `outputs/camera_probe/`。
+
+如果你只想快速测一次并且不落盘：
 
 ```bash
-scripts/collect_data/dragdatacoach.sh drag-start
+just camera-test-raw --config configs/drag_replay.yaml --timeout-s 1.0 --no-save
 ```
 
-### 3) Start keyboard gripper
+如果提示 `pyrealsense2 is not installed`，说明当前 Python 环境缺少 RealSense 依赖；此时可以先安装依赖，或者先把配置里 RealSense 相机 `enabled` 设为 `false` 只测手眼相机。
+
+---
+
+## 5. 录制（拖拽）流程
+
+建议开 3~4 个终端。
+
+### 终端 A：启动录制链路（driver + end_effector_pose 发布）
 
 ```bash
-scripts/collect_data/dragdatacoach.sh gripper-keyboard
+just launch-ee-record /dev/ttyACM0
 ```
 
-### 4) Start/stop bag recording while dragging
+### 终端 B：开启拖拽模式
 
 ```bash
-scripts/collect_data/dragdatacoach.sh record-start drag_demo
-# ... finish dragging ...
-scripts/collect_data/dragdatacoach.sh record-stop
-scripts/collect_data/dragdatacoach.sh drag-stop
+just drag-start
 ```
 
-### 5) Start tracker launch for replay
+### 终端 C（可选）：键盘夹爪
 
 ```bash
-scripts/collect_data/dragdatacoach.sh launch-tracker
+just gripper-keyboard
 ```
 
-Equivalent raw command:
+### 终端 D：开始/结束录包
 
 ```bash
-source third_party/A1_SDK/install/setup.bash
-roslaunch mobiman eeTrackerdemo.launch
+just record-start drag_demo
+# 结束后
+just record-stop
 ```
 
-### 6) Start DataCoach replay collection
-
-Open a new terminal:
+结束拖拽：
 
 ```bash
-source /opt/ros/noetic/setup.bash
-source third_party/A1_SDK/install/setup.bash
-scripts/collect_data/dragdatacoach.sh collect
+just drag-stop
+just gripper-stop
 ```
 
-Press Enter to start recording in DataCoach.
-
-### 7) Run replay
-
-Open a new terminal:
+查看最新 bag：
 
 ```bash
-scripts/collect_data/dragdatacoach.sh replay --bag /home/eric/A1_SDK/data/records/a1_eef_drag_20260226_043052.bag --gripper-mode position --rate 1.0
+just latest-bag
 ```
 
-Use `--gripper-mode position` for this pipeline.
+---
 
-After replay completes, go back to DataCoach terminal and press `Ctrl+C` to save.
+## 6. 回放 + 数据采集流程
 
-Raw data is saved under:
+建议开 3 个终端。
+
+### 终端 A：机械臂驱动
+
+```bash
+just launch-driver /dev/ttyACM0
+```
+
+### 终端 B：eeTracker 控制器
+
+```bash
+just launch-tracker
+```
+
+### 终端 C：DataCoach 采集器
+
+```bash
+just collect
+```
+
+按提示 `Enter` 开始采集，然后在另一个终端执行回放：
+
+```bash
+just replay /path/to/your.bag 1.0 position
+```
+
+如果你只想先验证机械臂轨迹，不回放夹爪：
+
+```bash
+just replay-arm-only /path/to/your.bag 1.0
+```
+
+---
+
+## 7. 关键防呆（已内置）
+
+- `record-start` 前会检查 `/end_effector_pose`。
+  - 若没有该 topic，会阻止录制（否则会出现“夹爪能回放，机械臂不动”）。
+- `replay` 前会检查是否有 `a1_gripper_keyboard.py` 在后台跑。
+  - 若在跑，会阻止回放（避免夹爪命令冲突导致异常抖动）。
+
+---
+
+## 8. 输出路径
+
+原始采集输出：
 
 ```bash
 data/raw_data/<task_name>/demo_<index>/
 ```
 
-## Post-processing
-
-Set `task_name`/paths in `configs/process_data.yaml`, then:
-
-```bash
-PY=$(scripts/collect_data/dragdatacoach.sh which-python)
-$PY scripts/process_data/align_timestamps.py
-$PY scripts/process_data/convert_data_to_lerobot.py
-```
-
-`convert_data_to_lerobot.py` requires `lerobot`; see [Environment Setup](docs/SETUP_ENV.md).
-
-Processed output:
+对齐与转换后输出：
 
 ```bash
 data/processed_data/<task_name>/demo_<index>/
 ```
 
-Includes:
+典型文件：
 - `cam_0_rgb_video.mp4`
 - `cam_1_rgb_video.mp4`
 - `states.pkl`

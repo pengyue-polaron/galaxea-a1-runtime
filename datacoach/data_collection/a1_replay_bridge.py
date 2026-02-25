@@ -212,9 +212,11 @@ class A1ReplayBridge:
             if self.publish_debug:
                 print(f"[ReplayBridge] cmd: {cmd_payload}")
 
-    def run(self):
+    def run(self, stop_event=None):
         rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
         while not rospy.is_shutdown():
+            if stop_event is not None and stop_event.is_set():
+                break
             self._publish_once()
             rate.sleep()
 
@@ -224,7 +226,7 @@ class A1ReplayBridge:
         self.context.term()
 
 
-def main(cfg=None):
+def main(cfg=None, stop_event=None):
     node_name = str(_cfg_get(cfg, "node_name", "a1_replay_bridge"))
     anonymous = bool(_cfg_get(cfg, "anonymous", False))
     disable_ros_signals = bool(_cfg_get(cfg, "disable_ros_signals", False))
@@ -237,7 +239,7 @@ def main(cfg=None):
 
     bridge = A1ReplayBridge(cfg)
     try:
-        bridge.run()
+        bridge.run(stop_event=stop_event)
     finally:
         bridge.close()
 

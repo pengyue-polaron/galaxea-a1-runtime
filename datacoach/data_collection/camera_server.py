@@ -97,7 +97,7 @@ def _build_camera_source(camera_cfg):
     return cam_id, source
 
 
-def main(cfg=None):
+def main(cfg=None, stop_event=None):
     bind = _cfg_get(cfg, "bind", f"tcp://*:{ZMQ_CAM_PORT}")
     jpeg_quality = int(_cfg_get(cfg, "jpeg_quality", 85))
     loop_sleep_s = float(_cfg_get(cfg, "loop_sleep_s", 0.001))
@@ -140,7 +140,7 @@ def main(cfg=None):
 
     encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
     try:
-        while True:
+        while stop_event is None or not stop_event.is_set():
             published = 0
             for cam_id, source in sources.items():
                 frame = source.read()

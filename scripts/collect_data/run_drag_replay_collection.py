@@ -15,7 +15,7 @@ threads = []
 
 
 def start_thread(target, kwargs=None):
-    t = threading.Thread(target=target, kwargs=kwargs or {}, daemon=True)
+    t = threading.Thread(target=target, kwargs=kwargs or {}, daemon=False)
     t.start()
     threads.append(t)
     return t
@@ -24,8 +24,10 @@ def start_thread(target, kwargs=None):
 @hydra.main(config_path="../../configs", config_name="drag_replay.yaml", version_base="1.2")
 def main(cfg):
     print("===== DragDataCoach Replay Collection =====")
+    shutdown_event = threading.Event()
+
     print("[1] Starting camera_server ...")
-    cam_thread = start_thread(camera_server.main, {"cfg": cfg.camera_server})
+    cam_thread = start_thread(camera_server.main, {"cfg": cfg.camera_server, "stop_event": shutdown_event})
     time.sleep(1.5)
     if not cam_thread.is_alive():
         raise RuntimeError("camera_server exited early. Check camera config/device availability.")
@@ -33,7 +35,7 @@ def main(cfg):
     print("[2] Starting a1_replay_bridge ...")
     bridge_cfg = cfg.a1_replay_bridge
     bridge_cfg.disable_ros_signals = True
-    bridge_thread = start_thread(a1_replay_bridge.main, {"cfg": bridge_cfg})
+    bridge_thread = start_thread(a1_replay_bridge.main, {"cfg": bridge_cfg, "stop_event": shutdown_event})
     time.sleep(1.0)
     if not bridge_thread.is_alive():
         raise RuntimeError(
@@ -41,8 +43,18 @@ def main(cfg):
         )
 
     print("[3] Starting data_collector ...")
-    data_collector.main(cfg.data_collector)
-    print("✅ DragDataCoach collection finished.")
+    try:
+        data_collector.main(cfg.data_collector)
+        print("✅ DragDataCoach collection finished.")
+    finally:
+        print("[4] Stopping background services ...")
+        shutdown_event.set()
+        for name, thread in (("a1_replay_bridge", bridge_thread), ("camera_server", cam_thread)):
+            thread.join(timeout=3.0)
+            if thread.is_alive():
+                print(f"[WARN] {name} did not stop within timeout.")
+            else:
+                print(f"[OK] {name} stopped.")
 
 
 if __name__ == "__main__":
