@@ -138,6 +138,7 @@ celerybeat.pid
 .env
 .envrc
 .venv
+.conda/
 env/
 venv/
 ENV/
@@ -217,3 +218,4 @@ scripts/train/wandb/
 scripts/train/checkpoints/
 data/
 uv.lock.bak
+third_party/A1_SDK/

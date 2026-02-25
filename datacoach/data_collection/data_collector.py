@@ -24,6 +24,7 @@ class DataCollector:
         # === Camera setup ===
         camera_fps_value = self._cfg_get(cfg, "camera_fps", CAM_FPS)
         self.camera_fps = int(camera_fps_value) if camera_fps_value is not None else CAM_FPS
+        self.wait_for_enter = bool(self._cfg_get(cfg, "wait_for_enter", True))
         self.camera_ids = self._parse_camera_ids(cfg)
         print(f"🎥 Expecting camera topics: {', '.join(self.camera_ids)}")
 
@@ -117,7 +118,8 @@ class DataCollector:
                 msg = self.zmq_state_sub.recv_json(flags=zmq.NOBLOCK)
                 if self.recording:
                     with self.lock:
-                        self.state_data.append({"timestamp": time.time(), "data": msg})
+                        ts = float(msg.get("timestamp", time.time())) if isinstance(msg, dict) else time.time()
+                        self.state_data.append({"timestamp": ts, "data": msg})
             except zmq.Again:
                 time.sleep(0.005)
 
@@ -128,7 +130,8 @@ class DataCollector:
                 msg = self.zmq_cmd_sub.recv_json(flags=zmq.NOBLOCK)
                 if self.recording:
                     with self.lock:
-                        self.cmd_data.append({"timestamp": time.time(), "data": msg})
+                        ts = float(msg.get("timestamp", time.time())) if isinstance(msg, dict) else time.time()
+                        self.cmd_data.append({"timestamp": ts, "data": msg})
             except zmq.Again:
                 time.sleep(0.005)
 
@@ -236,8 +239,11 @@ class DataCollector:
         self.save_all()
 
     def run(self):
-        print("Press ENTER to start collecting data...")
-        input()
+        if self.wait_for_enter:
+            print("Press ENTER to start collecting data...")
+            input()
+        else:
+            print("Auto start enabled. Starting recording immediately...")
         self.recording = True
         print("▶️ Recording started. Press Ctrl+C to stop.")
 

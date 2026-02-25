@@ -1,5 +1,8 @@
 project_root: ${oc.env:DATACOACH_ROOT,/home/pengyue/Codespace/DataCoach}
 
+third_party:
+  a1_sdk_root: ${project_root}/third_party/A1_SDK
+
 camera_server:
   bind: tcp://*:5558
   jpeg_quality: 85

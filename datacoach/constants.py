@@ -14,14 +14,9 @@ DEFAULT_STEPS = 50000
 DEFAULT_OPTIMIZER_LR = 1e-4
 DEFAULT_WANDB_ENABLE = False
 
-# scale Lerobot data to A1
-LEROBOT_PORT = 7005
 ZMQ_CMD_PORT = 5556  # commanded state port
 ZMQ_STATE_PORT = 5557  # state port
 ZMQ_CAM_PORT = 5558  # camera stream port
-
-SCALE = [2, 2, 1.5]
-OFFSET = [0, 0, 0.05]
 
 # data collection
 ROBOT_FPS = 50  # Hz

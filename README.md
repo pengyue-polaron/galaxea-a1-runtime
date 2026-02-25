@@ -1,148 +1,168 @@
-# DataCoach
-> Using a Vision-Language Model as a Coach to Guide Next-Round Data Collection
+# DragDataCoach
 
-**DataCoach** explores how a **Vision-Language Model (VLM)** can act as a **coach** to guide a robot in iterative data collection.  
-Instead of passively collecting data, the robot receives **feedback and guidance** from the VLM after each trial, improving the quality and diversity of the next round of demonstrations.
+`DragDataCoach` uses an **offline drag-record + replay-collect** workflow:
+1. Drag the A1 arm and record a ROS bag.
+2. Replay that bag.
+3. During replay, DataCoach captures:
+   - `cam_0` third-person video (RealSense)
+   - `cam_1` hand-eye video (regular video device)
+   - arm trajectory/state streams
 
-If you have already set up the workspace before, you can directly jump to (## Teleoperation with LeRobot).
+Each processed demo outputs:
+- two aligned videos (`cam_0_rgb_video.mp4`, `cam_1_rgb_video.mp4`)
+- aligned trajectory/state files (`states.pkl`, `commanded_states.pkl`, `trajectory.csv`)
 
+## Third-party A1_SDK
 
-## Setup
+Copy external SDK into this repo (as pure third-party, decoupled from DataCoach logic):
+
 ```bash
-git clone --recurse-submodules https://github.com/joliachen/DataCoach.git
-# Or if you already cloned the repo:
-git submodule update --init --recursive
-cd DataCoach
-cd third_party/lerobot
-git lfs pull
-cd ../..
+scripts/collect_data/sync_a1_sdk.sh /home/eric/A1_SDK
 ```
 
-###
-Install A1
-Follow [guidance](./ros_workspace/README.md) to configurate A1 SDK. 
+It syncs into:
 
-### Set up pi 0.5 environment
-
-If uv is already set up, skip below commands:
 ```bash
-curl -LsSf https://astral.sh/uv/install.sh | sh
-echo 'source $HOME/.local/bin/env' >> ~/.bashrc
-source ~/.bashrc
-```
-run the following to set up the uv environment for openpi:
-```bash
-# cd third_party/openpi
-GIT_LFS_SKIP_SMUDGE=1 uv sync
-GIT_LFS_SKIP_SMUDGE=1 uv pip install -e ./third_party/openpi # import openpi in the root uv
-
-# If you use PyTorch for Linux x86_64 and Linux SBSA on NVIDIA 5080, 5090 Blackwell RTX GPUs, run the command below.
-source /home/jolia/DataCoach/.venv/bin/activate
-pip uninstall -y torch torchvision torchaudio
-pip install --pre --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-uv sync
-
-```
-```bash
-UV_HT。TP_TIMEOUT=120 GIT_LFS_SKIP_SMUDGE=1 uv sync
-
+third_party/A1_SDK
 ```
 
+## Environment
 
-`Note: Since there is confliction between lerobot packages and openpi packages, we use uv to manage pacakges of openpi, which is independent from the lerobot conda environment.
+Use:
 
-Set up conda environment for datacoach project
 ```bash
-cd lerobot
-conda create -y -n datacoach python=3.10
-conda activate datacoach
-pip install -e .
-
-pip install lerobot feetech-servo-sdk scipy placo pyrealsense2 hydra-core zmq scservo_sdk
-conda install -c conda-forge ffmpeg opencv
-
-conda config --set auto_activate_base false # turn off activating conda env automatically
+scripts/collect_data/dragdatacoach.sh which-python
+scripts/collect_data/dragdatacoach.sh doctor
 ```
 
-## Data collection with LeRobot
+By default it now selects local env:
 
 ```bash
-conda activate datacoach
-lerobot-find-port # ttyACM0
-# If you have not set up index for motor, you should set up for once
-lerobot-setup-motors --teleop.type=so101_leader --teleop.port='/dev/ttyACM2'
-
-sudo chmod 777 /dev/ttyACM0 # port for lerobot
-sudo chmod 777 /dev/ttyACM1 # port for A1
+.conda/envs/dragdatacoach/bin/python
 ```
 
-```bash
-# in a new terminal, with datacoach conda environment deactivated
-source /home/jolia/DataCoach/ros_workspace/scripts/setup_a1.sh
-#or 
-a1env # if you set alias 
-roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:="/dev/ttyACM1"
-```
-it will print out:
-```bash
-[INFO] [1760946372.464759096]: Initialization Complete
-[INFO] [1760946372.464957949]: Launch feedback and control thread
-[INFO] [1760946372.464999897]: Bringup all
-****CANNOT PASS CRC16 CHECK!!!****
-****CANNOT PASS CRC16 CHECK!!!****
-```
+Detailed setup guide:
 
-If it print out ` [ERROR] [1760946263.450528882]: Serial interface error: Driver Feedback: Serial Read/Write Fault `, it can be the port issue (might not be /dev/ttyACM1 can be /dev/ttyACM0)
+- [Environment Setup](docs/SETUP_ENV.md)
+- [A1 Serial Setup (udev)](docs/SETUP_UDEV.md)
+
+`lerobot` is optional unless you run `scripts/process_data/convert_data_to_lerobot.py`.
+
+## Quick Start (Your Workflow)
+
+### 0) Terminal prerequisites (must pass before running)
+
+In terminals that run DataCoach Python scripts, ensure:
 
 ```bash
-# open a new terminal
-a1env
+# optional: inspect selected interpreter
+scripts/collect_data/dragdatacoach.sh which-python
+
+# ROS + A1 message path
+source /opt/ros/noetic/setup.bash
+source third_party/A1_SDK/install/setup.bash
+```
+
+If not sourced, `run_drag_replay_collection.py` will fail to import ROS/A1 message modules.
+
+### 1) Start A1 driver
+
+```bash
+scripts/collect_data/dragdatacoach.sh launch-driver
+```
+
+Equivalent raw command:
+
+```bash
+source third_party/A1_SDK/install/setup.bash
+roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=/dev/ttyACM0
+```
+
+### 2) Start drag mode
+
+```bash
+scripts/collect_data/dragdatacoach.sh drag-start
+```
+
+### 3) Start keyboard gripper
+
+```bash
+scripts/collect_data/dragdatacoach.sh gripper-keyboard
+```
+
+### 4) Start/stop bag recording while dragging
+
+```bash
+scripts/collect_data/dragdatacoach.sh record-start drag_demo
+# ... finish dragging ...
+scripts/collect_data/dragdatacoach.sh record-stop
+scripts/collect_data/dragdatacoach.sh drag-stop
+```
+
+### 5) Start tracker launch for replay
+
+```bash
+scripts/collect_data/dragdatacoach.sh launch-tracker
+```
+
+Equivalent raw command:
+
+```bash
+source third_party/A1_SDK/install/setup.bash
 roslaunch mobiman eeTrackerdemo.launch
 ```
 
-# In a new terminal
-```bash
-a1env
-cd scripts/collect_data
-python run_a1_server.py # which start teleoperating A1
+### 6) Start DataCoach replay collection
 
-# In a new terminal,
-conda activate datacoach
-python run_data_services.py 
-```
-
-Under `configs/lerobot/collect_data.yaml`, specify your task name and demo index everytime before you start to collect a new demo.
-```bash
-# In a new terminal,
-conda activate datacoach
-python run_data_collection.py 
-
-```
-
-
-## Data preprocessing
-
-Remember in `configs/lerobot/process_data.yaml` change your task_name and data path.
+Open a new terminal:
 
 ```bash
-conda activate datacoach
-cd scripts/process_data
-python align_timestamps.py
-python convert_data_to_lerobot.py
+source /opt/ros/noetic/setup.bash
+source third_party/A1_SDK/install/setup.bash
+scripts/collect_data/dragdatacoach.sh collect
 ```
 
+Press Enter to start recording in DataCoach.
 
-## Training
+### 7) Run replay
+
+Open a new terminal:
+
 ```bash
-# register openai package into current env
-
-cd ../train
-uv run compute_norm_stats.py --config-name localdata_a1_pi05
-XLA_PYTHON_CLIENT_MEM_FRACTION=0.9 uv run train.py localdata_a1_pi05 --exp-name=my_experiment --overwrite
-
+scripts/collect_data/dragdatacoach.sh replay --bag /home/eric/A1_SDK/data/records/a1_eef_drag_20260226_043052.bag --gripper-mode position --rate 1.0
 ```
 
+Use `--gripper-mode position` for this pipeline.
 
+After replay completes, go back to DataCoach terminal and press `Ctrl+C` to save.
 
+Raw data is saved under:
 
-sudo -E bash -c "source /opt/ros/noetic/setup.bash && source /home/nyush_robo/DataCoach/ros_workspace/ros_ws/src/a1_sdk/install/setup.bash && python3 /home/nyush_robo/DataCoach/receiver.py
+```bash
+data/raw_data/<task_name>/demo_<index>/
+```
+
+## Post-processing
+
+Set `task_name`/paths in `configs/process_data.yaml`, then:
+
+```bash
+PY=$(scripts/collect_data/dragdatacoach.sh which-python)
+$PY scripts/process_data/align_timestamps.py
+$PY scripts/process_data/convert_data_to_lerobot.py
+```
+
+`convert_data_to_lerobot.py` requires `lerobot`; see [Environment Setup](docs/SETUP_ENV.md).
+
+Processed output:
+
+```bash
+data/processed_data/<task_name>/demo_<index>/
+```
+
+Includes:
+- `cam_0_rgb_video.mp4`
+- `cam_1_rgb_video.mp4`
+- `states.pkl`
+- `commanded_states.pkl`
+- `trajectory.csv`

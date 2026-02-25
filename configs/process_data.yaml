@@ -6,3 +6,7 @@ processed_data_path: ${project_root}/data/processed_data
 formatted_data_path: ${project_root}/data/formatted_data
 fps: 50
 mode: video  # or image
+reference_camera: cam_0
+cameras:
+  - cam_0
+  - cam_1
