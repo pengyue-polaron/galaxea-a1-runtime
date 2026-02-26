@@ -253,6 +253,9 @@ if [[ "${SKIP_RECORD}" -eq 0 ]]; then
   tmux_new_window "record_driver" "just launch ee-record '${SERIAL}'"
   sleep 3
 
+  # Previous interrupted runs may leave drag mode alive outside tmux.
+  # Always clear it before starting a new drag session.
+  just drag stop >/dev/null 2>&1 || true
   just drag start
 
   read -r -p "Press Enter to START bag recording..."
@@ -299,7 +302,7 @@ fi
 echo "[Stage 2/2] Replay + Collect"
 echo "Using bag: ${BAG}"
 
-tmux_new_window "replay_driver" "just launch driver '${SERIAL}'"
+tmux_new_window "replay_driver" "just launch ee-record '${SERIAL}'"
 sleep 2
 tmux_new_window "tracker" "just launch tracker"
 sleep 2
@@ -312,6 +315,10 @@ just replay "${BAG}" "${RATE}" "${GRIPPER_MODE}"
 
 echo "Replay finished. Stopping collector..."
 tmux_ctrl_c "collect"
+sleep 2
+tmux_ctrl_c "replay_driver"
+sleep 2
+tmux send-keys -t "${SESSION}:replay_driver" "just launch driver '${SERIAL}'" Enter
 sleep 2
 
 if [[ "${AUTO_STOP}" -eq 1 ]]; then

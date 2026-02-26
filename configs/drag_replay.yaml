@@ -44,7 +44,7 @@ data_collector:
   task_name: rollout
   demo_index: 0
   save_video: true
-  camera_fps: 20
+  camera_fps: 15
   wait_for_enter: true
   cameras:
     - id: cam_0

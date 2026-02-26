@@ -135,7 +135,7 @@ case "${cmd}" in
 [ERROR] This recording will NOT replay arm motion (gripper-only replay).
 [ERROR] Start one of these before recording:
   1) scripts/collect_data/dragdatacoach.sh launch-ee-record /dev/ttyACM0
-  2) roslaunch mobiman eeTrackerdemo.launch
+  2) roslaunch mobiman jointTrackerdemo.launch
 EOF
           if [[ "${A1_RECORD_ALLOW_NO_EE_POSE:-0}" != "1" ]]; then
             echo "[ERROR] Aborting record-start. Set A1_RECORD_ALLOW_NO_EE_POSE=1 to bypass."
@@ -151,7 +151,7 @@ EOF
     "${A1_SDK_ROOT}/tools/a1_record.sh" stop
     ;;
   launch-tracker)
-    roslaunch mobiman eeTrackerdemo.launch
+    roslaunch mobiman jointTrackerdemo.launch
     ;;
   replay)
     shift
@@ -169,35 +169,91 @@ EOF
       echo "[WARN] Bypass enabled (A1_REPLAY_ALLOW_GRIPPER_KEYBOARD=1)."
     fi
 
+    replay_bag_path=""
+    replay_rate="1.0"
+    replay_gripper_mode="position"
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --bag)
+          replay_bag_path="${2:-}"
+          shift 2
+          ;;
+        --rate)
+          replay_rate="${2:-1.0}"
+          shift 2
+          ;;
+        --gripper-mode)
+          replay_gripper_mode="${2:-position}"
+          shift 2
+          ;;
+        *)
+          echo "Unknown replay option: $1"
+          echo "Usage: replay --bag <path> [--rate 1.0] [--gripper-mode position]"
+          exit 1
+          ;;
+      esac
+    done
+
+    if [[ -z "${replay_bag_path}" ]]; then
+      replay_bag_path="$(ls -t "${A1_SDK_ROOT}"/data/records/*.bag 2>/dev/null | head -n 1 || true)"
+    fi
+    if [[ -z "${replay_bag_path}" || ! -f "${replay_bag_path}" ]]; then
+      echo "Replay bag not found: ${replay_bag_path}"
+      exit 1
+    fi
+
     if command -v rostopic >/dev/null 2>&1 && rostopic list >/dev/null 2>&1; then
-      if ! rostopic list | grep -qx "/a1_ee_target"; then
+      if ! rostopic list | grep -qx "/arm_joint_target_position"; then
         cat <<'EOF'
-[WARN] /a1_ee_target topic is missing. eeTracker may not be running.
-[WARN] Without eeTracker, replay can move gripper but arm will not move.
+[WARN] /arm_joint_target_position topic is missing. jointTrackerdemo may not be running.
 [WARN] Start:
   scripts/collect_data/dragdatacoach.sh launch-tracker
 EOF
       fi
     fi
 
-    replay_args=("$@")
-    replay_bag_path=""
-    for ((i=0; i<${#replay_args[@]}; i++)); do
-      if [[ "${replay_args[$i]}" == "--bag" ]] && [[ $((i+1)) -lt ${#replay_args[@]} ]]; then
-        replay_bag_path="${replay_args[$((i+1))]}"
-        break
-      fi
-    done
-    if [[ -n "${replay_bag_path}" ]] && [[ -f "${replay_bag_path}" ]] && command -v rosbag >/dev/null 2>&1; then
-      if ! rosbag info "${replay_bag_path}" | awk '/topics:/{p=1;next} p && $1=="/end_effector_pose"{found=1} END{exit !found}'; then
+    bag_has_gripper_topic=0
+    replay_gripper_topic="/gripper_position_control/host"
+    replay_gripper_remap=1
+    if command -v rosbag >/dev/null 2>&1; then
+      if ! rosbag info "${replay_bag_path}" | awk '/topics:/{p=1;next} p && $1=="/joint_states_host"{found=1} END{exit !found}'; then
         cat <<'EOF'
-[WARN] Bag does not contain /end_effector_pose.
-[WARN] Current replay path drives arm motion only from /end_effector_pose -> /a1_ee_target.
-[WARN] Result: gripper may move, but arm trajectory will not replay.
+[WARN] Bag does not contain /joint_states_host.
+[WARN] Arm trajectory may not replay.
 EOF
       fi
+      if rosbag info "${replay_bag_path}" | awk '/topics:/{p=1;next} p && $1=="/gripper_position_control_host"{found=1} END{exit !found}'; then
+        bag_has_gripper_topic=1
+        replay_gripper_topic="/gripper_position_control_host"
+        replay_gripper_remap=0
+      elif rosbag info "${replay_bag_path}" | awk '/topics:/{p=1;next} p && $1=="/gripper_position_control/host"{found=1} END{exit !found}'; then
+        bag_has_gripper_topic=1
+        replay_gripper_topic="/gripper_position_control/host"
+        replay_gripper_remap=1
+      fi
     fi
-    "${A1_SDK_ROOT}/tools/a1_replay.sh" "$@"
+
+    if [[ "${bag_has_gripper_topic}" -eq 0 ]]; then
+      cat <<'EOF'
+[WARN] Bag does not contain gripper position control topic.
+[WARN] Supported: /gripper_position_control_host or /gripper_position_control/host
+[WARN] Gripper may not replay.
+EOF
+    fi
+
+    echo "Replay mode: gripper-mode=${replay_gripper_mode} (kept for compatibility)"
+    if [[ "${replay_gripper_remap}" -eq 1 ]]; then
+      rosbag play "${replay_bag_path}" \
+        --topics /joint_states_host "${replay_gripper_topic}" \
+        /joint_states_host:=/arm_joint_target_position \
+        /gripper_position_control/host:=/gripper_position_control_host \
+        -r "${replay_rate}"
+    else
+      rosbag play "${replay_bag_path}" \
+        --topics /joint_states_host "${replay_gripper_topic}" \
+        /joint_states_host:=/arm_joint_target_position \
+        -r "${replay_rate}"
+    fi
     ;;
   collect)
     py="$(pick_datacoach_python || true)"

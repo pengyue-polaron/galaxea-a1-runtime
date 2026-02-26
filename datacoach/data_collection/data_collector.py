@@ -32,7 +32,6 @@ class DataCollector:
         self.state_data = []
         self.cmd_data = []
         self.image_buffers = {cam_id: [] for cam_id in self.camera_ids}
-        self.video_writers = {}
 
         self.lock = threading.Lock()
         self.recording = False
@@ -126,6 +125,18 @@ class DataCollector:
             self.image_buffers[cam_id] = []
             print(f"[Collector] Detected new camera topic: {cam_id}")
 
+    def _estimate_video_fps(self, timestamps):
+        if len(timestamps) < 2:
+            return float(self.camera_fps)
+        duration = float(timestamps[-1]) - float(timestamps[0])
+        if duration <= 1e-6:
+            return float(self.camera_fps)
+        fps = (len(timestamps) - 1) / duration
+        if not np.isfinite(fps) or fps <= 0:
+            return float(self.camera_fps)
+        # Guard against pathological timestamps.
+        return float(min(max(fps, 1.0), 240.0))
+
     def collect_state(self):
         print(f"📡 Subscribing to robot state at tcp://127.0.0.1:{ZMQ_STATE_PORT}")
         while not self.exit_flag:
@@ -184,16 +195,6 @@ class DataCollector:
                     self._ensure_camera(cam_id)
                     self.image_buffers[cam_id].append((timestamp, img.copy()))
 
-                    writer = self.video_writers.get(cam_id)
-                    if writer is None:
-                        h, w, _ = img.shape
-                        video_path = self.base_dir / f"{cam_id}_rgb_video.mp4"
-                        fourcc = getattr(cv2, "VideoWriter_fourcc")(*"mp4v")
-                        writer = cv2.VideoWriter(str(video_path), fourcc, self.camera_fps, (w, h))
-                        self.video_writers[cam_id] = writer
-
-                    writer.write(img)
-
     def save_all(self):
         print("💾 Saving data...")
 
@@ -204,9 +205,6 @@ class DataCollector:
             with open(self.base_dir / "commanded_states.pkl", "wb") as f:
                 pickle.dump(self.cmd_data, f)
 
-            for writer in self.video_writers.values():
-                writer.release()
-
             saved_cameras = []
             for cam_idx, cam_id in enumerate(sorted(self.image_buffers.keys())):
                 frames = self.image_buffers[cam_id]
@@ -214,12 +212,30 @@ class DataCollector:
                     continue
 
                 video_path = self.base_dir / f"{cam_id}_rgb_video.mp4"
-                timestamps = [ts for ts, _ in frames]
+                timestamps = [float(ts) for ts, _ in frames]
+                video_fps = self._estimate_video_fps(timestamps)
+
+                first_img = frames[0][1]
+                h, w = first_img.shape[:2]
+                fourcc = getattr(cv2, "VideoWriter_fourcc")(*"mp4v")
+                writer = cv2.VideoWriter(str(video_path), fourcc, video_fps, (w, h))
+                if not writer.isOpened():
+                    raise RuntimeError(f"Cannot open video writer for {video_path}")
+
+                for _, img in frames:
+                    if img is None:
+                        continue
+                    ih, iw = img.shape[:2]
+                    if ih != h or iw != w:
+                        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+                    writer.write(img)
+                writer.release()
 
                 metadata = {
                     "cam_idx": cam_idx,
                     "cam_name": cam_id,
-                    "cam_fps": self.camera_fps,
+                    "cam_fps": video_fps,
+                    "cam_fps_configured": self.camera_fps,
                     "num_image_frames": len(timestamps),
                     "timestamps": timestamps,
                     "record_start_time": timestamps[0],
@@ -230,6 +246,7 @@ class DataCollector:
                 with open(self.base_dir / f"{cam_id}_rgb_video.metadata", "wb") as f:
                     pickle.dump(metadata, f)
 
+                print(f"  - {cam_id}: write_fps={video_fps:.2f}, frames={len(timestamps)}")
                 saved_cameras.append(cam_id)
 
         print("✅ Saved:")
