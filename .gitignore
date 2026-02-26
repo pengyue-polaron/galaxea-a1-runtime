@@ -218,4 +218,3 @@ scripts/train/wandb/
 scripts/train/checkpoints/
 data/
 uv.lock.bak
-third_party/A1_SDK/
