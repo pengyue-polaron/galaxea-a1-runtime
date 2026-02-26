@@ -13,6 +13,10 @@ fi
 
 set +u
 # shellcheck disable=SC1091
+if [[ -f "/opt/ros/noetic/setup.bash" ]]; then
+  source "/opt/ros/noetic/setup.bash"
+fi
+# shellcheck disable=SC1091
 source "${A1_SDK_ROOT}/install/setup.bash"
 set -u
 
