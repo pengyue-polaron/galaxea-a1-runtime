@@ -89,6 +89,7 @@ class A1ReplayBridge:
         self.state_pose_topic = str(_cfg_get(cfg, "state_pose_topic", "/end_effector_pose"))
         self.state_gripper_topic = str(_cfg_get(cfg, "state_gripper_topic", "/gripper_stroke_host"))
         self.cmd_pose_topic = str(_cfg_get(cfg, "cmd_pose_topic", "/a1_ee_target"))
+        self.cmd_joint_topic = str(_cfg_get(cfg, "cmd_joint_topic", "/arm_joint_target_position"))
         self.cmd_gripper_position_topic = str(
             _cfg_get(cfg, "cmd_gripper_position_topic", "/gripper_position_control_host")
         )
@@ -111,12 +112,14 @@ class A1ReplayBridge:
 
         self.latest_cmd_pos: Optional[tuple[float, float, float]] = None
         self.latest_cmd_ori: Optional[tuple[float, float, float, float]] = None
+        self.latest_cmd_joint: Optional[tuple[float, ...]] = None
         self.latest_cmd_gripper: Optional[float] = None
         self.latest_cmd_gripper_source = "fallback"
 
         rospy.Subscriber(self.state_pose_topic, PoseStamped, self._state_pose_cb, queue_size=100)
         rospy.Subscriber(self.state_gripper_topic, JointState, self._state_gripper_cb, queue_size=100)
         rospy.Subscriber(self.cmd_pose_topic, PoseStamped, self._cmd_pose_cb, queue_size=100)
+        rospy.Subscriber(self.cmd_joint_topic, JointState, self._cmd_joint_cb, queue_size=100)
         rospy.Subscriber(
             self.cmd_gripper_position_topic,
             gripper_position_control,
@@ -133,6 +136,7 @@ class A1ReplayBridge:
         print(f"[ReplayBridge] State pose topic: {self.state_pose_topic}")
         print(f"[ReplayBridge] State gripper topic: {self.state_gripper_topic}")
         print(f"[ReplayBridge] Command pose topic: {self.cmd_pose_topic}")
+        print(f"[ReplayBridge] Command joint topic: {self.cmd_joint_topic}")
         print(f"[ReplayBridge] Command gripper position topic: {self.cmd_gripper_position_topic}")
         print(f"[ReplayBridge] Command gripper force topic: {self.cmd_gripper_force_topic}")
         print(f"[ReplayBridge] ZMQ state PUB: {state_bind}")
@@ -155,6 +159,12 @@ class A1ReplayBridge:
         with self.lock:
             self.latest_cmd_pos = pose["pos"]
             self.latest_cmd_ori = pose["ori"]
+
+    def _cmd_joint_cb(self, msg: JointState):
+        if not msg.position:
+            return
+        with self.lock:
+            self.latest_cmd_joint = tuple(float(v) for v in msg.position)
 
     def _cmd_gripper_position_cb(self, msg: gripper_position_control):
         with self.lock:
@@ -183,6 +193,7 @@ class A1ReplayBridge:
 
             cmd_pos = self.latest_cmd_pos
             cmd_ori = self.latest_cmd_ori
+            cmd_joint = self.latest_cmd_joint
             cmd_gripper = self.latest_cmd_gripper
             cmd_gripper_source = self.latest_cmd_gripper_source
 
@@ -195,15 +206,23 @@ class A1ReplayBridge:
             }
             self.zmq_state_pub.send_json(state_payload)
 
-        should_publish_cmd = cmd_pos is not None and cmd_ori is not None
+        eff_cmd_pos = cmd_pos if cmd_pos is not None else state_pos
+        eff_cmd_ori = cmd_ori if cmd_ori is not None else state_ori
+        pose_available = eff_cmd_pos is not None and eff_cmd_ori is not None
+
+        has_cmd_pose = cmd_pos is not None and cmd_ori is not None
+        has_cmd_joint = cmd_joint is not None
+        should_publish_cmd = pose_available and (has_cmd_pose or has_cmd_joint)
         if not self.require_command_pose:
-            should_publish_cmd = should_publish_cmd or (cmd_gripper is not None)
+            should_publish_cmd = should_publish_cmd or (pose_available and (cmd_gripper is not None))
+            should_publish_cmd = should_publish_cmd or pose_available
 
         if should_publish_cmd:
             cmd_payload = {
                 "timestamp": now,
-                "pos": cmd_pos if cmd_pos is not None else state_pos,
-                "ori": cmd_ori if cmd_ori is not None else state_ori,
+                "pos": eff_cmd_pos,
+                "ori": eff_cmd_ori,
+                "joint": cmd_joint,
                 "gripper": self._effective_gripper(cmd_gripper, state_gripper),
                 "gripper_source": cmd_gripper_source,
             }
