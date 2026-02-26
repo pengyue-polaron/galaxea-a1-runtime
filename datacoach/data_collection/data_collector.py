@@ -2,6 +2,7 @@ import pickle
 import signal
 import threading
 import time
+from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -17,8 +18,7 @@ class DataCollector:
         self.cfg = cfg
 
         # === Directory setup ===
-        self.base_dir = Path(cfg.storage_path) / cfg.task_name / f"demo_{cfg.demo_index}"
-        self.base_dir.mkdir(parents=True, exist_ok=True)
+        self.base_dir = self._build_base_dir(cfg)
         print(f"📂 Saving data to: {self.base_dir}")
 
         # === Camera setup ===
@@ -73,6 +73,21 @@ class DataCollector:
         if hasattr(cfg, "get"):
             return cfg.get(key, default)
         return getattr(cfg, key, default)
+
+    def _build_base_dir(self, cfg):
+        storage_root = Path(cfg.storage_path) / cfg.task_name
+        demo_index = self._cfg_get(cfg, "demo_index", 0)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name = f"demo_{demo_index}_{timestamp}"
+        base_dir = storage_root / base_name
+
+        suffix = 1
+        while base_dir.exists():
+            base_dir = storage_root / f"{base_name}_{suffix}"
+            suffix += 1
+
+        base_dir.mkdir(parents=True, exist_ok=False)
+        return base_dir
 
     def _parse_camera_ids(self, cfg):
         cameras = self._cfg_get(cfg, "cameras", None)

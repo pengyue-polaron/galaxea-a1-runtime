@@ -141,7 +141,7 @@ just drag-collect \
 原始数据：
 
 ```bash
-data/raw_data/<task_name>/demo_<index>/
+data/raw_data/<task_name>/demo_<index>_<YYYYMMDD_HHMMSS>/
 ```
 
 典型文件：
