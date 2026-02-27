@@ -37,6 +37,7 @@ Commands:
   launch-tracker
   replay --bag <path> [--rate 1.0] [--gripper-mode position]
   collect                        # start DataCoach replay bridge + cameras + collector
+  require-cameras [context]      # run camera preflight check
   doctor                         # check runtime dependencies and selected python
   which-python                   # print selected DataCoach python
 EOF
@@ -94,6 +95,37 @@ else:
 PY
 }
 
+require_all_cameras() {
+  local context="${1:-recording or replay}"
+  local py=""
+  local camera_cfg="${A1_CAMERA_CHECK_CONFIG:-${PROJECT_ROOT}/configs/drag_replay.yaml}"
+  local timeout_s="${A1_CAMERA_CHECK_TIMEOUT_S:-2.0}"
+
+  if [[ "${A1_ALLOW_MISSING_CAMERAS:-0}" == "1" ]]; then
+    echo "[WARN] Camera preflight bypass enabled (A1_ALLOW_MISSING_CAMERAS=1)."
+    return 0
+  fi
+
+  py="$(pick_datacoach_python || true)"
+  if [[ -z "${py}" ]]; then
+    echo "[ERROR] Could not find a usable DataCoach python for camera checks."
+    return 1
+  fi
+
+  echo "[CHECK] Verifying required cameras before ${context} ..."
+  if ! DATACOACH_PYTHON="${py}" "${py}" "${PROJECT_ROOT}/scripts/collect_data/test_camera_connections.py" \
+    --config "${camera_cfg}" \
+    --timeout-s "${timeout_s}" \
+    --no-save; then
+    cat <<EOF
+[ERROR] Camera preflight failed.
+[ERROR] Both cam_0 and cam_1 must be connected before ${context}.
+[ERROR] Fix the camera connection first, then retry.
+EOF
+    return 1
+  fi
+}
+
 cmd="${1:-}"
 case "${cmd}" in
   launch-driver)
@@ -125,6 +157,10 @@ case "${cmd}" in
       echo "No running a1_gripper_keyboard.py found."
     fi
     ;;
+  require-cameras)
+    shift || true
+    require_all_cameras "${*:-replay}"
+    ;;
   record-start)
     tag="${2:-drag}"
     if command -v rostopic >/dev/null 2>&1; then
@@ -155,6 +191,9 @@ EOF
     ;;
   replay)
     shift
+    if [[ "${A1_SKIP_CAMERA_PREFLIGHT:-0}" != "1" ]]; then
+      require_all_cameras "replay"
+    fi
     if pgrep -f "a1_gripper_keyboard.py" >/dev/null 2>&1; then
       cat <<'EOF'
 [ERROR] Detected running a1_gripper_keyboard.py.

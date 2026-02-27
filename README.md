@@ -68,6 +68,8 @@ just camera test
 
 `just replay` 不带 bag 参数时，会自动使用 `third_party/A1_SDK/data/records/` 里的最新 bag。
 
+`just replay` 会在开始回放前检查 `cam_0` 和 `cam_1`；任意一个没连上就直接退出。`just drag-collect` 只会在 replay 阶段检查一次，而且检查发生在启动 `collect` 之前。
+
 ## 5. 标准手动流程
 
 录制（拖拽）阶段：
@@ -108,7 +110,7 @@ scripts/collect_data/dragdatacoach_all_in_one.sh
 
 它会在后台创建 `tmux` 会话并自动拉起多窗口，完成录制 + 回放 + 采集的完整流程。
 在录制阶段，脚本会在当前终端打开 `just gripper start`，你可以直接键盘控制夹爪。
-如果检测到同名 tmux 会话，脚本会提示你选择：`restart / attach / new / quit`。
+如果检测到同名 tmux 会话，脚本默认会直接 `restart`；你也可以用 `--on-existing` 改成 `ask / attach / new / abort`。
 
 最常用：
 

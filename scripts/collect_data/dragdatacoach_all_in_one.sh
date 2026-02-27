@@ -13,7 +13,7 @@ GRIPPER_MODE="position"
 SKIP_RECORD=0
 WITH_GRIPPER_KEYBOARD=1
 AUTO_STOP=1
-ON_EXISTING="ask"
+ON_EXISTING="restart"
 
 usage() {
   cat <<'EOF'
@@ -32,7 +32,7 @@ Options:
   --no-auto-stop             Keep replay launch windows running at the end.
   --on-existing <policy>     Existing tmux session policy:
                              ask | restart | attach | new | abort
-                             (default: ask)
+                             (default: restart)
   -h, --help                 Show this help.
 EOF
 }
@@ -310,12 +310,14 @@ tmux_new_window "replay_driver" "just launch ee-record '${SERIAL}'"
 sleep 2
 tmux_new_window "tracker" "just launch tracker"
 sleep 2
+scripts/collect_data/dragdatacoach.sh require-cameras "replay"
 tmux_new_window "collect" "${collect_cmd}"
 sleep 4
+read -r -p "Press Enter to START replay..."
 tmux send-keys -t "${SESSION}:collect" Enter
 sleep 1
 
-just replay "${BAG}" "${RATE}" "${GRIPPER_MODE}"
+A1_SKIP_CAMERA_PREFLIGHT=1 just replay "${BAG}" "${RATE}" "${GRIPPER_MODE}"
 
 echo "Replay finished. Stopping collector..."
 tmux_ctrl_c "collect"
