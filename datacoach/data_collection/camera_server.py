@@ -101,6 +101,8 @@ def main(cfg=None, stop_event=None):
     bind = _cfg_get(cfg, "bind", f"tcp://*:{ZMQ_CAM_PORT}")
     jpeg_quality = int(_cfg_get(cfg, "jpeg_quality", 85))
     loop_sleep_s = float(_cfg_get(cfg, "loop_sleep_s", 0.001))
+    startup_timeout_s = float(_cfg_get(cfg, "startup_timeout_s", 3.0))
+    stall_timeout_s = float(_cfg_get(cfg, "stall_timeout_s", 2.0))
 
     camera_cfgs = _cfg_get(cfg, "cameras", None)
     if not camera_cfgs:
@@ -116,6 +118,7 @@ def main(cfg=None, stop_event=None):
         ]
 
     sources = {}
+    camera_state = {}
     for camera_cfg in camera_cfgs:
         cam_id = str(_cfg_get(camera_cfg, "id", "cam_0"))
         try:
@@ -125,6 +128,12 @@ def main(cfg=None, stop_event=None):
                 continue
             sources[built_cam_id] = source
             print(f"[Camera Server] Camera ready: {built_cam_id}")
+            now = time.monotonic()
+            camera_state[built_cam_id] = {
+                "startup_ts": now,
+                "last_frame_ts": None,
+                "warned_no_frame": False,
+            }
         except Exception as exc:
             print(f"[Camera Server] Failed to init {cam_id}: {exc}")
 
@@ -143,14 +152,38 @@ def main(cfg=None, stop_event=None):
         while stop_event is None or not stop_event.is_set():
             published = 0
             for cam_id, source in sources.items():
-                frame = source.read()
+                state = camera_state[cam_id]
+                try:
+                    frame = source.read()
+                except Exception as exc:
+                    raise RuntimeError(f"Camera {cam_id} read failed: {exc}") from exc
+
+                now = time.monotonic()
                 if frame is None:
+                    if state["last_frame_ts"] is None:
+                        wait_s = now - state["startup_ts"]
+                        if wait_s >= startup_timeout_s:
+                            raise RuntimeError(
+                                f"Camera {cam_id} produced no frames within {startup_timeout_s:.1f}s."
+                            )
+                        if wait_s >= 0.5 and not state["warned_no_frame"]:
+                            print(
+                                f"[Camera Server] Waiting for first frame from {cam_id} "
+                                f"({wait_s:.1f}s elapsed) ..."
+                            )
+                            state["warned_no_frame"] = True
+                    elif now - state["last_frame_ts"] >= stall_timeout_s:
+                        raise RuntimeError(
+                            f"Camera {cam_id} stopped producing frames for "
+                            f"{stall_timeout_s:.1f}s."
+                        )
                     continue
 
                 ok, img_bytes = cv2.imencode(".jpg", frame, encode_params)
                 if not ok:
                     continue
 
+                state["last_frame_ts"] = now
                 timestamp = time.time_ns()
                 pub.send_multipart(
                     [

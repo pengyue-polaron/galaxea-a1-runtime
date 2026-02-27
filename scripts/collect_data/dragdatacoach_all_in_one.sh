@@ -14,6 +14,10 @@ SKIP_RECORD=0
 WITH_GRIPPER_KEYBOARD=1
 AUTO_STOP=1
 ON_EXISTING="restart"
+RUN_STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dragdatacoach.XXXXXX")"
+COLLECT_STATUS_FILE="${RUN_STATUS_DIR}/collect.exit"
+COLLECT_PID_FILE="${RUN_STATUS_DIR}/collect.pid"
+COLLECT_LOG_FILE="${RUN_STATUS_DIR}/collect.log"
 
 usage() {
   cat <<'EOF'
@@ -36,6 +40,12 @@ Options:
   -h, --help                 Show this help.
 EOF
 }
+
+cleanup() {
+  rm -rf "${RUN_STATUS_DIR}"
+}
+
+trap cleanup EXIT
 
 next_session_name() {
   local base="$1"
@@ -235,11 +245,49 @@ tmux_ctrl_c() {
   tmux send-keys -t "${SESSION}:${window_name}" C-c || true
 }
 
-collect_cmd="just collect"
+read_status_file() {
+  local status_file="$1"
+  local timeout_s="${2:-10}"
+  local waited=0
+
+  while [[ ! -f "${status_file}" && "${waited}" -lt $((timeout_s * 10)) ]]; do
+    sleep 0.1
+    waited=$((waited + 1))
+  done
+
+  if [[ ! -f "${status_file}" ]]; then
+    echo "[ERROR] Timed out waiting for status file: ${status_file}" >&2
+    return 1
+  fi
+
+  cat "${status_file}"
+}
+
+collect_window_alive() {
+  tmux list-panes -t "${SESSION}:collect" >/dev/null 2>&1
+}
+
+print_collect_failure_details() {
+  if [[ ! -f "${COLLECT_LOG_FILE}" ]]; then
+    return
+  fi
+
+  local detail=""
+  detail="$(grep -E "Validation failed|aborting save|ended too early|coverage too short|Missing camera frames|captured too few frames|No robot states captured|No commanded states captured|produced no frames|stopped producing frames|read failed" "${COLLECT_LOG_FILE}" | tail -n 1 || true)"
+  if [[ -n "${detail}" ]]; then
+    echo "[ERROR] ${detail}"
+    return
+  fi
+
+  echo "[ERROR] Last collector log lines:"
+  tail -n 20 "${COLLECT_LOG_FILE}" || true
+}
+
+collect_cmd="scripts/collect_data/run_collect_supervised.sh '${COLLECT_STATUS_FILE}' '${COLLECT_PID_FILE}' '${COLLECT_LOG_FILE}'"
 if ! id -nG | grep -qw video; then
   video_members="$(getent group video | awk -F: '{print $4}' || true)"
   if [[ ",${video_members}," == *",${USER},"* ]]; then
-    collect_cmd="sg video -c 'cd \"${PROJECT_ROOT}\" && just collect'"
+    collect_cmd="sg video -c 'cd \"${PROJECT_ROOT}\" && scripts/collect_data/run_collect_supervised.sh \"${COLLECT_STATUS_FILE}\" \"${COLLECT_PID_FILE}\" \"${COLLECT_LOG_FILE}\"'"
   else
     echo "[WARN] Current user is not in video group. Camera permissions may fail."
     echo "[WARN] Run: sudo usermod -aG video ${USER} && relogin"
@@ -270,7 +318,6 @@ if [[ "${SKIP_RECORD}" -eq 0 ]]; then
     echo "Recording now. Control gripper with keyboard in THIS terminal."
     echo "Press Enter to stop recording and exit gripper control."
     just gripper start --quit-on-enter || true
-    just gripper stop || true
     just record stop || true
   else
     echo "Recording now. Move the arm. Press Enter when finished."
@@ -278,7 +325,7 @@ if [[ "${SKIP_RECORD}" -eq 0 ]]; then
     just record stop || true
   fi
   just drag stop || true
-  just gripper stop || true
+  just gripper stop >/dev/null 2>&1 || true
 
   if [[ -z "${BAG}" ]]; then
     BAG="$(pick_latest_bag_since "${record_start_ts}" "${TAG}")"
@@ -311,17 +358,45 @@ sleep 2
 tmux_new_window "tracker" "just launch tracker"
 sleep 2
 scripts/collect_data/dragdatacoach.sh require-cameras "replay"
+rm -f "${COLLECT_STATUS_FILE}" "${COLLECT_PID_FILE}" "${COLLECT_LOG_FILE}"
 tmux_new_window "collect" "${collect_cmd}"
 sleep 4
+if [[ -f "${COLLECT_STATUS_FILE}" ]]; then
+  collect_rc="$(cat "${COLLECT_STATUS_FILE}")"
+  echo "[ERROR] Collector exited before replay started (rc=${collect_rc})."
+  print_collect_failure_details
+  tmux_ctrl_c "tracker"
+  tmux_ctrl_c "replay_driver"
+  exit "${collect_rc:-1}"
+fi
 read -r -p "Press Enter to START replay..."
+if [[ -f "${COLLECT_STATUS_FILE}" ]] || ! collect_window_alive; then
+  collect_rc="$(read_status_file "${COLLECT_STATUS_FILE}" 5 || echo 1)"
+  echo "[ERROR] Collector is not running before replay start (rc=${collect_rc})."
+  print_collect_failure_details
+  tmux_ctrl_c "tracker"
+  tmux_ctrl_c "replay_driver"
+  exit "${collect_rc}"
+fi
 tmux send-keys -t "${SESSION}:collect" Enter
 sleep 1
 
 A1_SKIP_CAMERA_PREFLIGHT=1 just replay "${BAG}" "${RATE}" "${GRIPPER_MODE}"
 
 echo "Replay finished. Stopping collector..."
-tmux_ctrl_c "collect"
+if [[ -f "${COLLECT_PID_FILE}" ]]; then
+  kill -INT "$(cat "${COLLECT_PID_FILE}")" >/dev/null 2>&1 || true
+else
+  tmux_ctrl_c "collect"
+fi
 sleep 2
+collect_rc="$(read_status_file "${COLLECT_STATUS_FILE}" 15 || echo 1)"
+collect_failed=0
+if [[ "${collect_rc}" != "0" ]]; then
+  echo "[ERROR] Collector failed (rc=${collect_rc}). Check tmux window '${SESSION}:collect'."
+  print_collect_failure_details
+  collect_failed=1
+fi
 tmux_ctrl_c "replay_driver"
 sleep 2
 tmux send-keys -t "${SESSION}:replay_driver" "just launch driver '${SERIAL}'" Enter
@@ -330,6 +405,10 @@ sleep 2
 if [[ "${AUTO_STOP}" -eq 1 ]]; then
   tmux_ctrl_c "tracker"
   tmux_ctrl_c "replay_driver"
+fi
+
+if [[ "${collect_failed}" -eq 1 ]]; then
+  exit "${collect_rc}"
 fi
 
 echo

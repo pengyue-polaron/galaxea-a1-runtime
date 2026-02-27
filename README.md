@@ -166,7 +166,7 @@ scripts/collect_data/dragdatacoach_all_in_one.sh
 ```
 
 它会在后台创建 `tmux` 会话并自动拉起多窗口，完成录制 + 回放 + 采集的完整流程。
-在录制阶段，脚本会在当前终端打开 `just gripper start`，你可以直接键盘控制夹爪。
+在录制阶段，脚本会在当前终端打开 `just gripper start`，你可以直接键盘控制夹爪；按 `Enter` 会退出夹爪控制并停止录制。
 如果检测到同名 tmux 会话，脚本默认会直接 `restart`；你也可以用 `--on-existing` 改成 `ask / attach / new / abort`。
 
 最常用：
