@@ -12,12 +12,16 @@ if [[ ! -d "${A1_SDK_ROOT}" ]]; then
 fi
 
 set +u
+original_args=("$@")
+set --
 # shellcheck disable=SC1091
 if [[ -f "/opt/ros/noetic/setup.bash" ]]; then
   source "/opt/ros/noetic/setup.bash"
 fi
 # shellcheck disable=SC1091
 source "${A1_SDK_ROOT}/install/setup.bash"
+set -- "${original_args[@]}"
+unset original_args
 set -u
 
 usage() {
@@ -31,6 +35,8 @@ Commands:
   drag-start [kp] [kd] [mode]
   drag-stop
   gripper-keyboard [args...]
+  gripper-open [args...]
+  gripper-close [args...]
   gripper-stop                    # stop background keyboard gripper publishers
   record-start [tag]
   record-stop
@@ -148,6 +154,14 @@ case "${cmd}" in
   gripper-keyboard)
     shift
     "${A1_SDK_ROOT}/tools/a1_gripper_keyboard.py" "$@"
+    ;;
+  gripper-open)
+    shift
+    "${PROJECT_ROOT}/scripts/collect_data/a1_gripper_command.py" open "$@"
+    ;;
+  gripper-close)
+    shift
+    "${PROJECT_ROOT}/scripts/collect_data/a1_gripper_command.py" close "$@"
     ;;
   gripper-stop)
     if pgrep -f "a1_gripper_keyboard.py" >/dev/null 2>&1; then

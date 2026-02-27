@@ -34,6 +34,8 @@ just launch ee-record /dev/ttyACM0
 just launch tracker
 
 just gripper start
+just gripper open
+just gripper close
 just gripper stop
 
 just record start drag_demo
@@ -94,7 +96,62 @@ just collect
 just replay /path/to/demo.bag 1.0 position
 ```
 
-## 6. All-in-One 单终端脚本
+## 6. 本地麦克风阈值触发远端夹爪
+
+你的麦克风如果在本地电脑，而控制代码跑在 SSH 连上的远端主机，建议在本地跑音量阈值监听，再通过 `ssh` 调远端 `just gripper open/close`。
+
+远端已经支持一次性夹爪命令：
+
+```bash
+just gripper open
+just gripper close
+```
+
+本地监听脚本在：
+
+```bash
+scripts/collect_data/gripper_audio_threshold.py
+```
+
+先在本地电脑安装音频依赖：
+
+```bash
+python3 -m pip install numpy sounddevice
+```
+
+先列出本地麦克风设备：
+
+```bash
+python3 scripts/collect_data/gripper_audio_threshold.py --ssh-host <your-ssh-host> --list-devices
+```
+
+最小用法，超过阈值就交替执行开/关：
+
+```bash
+python3 scripts/collect_data/gripper_audio_threshold.py \
+  --ssh-host <your-ssh-host> \
+  --threshold-db -24 \
+  --trigger-mode toggle
+```
+
+如果你只想“声音大于阈值就打开”：
+
+```bash
+python3 scripts/collect_data/gripper_audio_threshold.py \
+  --ssh-host <your-ssh-host> \
+  --threshold-db -24 \
+  --trigger-mode open
+```
+
+常用参数：
+
+- `--threshold-db`：触发阈值，单位 dBFS，越接近 `0` 越难触发。
+- `--reset-db`：重新 armed 的阈值，默认比 `threshold` 低 8 dB。
+- `--cooldown-seconds`：触发后的冷却时间，避免连续抖动。
+- `--initial-state close`：`toggle` 模式下第一次触发会执行 `open`。
+- `--device <name-or-index>`：指定本地麦克风。
+
+## 7. All-in-One 单终端脚本
 
 你可以直接用 `just` 启动 all-in-one：
 
@@ -138,7 +195,7 @@ just drag-collect \
 --on-existing <policy>      # ask|restart|attach|new|abort
 ```
 
-## 7. 输出路径
+## 8. 输出路径
 
 原始数据：
 
