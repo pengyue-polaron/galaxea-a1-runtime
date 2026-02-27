@@ -48,7 +48,7 @@ just collect
 just drag-collect --serial /dev/ttyACM0 --tag drag_demo
 
 just camera test
-just camera raw --config configs/drag_replay.yaml --timeout-s 1.0 --no-save
+just camera raw --config configs/drag_replay.yaml
 
 just bag latest
 just bag info /path/to/demo.bag
@@ -66,7 +66,7 @@ just --list
 just camera test
 ```
 
-默认会保存探测图到 `outputs/camera_probe/`。
+现在只做设备枚举和串口/设备节点检查，不会尝试打开相机或保存探测图。
 
 `just replay` 不带 bag 参数时，会自动使用 `third_party/A1_SDK/data/records/` 里的最新 bag。
 

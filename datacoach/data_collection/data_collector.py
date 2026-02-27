@@ -17,14 +17,16 @@ class DataCollector:
     def __init__(self, cfg: DictConfig):
         self.cfg = cfg
 
-        # === Directory setup ===
-        self.base_dir = self._build_base_dir(cfg)
-        print(f"📂 Saving data to: {self.base_dir}")
+        # Delay output directory creation until recording actually starts.
+        self.base_dir = None
 
         # === Camera setup ===
         camera_fps_value = self._cfg_get(cfg, "camera_fps", CAM_FPS)
         self.camera_fps = int(camera_fps_value) if camera_fps_value is not None else CAM_FPS
         self.wait_for_enter = bool(self._cfg_get(cfg, "wait_for_enter", True))
+        self.min_camera_coverage_ratio = float(self._cfg_get(cfg, "min_camera_coverage_ratio", 0.9))
+        self.max_camera_start_lag_s = float(self._cfg_get(cfg, "max_camera_start_lag_s", 1.0))
+        self.max_camera_end_lag_s = float(self._cfg_get(cfg, "max_camera_end_lag_s", 1.0))
         self.camera_ids = self._parse_camera_ids(cfg)
         print(f"🎥 Expecting camera topics: {', '.join(self.camera_ids)}")
 
@@ -137,6 +139,67 @@ class DataCollector:
         # Guard against pathological timestamps.
         return float(min(max(fps, 1.0), 240.0))
 
+    def _validate_recording_or_raise(self):
+        if not self.state_data:
+            raise RuntimeError("No robot states captured; aborting save.")
+        if not self.cmd_data:
+            raise RuntimeError("No commanded states captured; aborting save.")
+
+        record_start = min(
+            float(self.state_data[0]["timestamp"]),
+            float(self.cmd_data[0]["timestamp"]),
+        )
+        record_end = max(
+            float(self.state_data[-1]["timestamp"]),
+            float(self.cmd_data[-1]["timestamp"]),
+        )
+        record_duration = max(0.0, record_end - record_start)
+
+        missing_cameras = [cam_id for cam_id in self.camera_ids if not self.image_buffers.get(cam_id)]
+        if missing_cameras:
+            raise RuntimeError(
+                f"Missing camera frames for {', '.join(missing_cameras)}; aborting save."
+            )
+
+        for cam_id in self.camera_ids:
+            frames = self.image_buffers[cam_id]
+            timestamps = [float(ts) for ts, _ in frames]
+            if len(timestamps) < 2:
+                raise RuntimeError(
+                    f"Camera {cam_id} captured too few frames ({len(timestamps)}); aborting save."
+                )
+
+            cam_start = timestamps[0]
+            cam_end = timestamps[-1]
+            cam_duration = max(0.0, cam_end - cam_start)
+            start_lag = max(0.0, cam_start - record_start)
+            end_lag = max(0.0, record_end - cam_end)
+            coverage_ratio = 1.0 if record_duration <= 1e-6 else cam_duration / record_duration
+
+            if start_lag > self.max_camera_start_lag_s:
+                raise RuntimeError(
+                    f"Camera {cam_id} started too late ({start_lag:.2f}s > "
+                    f"{self.max_camera_start_lag_s:.2f}s); aborting save."
+                )
+            if end_lag > self.max_camera_end_lag_s:
+                raise RuntimeError(
+                    f"Camera {cam_id} ended too early ({end_lag:.2f}s before replay end); "
+                    "possible camera disconnect, aborting save."
+                )
+            if coverage_ratio < self.min_camera_coverage_ratio:
+                raise RuntimeError(
+                    f"Camera {cam_id} coverage too short ({coverage_ratio:.1%} < "
+                    f"{self.min_camera_coverage_ratio:.1%}); aborting save."
+                )
+
+    def _cleanup_empty_base_dir(self):
+        if self.base_dir is None:
+            return
+        try:
+            self.base_dir.rmdir()
+        except OSError:
+            pass
+
     def collect_state(self):
         print(f"📡 Subscribing to robot state at tcp://127.0.0.1:{ZMQ_STATE_PORT}")
         while not self.exit_flag:
@@ -196,6 +259,13 @@ class DataCollector:
                     self.image_buffers[cam_id].append((timestamp, img.copy()))
 
     def save_all(self):
+        if self.base_dir is None:
+            print("ℹ️ No recording session started, nothing to save.")
+            return
+
+        with self.lock:
+            self._validate_recording_or_raise()
+
         print("💾 Saving data...")
 
         with self.lock:
@@ -264,24 +334,38 @@ class DataCollector:
         self.recording = False
         self.exit_flag = True
 
-        self.state_thread.join(timeout=1.0)
-        self.cmd_thread.join(timeout=1.0)
-        self.image_thread.join(timeout=1.0)
+        for thread in (self.state_thread, self.cmd_thread, self.image_thread):
+            if thread.is_alive():
+                thread.join(timeout=1.0)
 
-        self.save_all()
+        try:
+            self.save_all()
+        except Exception as exc:
+            print(f"❌ Validation failed, recording discarded: {exc}")
+            self._cleanup_empty_base_dir()
+            raise
 
     def run(self):
+        self.state_thread.start()
+        self.cmd_thread.start()
+        self.image_thread.start()
+
         if self.wait_for_enter:
             print("Press ENTER to start collecting data...")
             input()
         else:
             print("Auto start enabled. Starting recording immediately...")
+
+        with self.lock:
+            self.state_data.clear()
+            self.cmd_data.clear()
+            for frames in self.image_buffers.values():
+                frames.clear()
+            self.base_dir = self._build_base_dir(self.cfg)
+
+        print(f"📂 Saving data to: {self.base_dir}")
         self.recording = True
         print("▶️ Recording started. Press Ctrl+C to stop.")
-
-        self.state_thread.start()
-        self.cmd_thread.start()
-        self.image_thread.start()
 
         while not self.exit_flag:
             time.sleep(0.1)

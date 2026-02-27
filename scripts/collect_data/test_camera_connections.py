@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
 import argparse
+import shutil
 import sys
-import time
 from pathlib import Path
-
-import cv2
-import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
@@ -26,6 +23,11 @@ try:
 except Exception:
     rs = None
 
+try:
+    from read_cam1_hardware_params import parse_udev_properties
+except Exception:
+    parse_udev_properties = None
+
 
 def _cfg_get(cfg, key, default=None):
     if cfg is None:
@@ -37,98 +39,116 @@ def _cfg_get(cfg, key, default=None):
     return getattr(cfg, key, default)
 
 
-class OpenCVCamera:
-    def __init__(self, *, device, width: int, height: int, fps: int, backend_api: str = "auto"):
-        source = int(device) if str(device).isdigit() else str(device)
-        if backend_api == "v4l2":
-            self._cap = cv2.VideoCapture(source, cv2.CAP_V4L2)
-        else:
-            self._cap = cv2.VideoCapture(source)
-
-        if not self._cap.isOpened():
-            raise RuntimeError(f"Cannot open OpenCV camera device={device}")
-
-        self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self._cap.set(cv2.CAP_PROP_FPS, fps)
-
-    def read(self):
-        ok, frame = self._cap.read()
-        if not ok:
-            return None
-        return frame
-
-    def close(self):
-        self._cap.release()
+def _load_config(cfg_path: Path):
+    if OmegaConf is not None:
+        return OmegaConf.load(str(cfg_path))
+    if yaml is not None:
+        with cfg_path.open("r", encoding="utf-8") as f:
+            return yaml.safe_load(f)
+    raise RuntimeError("Neither omegaconf nor pyyaml is available in this python env.")
 
 
-class RealSenseCamera:
-    def __init__(self, *, serial: str | None, width: int, height: int, fps: int):
-        if rs is None:
-            raise RuntimeError("pyrealsense2 is not installed")
-
-        self._pipeline = rs.pipeline()
-        config = rs.config()
-        if serial:
-            config.enable_device(serial)
-        config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
-        self._pipeline.start(config)
-
-    def read(self):
-        frames = self._pipeline.poll_for_frames()
-        if not frames:
-            return None
-        color_frame = frames.get_color_frame()
-        if not color_frame:
-            return None
-        return np.asanyarray(color_frame.get_data())
-
-    def close(self):
-        self._pipeline.stop()
+def _resolve_video_device(device):
+    device_str = str(device)
+    if device_str.isdigit():
+        return f"/dev/video{device_str}"
+    return device_str
 
 
-def _build_camera_source(camera_cfg):
-    cam_id = str(_cfg_get(camera_cfg, "id", "cam_0"))
-    enabled = bool(_cfg_get(camera_cfg, "enabled", True))
-    if not enabled:
-        return cam_id, None
-
-    backend = str(_cfg_get(camera_cfg, "backend", "opencv")).lower()
-    width = int(_cfg_get(camera_cfg, "width", 640))
-    height = int(_cfg_get(camera_cfg, "height", 480))
-    fps = int(_cfg_get(camera_cfg, "fps", 30))
-
-    if backend == "realsense":
-        serial = _cfg_get(camera_cfg, "serial", None)
-        source = RealSenseCamera(serial=serial, width=width, height=height, fps=fps)
-    elif backend == "opencv":
-        device = _cfg_get(camera_cfg, "device", 0)
-        backend_api = str(_cfg_get(camera_cfg, "backend_api", "auto")).lower()
-        source = OpenCVCamera(device=device, width=width, height=height, fps=fps, backend_api=backend_api)
-    else:
-        raise ValueError(f"Unsupported camera backend '{backend}' for camera '{cam_id}'")
-
-    return cam_id, source
+def _format_udev_serial(props):
+    if not props:
+        return None
+    for key in ("ID_SERIAL_SHORT", "ID_SERIAL", "ID_USB_SERIAL_SHORT"):
+        value = props.get(key)
+        if value:
+            return value
+    return None
 
 
-def _format_backend(camera_cfg):
-    backend = str(_cfg_get(camera_cfg, "backend", "opencv")).lower()
-    if backend == "realsense":
-        serial = _cfg_get(camera_cfg, "serial", None)
-        return f"realsense(serial={serial})"
-    device = _cfg_get(camera_cfg, "device", 0)
-    backend_api = _cfg_get(camera_cfg, "backend_api", "auto")
-    return f"opencv(device={device}, backend_api={backend_api})"
+def _test_realsense_camera(camera_cfg):
+    cam_id = str(_cfg_get(camera_cfg, "id", "cam"))
+    configured_serial = _cfg_get(camera_cfg, "serial", None)
+
+    if rs is None:
+        print(f"[FAIL] {cam_id}: pyrealsense2 is not installed")
+        return False
+
+    try:
+        ctx = rs.context()
+        devices = list(ctx.query_devices())
+    except Exception as exc:
+        print(f"[FAIL] {cam_id}: failed to enumerate RealSense devices: {exc}")
+        return False
+
+    found = []
+    for dev in devices:
+        try:
+            name = dev.get_info(rs.camera_info.name)
+        except Exception:
+            name = "unknown"
+        try:
+            serial = dev.get_info(rs.camera_info.serial_number)
+        except Exception:
+            serial = None
+        found.append({"name": name, "serial": serial})
+
+    if configured_serial:
+        matched = next((item for item in found if item["serial"] == str(configured_serial)), None)
+        if matched is None:
+            available = ", ".join(item["serial"] or "unknown" for item in found) or "<none>"
+            print(
+                f"[FAIL] {cam_id}: configured serial={configured_serial}, "
+                f"detected_serials={available}"
+            )
+            return False
+
+        print(
+            f"[PASS] {cam_id}: backend=realsense, serial={matched['serial']}, "
+            f"name={matched['name']}"
+        )
+        return True
+
+    if not found:
+        print(f"[FAIL] {cam_id}: no RealSense devices detected")
+        return False
+
+    first = found[0]
+    print(
+        f"[PASS] {cam_id}: backend=realsense, serial={first['serial'] or 'unknown'}, "
+        f"name={first['name']}"
+    )
+    if len(found) > 1:
+        serials = ", ".join(item["serial"] or "unknown" for item in found)
+        print(f"       detected_serials: {serials}")
+    return True
 
 
-def _save_probe_image(output_dir: Path, cam_id: str, frame):
-    output_dir.mkdir(parents=True, exist_ok=True)
-    path = output_dir / f"{cam_id}_probe.jpg"
-    cv2.imwrite(str(path), frame)
-    return path
+def _test_opencv_camera(camera_cfg):
+    cam_id = str(_cfg_get(camera_cfg, "id", "cam"))
+    configured_device = _cfg_get(camera_cfg, "device", 0)
+    device_path = _resolve_video_device(configured_device)
+
+    if not Path(device_path).exists():
+        print(f"[FAIL] {cam_id}: device node not found: {device_path}")
+        return False
+
+    props = None
+    if parse_udev_properties is not None and shutil.which("udevadm") is not None:
+        props, err = parse_udev_properties(device_path)
+        if err is not None:
+            print(f"[FAIL] {cam_id}: udev query failed for {device_path}: {err}")
+            return False
+
+    serial = _format_udev_serial(props)
+    product = props.get("ID_V4L_PRODUCT", "unknown") if props else "unknown"
+    print(
+        f"[PASS] {cam_id}: backend=opencv, device={device_path}, "
+        f"serial={serial or 'unknown'}, product={product}"
+    )
+    return True
 
 
-def test_one_camera(camera_cfg, timeout_s: float, output_dir: Path | None):
+def test_one_camera(camera_cfg):
     cam_id = str(_cfg_get(camera_cfg, "id", "cam"))
     enabled = bool(_cfg_get(camera_cfg, "enabled", True))
 
@@ -136,50 +156,19 @@ def test_one_camera(camera_cfg, timeout_s: float, output_dir: Path | None):
         print(f"[SKIP] {cam_id}: disabled")
         return True
 
-    desc = _format_backend(camera_cfg)
-    source = None
-    start = time.time()
-    frame = None
-    frame_count = 0
+    backend = str(_cfg_get(camera_cfg, "backend", "opencv")).lower()
+    if backend == "realsense":
+        return _test_realsense_camera(camera_cfg)
+    if backend == "opencv":
+        return _test_opencv_camera(camera_cfg)
 
-    try:
-        source_id, source = _build_camera_source(camera_cfg)
-        cam_id = source_id
-        print(f"[TEST] {cam_id}: {desc}")
-
-        while time.time() - start < timeout_s:
-            frame = source.read()
-            if frame is None:
-                time.sleep(0.01)
-                continue
-            frame_count += 1
-            if frame_count >= 3:
-                break
-
-        if frame is None:
-            print(f"[FAIL] {cam_id}: no frame within {timeout_s:.1f}s")
-            return False
-
-        h, w = frame.shape[:2]
-        print(f"[PASS] {cam_id}: frame={w}x{h}, captured_frames={frame_count}")
-        if output_dir is not None:
-            image_path = _save_probe_image(output_dir, cam_id, frame)
-            print(f"       saved: {image_path}")
-        return True
-    except Exception as exc:
-        print(f"[FAIL] {cam_id}: {exc}")
-        return False
-    finally:
-        if source is not None:
-            try:
-                source.close()
-            except Exception:
-                pass
+    print(f"[FAIL] {cam_id}: unsupported backend '{backend}'")
+    return False
 
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Test camera connections from DataCoach config (RealSense + OpenCV)."
+        description="Check configured cameras by enumerating device info only; do not open streams."
     )
     parser.add_argument(
         "--config",
@@ -190,17 +179,17 @@ def main():
         "--timeout-s",
         type=float,
         default=6.0,
-        help="Per-camera timeout waiting for frames.",
+        help="Deprecated compatibility flag. Ignored.",
     )
     parser.add_argument(
         "--save-dir",
         default=str(ROOT_DIR / "outputs" / "camera_probe"),
-        help="Where to save one probe frame per camera.",
+        help="Deprecated compatibility flag. Ignored.",
     )
     parser.add_argument(
         "--no-save",
         action="store_true",
-        help="Do not save probe images.",
+        help="Deprecated compatibility flag. Ignored.",
     )
     args = parser.parse_args()
 
@@ -209,13 +198,10 @@ def main():
         print(f"[ERROR] Config not found: {cfg_path}")
         return 2
 
-    if OmegaConf is not None:
-        cfg = OmegaConf.load(str(cfg_path))
-    elif yaml is not None:
-        with cfg_path.open("r", encoding="utf-8") as f:
-            cfg = yaml.safe_load(f)
-    else:
-        print("[ERROR] Neither omegaconf nor pyyaml is available in this python env.")
+    try:
+        cfg = _load_config(cfg_path)
+    except Exception as exc:
+        print(f"[ERROR] Failed to load config: {exc}")
         return 2
 
     camera_cfgs = _cfg_get(_cfg_get(cfg, "camera_server", {}), "cameras", None)
@@ -225,11 +211,11 @@ def main():
 
     print(f"[INFO] Config: {cfg_path}")
     print(f"[INFO] Cameras: {len(camera_cfgs)}")
+    print("[INFO] Mode: enumerate device info only; no stream open")
 
-    output_dir = None if args.no_save else Path(args.save_dir).expanduser().resolve()
     ok = True
     for cam_cfg in camera_cfgs:
-        ok = test_one_camera(cam_cfg, timeout_s=args.timeout_s, output_dir=output_dir) and ok
+        ok = test_one_camera(cam_cfg) and ok
 
     if ok:
         print("[SUMMARY] Camera connection test passed.")

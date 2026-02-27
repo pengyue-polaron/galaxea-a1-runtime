@@ -48,6 +48,9 @@ data_collector:
   save_video: true
   camera_fps: 15
   wait_for_enter: true
+  min_camera_coverage_ratio: 0.9
+  max_camera_start_lag_s: 1.0
+  max_camera_end_lag_s: 1.0
   cameras:
     - id: cam_0
     - id: cam_1
