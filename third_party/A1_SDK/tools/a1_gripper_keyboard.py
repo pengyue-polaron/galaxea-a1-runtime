@@ -98,6 +98,19 @@ class GripperKeyboardNode:
     def apply_key(self, key: str) -> bool:
         key = key.lower()
 
+        if key == " ":
+            if self.target_stroke is None:
+                self.target_stroke = self.args.close_stroke
+            elif abs(self.target_stroke - self.args.close_stroke) <= abs(
+                self.target_stroke - self.args.open_stroke
+            ):
+                self.target_stroke = self.args.open_stroke
+            else:
+                self.target_stroke = self.args.close_stroke
+            rospy.loginfo("Toggle gripper: %.2f mm", self.target_stroke)
+            self.burst_publish(self.target_stroke)
+            return True
+
         if self.args.quit_on_enter and key in ("\r", "\n"):
             rospy.loginfo("Enter key received.")
             return False
@@ -125,6 +138,7 @@ class GripperKeyboardNode:
         print("Gripper Keyboard Teleop (Binary: Open/Close)")
         print(f"  publish topic : {self.args.topic}")
         print("  keys:")
+        print("    Space : toggle open/close")
         print(f"    {self.args.open_key} : fully open")
         print(f"    {self.args.close_key} : fully close")
         print(f"    {self.args.quit_key} : quit")
