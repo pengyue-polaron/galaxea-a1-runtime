@@ -98,6 +98,10 @@ class GripperKeyboardNode:
     def apply_key(self, key: str) -> bool:
         key = key.lower()
 
+        if self.args.quit_on_enter and key in ("\r", "\n"):
+            rospy.loginfo("Enter key received.")
+            return False
+
         if key in (self.args.quit_key, "\x03"):
             rospy.loginfo("Quit key received.")
             return False
@@ -124,6 +128,8 @@ class GripperKeyboardNode:
         print(f"    {self.args.open_key} : fully open")
         print(f"    {self.args.close_key} : fully close")
         print(f"    {self.args.quit_key} : quit")
+        if self.args.quit_on_enter:
+            print("    Enter : quit")
         print("")
         print(
             f"  stroke range : [{self.args.min_stroke:.2f}, {self.args.max_stroke:.2f}] mm, "
@@ -186,6 +192,11 @@ def build_arg_parser():
     parser.add_argument("--open-key", default="o", help="Key for full open.")
     parser.add_argument("--close-key", default="c", help="Key for full close.")
     parser.add_argument("--quit-key", default="q", help="Key for quit.")
+    parser.add_argument(
+        "--quit-on-enter",
+        action="store_true",
+        help="Allow Enter to quit the teleop loop.",
+    )
     return parser
 
 

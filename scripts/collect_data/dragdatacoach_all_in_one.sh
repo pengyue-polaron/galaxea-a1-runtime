@@ -268,15 +268,15 @@ if [[ "${SKIP_RECORD}" -eq 0 ]]; then
 
   if [[ "${WITH_GRIPPER_KEYBOARD}" -eq 1 ]]; then
     echo "Recording now. Control gripper with keyboard in THIS terminal."
-    echo "Press q to quit gripper control cleanly, then stop recording."
-    just gripper start || true
+    echo "Press Enter to stop recording and exit gripper control."
+    just gripper start --quit-on-enter || true
     just gripper stop || true
+    just record stop || true
   else
     echo "Recording now. Move the arm. Press Enter when finished."
+    read -r -p "Press Enter to STOP bag recording..."
+    just record stop || true
   fi
-
-  read -r -p "Press Enter to STOP bag recording..."
-  just record stop || true
   just drag stop || true
   just gripper stop || true
 
