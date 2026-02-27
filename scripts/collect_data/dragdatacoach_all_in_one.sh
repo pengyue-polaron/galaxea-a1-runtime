@@ -256,7 +256,11 @@ if [[ "${SKIP_RECORD}" -eq 0 ]]; then
   # Previous interrupted runs may leave drag mode alive outside tmux.
   # Always clear it before starting a new drag session.
   just drag stop >/dev/null 2>&1 || true
-  just drag start
+  if [[ "${WITH_GRIPPER_KEYBOARD}" -eq 1 ]]; then
+    A1_DRAG_HOLD_GRIPPER_POSITION=0 just drag start
+  else
+    just drag start
+  fi
 
   read -r -p "Press Enter to START bag recording..."
   record_start_ts="$(date +%s)"
@@ -264,7 +268,7 @@ if [[ "${SKIP_RECORD}" -eq 0 ]]; then
 
   if [[ "${WITH_GRIPPER_KEYBOARD}" -eq 1 ]]; then
     echo "Recording now. Control gripper with keyboard in THIS terminal."
-    echo "Press Ctrl+C when gripper control is done, then stop recording."
+    echo "Press q to quit gripper control cleanly, then stop recording."
     just gripper start || true
     just gripper stop || true
   else
