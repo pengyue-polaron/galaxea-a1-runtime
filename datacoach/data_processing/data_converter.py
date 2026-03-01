@@ -120,7 +120,10 @@ def convert_a1_to_lerobot(cfg):
             states = pickle.load(f)
         with open(episode / "commanded_states.pkl", "rb") as f:
             actions = pickle.load(f)
-
+        print(states[0]["data"]["pos"]== actions[0]["data"]["pos"])
+        states = states[:-1]
+        actions = actions[1:]
+        print(states[0]["data"]["pos"]== actions[0]["data"]["pos"])
         if len(states) != len(actions):
             raise RuntimeError(f"State/action length mismatch in {episode}")
         T = len(states)

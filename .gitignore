@@ -218,3 +218,6 @@ scripts/train/wandb/
 scripts/train/checkpoints/
 data/
 uv.lock.bak
+
+__MACOSX
+.DS_Store

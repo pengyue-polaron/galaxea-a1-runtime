@@ -202,6 +202,18 @@ just drag-collect \
 ```bash
 data/raw_data/<task_name>/demo_<index>_<YYYYMMDD_HHMMSS>/
 ```
+转化成 demo_<index>
+
+```bash
+cd /home/pengyue/Codespace/DataCoach/data/raw_data/<task_name>
+
+# paste and enter the below commands, change task name into demo_<index>
+i=0
+for dir in */; do
+    mv "$dir" "demo_$i"
+    ((i++))
+done
+```
 
 典型文件：
 - `cam_0_rgb_video.mp4`
@@ -209,3 +221,11 @@ data/raw_data/<task_name>/demo_<index>_<YYYYMMDD_HHMMSS>/
 - `states.pkl`
 - `commanded_states.pkl`
 - `trajectory.csv`
+
+```bash
+cd scripts/process_data
+conda activate datacoach
+python align_timestamps.py
+#TODO: need to change the 
+python process_data.py
+```

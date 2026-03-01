@@ -39,7 +39,7 @@ a1_replay_bridge:
   zmq_state_bind: tcp://127.0.0.1:5557
 
 data_collector:
-  task_name: rollout
+  task_name: pick_twice
   demo_index: 0
   save_video: true
   camera_fps: 20
