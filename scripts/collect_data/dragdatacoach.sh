@@ -32,6 +32,7 @@ Usage:
 Commands:
   launch-driver [serial]          # default serial=/dev/a1
   launch-ee-record [serial]       # driver + /end_effector_pose publisher
+  ee-tracker-drag [options]       # launch ee-tracker -> manual force move -> Enter publish
   drag-start [kp] [kd] [mode]
   drag-stop
   gripper-keyboard [args...]
@@ -203,6 +204,185 @@ EOF
     ;;
   launch-tracker)
     roslaunch mobiman jointTrackerdemo.launch
+    ;;
+  ee-tracker-drag)
+    shift || true
+    (
+      set -euo pipefail
+
+      rviz="false"
+      launch_tracker="1"
+      keep_tracker="auto"
+      pose_topic="/end_effector_pose"
+      target_topic="/a1_ee_target"
+      frame_id="world"
+      topic_timeout="25.0"
+      message_timeout="25.0"
+      connect_timeout="1.0"
+      publish_rate="30.0"
+      publish_count="15"
+      publish_succeeded="0"
+
+      while [[ $# -gt 0 ]]; do
+        case "$1" in
+          --rviz)
+            rviz="${2:-false}"
+            shift 2
+            ;;
+          --no-launch-tracker)
+            launch_tracker="0"
+            shift
+            ;;
+          --keep-tracker)
+            keep_tracker="1"
+            shift
+            ;;
+          --no-keep-tracker)
+            keep_tracker="0"
+            shift
+            ;;
+          --pose-topic)
+            pose_topic="${2:-}"
+            shift 2
+            ;;
+          --target-topic)
+            target_topic="${2:-}"
+            shift 2
+            ;;
+          --frame-id)
+            frame_id="${2:-world}"
+            shift 2
+            ;;
+          --topic-timeout)
+            topic_timeout="${2:-25.0}"
+            shift 2
+            ;;
+          --message-timeout)
+            message_timeout="${2:-25.0}"
+            shift 2
+            ;;
+          --connect-timeout)
+            connect_timeout="${2:-1.0}"
+            shift 2
+            ;;
+          --publish-rate)
+            publish_rate="${2:-30.0}"
+            shift 2
+            ;;
+          --publish-count)
+            publish_count="${2:-15}"
+            shift 2
+            ;;
+          -h|--help)
+            cat <<'EOF'
+Usage: scripts/collect_data/dragdatacoach.sh ee-tracker-drag [options]
+
+Options:
+  --rviz <true|false>      Launch eeTrackerdemo with rviz (default: false)
+  --no-launch-tracker      Assume ee tracker is already running
+  --keep-tracker           Always keep tracker alive on script exit (if auto-launched)
+  --no-keep-tracker        Always stop tracker on script exit (if auto-launched)
+                           Default is auto: keep on success, stop on failure/interruption
+  --pose-topic <name>      Source pose topic (default: /end_effector_pose)
+  --target-topic <name>    Target topic (default: /a1_ee_target)
+  --frame-id <name>        Default frame id for Pose messages (default: world)
+  --topic-timeout <sec>    Wait timeout for source topic appear (default: 25.0)
+  --message-timeout <sec>  Wait timeout for source message (default: 25.0)
+  --connect-timeout <sec>  Wait timeout for target subscriber (default: 1.0)
+  --publish-rate <hz>      Publish rate for target burst (default: 30.0)
+  --publish-count <n>      Publish burst count (default: 15)
+EOF
+            exit 0
+            ;;
+          *)
+            echo "Unknown option for ee-tracker-drag: $1"
+            exit 1
+            ;;
+        esac
+      done
+
+      if ! rostopic list >/dev/null 2>&1; then
+        echo "[ERROR] ROS master is not reachable. Start roscore first."
+        exit 1
+      fi
+
+      tracker_pid=""
+      tracker_log=""
+
+      cleanup_drag_tracker() {
+        if [[ -n "${tracker_pid}" && "${launch_tracker}" == "1" ]]; then
+          should_stop_tracker="1"
+          if [[ "${keep_tracker}" == "1" ]]; then
+            should_stop_tracker="0"
+          elif [[ "${keep_tracker}" == "auto" && "${publish_succeeded}" == "1" ]]; then
+            should_stop_tracker="0"
+          fi
+          if [[ "${should_stop_tracker}" == "1" ]]; then
+            kill -INT "${tracker_pid}" >/dev/null 2>&1 || true
+            wait "${tracker_pid}" >/dev/null 2>&1 || true
+          fi
+        fi
+      }
+      trap cleanup_drag_tracker EXIT INT TERM
+
+      if [[ "${launch_tracker}" == "1" ]]; then
+        ts="$(date +%Y%m%d_%H%M%S)"
+        tracker_log="${A1_SDK_ROOT}/data/records/ee_tracker_drag_${ts}.log"
+        mkdir -p "$(dirname "${tracker_log}")"
+
+        echo "[1/4] Launching ee tracker (rviz=${rviz}) ..."
+        roslaunch mobiman eeTrackerdemo.launch "rviz:=${rviz}" >"${tracker_log}" 2>&1 &
+        tracker_pid=$!
+        sleep 3
+        if ! kill -0 "${tracker_pid}" >/dev/null 2>&1; then
+          echo "[ERROR] Failed to launch ee tracker."
+          echo "[ERROR] Check log: ${tracker_log}"
+          exit 1
+        fi
+        echo "[OK] ee tracker running (pid=${tracker_pid})"
+      else
+        echo "[1/4] Using existing ee tracker."
+      fi
+
+      echo "[2/4] Waiting for EE pose stream on ${pose_topic} ..."
+      if ! python3 "${PROJECT_ROOT}/scripts/collect_data/publish_current_ee_target.py" \
+        --probe-only \
+        --pose-topic "${pose_topic}" \
+        --frame-id "${frame_id}" \
+        --topic-timeout "${topic_timeout}" \
+        --message-timeout "${message_timeout}"; then
+        echo "[ERROR] EE pose is not ready."
+        echo "[ERROR] Ensure /joint_states_host is publishing (e.g. arm driver is running)."
+        if [[ -n "${tracker_log}" ]]; then
+          echo "[ERROR] Tracker log: ${tracker_log}"
+        fi
+        exit 1
+      fi
+
+      echo "[3/4] No software drag mode is started."
+      echo "      Please manually force-move the arm to target pose, then press Enter."
+      read -r -p "Press Enter to publish current EE pose to ${target_topic} ..."
+      echo "[4/4] Publishing current EE pose ..."
+      python3 "${PROJECT_ROOT}/scripts/collect_data/publish_current_ee_target.py" \
+        --pose-topic "${pose_topic}" \
+        --target-topic "${target_topic}" \
+        --frame-id "${frame_id}" \
+        --topic-timeout "${topic_timeout}" \
+        --message-timeout "${message_timeout}" \
+        --connect-timeout "${connect_timeout}" \
+        --publish-rate "${publish_rate}" \
+        --publish-count "${publish_count}"
+      publish_succeeded="1"
+
+      echo "[DONE] Target published: ${target_topic}"
+      if [[ "${launch_tracker}" == "1" ]]; then
+        if [[ "${keep_tracker}" == "1" ]]; then
+          echo "[INFO] Keeping ee tracker alive (pid=${tracker_pid})."
+        elif [[ "${keep_tracker}" == "auto" ]]; then
+          echo "[INFO] Auto keep enabled: keeping ee tracker alive (pid=${tracker_pid})."
+        fi
+      fi
+    )
     ;;
   replay)
     shift

@@ -32,6 +32,8 @@ just drag stop
 just launch driver /dev/ttyACM0
 just launch ee-record /dev/ttyACM0
 just launch tracker
+just ee-tracker
+just ee-tracker -drag
 
 just gripper start
 just gripper open
@@ -86,6 +88,19 @@ just record stop
 just drag stop
 just gripper stop
 ```
+
+如果你想快速“手掰一个目标位姿再下发给 ee-tracker”，可以直接：
+
+```bash
+just ee-tracker -drag
+```
+
+默认流程：
+- 自动启动 `eeTrackerdemo`（`rviz:=false`）
+- 不启动软件 drag mode
+- 你直接手动强掰到目标位置后按 Enter
+- 读取当前 `/end_effector_pose` 并发布到 `/a1_ee_target`
+- 自动保留 tracker（下发失败/中断时会自动清理）；可用 `--no-keep-tracker` 强制退出
 
 回放 + 采集阶段（建议 3 终端）：
 
