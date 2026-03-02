@@ -11,7 +11,7 @@ from openpi.policies import policy_config as _policy_config
 from datacoach.inference import ZMQ_policy_server
 
 from datacoach.training import config as _config
-from datacoach.constants import ZMQ_STATE_PORT, ZMQ_POLICY_ACTION_PORT
+from datacoach.constants import ZMQ_CAM_PORT, ZMQ_POLICY_ACTION_PORT, ZMQ_STATE_PORT
 
 class EnvMode(enum.Enum):
     """Supported environments."""

@@ -17,6 +17,7 @@ DEFAULT_WANDB_ENABLE = False
 ZMQ_CMD_PORT = 5556  # commanded state port
 ZMQ_STATE_PORT = 5557  # state port
 ZMQ_CAM_PORT = 5558  # camera stream port
+ZMQ_POLICY_ACTION_PORT = 5559  # policy action output port
 
 # data collection
 ROBOT_FPS = 50  # Hz

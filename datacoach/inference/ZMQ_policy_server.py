@@ -1,3 +1,4 @@
+import cv2
 import zmq
 import numpy as np
 import time
@@ -113,7 +114,7 @@ class ZMQPolicyServer:
         obs = {
             "cam_0": image,
             "state": state,
-            "action": np.zeros(state.shape, dtype=np.uint8),
+            "action": np.zeros(state.shape, dtype=np.float32),
             "prompt": "do something",
         }
 

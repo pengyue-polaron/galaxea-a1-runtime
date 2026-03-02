@@ -18,6 +18,7 @@ RUN_STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dragdatacoach.XXXXXX")"
 COLLECT_STATUS_FILE="${RUN_STATUS_DIR}/collect.exit"
 COLLECT_PID_FILE="${RUN_STATUS_DIR}/collect.pid"
 COLLECT_LOG_FILE="${RUN_STATUS_DIR}/collect.log"
+KEEP_RUN_STATUS_DIR=0
 
 usage() {
   cat <<'EOF'
@@ -42,6 +43,14 @@ EOF
 }
 
 cleanup() {
+  local rc=$?
+  if [[ "${KEEP_RUN_STATUS_DIR}" -eq 1 || "${rc}" -ne 0 ]]; then
+    echo "[INFO] Preserving collector artifacts: ${RUN_STATUS_DIR}"
+    if [[ -f "${COLLECT_LOG_FILE}" ]]; then
+      echo "[INFO] Collector log: ${COLLECT_LOG_FILE}"
+    fi
+    return
+  fi
   rm -rf "${RUN_STATUS_DIR}"
 }
 
@@ -267,20 +276,197 @@ collect_window_alive() {
   tmux list-panes -t "${SESSION}:collect" >/dev/null 2>&1
 }
 
+tmux_kill_window() {
+  local window_name="$1"
+  tmux kill-window -t "${SESSION}:${window_name}" >/dev/null 2>&1 || true
+}
+
 print_collect_failure_details() {
   if [[ ! -f "${COLLECT_LOG_FILE}" ]]; then
+    echo "[ERROR] Collector log file not found: ${COLLECT_LOG_FILE}"
     return
   fi
 
   local detail=""
-  detail="$(grep -E "Validation failed|aborting save|ended too early|coverage too short|Missing camera frames|captured too few frames|No robot states captured|No commanded states captured|produced no frames|stopped producing frames|read failed" "${COLLECT_LOG_FILE}" | tail -n 1 || true)"
+  detail="$(grep -E "Validation failed|aborting save|ended too early|coverage too short|Missing camera frames|captured too few frames|No robot states captured|No commanded states captured|produced no frames|stopped producing frames|read failed|camera_server failed" "${COLLECT_LOG_FILE}" | tail -n 1 || true)"
   if [[ -n "${detail}" ]]; then
     echo "[ERROR] ${detail}"
+    echo "[ERROR] Collector log preserved at: ${COLLECT_LOG_FILE}"
     return
   fi
 
   echo "[ERROR] Last collector log lines:"
   tail -n 20 "${COLLECT_LOG_FILE}" || true
+  echo "[ERROR] Collector log preserved at: ${COLLECT_LOG_FILE}"
+}
+
+collect_failure_detail() {
+  if [[ ! -f "${COLLECT_LOG_FILE}" ]]; then
+    return 0
+  fi
+  grep -E "Validation failed|aborting save|ended too early|coverage too short|Missing camera frames|captured too few frames|No robot states captured|No commanded states captured|produced no frames|stopped producing frames|read failed|camera_server failed" "${COLLECT_LOG_FILE}" | tail -n 1 || true
+}
+
+is_retryable_camera_failure() {
+  local detail="${1:-}"
+  [[ "${detail}" == *"Camera preflight failed"* ]] \
+    || [[ "${detail}" == *"Both cam_0 and cam_1 must be connected"* ]] \
+    || \
+  [[ "${detail}" == *"camera_server failed:"* ]] \
+    || [[ "${detail}" == *"Camera cam_"* ]] \
+    || [[ "${detail}" == *"Missing camera frames"* ]] \
+    || [[ "${detail}" == *"produced no frames"* ]] \
+    || [[ "${detail}" == *"stopped producing frames"* ]] \
+    || [[ "${detail}" == *"read failed"* ]]
+}
+
+stop_stage2_windows() {
+  tmux_ctrl_c "collect"
+  tmux_ctrl_c "tracker"
+  tmux_ctrl_c "replay_driver"
+  sleep 1
+  tmux_kill_window "collect"
+  tmux_kill_window "tracker"
+  tmux_kill_window "replay_driver"
+}
+
+prompt_retry_same_replay() {
+  local reason="$1"
+  if ! is_retryable_camera_failure "${reason}"; then
+    return 1
+  fi
+  if [[ ! -t 0 || ! -t 1 ]]; then
+    echo "[ERROR] Camera-related replay failure is retryable, but no interactive terminal is available."
+    return 1
+  fi
+
+  echo "[WARN] Camera-related replay failure detected."
+  if [[ -n "${reason}" ]]; then
+    echo "[WARN] ${reason}"
+  fi
+  echo "[WARN] Reconnect the camera, then press Enter to replay the same bag again."
+
+  local choice=""
+  read -r -p "Press Enter to retry replay, or type q to abort: " choice
+  [[ ! "${choice}" =~ ^[Qq]$ ]]
+}
+
+run_stage2_attempt() {
+  local attempt="$1"
+  local collect_rc=""
+  local replay_pid=""
+  local replay_rc=0
+  local detail=""
+
+  echo "[Attempt ${attempt}] Starting replay services..."
+  tmux_new_window "replay_driver" "just launch ee-record '${SERIAL}'"
+  sleep 2
+  tmux_new_window "tracker" "just launch tracker"
+  sleep 2
+  if ! scripts/collect_data/dragdatacoach.sh require-cameras "replay attempt ${attempt}"; then
+    KEEP_RUN_STATUS_DIR=1
+    stop_stage2_windows
+    if prompt_retry_same_replay "Camera preflight failed for replay attempt ${attempt}."; then
+      return 10
+    fi
+    return 1
+  fi
+  rm -f "${COLLECT_STATUS_FILE}" "${COLLECT_PID_FILE}" "${COLLECT_LOG_FILE}"
+  tmux_new_window "collect" "${collect_cmd}"
+  sleep 4
+  if [[ -f "${COLLECT_STATUS_FILE}" ]]; then
+    collect_rc="$(cat "${COLLECT_STATUS_FILE}")"
+    echo "[ERROR] Collector exited before replay started (rc=${collect_rc})."
+    KEEP_RUN_STATUS_DIR=1
+    detail="$(collect_failure_detail)"
+    print_collect_failure_details
+    stop_stage2_windows
+    if prompt_retry_same_replay "${detail}"; then
+      return 10
+    fi
+    return "${collect_rc:-1}"
+  fi
+
+  read -r -p "Press Enter to START replay..."
+  if [[ -f "${COLLECT_STATUS_FILE}" ]] || ! collect_window_alive; then
+    collect_rc="$(read_status_file "${COLLECT_STATUS_FILE}" 5 || echo 1)"
+    echo "[ERROR] Collector is not running before replay start (rc=${collect_rc})."
+    KEEP_RUN_STATUS_DIR=1
+    detail="$(collect_failure_detail)"
+    print_collect_failure_details
+    stop_stage2_windows
+    if prompt_retry_same_replay "${detail}"; then
+      return 10
+    fi
+    return "${collect_rc}"
+  fi
+  tmux send-keys -t "${SESSION}:collect" Enter
+  sleep 1
+
+  A1_SKIP_CAMERA_PREFLIGHT=1 just replay "${BAG}" "${RATE}" "${GRIPPER_MODE}" &
+  replay_pid=$!
+  while kill -0 "${replay_pid}" >/dev/null 2>&1; do
+    if [[ -f "${COLLECT_STATUS_FILE}" ]]; then
+      collect_rc="$(cat "${COLLECT_STATUS_FILE}" 2>/dev/null || echo 1)"
+      echo "[ERROR] Collector exited during replay (rc=${collect_rc}). Stopping replay..."
+      KEEP_RUN_STATUS_DIR=1
+      kill -INT "${replay_pid}" >/dev/null 2>&1 || true
+      set +e
+      wait "${replay_pid}"
+      replay_rc=$?
+      set -e
+      detail="$(collect_failure_detail)"
+      print_collect_failure_details
+      stop_stage2_windows
+      if prompt_retry_same_replay "${detail}"; then
+        return 10
+      fi
+      return "${collect_rc:-1}"
+    fi
+    sleep 0.2
+  done
+  set +e
+  wait "${replay_pid}"
+  replay_rc=$?
+  set -e
+  if [[ "${replay_rc}" != "0" ]]; then
+    echo "[ERROR] Replay failed (rc=${replay_rc})."
+    KEEP_RUN_STATUS_DIR=1
+    stop_stage2_windows
+    return "${replay_rc}"
+  fi
+
+  echo "Replay finished. Stopping collector..."
+  if [[ -f "${COLLECT_PID_FILE}" ]]; then
+    kill -INT "$(cat "${COLLECT_PID_FILE}")" >/dev/null 2>&1 || true
+  else
+    tmux_ctrl_c "collect"
+  fi
+  sleep 2
+  collect_rc="$(read_status_file "${COLLECT_STATUS_FILE}" 15 || echo 1)"
+  if [[ "${collect_rc}" != "0" ]]; then
+    echo "[ERROR] Collector failed (rc=${collect_rc}). Check tmux window '${SESSION}:collect'."
+    KEEP_RUN_STATUS_DIR=1
+    detail="$(collect_failure_detail)"
+    print_collect_failure_details
+    stop_stage2_windows
+    if prompt_retry_same_replay "${detail}"; then
+      return 10
+    fi
+    return "${collect_rc}"
+  fi
+
+  tmux_ctrl_c "replay_driver"
+  sleep 2
+  tmux send-keys -t "${SESSION}:replay_driver" "just launch driver '${SERIAL}'" Enter
+  sleep 2
+
+  if [[ "${AUTO_STOP}" -eq 1 ]]; then
+    tmux_ctrl_c "tracker"
+    tmux_ctrl_c "replay_driver"
+  fi
+
+  return 0
 }
 
 collect_cmd="scripts/collect_data/run_collect_supervised.sh '${COLLECT_STATUS_FILE}' '${COLLECT_PID_FILE}' '${COLLECT_LOG_FILE}'"
@@ -353,63 +539,18 @@ fi
 echo "[Stage 2/2] Replay + Collect"
 echo "Using bag: ${BAG}"
 
-tmux_new_window "replay_driver" "just launch ee-record '${SERIAL}'"
-sleep 2
-tmux_new_window "tracker" "just launch tracker"
-sleep 2
-scripts/collect_data/dragdatacoach.sh require-cameras "replay"
-rm -f "${COLLECT_STATUS_FILE}" "${COLLECT_PID_FILE}" "${COLLECT_LOG_FILE}"
-tmux_new_window "collect" "${collect_cmd}"
-sleep 4
-if [[ -f "${COLLECT_STATUS_FILE}" ]]; then
-  collect_rc="$(cat "${COLLECT_STATUS_FILE}")"
-  echo "[ERROR] Collector exited before replay started (rc=${collect_rc})."
-  print_collect_failure_details
-  tmux_ctrl_c "tracker"
-  tmux_ctrl_c "replay_driver"
-  exit "${collect_rc:-1}"
-fi
-read -r -p "Press Enter to START replay..."
-if [[ -f "${COLLECT_STATUS_FILE}" ]] || ! collect_window_alive; then
-  collect_rc="$(read_status_file "${COLLECT_STATUS_FILE}" 5 || echo 1)"
-  echo "[ERROR] Collector is not running before replay start (rc=${collect_rc})."
-  print_collect_failure_details
-  tmux_ctrl_c "tracker"
-  tmux_ctrl_c "replay_driver"
-  exit "${collect_rc}"
-fi
-tmux send-keys -t "${SESSION}:collect" Enter
-sleep 1
-
-A1_SKIP_CAMERA_PREFLIGHT=1 just replay "${BAG}" "${RATE}" "${GRIPPER_MODE}"
-
-echo "Replay finished. Stopping collector..."
-if [[ -f "${COLLECT_PID_FILE}" ]]; then
-  kill -INT "$(cat "${COLLECT_PID_FILE}")" >/dev/null 2>&1 || true
-else
-  tmux_ctrl_c "collect"
-fi
-sleep 2
-collect_rc="$(read_status_file "${COLLECT_STATUS_FILE}" 15 || echo 1)"
-collect_failed=0
-if [[ "${collect_rc}" != "0" ]]; then
-  echo "[ERROR] Collector failed (rc=${collect_rc}). Check tmux window '${SESSION}:collect'."
-  print_collect_failure_details
-  collect_failed=1
-fi
-tmux_ctrl_c "replay_driver"
-sleep 2
-tmux send-keys -t "${SESSION}:replay_driver" "just launch driver '${SERIAL}'" Enter
-sleep 2
-
-if [[ "${AUTO_STOP}" -eq 1 ]]; then
-  tmux_ctrl_c "tracker"
-  tmux_ctrl_c "replay_driver"
-fi
-
-if [[ "${collect_failed}" -eq 1 ]]; then
-  exit "${collect_rc}"
-fi
+attempt=1
+while true; do
+  if run_stage2_attempt "${attempt}"; then
+    break
+  fi
+  stage2_rc=$?
+  if [[ "${stage2_rc}" -eq 10 ]]; then
+    attempt=$((attempt + 1))
+    continue
+  fi
+  exit "${stage2_rc}"
+done
 
 echo
 echo "All-in-one flow finished."

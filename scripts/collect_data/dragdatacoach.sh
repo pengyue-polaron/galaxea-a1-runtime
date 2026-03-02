@@ -30,7 +30,7 @@ Usage:
   scripts/collect_data/dragdatacoach.sh <command> [args...]
 
 Commands:
-  launch-driver [serial]          # default serial=/dev/ttyACM0
+  launch-driver [serial]          # default serial=/dev/a1
   launch-ee-record [serial]       # driver + /end_effector_pose publisher
   drag-start [kp] [kd] [mode]
   drag-stop
@@ -135,12 +135,12 @@ EOF
 cmd="${1:-}"
 case "${cmd}" in
   launch-driver)
-    serial="${2:-/dev/ttyACM0}"
+    serial="${2:-/dev/a1}"
     echo "Using serial port: ${serial}"
     roslaunch signal_arm single_arm_node.launch "single_arm_serial_port_path:=${serial}"
     ;;
   launch-ee-record)
-    serial="${2:-/dev/ttyACM0}"
+    serial="${2:-/dev/a1}"
     echo "Using serial port: ${serial}"
     roslaunch "${A1_SDK_ROOT}/install/share/mobiman/launch/simpleExample/ee_record_only.launch" "serial_port_path:=${serial}"
     ;;
@@ -184,7 +184,7 @@ case "${cmd}" in
 [ERROR] /end_effector_pose is not being published.
 [ERROR] This recording will NOT replay arm motion (gripper-only replay).
 [ERROR] Start one of these before recording:
-  1) scripts/collect_data/dragdatacoach.sh launch-ee-record /dev/ttyACM0
+  1) scripts/collect_data/dragdatacoach.sh launch-ee-record /dev/a1
   2) roslaunch mobiman jointTrackerdemo.launch
 EOF
           if [[ "${A1_RECORD_ALLOW_NO_EE_POSE:-0}" != "1" ]]; then

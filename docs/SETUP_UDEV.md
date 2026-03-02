@@ -1,6 +1,6 @@
 # A1 Serial Setup (udev)
 
-This setup keeps serial permissions persistent across reboot/replug, without custom device aliases.
+This setup keeps serial permissions persistent across reboot/replug, and creates stable `/dev/a1` symlink so the device name won't change.
 
 ## 1) Inspect device identity
 
@@ -16,14 +16,13 @@ In this project machine:
 - arm controller: `0483:5740` (`STM32 Virtual ComPort`)
 - secondary serial: `1a86:55d3` (`USB Single Serial`)
 
-## 2) Install udev rules (no alias)
+## 2) Install udev rules
 
 Create `/etc/udev/rules.d/99-datacoach-a1.rules`:
 
 ```udev
-# DataCoach: serial permissions for A1 setup (no custom symlink)
-# Arm controller (STM32 Virtual ComPort)
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="336635623233", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
+# DataCoach: A1 arm controller (STM32 Virtual ComPort) -> /dev/a1
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="336635623233", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="a1"
 
 # Secondary USB serial dongle seen on this machine
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", ATTRS{serial}=="5A7A016967", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
@@ -47,25 +46,22 @@ Open a new terminal (or re-login) to ensure group change applies in your shell.
 ## 4) Verify
 
 ```bash
-ls -l /dev/ttyACM*
+ls -l /dev/a1 /dev/ttyACM*
 id
 ```
 
 Expected:
 
+- `/dev/a1` is a symlink pointing to `ttyACM0` (or whichever port the arm is on)
 - tty device owner/group includes `dialout`
 - your user is in `dialout`
 
 ## 5) Run driver
 
-`dragdatacoach.sh` defaults to `/dev/ttyACM0`:
+Use the stable `/dev/a1` alias:
 
 ```bash
-scripts/collect_data/dragdatacoach.sh launch-driver
+just launch driver /dev/a1
 ```
 
-You can still override explicitly:
-
-```bash
-scripts/collect_data/dragdatacoach.sh launch-driver /dev/ttyACM1
-```
+The alias is stable across reboot/replug — no matter which `ttyACM*` number the kernel assigns, `/dev/a1` always points to the arm controller.

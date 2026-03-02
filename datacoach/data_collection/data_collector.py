@@ -1,8 +1,11 @@
 import pickle
+import select
 import signal
+import sys
 import threading
 import time
 from datetime import datetime
+from enum import Enum
 from pathlib import Path
 
 import cv2
@@ -11,6 +14,12 @@ import zmq
 from omegaconf import DictConfig
 
 from datacoach.constants import CAM_FPS, ZMQ_CAM_PORT, ZMQ_CMD_PORT, ZMQ_STATE_PORT
+
+
+class ReplayAction(Enum):
+    """Action to take after replay completes."""
+    CLOSE = "close"
+    REPLAY = "replay"
 
 
 class DataCollector:
@@ -38,6 +47,8 @@ class DataCollector:
         self.lock = threading.Lock()
         self.recording = False
         self.exit_flag = False
+        self.abort_reason = None
+        self.save_on_stop = False
 
         # === ZMQ Setup ===
         context = zmq.Context()
@@ -200,6 +211,54 @@ class DataCollector:
         except OSError:
             pass
 
+    def _request_stop(self, *, save_recording: bool, reason: str | None = None, announce: str | None = None):
+        if announce:
+            print(announce)
+        self.recording = False
+        self.save_on_stop = self.save_on_stop or save_recording
+        if reason and self.abort_reason is None:
+            self.abort_reason = reason
+        self.exit_flag = True
+
+    def abort(self, reason: str, *, save_recording: bool = False):
+        self._request_stop(save_recording=save_recording, reason=reason)
+
+    def _join_worker_threads(self):
+        for thread in (self.state_thread, self.cmd_thread, self.image_thread):
+            if thread.is_alive():
+                thread.join(timeout=1.0)
+
+    def _wait_for_start_signal(self):
+        if not self.wait_for_enter:
+            print("Auto start enabled. Starting recording immediately...")
+            return
+
+        print("Press ENTER to start collecting data...")
+        while not self.exit_flag:
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if ready:
+                sys.stdin.readline()
+                return
+
+    def _prompt_replay_action(self) -> ReplayAction:
+        """Prompt user to choose action after replay completes."""
+        print("\n" + "=" * 50)
+        print("Replay finished! Choose next action:")
+        print("  [1] Close")
+        print("  [2] Replay again")
+        print("=" * 50)
+
+        while True:
+            ready, _, _ = select.select([sys.stdin], [], [], 0.1)
+            if ready:
+                user_input = sys.stdin.readline().strip()
+                if user_input == "1":
+                    return ReplayAction.CLOSE
+                elif user_input == "2":
+                    return ReplayAction.REPLAY
+                else:
+                    print("Invalid input. Please enter 1 or 2:")
+
     def collect_state(self):
         print(f"📡 Subscribing to robot state at tcp://127.0.0.1:{ZMQ_STATE_PORT}")
         while not self.exit_flag:
@@ -330,31 +389,23 @@ class DataCollector:
             print("  - no camera frames captured")
 
     def stop_recording(self, *args):
-        print("\n⏹️ Ctrl+C detected, stopping...")
-        self.recording = False
-        self.exit_flag = True
+        self._request_stop(save_recording=True, announce="\n⏹️ Ctrl+C detected, stopping...")
 
-        for thread in (self.state_thread, self.cmd_thread, self.image_thread):
-            if thread.is_alive():
-                thread.join(timeout=1.0)
+    def run(self) -> ReplayAction:
+        """Run the data collection loop.
 
-        try:
-            self.save_all()
-        except Exception as exc:
-            print(f"❌ Validation failed, recording discarded: {exc}")
-            self._cleanup_empty_base_dir()
-            raise
-
-    def run(self):
+        Returns:
+            ReplayAction: The action chosen by the user after completion.
+        """
         self.state_thread.start()
         self.cmd_thread.start()
         self.image_thread.start()
 
-        if self.wait_for_enter:
-            print("Press ENTER to start collecting data...")
-            input()
-        else:
-            print("Auto start enabled. Starting recording immediately...")
+        self._wait_for_start_signal()
+
+        if self.abort_reason is not None:
+            self._join_worker_threads()
+            raise RuntimeError(self.abort_reason)
 
         with self.lock:
             self.state_data.clear()
@@ -369,12 +420,30 @@ class DataCollector:
 
         while not self.exit_flag:
             time.sleep(0.1)
+
+        self._join_worker_threads()
+
+        if self.save_on_stop:
+            try:
+                self.save_all()
+            except Exception as exc:
+                print(f"❌ Validation failed, recording discarded: {exc}")
+                self._cleanup_empty_base_dir()
+                raise
+        else:
+            self._cleanup_empty_base_dir()
+
         print("🧹 Collector run() exiting")
+        if self.abort_reason is not None:
+            raise RuntimeError(self.abort_reason)
+
+        # Prompt user for next action
+        return self._prompt_replay_action()
 
 
-def main(cfg: DictConfig):
+def main(cfg: DictConfig) -> ReplayAction:
     collector = DataCollector(cfg)
-    collector.run()
+    return collector.run()
 
 
 if __name__ == "__main__":

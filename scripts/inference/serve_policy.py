@@ -8,8 +8,6 @@ import tyro
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
 
-from datacoach.inference import websocket_policy_server
-
 from datacoach.training import config as _config
 
 
@@ -99,6 +97,15 @@ def create_policy(args: Args) -> _policy.Policy:
 
 
 def main(args: Args) -> None:
+    try:
+        from datacoach.inference import websocket_policy_server
+    except ImportError as exc:
+        raise RuntimeError(
+            "WebSocket inference backend is not available in this checkout. "
+            "Use `scripts/inference/my_serve_policy.py` for the ZMQ-based A1 path, "
+            "or add `datacoach/inference/websocket_policy_server.py` back before using this script."
+        ) from exc
+
     policy = create_policy(args)
     policy_metadata = policy.metadata
 

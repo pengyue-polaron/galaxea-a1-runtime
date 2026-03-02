@@ -14,7 +14,7 @@ which-python:
 
 # ---------- Command Groups ----------
 
-launch target="driver" serial="/dev/ttyACM0":
+launch target="driver" serial="/dev/a1":
     case "{{target}}" in driver) scripts/collect_data/dragdatacoach.sh launch-driver "{{serial}}" ;; ee-record) scripts/collect_data/dragdatacoach.sh launch-ee-record "{{serial}}" ;; tracker) scripts/collect_data/dragdatacoach.sh launch-tracker ;; *) echo "Usage: just launch <driver|ee-record|tracker> [serial]"; exit 1 ;; esac
 
 drag action="start" *args:
@@ -37,6 +37,9 @@ drag-collect *args:
 
 camera action="test" *args:
     PY=$(scripts/collect_data/dragdatacoach.sh which-python); case "{{action}}" in test) "$PY" scripts/collect_data/test_camera_connections.py --config configs/drag_replay.yaml --timeout-s 6.0 {{args}} ;; raw) "$PY" scripts/collect_data/test_camera_connections.py {{args}} ;; *) echo "Usage: just camera <test|raw> [args...]"; exit 1 ;; esac
+
+print target="joints" count="0" unit="deg":
+    case "{{target}}" in joints) set +u; source /opt/ros/noetic/setup.bash; source third_party/A1_SDK/install/setup.bash; set -u; python3 scripts/collect_data/print_joint_angles.py --count "{{count}}" --unit "{{unit}}" ;; *) echo "Usage: just print joints [count] [unit]"; exit 1 ;; esac
 
 bag action="latest" bag="":
     case "{{action}}" in latest) ls -t third_party/A1_SDK/data/records/*.bag | head -n 1 ;; info) if [ -z "{{bag}}" ]; then echo "Usage: just bag info <bag>"; exit 1; fi; set +u; source /opt/ros/noetic/setup.bash; set -u; rosbag info "{{bag}}" ;; *) echo "Usage: just bag <latest|info> [bag]"; exit 1 ;; esac
