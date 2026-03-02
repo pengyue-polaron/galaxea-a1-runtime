@@ -19,8 +19,7 @@ camera_server:
       enabled: true
     - id: cam_1
       backend: opencv
-      # device: /dev/video0
-      device: 1
+      device: /dev/video2
       backend_api: v4l2
       width: 640
       height: 480

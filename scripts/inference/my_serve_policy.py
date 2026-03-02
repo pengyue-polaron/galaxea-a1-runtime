@@ -1,17 +1,71 @@
 import dataclasses
 import enum
+import importlib.util
 import logging
 import socket
+from pathlib import Path
+import sys
 
 import tyro
 
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
 
+# Ensure local DataCoach package is preferred over environment-installed copy.
+ROOT_DIR = Path(__file__).resolve().parent.parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
+
 from datacoach.inference import ZMQ_policy_server
 
 from datacoach.training import config as _config
 from datacoach.constants import ZMQ_CAM_PORT, ZMQ_POLICY_ACTION_PORT, ZMQ_STATE_PORT
+
+_EXTERNAL_TRAINING_CONFIG = None
+
+
+def _load_external_training_config():
+    """Load fallback training config module from jolia repo if available."""
+    global _EXTERNAL_TRAINING_CONFIG
+    if _EXTERNAL_TRAINING_CONFIG is not None:
+        return _EXTERNAL_TRAINING_CONFIG
+
+    fallback_root = Path("/home/jolia/DataCoach")
+    config_file = fallback_root / "datacoach" / "training" / "config.py"
+    if not config_file.exists():
+        _EXTERNAL_TRAINING_CONFIG = False
+        return None
+
+    spec = importlib.util.spec_from_file_location("jolia_training_config", str(config_file))
+    if spec is None or spec.loader is None:
+        _EXTERNAL_TRAINING_CONFIG = False
+        return None
+
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    _EXTERNAL_TRAINING_CONFIG = module
+    return module
+
+
+def _resolve_train_config(config_name: str):
+    """Resolve training config, preferring local repo then jolia fallback."""
+    try:
+        return _config.get_config(config_name)
+    except Exception as local_exc:
+        fallback_module = _load_external_training_config()
+        if fallback_module is not None:
+            try:
+                logging.warning(
+                    "Local config '%s' unavailable, using fallback config from /home/jolia/DataCoach",
+                    config_name,
+                )
+                return fallback_module.get_config(config_name)
+            except Exception as fallback_exc:
+                raise ValueError(
+                    f"Config '{config_name}' is unavailable in both local and fallback configs. "
+                    f"local_error={local_exc}; fallback_error={fallback_exc}"
+                ) from fallback_exc
+        raise
 
 class EnvMode(enum.Enum):
     """Supported environments."""
@@ -82,7 +136,7 @@ def create_default_policy(env: EnvMode, *, default_prompt: str | None = None) ->
     """Create a default policy for the given environment."""
     if checkpoint := DEFAULT_CHECKPOINT.get(env):
         return _policy_config.create_trained_policy(
-            _config.get_config(checkpoint.config), checkpoint.dir, default_prompt=default_prompt
+            _resolve_train_config(checkpoint.config), checkpoint.dir, default_prompt=default_prompt
         )
     raise ValueError(f"Unsupported environment mode: {env}")
 
@@ -92,7 +146,7 @@ def create_policy(args: Args) -> _policy.Policy:
     match args.policy:
         case Checkpoint():
             # _config.get_config(checkpoint.config) return a training config
-            train_config = _config.get_config(args.policy.config)
+            train_config = _resolve_train_config(args.policy.config)
             data_config = train_config.data.create(train_config.assets_dirs, train_config.model)
             return _policy_config.create_trained_policy(
                 train_config=train_config, repack_transforms=data_config.repack_transforms, checkpoint_dir=args.policy.dir, default_prompt=args.default_prompt

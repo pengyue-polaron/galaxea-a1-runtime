@@ -1,23 +1,25 @@
 project_root: ${oc.env:DATACOACH_ROOT,/home/pengyue/Codespace/DataCoach}
+service_mode: replay
 
 camera_server:
+  enabled: true
   bind: tcp://*:5558
   jpeg_quality: 85
   loop_sleep_s: 0.001
   cameras:
     - id: cam_0
       backend: realsense
-      serial: null
-      width: 1280
-      height: 720 # 480
+      serial: "341522300456"
+      width: 640
+      height: 480
       fps: 30
       enabled: true
     - id: cam_1
       backend: opencv
-      device: /dev/video0
+      device: /dev/video2
       backend_api: v4l2
-      width: 1280
-      height: 720
+      width: 640
+      height: 480
       fps: 30
       enabled: true
 
@@ -37,6 +39,28 @@ a1_replay_bridge:
   cmd_gripper_force_topic: /gripper_force_control_host
   zmq_cmd_bind: tcp://127.0.0.1:5556
   zmq_state_bind: tcp://127.0.0.1:5557
+
+a1_server:
+  node_name: a1_server_node
+  anonymous: true
+  disable_ros_signals: false
+  leader_udp_host: 127.0.0.1
+  leader_udp_port: 7005
+  scale: [2.0, 2.0, 1.5]
+  offset: [0.0, 0.0, 0.05]
+  publish_rate_hz: 50
+  state_pose_topic: /end_effector_pose
+  state_gripper_topic: /gripper_stroke_host
+  cmd_pose_topic: /a1_ee_target
+  cmd_gripper_position_topic: /gripper_position_control_host
+  zmq_cmd_bind: tcp://127.0.0.1:5556
+  zmq_state_bind: tcp://127.0.0.1:5557
+  zmq_policy_action_connect: tcp://127.0.0.1:5559
+  components:
+    - leader_data_receiver
+    - ros_publisher
+    - ros_subscriber
+    - policy_action_subscriber
 
 data_collector:
   task_name: pick_twice
