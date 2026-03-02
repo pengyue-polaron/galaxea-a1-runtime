@@ -1,4 +1,5 @@
 import time
+from pathlib import Path
 
 import cv2
 import numpy as np
@@ -103,6 +104,10 @@ def main(cfg=None, stop_event=None):
     loop_sleep_s = float(_cfg_get(cfg, "loop_sleep_s", 0.001))
     startup_timeout_s = float(_cfg_get(cfg, "startup_timeout_s", 3.0))
     stall_timeout_s = float(_cfg_get(cfg, "stall_timeout_s", 2.0))
+    debug_dump_enable = bool(_cfg_get(cfg, "debug_dump_enable", False))
+    debug_dump_dir_raw = _cfg_get(cfg, "debug_dump_dir", None)
+    debug_dump_every_n = int(_cfg_get(cfg, "debug_dump_every_n", 30))
+    debug_dump_max_per_cam = int(_cfg_get(cfg, "debug_dump_max_per_cam", 0))
 
     camera_cfgs = _cfg_get(cfg, "cameras", None)
     if not camera_cfgs:
@@ -147,6 +152,18 @@ def main(cfg=None, stop_event=None):
     print(f"[Camera Server] Publishing on {bind}")
     print("[Camera Server] Format: [camera_id, timestamp, jpeg_bytes]")
 
+    debug_dump_dir = None
+    dump_stats = {}
+    dump_write_failed = set()
+    if debug_dump_enable and debug_dump_dir_raw:
+        debug_dump_dir = Path(str(debug_dump_dir_raw)).expanduser().resolve()
+        debug_dump_dir.mkdir(parents=True, exist_ok=True)
+        print(
+            "[Camera Server] Debug dump enabled: "
+            f"dir={debug_dump_dir}, every_n={max(1, debug_dump_every_n)}, "
+            f"max_per_cam={debug_dump_max_per_cam}"
+        )
+
     encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), jpeg_quality]
     try:
         while stop_event is None or not stop_event.is_set():
@@ -185,20 +202,50 @@ def main(cfg=None, stop_event=None):
 
                 state["last_frame_ts"] = now
                 timestamp = time.time_ns()
+                encoded = img_bytes.tobytes()
                 pub.send_multipart(
                     [
                         cam_id.encode("utf-8"),
                         str(timestamp).encode("ascii"),
-                        img_bytes.tobytes(),
+                        encoded,
                     ]
                 )
                 published += 1
+
+                if debug_dump_dir is not None:
+                    cam_stats = dump_stats.setdefault(cam_id, {"seen": 0, "saved": 0})
+                    cam_stats["seen"] += 1
+                    every_n = max(1, debug_dump_every_n)
+                    should_save = (cam_stats["seen"] % every_n) == 0
+                    under_limit = (
+                        debug_dump_max_per_cam <= 0 or cam_stats["saved"] < debug_dump_max_per_cam
+                    )
+                    if should_save and under_limit:
+                        cam_dir = debug_dump_dir / cam_id
+                        if cam_id not in dump_write_failed:
+                            try:
+                                cam_dir.mkdir(parents=True, exist_ok=True)
+                                out_path = cam_dir / f"{timestamp}_{cam_stats['saved']:06d}.jpg"
+                                out_path.write_bytes(encoded)
+                                cam_stats["saved"] += 1
+                            except Exception as exc:
+                                dump_write_failed.add(cam_id)
+                                print(
+                                    f"[Camera Server] WARNING: failed to dump frames for {cam_id}: {exc}"
+                                )
 
             if published == 0:
                 time.sleep(loop_sleep_s)
     except KeyboardInterrupt:
         print("\n[Camera Server] Stopped by user.")
     finally:
+        if debug_dump_dir is not None:
+            print(f"[Camera Server] Debug dump summary @ {debug_dump_dir}")
+            for cam_id in sorted(dump_stats):
+                stats = dump_stats[cam_id]
+                print(
+                    f"  - {cam_id}: seen={stats['seen']}, saved={stats['saved']}"
+                )
         for source in sources.values():
             source.close()
         pub.close(0)

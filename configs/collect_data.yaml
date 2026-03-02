@@ -6,6 +6,10 @@ camera_server:
   bind: tcp://*:5558
   jpeg_quality: 85
   loop_sleep_s: 0.001
+  debug_dump_enable: false
+  debug_dump_dir: ${project_root}/data/debug/model_input_frames
+  debug_dump_every_n: 30
+  debug_dump_max_per_cam: 200
   cameras:
     - id: cam_0
       backend: realsense

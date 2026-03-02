@@ -42,6 +42,7 @@ Commands:
   record-stop
   launch-tracker
   replay --bag <path> [--rate 1.0] [--gripper-mode position]
+  replay-infer --input <path> [--source auto|csv|pkl] [--rate 15] [--speed 1.0] [--loop]
   collect                        # start DataCoach replay bridge + cameras + collector
   require-cameras [context]      # run camera preflight check
   doctor                         # check runtime dependencies and selected python
@@ -307,6 +308,16 @@ EOF
         /joint_states_host:=/arm_joint_target_position \
         -r "${replay_rate}"
     fi
+    ;;
+  replay-infer)
+    shift
+    py="$(pick_datacoach_python || true)"
+    if [[ -z "${py}" ]]; then
+      echo "Could not find a usable DataCoach python interpreter."
+      echo "Set DATACOACH_PYTHON explicitly, or prepare env with hydra/zmq/cv2."
+      exit 1
+    fi
+    DATACOACH_PYTHON="${py}" "${py}" "${PROJECT_ROOT}/scripts/collect_data/replay_inferred_trajectory.py" "$@"
     ;;
   collect)
     py="$(pick_datacoach_python || true)"

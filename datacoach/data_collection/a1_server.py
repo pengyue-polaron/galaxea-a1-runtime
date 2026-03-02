@@ -234,6 +234,10 @@ class A1Server:
                 rate.sleep()
                 continue
 
+            if not isinstance(action, dict):
+                rate.sleep()
+                continue
+
             action_ts = action.get("timestamp", None)
             if action_ts is not None:
                 try:

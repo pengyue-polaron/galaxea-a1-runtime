@@ -29,6 +29,9 @@ record action="start" tag="drag_demo":
 replay bag="" rate="1.0" gripper_mode="position":
     BAG="{{bag}}"; if [ -z "$BAG" ]; then BAG=$(ls -t third_party/A1_SDK/data/records/*.bag | head -n 1); fi; scripts/collect_data/dragdatacoach.sh replay --bag "$BAG" --gripper-mode "{{gripper_mode}}" --rate "{{rate}}"
 
+replay-infer input="" source="auto" rate="15" speed="1.0" *args:
+    if [ -z "{{input}}" ]; then echo "Usage: just replay-infer <input> [source] [rate] [speed] [extra args...]"; exit 1; fi; scripts/collect_data/dragdatacoach.sh replay-infer --input "{{input}}" --source "{{source}}" --rate "{{rate}}" --speed "{{speed}}" {{args}}
+
 collect:
     trap '' INT; set +e; scripts/collect_data/dragdatacoach.sh collect; rc=$?; trap - INT; set -e; if [ "$rc" -eq 130 ]; then exit 0; fi; exit "$rc"
 
@@ -48,3 +51,8 @@ bag action="latest" bag="":
 
 policy policy_dir="/home/pengyue/29000":
     PYTHONPATH="/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py policy:checkpoint --policy.config pi05_ltc_pick_twice --policy.dir "{{policy_dir}}"
+
+# ---------- Debug ----------
+
+debug target="camera" output_dir="/home/pengyue/Codespace/DataCoach/data/debug/model_input_frames" every_n="20" max_per_cam="300" duration_s="30" *args:
+    case "{{target}}" in camera) /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/dump_model_input_images.py --output-dir "{{output_dir}}" --every-n "{{every_n}}" --max-per-cam "{{max_per_cam}}" --duration-s "{{duration_s}}" {{args}} ;; *) echo "Usage: just debug <camera> [output_dir] [every_n] [max_per_cam] [duration_s] [extra args...]"; exit 1 ;; esac
