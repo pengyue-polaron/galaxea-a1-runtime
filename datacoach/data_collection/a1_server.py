@@ -3,6 +3,7 @@ from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
 from std_msgs.msg import Header
 
+from collections import deque
 import socket
 import threading
 import time
@@ -56,7 +57,9 @@ class A1Server:
             "gripper": None,
         }
         self.feedback_lock = threading.Lock()
-        self.processed_data_queue = []
+        # Keep only the freshest leader command to prevent stale command replay.
+        self._leader_queue = deque(maxlen=1)
+        self._leader_lock = threading.Lock()
 
     def _cfg_get(self, key, default=None):
         if self.cfg is None:
@@ -94,7 +97,8 @@ class A1Server:
                 "gripper": float(parts[7]) if len(parts) >= 8 else None,
             }
 
-            self.processed_data_queue.append(pose_data)
+            with self._leader_lock:
+                self._leader_queue.append(pose_data)
             time.sleep(1 / max(self.publish_rate_hz, 1.0))
 
     def ros_publisher(self):
@@ -111,8 +115,12 @@ class A1Server:
         print(f"[A1Server] ZMQ publisher (commanded_state) bound to {self.zmq_cmd_bind}")
 
         while not rospy.is_shutdown():
-            if self.processed_data_queue:
-                pose_data = self.processed_data_queue.pop(0)
+            pose_data = None
+            with self._leader_lock:
+                if self._leader_queue:
+                    pose_data = self._leader_queue.popleft()
+
+            if pose_data is not None:
 
                 pose_msg = PoseStamped()
                 pose_msg.header.frame_id = "world"
@@ -209,10 +217,15 @@ class A1Server:
 
         context = zmq.Context()
         zmq_sub = context.socket(zmq.SUB)
+        # Keep only the freshest policy action and avoid replaying stale buffered actions.
+        zmq_sub.setsockopt(zmq.CONFLATE, 1)
+        zmq_sub.setsockopt(zmq.RCVHWM, 1)
         zmq_sub.connect(self.zmq_policy_action_connect)
         zmq_sub.setsockopt_string(zmq.SUBSCRIBE, "")
         print(f"[A1Server] ZMQ SUB connected to {self.zmq_policy_action_connect}")
 
+        max_action_age_s = 0.5
+        stale_action_drop_count = 0
         rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
         while not rospy.is_shutdown():
             try:
@@ -220,6 +233,22 @@ class A1Server:
             except zmq.Again:
                 rate.sleep()
                 continue
+
+            action_ts = action.get("timestamp", None)
+            if action_ts is not None:
+                try:
+                    age_s = time.time() - float(action_ts)
+                except Exception:
+                    age_s = None
+                if age_s is not None and age_s > max_action_age_s:
+                    stale_action_drop_count += 1
+                    if stale_action_drop_count % 100 == 1:
+                        print(
+                            "[A1Server] Dropping stale policy action "
+                            f"(age={age_s:.3f}s, count={stale_action_drop_count})"
+                        )
+                    rate.sleep()
+                    continue
 
             try:
                 pos = action["pos"]

@@ -40,11 +40,23 @@ class ZMQPolicyServer:
         self._required_cam_ids = ("cam_0", "cam_1")
         self._latest_images = {}
         self._warned_bad_cam_message = False
+        # Drop stale buffered states from previous runs.
+        self._max_state_age_s = 0.5
+        self._stale_state_drop_count = 0
+        # Require camera frames to be fresh and synchronized with state timestamps.
+        self._max_camera_age_s = 0.5
+        self._max_cam_state_skew_s = 0.25
+        self._max_inter_cam_skew_s = 0.08
+        self._stale_camera_drop_count = 0
+        self._misaligned_camera_drop_count = 0
 
         self._context = zmq.Context()
 
         # -------- SUB: receive state --------
         self._sub = self._context.socket(zmq.SUB)
+        # Keep only the freshest robot state and prevent backlog replay after reconnect.
+        self._sub.setsockopt(zmq.CONFLATE, 1)
+        self._sub.setsockopt(zmq.RCVHWM, 1)
         self._sub.connect(f"tcp://{host}:{state_port}")
         self._sub.setsockopt_string(zmq.SUBSCRIBE, "")
 
@@ -54,6 +66,8 @@ class ZMQPolicyServer:
         
         # -------- SUB: receive camera --------
         self._cam_sub = self._context.socket(zmq.SUB)
+        # Bound camera backlog to reduce stale frame accumulation.
+        self._cam_sub.setsockopt(zmq.RCVHWM, 20)
         self._cam_sub.connect(f"tcp://{host}:{camera_port}")
         self._cam_sub.setsockopt_string(zmq.SUBSCRIBE, "")
 
@@ -65,6 +79,16 @@ class ZMQPolicyServer:
         time.sleep(0.3)
 
     
+    def _parse_camera_timestamp_s(self, raw_ts: bytes):
+        try:
+            ts = float(raw_ts.decode("ascii", errors="strict"))
+        except Exception:
+            return None
+        # Camera server publishes time.time_ns(); convert to seconds.
+        if ts > 1e12:
+            ts = ts / 1e9
+        return ts
+
     def _poll_camera_frames(self):
         while True:
             try:
@@ -83,23 +107,62 @@ class ZMQPolicyServer:
                 continue
 
             cam_id = parts[0].decode("utf-8", errors="replace")
+            cam_ts_s = self._parse_camera_timestamp_s(parts[1])
+            if cam_ts_s is None:
+                continue
             img_bytes = parts[2]
 
             np_arr = np.frombuffer(img_bytes, dtype=np.uint8)
             image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if image is None:
                 continue
-            self._latest_images[cam_id] = image
+            self._latest_images[cam_id] = {"image": image, "timestamp_s": cam_ts_s}
 
-    def _get_camera_images(self):
+    def _get_camera_images(self, state_ts: float):
         self._poll_camera_frames()
+        now = time.time()
+        camera_entries = {}
         for cam_id in self._required_cam_ids:
             if cam_id not in self._latest_images:
                 return None
-        return {
-            "cam_0": self._latest_images["cam_0"],
-            "cam_1": self._latest_images["cam_1"],
-        }
+            entry = self._latest_images[cam_id]
+            cam_ts = float(entry["timestamp_s"])
+            if (now - cam_ts) > self._max_camera_age_s:
+                self._stale_camera_drop_count += 1
+                if self._stale_camera_drop_count % 100 == 1:
+                    print(
+                        "[ZMQPolicyServer] Dropping stale camera frame "
+                        f"(cam={cam_id}, age={now - cam_ts:.3f}s, count={self._stale_camera_drop_count})"
+                    )
+                return None
+            camera_entries[cam_id] = entry
+
+        cam0_ts = float(camera_entries["cam_0"]["timestamp_s"])
+        cam1_ts = float(camera_entries["cam_1"]["timestamp_s"])
+        inter_cam_skew = abs(cam0_ts - cam1_ts)
+        if inter_cam_skew > self._max_inter_cam_skew_s:
+            self._misaligned_camera_drop_count += 1
+            if self._misaligned_camera_drop_count % 100 == 1:
+                print(
+                    "[ZMQPolicyServer] Dropping unsynced camera pair "
+                    f"(cam_skew={inter_cam_skew:.3f}s, count={self._misaligned_camera_drop_count})"
+                )
+            return None
+
+        if state_ts > 0.0:
+            for cam_id in self._required_cam_ids:
+                cam_ts = float(camera_entries[cam_id]["timestamp_s"])
+                skew = abs(cam_ts - state_ts)
+                if skew > self._max_cam_state_skew_s:
+                    self._misaligned_camera_drop_count += 1
+                    if self._misaligned_camera_drop_count % 100 == 1:
+                        print(
+                            "[ZMQPolicyServer] Dropping state/camera mismatch "
+                            f"(cam={cam_id}, skew={skew:.3f}s, count={self._misaligned_camera_drop_count})"
+                        )
+                    return None
+
+        return {"cam_0": camera_entries["cam_0"]["image"], "cam_1": camera_entries["cam_1"]["image"]}
 
     def _convert_obs(self, data, images):
         pos = data["pos"]
@@ -175,8 +238,17 @@ class ZMQPolicyServer:
         while True:
             try:
                 obs_raw = self._sub.recv_json()
+                state_ts = float(obs_raw.get("timestamp", 0.0))
+                if state_ts > 0.0 and (time.time() - state_ts) > self._max_state_age_s:
+                    self._stale_state_drop_count += 1
+                    if self._stale_state_drop_count % 100 == 1:
+                        print(
+                            "[ZMQPolicyServer] Dropping stale state "
+                            f"(age={time.time() - state_ts:.3f}s, count={self._stale_state_drop_count})"
+                        )
+                    continue
 
-                images = self._get_camera_images()
+                images = self._get_camera_images(state_ts)
                 if images is None:
                     continue
 

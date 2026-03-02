@@ -40,12 +40,16 @@ def main(cfg):
     node_name = str(_cfg_get(server_cfg, "node_name", "a1_server_node"))
     anonymous = bool(_cfg_get(server_cfg, "anonymous", True))
     disable_ros_signals = bool(_cfg_get(server_cfg, "disable_ros_signals", False))
-    components = _cfg_get(server_cfg, "components", None) or [
-        "leader_data_receiver",
-        "ros_publisher",
-        "ros_subscriber",
-        "policy_action_subscriber",
-    ]
+    components_cfg = _cfg_get(server_cfg, "components", None)
+    if components_cfg is None:
+        components = [
+            "leader_data_receiver",
+            "ros_publisher",
+            "ros_subscriber",
+            "policy_action_subscriber",
+        ]
+    else:
+        components = list(components_cfg)
 
     if not rospy.core.is_initialized():
         rospy.init_node(node_name, anonymous=anonymous, disable_signals=disable_ros_signals)

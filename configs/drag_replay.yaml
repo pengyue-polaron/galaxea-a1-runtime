@@ -12,14 +12,14 @@ camera_server:
   cameras:
     - id: cam_0
       backend: realsense
-      serial: null
+      serial: "341522300456"
       width: 640
       height: 480
       fps: 30
       enabled: true
     - id: cam_1
       backend: opencv
-      device: /dev/video2
+      device: /dev/video6
       backend_api: v4l2
       width: 640
       height: 480
