@@ -45,6 +45,12 @@ class ZMQPolicyServer:
         self._model_action_dim = int(getattr(model, "action_dim", 32))
         self._ltc_bptt_len = int(getattr(model, "bptt_len", 8))
         self._ltc_dt_s = float(self._metadata.get("ltc_dt_s", 1.0 / 50.0))
+        # Keep inference dt aligned with training by default.
+        # Set `ltc_use_measured_dt=true` in policy_metadata only if the model was
+        # trained to be robust to variable dt.
+        self._ltc_use_measured_dt = bool(self._metadata.get("ltc_use_measured_dt", False))
+        self._ltc_dt_min_s = float(self._metadata.get("ltc_dt_min_s", self._ltc_dt_s * 0.5))
+        self._ltc_dt_max_s = float(self._metadata.get("ltc_dt_max_s", self._ltc_dt_s * 2.0))
         self._ltc_episode_id = str(self._metadata.get("ltc_episode_id", "a1_zmq"))
         self._ltc_history_len = max(1, self._ltc_bptt_len)
         self._ltc_history_reset_gap_s = float(self._metadata.get("ltc_history_reset_gap_s", 1.0))
@@ -186,8 +192,8 @@ class ZMQPolicyServer:
                 self._ltc_state_history.clear()
                 self._ltc_time_history.clear()
                 reset_ltc_state = True
-            else:
-                ltc_dt_s = np.float32(dt if dt > 0.0 else self._ltc_dt_s)
+            elif self._ltc_use_measured_dt and dt > 0.0:
+                ltc_dt_s = np.float32(np.clip(dt, self._ltc_dt_min_s, self._ltc_dt_max_s))
 
         self._ltc_state_history.append(np.asarray(padded_state, dtype=np.float32).copy())
         self._ltc_time_history.append(float(timestamp))

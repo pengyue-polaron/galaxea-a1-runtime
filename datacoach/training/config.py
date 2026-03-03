@@ -819,6 +819,9 @@ _CONFIGS = [
         ema_decay=None,
         policy_metadata={
             "ltc_dt_s": 1.0 / 50.0,
+            "ltc_use_measured_dt": False,
+            "ltc_dt_min_s": 1.0 / 50.0,
+            "ltc_dt_max_s": 1.0 / 50.0,
             "ltc_history_reset_gap_s": 1.0,
             "ltc_episode_id": "a1_zmq",
         },
