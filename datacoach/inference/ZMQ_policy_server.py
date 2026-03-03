@@ -1,3 +1,4 @@
+from collections import deque
 import cv2
 import numpy as np
 import time
@@ -40,6 +41,15 @@ class ZMQPolicyServer:
         self._required_cam_ids = ("cam_0", "cam_1")
         self._latest_images = {}
         self._warned_bad_cam_message = False
+        model = getattr(self._policy, "_model", None)
+        self._model_action_dim = int(getattr(model, "action_dim", 32))
+        self._ltc_bptt_len = int(getattr(model, "bptt_len", 8))
+        self._ltc_dt_s = float(self._metadata.get("ltc_dt_s", 1.0 / 50.0))
+        self._ltc_episode_id = str(self._metadata.get("ltc_episode_id", "a1_zmq"))
+        self._ltc_history_len = max(1, self._ltc_bptt_len)
+        self._ltc_history_reset_gap_s = float(self._metadata.get("ltc_history_reset_gap_s", 1.0))
+        self._ltc_state_history = deque(maxlen=self._ltc_history_len)
+        self._ltc_time_history = deque(maxlen=self._ltc_history_len)
         # Drop stale buffered states from previous runs.
         self._max_state_age_s = 0.5
         self._stale_state_drop_count = 0
@@ -164,6 +174,45 @@ class ZMQPolicyServer:
 
         return {"cam_0": camera_entries["cam_0"]["image"], "cam_1": camera_entries["cam_1"]["image"]}
 
+    def _build_ltc_history(self, padded_state: np.ndarray, timestamp: float):
+        # Reset history on large time gaps or non-monotonic timestamps.
+        reset_ltc_state = not self._ltc_time_history
+        ltc_dt_s = np.float32(self._ltc_dt_s)
+        if self._ltc_time_history:
+            last_ts = float(self._ltc_time_history[-1])
+            dt = float(timestamp - last_ts)
+            if timestamp < last_ts or dt > self._ltc_history_reset_gap_s:
+                self._ltc_state_history.clear()
+                self._ltc_time_history.clear()
+                reset_ltc_state = True
+            else:
+                ltc_dt_s = np.float32(dt if dt > 0.0 else self._ltc_dt_s)
+
+        self._ltc_state_history.append(np.asarray(padded_state, dtype=np.float32).copy())
+        self._ltc_time_history.append(float(timestamp))
+
+        states = list(self._ltc_state_history)
+        times = list(self._ltc_time_history)
+
+        if len(states) < self._ltc_history_len:
+            pad_count = self._ltc_history_len - len(states)
+            states = [states[0]] * pad_count + states
+            times = [times[0]] * pad_count + times
+
+        proprio_seq = np.stack(states[-self._ltc_history_len :], axis=0).astype(np.float32, copy=False)
+        ts = np.asarray(times[-self._ltc_history_len :], dtype=np.float32)
+        deltas = np.diff(ts, prepend=ts[0]).astype(np.float32)
+        deltas = np.maximum(deltas, 0.0)
+
+        if np.all(deltas <= 0.0):
+            deltas[:] = np.float32(self._ltc_dt_s)
+        elif deltas[0] <= 0.0:
+            positive = deltas[deltas > 0.0]
+            deltas[0] = positive[0] if positive.size > 0 else np.float32(self._ltc_dt_s)
+
+        ltc_dt = np.asarray([ltc_dt_s], dtype=np.float32)
+        return proprio_seq, deltas[:, None], ltc_dt, bool(reset_ltc_state)
+
     def _convert_obs(self, data, images):
         pos = data["pos"]
         ori = data["ori"]
@@ -183,15 +232,23 @@ class ZMQPolicyServer:
             ],
             dtype=np.float32,
         )
-
-        timestamp = np.float32(data.get("timestamp", time.time()))
+        padded_state = np.zeros((self._model_action_dim,), dtype=np.float32)
+        usable_dim = min(state.shape[0], self._model_action_dim)
+        padded_state[:usable_dim] = state[:usable_dim]
+        timestamp = float(data.get("timestamp", time.time()))
+        proprio_seq, time_deltas, ltc_dt, reset_ltc_state = self._build_ltc_history(padded_state, timestamp)
         obs = {
             "cam_0": images["cam_0"],
             "cam_1": images["cam_1"],
             "state": state,
+            "proprio_seq": proprio_seq,
+            "time_deltas": time_deltas,
+            "ltc_dt": ltc_dt,
+            "episode_id": self._ltc_episode_id,
+            "reset": np.bool_(reset_ltc_state),
             "action": np.zeros(state.shape, dtype=np.float32),
             "prompt": "pick twice",
-            "observation.timestamp": timestamp,
+            "observation.timestamp": np.float32(timestamp),
             "observation.timestamp_is_pad": np.bool_(False),
             "state_is_pad": np.bool_(False),
         }

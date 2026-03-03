@@ -53,6 +53,7 @@ a1_server:
   scale: [2.0, 2.0, 1.5]
   offset: [0.0, 0.0, 0.05]
   publish_rate_hz: 50
+  state_stale_timeout_s: 0.3
   state_pose_topic: /end_effector_pose
   state_gripper_topic: /gripper_stroke_host
   cmd_pose_topic: /a1_ee_target

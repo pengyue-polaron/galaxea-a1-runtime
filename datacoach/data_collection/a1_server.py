@@ -32,6 +32,8 @@ class A1Server:
         self.scale = [float(v) for v in self._cfg_get("scale", SCALE)]
         self.offset = [float(v) for v in self._cfg_get("offset", OFFSET)]
         self.publish_rate_hz = float(self._cfg_get("publish_rate_hz", ROBOT_FPS))
+        # Drop stale ROS feedback instead of replaying frozen state forever.
+        self.state_stale_timeout_s = float(self._cfg_get("state_stale_timeout_s", 0.3))
 
         self.state_pose_topic = str(self._cfg_get("state_pose_topic", "/end_effector_pose"))
         self.state_gripper_topic = str(self._cfg_get("state_gripper_topic", "/gripper_stroke_host"))
@@ -168,6 +170,17 @@ class A1Server:
         self.feedback_lock = threading.Lock()
         self.pose_data = {"pos": None, "ori": None}
         self.gripper_data = None
+        self.pose_data_ts = None
+        self.gripper_data_ts = None
+
+        def _stamp_to_sec(stamp):
+            try:
+                ts = float(stamp.to_sec())
+            except Exception:
+                return time.time()
+            if ts <= 0.0:
+                return time.time()
+            return ts
 
         def pose_callback(msg):
             with self.feedback_lock:
@@ -182,25 +195,52 @@ class A1Server:
                     msg.pose.orientation.z,
                     msg.pose.orientation.w,
                 )
+                self.pose_data_ts = _stamp_to_sec(msg.header.stamp)
 
         def gripper_callback(msg):
+            if not msg.position:
+                return
             with self.feedback_lock:
                 self.gripper_data = msg.position[0]
+                self.gripper_data_ts = _stamp_to_sec(msg.header.stamp)
 
         rospy.Subscriber(self.state_pose_topic, PoseStamped, pose_callback)
         rospy.Subscriber(self.state_gripper_topic, JointState, gripper_callback)
 
         rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
+        stale_state_drop_count = 0
         while not rospy.is_shutdown():
+            now_s = time.time()
             with self.feedback_lock:
                 pos = self.pose_data["pos"]
                 ori = self.pose_data["ori"]
                 gripper = self.gripper_data
+                pose_ts = self.pose_data_ts
+                gripper_ts = self.gripper_data_ts
 
-            if pos is not None and ori is not None and gripper is not None:
+            if (
+                pos is not None
+                and ori is not None
+                and gripper is not None
+                and pose_ts is not None
+                and gripper_ts is not None
+            ):
+                pose_age = now_s - float(pose_ts)
+                gripper_age = now_s - float(gripper_ts)
+                if pose_age > self.state_stale_timeout_s or gripper_age > self.state_stale_timeout_s:
+                    stale_state_drop_count += 1
+                    if stale_state_drop_count % 100 == 1:
+                        print(
+                            "[A1Server] Dropping stale ROS feedback "
+                            f"(pose_age={pose_age:.3f}s, gripper_age={gripper_age:.3f}s, "
+                            f"timeout={self.state_stale_timeout_s:.3f}s, count={stale_state_drop_count})"
+                        )
+                    rate.sleep()
+                    continue
+
                 zmq_pub_state.send_json(
                     {
-                        "timestamp": time.time(),
+                        "timestamp": max(float(pose_ts), float(gripper_ts)),
                         "pos": pos,
                         "ori": ori,
                         "gripper": gripper,

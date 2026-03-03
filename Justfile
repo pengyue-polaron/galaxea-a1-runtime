@@ -53,7 +53,7 @@ bag action="latest" bag="":
 # ---------- Inference ----------
 
 policy policy_dir="/home/pengyue/29000":
-    PYTHONPATH="/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py policy:checkpoint --policy.config pi05_ltc_pick_twice --policy.dir "{{policy_dir}}"
+    PYTHONPATH="/home/pengyue/Codespace/DataCoach/third_party/openpi/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py policy:checkpoint --policy.config pi05_ltc_pick_twice --policy.dir "{{policy_dir}}"
 
 # ---------- Debug ----------
 

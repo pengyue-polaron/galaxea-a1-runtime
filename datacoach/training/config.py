@@ -128,7 +128,7 @@ class ModelTransformFactory(GroupFactory):
                         _transforms.PadStatesAndActions(model_config.action_dim),
                     ],
                 )
-            case _model.ModelType.PI05:
+            case _model.ModelType.PI05 | _model.ModelType.PI0_LTC | _model.ModelType.PI05_LTC:
                 assert isinstance(model_config, pi0_config.Pi0Config)
                 return _transforms.Group(
                     inputs=[
@@ -495,6 +495,7 @@ class LocalDataA1DataConfig(DataConfigFactory):
                 _transforms.RepackTransform(
                     { # pipeline input: dataset key
                         "image/cam_0_rgb": "cam_0",
+                        "image/cam_1_rgb": "cam_1",
                         "state": "state",
                         "actions": "action",  #  single action → actions
                         "prompt": "prompt",
@@ -526,7 +527,61 @@ class LocalDataA1DataConfig(DataConfigFactory):
             model_transforms=model_transforms,
             action_sequence_keys=self.action_sequence_keys
         )
-        
+
+
+@dataclasses.dataclass(frozen=True)
+class LocalDataA1LTCDataConfig(DataConfigFactory):
+    """A1 config that keeps LTC history fields for inference.
+
+    This variant is intended for LTC checkpoints where online observations already
+    provide `proprio_seq` and `time_deltas`.
+    """
+
+    local_data_dir: str | None = None
+    action_sequence_keys: Sequence[str] = ("action",)
+
+    @override
+    def create(
+        self,
+        assets_dirs: pathlib.Path,
+        model_config: _model.BaseModelConfig,
+    ) -> DataConfig:
+        repack_transform = _transforms.Group(
+            inputs=[
+                _transforms.RepackTransform(
+                    {
+                        "image/cam_0_rgb": "cam_0",
+                        "image/cam_1_rgb": "cam_1",
+                        "state": "state",
+                        "actions": "action",
+                        "prompt": "prompt",
+                        "proprio_seq": "proprio_seq",
+                        "time_deltas": "time_deltas",
+                        "ltc_dt": "ltc_dt",
+                    }
+                )
+            ]
+        )
+
+        data_transforms = _transforms.Group(
+            inputs=[A1Inputs(model_type=model_config.model_type)],
+            outputs=[A1Outputs()],
+        )
+        model_transforms = ModelTransformFactory()(model_config)
+
+        assert self.local_data_dir is not None, "Need to set local data dir for LocalDataA1LTCDataConfig."
+
+        return dataclasses.replace(
+            self.create_base_config(
+                assets_dirs=assets_dirs,
+                model_config=model_config,
+            ),
+            local_data_dir=self.local_data_dir,
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+            action_sequence_keys=self.action_sequence_keys,
+        )
 
         
         
@@ -732,6 +787,42 @@ _CONFIGS = [
             "gs://openpi-assets/checkpoints/pi05_base/params"  # Pi0.5 base
         ),
         num_train_steps=30000,
+    ),
+
+    # Compatibility config for existing LTC checkpoints used in live inference.
+    TrainConfig(
+        name="pi05_ltc_pick_twice",
+        model=pi0_config.Pi05LTCConfig(
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b",
+            action_expert_variant="gemma_300m",
+            bptt_len=8,
+            state_dropout_prob=0.2,
+            dyn_loss_weight=1.0,
+        ),
+        data=LocalDataA1LTCDataConfig(
+            repo_id="local_data",
+            assets=AssetsConfig(asset_id="pick_twice"),
+            local_data_dir="/home/jolia/DataCoach/data/formatted_data/rollout",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        batch_size=16,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,
+        policy_metadata={
+            "ltc_dt_s": 1.0 / 50.0,
+            "ltc_history_reset_gap_s": 1.0,
+            "ltc_episode_id": "a1_zmq",
+        },
+        num_train_steps=30_000,
     ),
    
    
