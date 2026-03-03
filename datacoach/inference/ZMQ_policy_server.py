@@ -126,6 +126,7 @@ class ZMQPolicyServer:
             image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
             if image is None:
                 continue
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
             self._latest_images[cam_id] = {"image": image, "timestamp_s": cam_ts_s}
 
     def _get_camera_images(self, state_ts: float):
