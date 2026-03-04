@@ -81,6 +81,20 @@ def _to_summary(values: list[float]) -> dict[str, float] | None:
     }
 
 
+def _extract_norm_stats(policy):
+    """Return (norm_stats, use_quantile_norm) from the policy's Normalize transform."""
+    try:
+        from openpi import transforms as _transforms
+
+        composite = getattr(policy, "_input_transform", None)
+        for t in getattr(composite, "transforms", []):
+            if isinstance(t, _transforms.Normalize):
+                return t.norm_stats, t.use_quantiles
+    except Exception:
+        pass
+    return None, False
+
+
 class LTCHistoryBuilder:
     def __init__(
         self,
@@ -92,6 +106,8 @@ class LTCHistoryBuilder:
         dt_min_s: float,
         dt_max_s: float,
         reset_gap_s: float,
+        norm_stats=None,
+        use_quantile_norm: bool = False,
     ):
         self._action_dim = int(action_dim)
         self._history_len = max(1, int(history_len))
@@ -100,13 +116,34 @@ class LTCHistoryBuilder:
         self._dt_min_s = float(dt_min_s)
         self._dt_max_s = float(dt_max_s)
         self._reset_gap_s = float(reset_gap_s)
+        self._norm_stats = norm_stats
+        self._use_quantile_norm = use_quantile_norm
         self._state_history: deque[np.ndarray] = deque(maxlen=self._history_len)
         self._time_history: deque[float] = deque(maxlen=self._history_len)
 
+    def _normalize_state(self, state: np.ndarray) -> np.ndarray:
+        if self._norm_stats is None:
+            return state
+        stats = self._norm_stats.get("state", None)
+        if stats is None:
+            return state
+        n = min(state.shape[0], len(stats.q01) if stats.q01 is not None else len(stats.mean))
+        x = state.copy()
+        if self._use_quantile_norm and stats.q01 is not None and stats.q99 is not None:
+            q01 = np.asarray(stats.q01[:n], dtype=np.float32)
+            q99 = np.asarray(stats.q99[:n], dtype=np.float32)
+            x[:n] = (x[:n] - q01) / (q99 - q01 + 1e-6) * 2.0 - 1.0
+        else:
+            mean = np.asarray(stats.mean[:n], dtype=np.float32)
+            std = np.asarray(stats.std[:n], dtype=np.float32)
+            x[:n] = (x[:n] - mean) / (std + 1e-6)
+        return x
+
     def build(self, state8: np.ndarray, timestamp: float):
+        normalized = self._normalize_state(state8)
         padded_state = np.zeros((self._action_dim,), dtype=np.float32)
-        usable_dim = min(state8.shape[0], self._action_dim)
-        padded_state[:usable_dim] = state8[:usable_dim]
+        usable_dim = min(normalized.shape[0], self._action_dim)
+        padded_state[:usable_dim] = normalized[:usable_dim]
 
         reset_ltc_state = not self._time_history
         ltc_dt_s = np.float32(self._ltc_dt_s)
@@ -191,6 +228,12 @@ def _build_arg_parser() -> argparse.ArgumentParser:
         help="Print per-demo summary rows",
     )
     parser.add_argument("--output-json", default=None, help="Optional output JSON summary path")
+    parser.add_argument(
+        "--force-history-mode",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+        help="Force full CfC scan (history mode) instead of single-step stateful inference",
+    )
     return parser
 
 
@@ -209,6 +252,12 @@ def main() -> None:
         checkpoint_dir=args.policy_dir,
         default_prompt=args.prompt,
     )
+
+    norm_stats, use_quantile_norm = _extract_norm_stats(policy)
+    if norm_stats is not None:
+        print("[Eval] Extracted norm_stats from policy for proprio_seq normalization.")
+    else:
+        print("[Eval] WARNING: Could not extract norm_stats — proprio_seq will be unnormalized.")
 
     metadata = policy.metadata or {}
     model = getattr(policy, "_model", None)
@@ -273,6 +322,8 @@ def main() -> None:
                 dt_min_s=dt_min_s,
                 dt_max_s=dt_max_s,
                 reset_gap_s=reset_gap_s,
+                norm_stats=norm_stats,
+                use_quantile_norm=use_quantile_norm,
             )
 
             max_steps = min(len(states) - 1, len(commanded) - 1)
@@ -312,6 +363,8 @@ def main() -> None:
                     "action": np.zeros_like(state_vec, dtype=np.float32),
                     "prompt": args.prompt,
                 }
+                if args.force_history_mode:
+                    obs["_force_history_mode"] = True
                 if deterministic_noise is None:
                     pred_dict = policy.infer(obs)
                 else:

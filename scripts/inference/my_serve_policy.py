@@ -155,8 +155,19 @@ def create_policy(args: Args) -> _policy.Policy:
             return create_default_policy(args.env, default_prompt=args.default_prompt)
 
 
+def _extract_norm_stats(policy):
+    """Extract norm_stats and use_quantile_norm from the Normalize transform inside the policy."""
+    from openpi import transforms as _transforms
+    composite = getattr(policy, "_input_transform", None)
+    transforms_list = getattr(composite, "transforms", [])
+    for t in transforms_list:
+        if isinstance(t, _transforms.Normalize):
+            return t.norm_stats, t.use_quantiles
+    return None, False
+
+
 def main(args: Args) -> None:
-    
+
     # 1. Initialize policy
     policy = create_policy(args)
     policy_metadata = policy.metadata
@@ -165,9 +176,16 @@ def main(args: Args) -> None:
     if args.record:
         policy = _policy.PolicyRecorder(policy, "policy_records")
 
+    # Extract norm_stats so the ZMQ server can normalize proprio_seq history
+    # to match the normalized state sequences used during training.
+    norm_stats, use_quantile_norm = _extract_norm_stats(policy)
+    if norm_stats is not None:
+        logging.info("Extracted norm_stats from policy for proprio_seq normalization.")
+    else:
+        logging.warning("Could not extract norm_stats from policy — proprio_seq will be unnormalized.")
 
     # 2. create policy server (recieve ZMQ obs data and publish ZMQ action data)
-    
+
     server = ZMQ_policy_server.ZMQPolicyServer(
         policy=policy,
         host="127.0.0.1",
@@ -175,6 +193,10 @@ def main(args: Args) -> None:
         action_port=ZMQ_POLICY_ACTION_PORT,
         camera_port=ZMQ_CAM_PORT,
         metadata=policy_metadata,
+        norm_stats=norm_stats,
+        use_quantile_norm=use_quantile_norm,
+        deterministic_inference=True,
+        prompt="pick_twice",
     )
     server.run()
 

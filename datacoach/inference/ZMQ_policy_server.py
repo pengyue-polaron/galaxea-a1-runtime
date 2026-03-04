@@ -30,6 +30,10 @@ class ZMQPolicyServer:
         action_port,
         camera_port,
         metadata=None,
+        norm_stats=None,
+        use_quantile_norm=False,
+        deterministic_inference=True,
+        prompt="pick_twice",
     ):
         self._policy = policy
         self._host = host
@@ -41,8 +45,15 @@ class ZMQPolicyServer:
         self._required_cam_ids = ("cam_0", "cam_1")
         self._latest_images = {}
         self._warned_bad_cam_message = False
+        # State normalization for proprio_seq history (must match training pipeline).
+        self._norm_stats = norm_stats
+        self._use_quantile_norm = use_quantile_norm
+        # Use deterministic (zero) noise to reduce stochastic trembling.
+        self._deterministic_inference = deterministic_inference
+        self._prompt = prompt
         model = getattr(self._policy, "_model", None)
         self._model_action_dim = int(getattr(model, "action_dim", 32))
+        self._model_action_horizon = int(getattr(model, "action_horizon", 10))
         self._ltc_bptt_len = int(getattr(model, "bptt_len", 8))
         self._ltc_dt_s = float(self._metadata.get("ltc_dt_s", 1.0 / 50.0))
         # Keep inference dt aligned with training by default.
@@ -95,6 +106,30 @@ class ZMQPolicyServer:
         time.sleep(0.3)
 
     
+    def _normalize_state_vec(self, state: np.ndarray) -> np.ndarray:
+        """Normalize a 1-D state vector using the policy's state norm stats.
+
+        This must mirror the normalization applied to the state sequence during
+        training so that ``proprio_seq`` is on the same scale the LTC backbone
+        was trained with.
+        """
+        if self._norm_stats is None:
+            return state
+        stats = self._norm_stats.get("state", None)
+        if stats is None:
+            return state
+        n = min(state.shape[0], len(stats.q01) if stats.q01 is not None else len(stats.mean))
+        x = state.copy()
+        if self._use_quantile_norm and stats.q01 is not None and stats.q99 is not None:
+            q01 = np.asarray(stats.q01[:n], dtype=np.float32)
+            q99 = np.asarray(stats.q99[:n], dtype=np.float32)
+            x[:n] = (x[:n] - q01) / (q99 - q01 + 1e-6) * 2.0 - 1.0
+        else:
+            mean = np.asarray(stats.mean[:n], dtype=np.float32)
+            std = np.asarray(stats.std[:n], dtype=np.float32)
+            x[:n] = (x[:n] - mean) / (std + 1e-6)
+        return x
+
     def _parse_camera_timestamp_s(self, raw_ts: bytes):
         try:
             ts = float(raw_ts.decode("ascii", errors="strict"))
@@ -239,11 +274,13 @@ class ZMQPolicyServer:
             ],
             dtype=np.float32,
         )
-        padded_state = np.zeros((self._model_action_dim,), dtype=np.float32)
-        usable_dim = min(state.shape[0], self._model_action_dim)
-        padded_state[:usable_dim] = state[:usable_dim]
+        # Normalize state before storing in proprio history so that proprio_seq
+        # matches the normalized state sequences seen during training.
+        normalized_state = self._normalize_state_vec(state)
+        padded_normalized = np.zeros((self._model_action_dim,), dtype=np.float32)
+        padded_normalized[: normalized_state.shape[0]] = normalized_state
         timestamp = float(data.get("timestamp", time.time()))
-        proprio_seq, time_deltas, ltc_dt, reset_ltc_state = self._build_ltc_history(padded_state, timestamp)
+        proprio_seq, time_deltas, ltc_dt, reset_ltc_state = self._build_ltc_history(padded_normalized, timestamp)
         obs = {
             "cam_0": images["cam_0"],
             "cam_1": images["cam_1"],
@@ -254,7 +291,7 @@ class ZMQPolicyServer:
             "episode_id": self._ltc_episode_id,
             "reset": np.bool_(reset_ltc_state),
             "action": np.zeros(state.shape, dtype=np.float32),
-            "prompt": "pick twice",
+            "prompt": self._prompt,
             "observation.timestamp": np.float32(timestamp),
             "observation.timestamp_is_pad": np.bool_(False),
             "state_is_pad": np.bool_(False),
@@ -299,6 +336,13 @@ class ZMQPolicyServer:
     def run(self):
         print("[ZMQPolicyServer] Running...")
         print("[ZMQPolicyServer] Expecting camera ids: cam_0, cam_1")
+        print(f"[ZMQPolicyServer] deterministic_inference={self._deterministic_inference}, prompt='{self._prompt}'")
+        # Pre-allocate deterministic zero noise to suppress stochastic trembling.
+        _det_noise = (
+            np.zeros((self._model_action_horizon, self._model_action_dim), dtype=np.float32)
+            if self._deterministic_inference
+            else None
+        )
         while True:
             try:
                 obs_raw = self._sub.recv_json()
@@ -317,7 +361,7 @@ class ZMQPolicyServer:
                     continue
 
                 obs = self._convert_obs(obs_raw, images)
-                action_dict = self._policy.infer(obs)
+                action_dict = self._policy.infer(obs, noise=_det_noise)
                 action_out = self._convert_action(action_dict)
                 self._pub.send_json(action_out)
                 print(action_out)
