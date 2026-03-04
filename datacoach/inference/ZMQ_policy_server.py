@@ -37,12 +37,20 @@ class ZMQPolicyServer:
         self._action_port = action_port
         self._camera_port = camera_port
         self._metadata = metadata or {}
-        self._last_gripper = 0.0
+        self._action_queue = deque()
         self._required_cam_ids = ("cam_0", "cam_1")
         self._latest_images = {}
         self._warned_bad_cam_message = False
         model = getattr(self._policy, "_model", None)
         self._model_action_dim = int(getattr(model, "action_dim", 32))
+        action_horizon = int(getattr(model, "action_horizon", 10))
+        # Let the model generate its own random noise for flow matching ODE.
+        # Passing external noise (zero or fixed) forces the ODE to always converge
+        # to the data distribution mean — the model needs fresh random noise each
+        # call to produce diverse, task-relevant predictions.
+        # Only execute the first few actions from the horizon so the model
+        # re-plans frequently and the CfC hidden state gets updated faster.
+        self._action_chunk_size = int(self._metadata.get("action_chunk_size", 2))
         self._ltc_bptt_len = int(getattr(model, "bptt_len", 8))
         self._ltc_dt_s = float(self._metadata.get("ltc_dt_s", 1.0 / 50.0))
         # Keep inference dt aligned with training by default.
@@ -221,24 +229,11 @@ class ZMQPolicyServer:
         return proprio_seq, deltas[:, None], ltc_dt, bool(reset_ltc_state)
 
     def _convert_obs(self, data, images):
-        pos = data["pos"]
-        ori = data["ori"]
-        gripper = data["gripper"]
-        self._last_gripper = float(gripper)
+        # State vector: 7D = [joint1..joint6, gripper_joint]
+        state = np.array(data["joints"], dtype=np.float32)
+        if state.shape != (7,):
+            raise ValueError(f"State shape must be (7,), got {state.shape}")
 
-        state = np.array(
-            [
-                pos[0],
-                pos[1],
-                pos[2],
-                ori[0],
-                ori[1],
-                ori[2],
-                ori[3],
-                gripper,
-            ],
-            dtype=np.float32,
-        )
         padded_state = np.zeros((self._model_action_dim,), dtype=np.float32)
         usable_dim = min(state.shape[0], self._model_action_dim)
         padded_state[:usable_dim] = state[:usable_dim]
@@ -254,51 +249,40 @@ class ZMQPolicyServer:
             "episode_id": self._ltc_episode_id,
             "reset": np.bool_(reset_ltc_state),
             "action": np.zeros(state.shape, dtype=np.float32),
-            "prompt": "pick twice",
+            "prompt": "swap the position of the marker and the yellow block through the white plate",
             "observation.timestamp": np.float32(timestamp),
             "observation.timestamp_is_pad": np.bool_(False),
             "state_is_pad": np.bool_(False),
         }
-
-        if state.shape != (8,):
-            raise ValueError(f"State shape must be (8,), got {state.shape}")
-
         return obs
 
-    def _convert_action(self, action_dict):
+    def _enqueue_actions(self, action_dict):
+        """Convert the first chunk of the action horizon and fill the action queue."""
         actions = np.asarray(action_dict["actions"], dtype=np.float32)
+        if actions.ndim == 1:
+            actions = actions[np.newaxis, :]
 
-        if actions.ndim == 2:
-            action = actions[0]
-        else:
-            action = actions
+        if actions.shape[-1] < 7:
+            raise ValueError(f"Expected at least 7-dim action, got {actions.shape[-1]}")
 
-        if action.shape[0] == 7:
-            action = np.concatenate([action, np.array([self._last_gripper], dtype=np.float32)])
-        elif action.shape[0] != 8:
-            raise ValueError(f"Expected 7 or 8-dim action, got {action.shape}")
+        self._action_queue.clear()
+        n_steps = min(actions.shape[0], self._action_chunk_size)
+        for i in range(n_steps):
+            # Action vector: 7D = [joint1..joint6, gripper_joint]
+            joints = actions[i, :7].tolist()
+            self._action_queue.append({"joints": joints})
 
-        x, y, z = action[:3]
-        qx, qy, qz, qw = action[3:7]
-        q = np.array([qx, qy, qz, qw], dtype=np.float32)
-        q_norm = float(np.linalg.norm(q))
-        if q_norm > 1e-8:
-            q = q / q_norm
-        else:
-            q = np.array([0.0, 0.0, 0.0, 1.0], dtype=np.float32)
-        qx, qy, qz, qw = q.tolist()
-        gripper = action[7]
-
-        return {
-            "timestamp": time.time(),
-            "pos": (float(x), float(y), float(z)),
-            "ori": (float(qx), float(qy), float(qz), float(qw)),
-            "gripper": float(gripper),
-        }
+    def _send_next_action(self):
+        """Pop the next queued action, stamp it, and publish."""
+        action_out = self._action_queue.popleft()
+        action_out["timestamp"] = time.time()
+        self._pub.send_json(action_out)
+        return action_out
 
     def run(self):
         print("[ZMQPolicyServer] Running...")
         print("[ZMQPolicyServer] Expecting camera ids: cam_0, cam_1")
+        infer_count = 0
         while True:
             try:
                 obs_raw = self._sub.recv_json()
@@ -312,15 +296,40 @@ class ZMQPolicyServer:
                         )
                     continue
 
+                # Execute queued actions from previous inference before re-querying.
+                if self._action_queue:
+                    action_out = self._send_next_action()
+                    remaining = len(self._action_queue)
+                    print(f"[chunk {remaining} left] {action_out}")
+                    continue
+
+                # Queue empty -- run new inference.
                 images = self._get_camera_images(state_ts)
                 if images is None:
                     continue
 
                 obs = self._convert_obs(obs_raw, images)
                 action_dict = self._policy.infer(obs)
-                action_out = self._convert_action(action_dict)
-                self._pub.send_json(action_out)
-                print(action_out)
+
+                # Debug: show raw predicted actions vs current state.
+                raw_actions = np.asarray(action_dict["actions"], dtype=np.float32)
+                cur_state = obs["state"]
+                if raw_actions.ndim == 2:
+                    delta = raw_actions[0, :7] - cur_state[:7]
+                    state_str = ",".join(f"{v:.3f}" for v in cur_state[:7].tolist())
+                    action_str = ",".join(f"{v:.3f}" for v in raw_actions[0, :7].tolist())
+                    print(
+                        f"[DEBUG] state_joints=[{state_str}]"
+                        f"  action0_joints=[{action_str}]"
+                        f"  |delta|={np.linalg.norm(delta):.4f}"
+                    )
+
+                self._enqueue_actions(action_dict)
+                infer_count += 1
+
+                action_out = self._send_next_action()
+                remaining = len(self._action_queue)
+                print(f"[infer #{infer_count}, chunk {remaining} left] {action_out}")
             except Exception:
                 print("[ZMQPolicyServer] ERROR:")
                 print(traceback.format_exc())

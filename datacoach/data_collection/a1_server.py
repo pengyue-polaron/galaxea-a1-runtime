@@ -35,8 +35,9 @@ class A1Server:
         # Drop stale ROS feedback instead of replaying frozen state forever.
         self.state_stale_timeout_s = float(self._cfg_get("state_stale_timeout_s", 0.3))
 
-        self.state_pose_topic = str(self._cfg_get("state_pose_topic", "/end_effector_pose"))
-        self.state_gripper_topic = str(self._cfg_get("state_gripper_topic", "/gripper_stroke_host"))
+        self.state_joint_topic = str(self._cfg_get("state_joint_topic", "/joint_states_host"))
+        self.cmd_joint_topic = str(self._cfg_get("cmd_joint_topic", "/arm_joint_target_position"))
+        # Kept for the leader/drag path (ros_publisher).
         self.cmd_pose_topic = str(self._cfg_get("cmd_pose_topic", "/a1_ee_target"))
         self.cmd_gripper_position_topic = str(
             self._cfg_get("cmd_gripper_position_topic", "/gripper_position_control_host")
@@ -48,16 +49,6 @@ class A1Server:
             self._cfg_get("zmq_policy_action_connect", f"tcp://127.0.0.1:{ZMQ_POLICY_ACTION_PORT}")
         )
 
-        self.current_feedback = {
-            "x": None,
-            "y": None,
-            "z": None,
-            "qx": None,
-            "qy": None,
-            "qz": None,
-            "qw": None,
-            "gripper": None,
-        }
         self.feedback_lock = threading.Lock()
         # Keep only the freshest leader command to prevent stale command replay.
         self._leader_queue = deque(maxlen=1)
@@ -159,7 +150,8 @@ class A1Server:
 
     def ros_subscriber(self):
         """
-        Subscribe A1 ROS feedback (pose/gripper) and publish unified state to ZMQ.
+        Subscribe joint state feedback and publish to ZMQ state stream.
+        State vector: 7D = [joint1..joint6, gripper_joint]
         """
         context = zmq.Context()
         zmq_pub_state = context.socket(zmq.PUB)
@@ -168,10 +160,8 @@ class A1Server:
         time.sleep(0.2)
 
         self.feedback_lock = threading.Lock()
-        self.pose_data = {"pos": None, "ori": None}
-        self.gripper_data = None
-        self.pose_data_ts = None
-        self.gripper_data_ts = None
+        self.joint_data = None
+        self.joint_data_ts = None
 
         def _stamp_to_sec(stamp):
             try:
@@ -182,57 +172,39 @@ class A1Server:
                 return time.time()
             return ts
 
-        def pose_callback(msg):
-            with self.feedback_lock:
-                self.pose_data["pos"] = (
-                    msg.pose.position.x,
-                    msg.pose.position.y,
-                    msg.pose.position.z,
-                )
-                self.pose_data["ori"] = (
-                    msg.pose.orientation.x,
-                    msg.pose.orientation.y,
-                    msg.pose.orientation.z,
-                    msg.pose.orientation.w,
-                )
-                self.pose_data_ts = _stamp_to_sec(msg.header.stamp)
+        _JOINT_NAMES = [
+            "arm_joint1", "arm_joint2", "arm_joint3",
+            "arm_joint4", "arm_joint5", "arm_joint6", "gripper",
+        ]
 
-        def gripper_callback(msg):
-            if not msg.position:
+        def joint_callback(msg):
+            if not msg.position or not msg.name:
+                return
+            name_to_pos = dict(zip(msg.name, msg.position))
+            if not all(n in name_to_pos for n in _JOINT_NAMES):
                 return
             with self.feedback_lock:
-                self.gripper_data = msg.position[0]
-                self.gripper_data_ts = _stamp_to_sec(msg.header.stamp)
+                self.joint_data = tuple(float(name_to_pos[n]) for n in _JOINT_NAMES)
+                self.joint_data_ts = _stamp_to_sec(msg.header.stamp)
 
-        rospy.Subscriber(self.state_pose_topic, PoseStamped, pose_callback)
-        rospy.Subscriber(self.state_gripper_topic, JointState, gripper_callback)
+        rospy.Subscriber(self.state_joint_topic, JointState, joint_callback)
 
         rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
         stale_state_drop_count = 0
         while not rospy.is_shutdown():
             now_s = time.time()
             with self.feedback_lock:
-                pos = self.pose_data["pos"]
-                ori = self.pose_data["ori"]
-                gripper = self.gripper_data
-                pose_ts = self.pose_data_ts
-                gripper_ts = self.gripper_data_ts
+                joints = self.joint_data
+                joint_ts = self.joint_data_ts
 
-            if (
-                pos is not None
-                and ori is not None
-                and gripper is not None
-                and pose_ts is not None
-                and gripper_ts is not None
-            ):
-                pose_age = now_s - float(pose_ts)
-                gripper_age = now_s - float(gripper_ts)
-                if pose_age > self.state_stale_timeout_s or gripper_age > self.state_stale_timeout_s:
+            if joints is not None and joint_ts is not None:
+                joint_age = now_s - float(joint_ts)
+                if joint_age > self.state_stale_timeout_s:
                     stale_state_drop_count += 1
                     if stale_state_drop_count % 100 == 1:
                         print(
                             "[A1Server] Dropping stale ROS feedback "
-                            f"(pose_age={pose_age:.3f}s, gripper_age={gripper_age:.3f}s, "
+                            f"(joint_age={joint_age:.3f}s, "
                             f"timeout={self.state_stale_timeout_s:.3f}s, count={stale_state_drop_count})"
                         )
                     rate.sleep()
@@ -240,20 +212,18 @@ class A1Server:
 
                 zmq_pub_state.send_json(
                     {
-                        "timestamp": max(float(pose_ts), float(gripper_ts)),
-                        "pos": pos,
-                        "ori": ori,
-                        "gripper": gripper,
+                        "timestamp": float(joint_ts),
+                        "joints": list(joints),
                     }
                 )
             rate.sleep()
 
     def policy_action_subscriber(self):
         """
-        Subscribe policy actions from ZMQ and forward to A1 ROS control topics.
+        Subscribe joint-angle policy actions from ZMQ and forward to ROS.
+        Action vector: 7D = [joint1..joint6, gripper_joint]
         """
-        pub = rospy.Publisher(self.cmd_pose_topic, PoseStamped, queue_size=10)
-        gripper_pub = rospy.Publisher(self.cmd_gripper_position_topic, gripper_position_control, queue_size=10)
+        pub = rospy.Publisher(self.cmd_joint_topic, JointState, queue_size=10)
 
         context = zmq.Context()
         zmq_sub = context.socket(zmq.SUB)
@@ -266,6 +236,7 @@ class A1Server:
 
         max_action_age_s = 0.5
         stale_action_drop_count = 0
+
         rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
         while not rospy.is_shutdown():
             try:
@@ -295,30 +266,20 @@ class A1Server:
                     continue
 
             try:
-                pos = action["pos"]
-                ori = action["ori"]
-                gripper = action.get("gripper", None)
+                joints = action["joints"]
             except Exception:
                 rate.sleep()
                 continue
 
-            pose_msg = PoseStamped()
-            pose_msg.header.frame_id = "world"
-            pose_msg.header.stamp = rospy.Time.now()
-            pose_msg.pose.position.x = float(pos[0])
-            pose_msg.pose.position.y = float(pos[1])
-            pose_msg.pose.position.z = float(pos[2])
-            pose_msg.pose.orientation.x = float(ori[0])
-            pose_msg.pose.orientation.y = float(ori[1])
-            pose_msg.pose.orientation.z = float(ori[2])
-            pose_msg.pose.orientation.w = float(ori[3])
-            pub.publish(pose_msg)
-
-            if gripper is not None:
-                grip_msg = gripper_position_control()
-                grip_msg.header = Header()
-                grip_msg.header.stamp = rospy.Time.now()
-                grip_msg.gripper_stroke = float(gripper)
-                gripper_pub.publish(grip_msg)
+            _JOINT_NAMES = [
+                "arm_joint1", "arm_joint2", "arm_joint3",
+                "arm_joint4", "arm_joint5", "arm_joint6", "gripper",
+            ]
+            joint_msg = JointState()
+            joint_msg.header.stamp = rospy.Time.now()
+            joint_msg.header.frame_id = "world"
+            joint_msg.name = _JOINT_NAMES[:len(joints)]
+            joint_msg.position = [float(j) for j in joints]
+            pub.publish(joint_msg)
 
             rate.sleep()

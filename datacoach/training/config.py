@@ -21,7 +21,7 @@ import openpi.policies.aloha_policy as aloha_policy
 import openpi.policies.droid_policy as droid_policy
 import openpi.policies.libero_policy as libero_policy
 
-from datacoach.training.a1_policy import A1Inputs, A1Outputs
+from datacoach.training.a1_policy import A1Inputs, A1JointInputs, A1JointOutputs, A1Outputs
 
 import openpi.shared.download as _download
 import openpi.shared.normalize as _normalize
@@ -583,8 +583,64 @@ class LocalDataA1LTCDataConfig(DataConfigFactory):
             action_sequence_keys=self.action_sequence_keys,
         )
 
-        
-        
+
+@dataclasses.dataclass(frozen=True)
+class LeRobotCalvinDataConfig(DataConfigFactory):
+    """Data config for datasets exported in LeRobot format with LeRobot-style column names.
+
+    Used by pi05_ltc_pick_twice to match the actual training config. Expects dataset columns:
+      - <top_image_key>        : top-down camera images
+      - <wrist_image_key>      : wrist camera images
+      - <state_key>            : robot state vector
+      - <action_key>           : action vector
+      - <timestamp_key>        : observation timestamps (used for LTC time-deltas)
+    """
+
+    top_image_key: str = "cam_0"
+    wrist_image_key: str = "cam_1"
+    state_key: str = "state"
+    action_key: str = "action"
+    timestamp_key: str = "observation.timestamp"
+    extra_delta_transform: bool = False
+
+    @override
+    def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
+        repack_structure = {
+            "observation/image": self.top_image_key,
+            "observation/wrist_image": self.wrist_image_key,
+            "observation/state": self.state_key,
+            "actions": self.action_key,
+            "prompt": "prompt",
+        }
+        if model_config.model_type in (_model.ModelType.PI0_LTC, _model.ModelType.PI05_LTC):
+            repack_structure["observation/timestamp_seq"] = self.timestamp_key
+            repack_structure["observation/state_seq_is_pad"] = f"{self.state_key}_is_pad"
+            repack_structure["observation/timestamp_seq_is_pad"] = f"{self.timestamp_key}_is_pad"
+
+        repack_transform = _transforms.Group(inputs=[_transforms.RepackTransform(repack_structure)])
+
+        data_transforms = _transforms.Group(
+            inputs=[libero_policy.LiberoInputs(model_type=model_config.model_type)],
+            outputs=[libero_policy.LiberoOutputs()],
+        )
+        if self.extra_delta_transform:
+            delta_action_mask = _transforms.make_bool_mask(6, -1)
+            data_transforms = data_transforms.push(
+                inputs=[_transforms.DeltaActions(delta_action_mask)],
+                outputs=[_transforms.AbsoluteActions(delta_action_mask)],
+            )
+
+        model_transforms = ModelTransformFactory()(model_config)
+
+        return dataclasses.replace(
+            self.create_base_config(assets_dirs, model_config),
+            repack_transforms=repack_transform,
+            data_transforms=data_transforms,
+            model_transforms=model_transforms,
+            action_sequence_keys=(self.action_key,),
+        )
+
+
 @dataclasses.dataclass(frozen=True)
 class TrainConfig:
     # Name of the config. Must be unique. Will be used to reference this config.
@@ -789,7 +845,10 @@ _CONFIGS = [
         num_train_steps=30000,
     ),
 
-    # Compatibility config for existing LTC checkpoints used in live inference.
+    # Inference config for the pick_twice LTC checkpoint.
+    # Uses LocalDataA1LTCDataConfig + A1Inputs so that proprio_seq / time_deltas / ltc_dt
+    # built by the caller (ZMQPolicyServer or teacher_forcing_infer) are passed through
+    # unchanged to the model — critical for proper LTC hidden-state updates.
     TrainConfig(
         name="pi05_ltc_pick_twice",
         model=pi0_config.Pi05LTCConfig(
@@ -802,9 +861,8 @@ _CONFIGS = [
             dyn_loss_weight=1.0,
         ),
         data=LocalDataA1LTCDataConfig(
-            repo_id="local_data",
             assets=AssetsConfig(asset_id="pick_twice"),
-            local_data_dir="/home/jolia/DataCoach/data/formatted_data/rollout",
+            local_data_dir="/home/jolia/DataCoach/data/formatted_data/swap",
             base_config=DataConfig(prompt_from_task=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
