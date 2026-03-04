@@ -221,3 +221,9 @@ uv.lock.bak
 
 __MACOSX
 .DS_Store
+
+# CppADCodeGen runtime-generated temporary directories (A1 SDK dynamics)
+third_party/A1_SDK/install/share/mobiman/auto_generated/
+
+# Compiled object files
+*.o
