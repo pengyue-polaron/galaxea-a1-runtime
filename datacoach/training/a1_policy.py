@@ -61,10 +61,17 @@ class A1Inputs(transforms.DataTransformFn):
         image_masks = {}
 
         # reference to openpi/policies/droid_policy.py
-        base_image = convert_image(data["image/cam_0_rgb"])
-        has_wrist_image = "image/cam_1_rgb" in data
-        wrist_image = convert_image(data["image/cam_1_rgb"]) if has_wrist_image else np.zeros_like(base_image)
-        
+
+        if "cam_0" in data:
+            base_image = convert_image(data["cam_0"])
+            has_wrist_image = "cam_1" in data
+            wrist_image = convert_image(data["cam_1"]) if has_wrist_image else np.zeros_like(base_image)
+            
+        else:
+            base_image = convert_image(data["image/cam_0_rgb"])
+            has_wrist_image = "image/cam_1_rgb" in data
+            wrist_image = convert_image(data["image/cam_1_rgb"]) if has_wrist_image else np.zeros_like(base_image)
+            
         match self.model_type:
             case (
                 _model.ModelType.PI0
@@ -103,7 +110,7 @@ class A1Inputs(transforms.DataTransformFn):
             if isinstance(data["prompt"], bytes):
                 data["prompt"] = data["prompt"].decode("utf-8")
             inputs["prompt"] = data["prompt"]
-
+   
         return inputs
 
 

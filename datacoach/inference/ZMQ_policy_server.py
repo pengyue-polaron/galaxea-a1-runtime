@@ -337,12 +337,18 @@ class ZMQPolicyServer:
         print("[ZMQPolicyServer] Running...")
         print("[ZMQPolicyServer] Expecting camera ids: cam_0, cam_1")
         print(f"[ZMQPolicyServer] deterministic_inference={self._deterministic_inference}, prompt='{self._prompt}'")
+        print(
+            "[ZMQPolicyServer] Training start reference: "
+            "pos≈(0.078, -0.028, 0.238) ori≈(0.03, 0.72, -0.05, 0.69) gripper≈57.6"
+        )
         # Pre-allocate deterministic zero noise to suppress stochastic trembling.
         _det_noise = (
             np.zeros((self._model_action_horizon, self._model_action_dim), dtype=np.float32)
             if self._deterministic_inference
             else None
         )
+        _infer_step = 0
+        _DIAG_STEPS = 20  # Log detailed diagnostics for first N inference steps.
         while True:
             try:
                 obs_raw = self._sub.recv_json()
@@ -361,10 +367,36 @@ class ZMQPolicyServer:
                     continue
 
                 obs = self._convert_obs(obs_raw, images)
+
+                # Diagnostic logging for the first N steps to debug divergence.
+                if _infer_step < _DIAG_STEPS:
+                    _s = obs.get("state", None)
+                    _ps = obs.get("proprio_seq", None)
+                    _reset = obs.get("reset", None)
+                    print(
+                        f"[DIAG step={_infer_step}] "
+                        f"state={np.array2string(_s, precision=4, separator=', ') if _s is not None else 'N/A'} "
+                        f"reset={_reset}"
+                    )
+                    if _ps is not None:
+                        print(f"  proprio_seq[-1]={np.array2string(_ps[-1, :8], precision=4, separator=', ')}")
+
                 action_dict = self._policy.infer(obs, noise=_det_noise)
                 action_out = self._convert_action(action_dict)
                 self._pub.send_json(action_out)
-                print(action_out)
+
+                if _infer_step < _DIAG_STEPS:
+                    print(
+                        f"  → action: pos=({action_out['pos'][0]:.4f}, {action_out['pos'][1]:.4f}, {action_out['pos'][2]:.4f}) "
+                        f"ori=({action_out['ori'][0]:.4f}, {action_out['ori'][1]:.4f}, {action_out['ori'][2]:.4f}, {action_out['ori'][3]:.4f}) "
+                        f"gripper={action_out['gripper']:.2f}"
+                    )
+                else:
+                    print("action out", action_out)
+                    print()
+                breakpoint()
+
+                _infer_step += 1
             except Exception:
                 print("[ZMQPolicyServer] ERROR:")
                 print(traceback.format_exc())

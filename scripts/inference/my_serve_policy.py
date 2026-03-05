@@ -11,6 +11,7 @@ import tyro
 from openpi.policies import policy as _policy
 from openpi.policies import policy_config as _policy_config
 
+
 # Ensure local DataCoach package is preferred over environment-installed copy.
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -169,9 +170,18 @@ def _extract_norm_stats(policy):
 def main(args: Args) -> None:
 
     # 1. Initialize policy
-    policy = create_policy(args)
-    policy_metadata = policy.metadata
+    # policy = create_policy(args)
+    # policy_metadata = policy.metadata
+    from openpi.shared import download
+    config = _config.get_config("pi05_droid_a1")
+    checkpoint_dir = download.maybe_download("gs://openpi-assets/checkpoints/pi05_droid")
 
+    from openpi.policies import policy_config
+    from openpi.shared import download
+    # Create a trained policy.
+    policy = policy_config.create_trained_policy(config, checkpoint_dir)
+    policy_metadata = policy.metadata
+    
     # Record the policy's behavior.
     if args.record:
         policy = _policy.PolicyRecorder(policy, "policy_records")
@@ -196,7 +206,7 @@ def main(args: Args) -> None:
         norm_stats=norm_stats,
         use_quantile_norm=use_quantile_norm,
         deterministic_inference=True,
-        prompt="pick_twice",
+        prompt="reach to the green plate",
     )
     server.run()
 

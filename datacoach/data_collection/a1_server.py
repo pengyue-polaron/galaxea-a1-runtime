@@ -110,7 +110,9 @@ class A1Server:
         pub = rospy.Publisher(self.cmd_pose_topic, PoseStamped, queue_size=10)
         gripper_pub = rospy.Publisher(self.cmd_gripper_position_topic, gripper_position_control, queue_size=10)
         rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
-
+        print("publish data", pub)
+        print("rate" ,rate)
+        breakpoint()
         context = zmq.Context()
         zmq_pub_cmd = context.socket(zmq.PUB)
         zmq_pub_cmd.bind(self.zmq_cmd_bind)
