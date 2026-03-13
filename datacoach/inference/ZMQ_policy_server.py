@@ -318,15 +318,14 @@ class ZMQPolicyServer:
                     delta = raw_actions[0, :7] - cur_state[:7]
                     state_str = ",".join(f"{v:.3f}" for v in cur_state[:7].tolist())
                     action_str = ",".join(f"{v:.3f}" for v in raw_actions[0, :7].tolist())
-                    print(
-                        f"[DEBUG] state_joints=[{state_str}]"
-                        f"  action0_joints=[{action_str}]"
-                        f"  |delta|={np.linalg.norm(delta):.4f}"
-                    )
+                    # print(
+                    #     f"[DEBUG] state_joints=[{state_str}]"
+                    #     f"  action0_joints=[{action_str}]"
+                    #     f"  |delta|={np.linalg.norm(delta):.4f}"
+                    # )
 
                 self._enqueue_actions(action_dict)
                 infer_count += 1
-
                 action_out = self._send_next_action()
                 remaining = len(self._action_queue)
                 print(f"[infer #{infer_count}, chunk {remaining} left] {action_out}")

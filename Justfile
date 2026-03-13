@@ -55,20 +55,29 @@ bag action="latest" bag="":
 
 # ---------- Inference ----------
 
-policy policy_dir="/home/pengyue/6000":
-    PYTHONPATH="/home/pengyue/Codespace/DataCoach/third_party/openpi/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py policy:checkpoint --policy.config pi05_ltc_pick_twice --policy.dir "{{policy_dir}}"
+policy policy_dir="/home/eric/4999":
+    PYTHONPATH="/home/eric/openpi/src:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/serve_policy_a1.py policy:checkpoint --policy.config pi05_a1_single_arm --policy.dir "{{policy_dir}}"
+
+# ZMQ↔WebSocket bridge: reads state+cameras from ZMQ, calls WebSocket policy server, publishes actions to ZMQ
+# Run this alongside `just policy` so the A1 server receives joint actions over ZMQ.
+# Example: just zmq-bridge
+# Example: just zmq-bridge --prompt "pick up the cup" --action-chunk-size 3
+zmq-bridge host="127.0.0.1" port="8000" prompt="swap the position of the marker and the yellow block" *args:
+    PYTHONPATH="/home/eric/openpi/packages/openpi-client/src:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/zmq_ws_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
 
 # Teacher-forcing: offline policy inference on training images → trajectory.json + trajectory.html
-# Example: just teacher-forcing demo_0_20260227_225247
-# Example: just teacher-forcing demo_0_20260227_225247 -- --max-steps 100
-teacher-forcing demo="" processed_root="/home/jolia/DataCoach/data/processed_data/swap" policy_dir="/home/pengyue/6000" *args:
-    PYTHONPATH="/home/pengyue/Codespace/DataCoach/third_party/openpi/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/teacher_forcing_infer.py --processed-root "{{processed_root}}" --policy-dir "{{policy_dir}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
+# Requires: just policy (WebSocket server) running first.
+# Example: just teacher-forcing
+# Example: just teacher-forcing demo_0
+# Example: just teacher-forcing demo_0 -- --max-steps 100
+teacher-forcing demo="" processed_root="/home/pengyue/Codespace/DataCoach/data/processed_data/pick_twice" *args:
+    PYTHONPATH="/home/eric/openpi/packages/openpi-client/src:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/teacher_forcing_infer.py --processed-root "{{processed_root}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
 
 # Open-loop rollout eval on processed data → per-demo trajectory.json + trajectory.html
-# Example: just openloop-rollout --policy-dir /home/pengyue/6000
-# Example: just openloop-rollout --policy-dir /home/pengyue/6000 --max-demos 1 --max-steps-per-demo 100
+# Example: just openloop-rollout --policy-dir /home/eric/4999
+# Example: just openloop-rollout --policy-dir /home/eric/4999 --max-demos 1 --max-steps-per-demo 100
 openloop-rollout policy_dir="" *args:
-    if [ -z "{{policy_dir}}" ]; then echo "Usage: just openloop-rollout <policy_dir> [extra args...]"; exit 1; fi; PYTHONPATH="/home/pengyue/Codespace/DataCoach/third_party/openpi/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/openloop_rollout.py --policy-dir "{{policy_dir}}" {{args}}
+    if [ -z "{{policy_dir}}" ]; then echo "Usage: just openloop-rollout <policy_dir> [extra args...]"; exit 1; fi; PYTHONPATH="/home/eric/openpi/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/openloop_rollout.py --policy-dir "{{policy_dir}}" {{args}}
 
 # Zero-shot DROID bridge: streams A1 state+cameras to pi05_droid WebSocket server
 # Requires: pi05_droid server running (just policy-droid)

@@ -128,7 +128,7 @@ class ModelTransformFactory(GroupFactory):
                         _transforms.PadStatesAndActions(model_config.action_dim),
                     ],
                 )
-            case _model.ModelType.PI05 | _model.ModelType.PI0_LTC | _model.ModelType.PI05_LTC:
+            case _model.ModelType.PI05:
                 assert isinstance(model_config, pi0_config.Pi0Config)
                 return _transforms.Group(
                     inputs=[
@@ -564,8 +564,8 @@ class LocalDataA1LTCDataConfig(DataConfigFactory):
         )
 
         data_transforms = _transforms.Group(
-            inputs=[A1Inputs(model_type=model_config.model_type)],
-            outputs=[A1Outputs()],
+            inputs=[A1JointInputs(model_type=model_config.model_type)],
+            outputs=[A1JointOutputs()],
         )
         model_transforms = ModelTransformFactory()(model_config)
 
@@ -845,12 +845,51 @@ _CONFIGS = [
         num_train_steps=30000,
     ),
 
-    # Inference config for the pick_twice LTC checkpoint.
-    # Uses LocalDataA1LTCDataConfig + A1Inputs so that proprio_seq / time_deltas / ltc_dt
-    # built by the caller (ZMQPolicyServer or teacher_forcing_infer) are passed through
-    # unchanged to the model — critical for proper LTC hidden-state updates.
     TrainConfig(
         name="pi05_ltc_pick_twice",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b",
+            action_expert_variant="gemma_300m",
+        ),
+        data=LocalDataA1DataConfig(
+            assets=AssetsConfig(asset_id="pick_twice"),
+            local_data_dir="/home/jolia/DataCoach/data/formatted_data/swap",
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+        batch_size=16,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=10_000,
+            peak_lr=5e-5,
+            decay_steps=1_000_000,
+            decay_lr=5e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=None,
+        num_train_steps=30_000,
+    ),
+   
+   
+    #
+    # Debugging configs.
+    #
+    TrainConfig(
+        name="debug",
+        data=FakeDataConfig(),
+        batch_size=2,
+        model=pi0_config.Pi0Config(paligemma_variant="dummy", action_expert_variant="dummy"),
+        save_interval=100,
+        overwrite=True,
+        exp_name="debug",
+        num_train_steps=10,
+        wandb_enabled=False,
+    ),
+    
+    TrainConfig(
+        name="pi05_ltc_swap",
         model=pi0_config.Pi05LTCConfig(
             action_horizon=10,
             discrete_state_input=False,
@@ -884,22 +923,6 @@ _CONFIGS = [
             "ltc_episode_id": "a1_zmq",
         },
         num_train_steps=30_000,
-    ),
-   
-   
-    #
-    # Debugging configs.
-    #
-    TrainConfig(
-        name="debug",
-        data=FakeDataConfig(),
-        batch_size=2,
-        model=pi0_config.Pi0Config(paligemma_variant="dummy", action_expert_variant="dummy"),
-        save_interval=100,
-        overwrite=True,
-        exp_name="debug",
-        num_train_steps=10,
-        wandb_enabled=False,
     ),
    
 ]
