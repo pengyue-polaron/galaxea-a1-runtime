@@ -37,13 +37,10 @@ try:
 except ImportError:
     _HAS_PIN = False
 
-# openpi_client WebSocket interface
+# openpi_client WebSocket interface — PYTHONPATH set by `just teacher-forcing`
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-_OPENPI_CLIENT = Path("/home/eric/openpi/packages/openpi-client/src")
-if _OPENPI_CLIENT.exists() and str(_OPENPI_CLIENT) not in sys.path:
-    sys.path.insert(0, str(_OPENPI_CLIENT))
 
-from openpi_client import websocket_client_policy as _ws_policy  # noqa: E402
+from openpi_client import websocket_client_policy as _ws_policy
 
 
 # ---------------------------------------------------------------------------
@@ -420,7 +417,7 @@ def main():
     )
     parser.add_argument(
         "--processed-root",
-        default="/home/pengyue/Codespace/DataCoach/data/processed_data/pick_twice",
+        default=str(ROOT_DIR / "data" / "processed_data" / "pick_twice"),
         help="Root dir with demo_N subdirectories (processed_data layout).",
     )
     parser.add_argument("--demo", default=None, help="Single demo name, e.g. demo_0")
@@ -430,7 +427,7 @@ def main():
     parser.add_argument("--max-steps", type=int, default=0, help="0 = all steps")
     parser.add_argument(
         "--output-dir",
-        default="/home/pengyue/Codespace/DataCoach/data/teacher_forcing",
+        default=str(ROOT_DIR / "data" / "teacher_forcing"),
     )
     # Accepted but ignored (legacy Justfile compat)
     parser.add_argument("--policy-dir",    default=None)

@@ -36,11 +36,8 @@ import cv2
 import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
-THIRD_PARTY_OPENPI = ROOT_DIR / "third_party" / "openpi" / "src"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
-if THIRD_PARTY_OPENPI.exists() and str(THIRD_PARTY_OPENPI) not in sys.path:
-    sys.path.insert(0, str(THIRD_PARTY_OPENPI))
 
 from datacoach.training import config as train_config_lib
 from openpi.policies import policy_config

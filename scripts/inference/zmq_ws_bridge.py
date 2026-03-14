@@ -10,6 +10,7 @@ Usage (alongside `just policy`):
 """
 
 import argparse
+from collections import deque
 import time
 
 import cv2
@@ -114,12 +115,12 @@ class ZmqWsBridge:
 
     def run(self):
         print("[Bridge] Running. Waiting for state + camera data ...")
-        action_queue: list[np.ndarray] = []
+        action_queue: deque[np.ndarray] = deque()
 
         while True:
             # --- if we have queued actions, publish the next one ---
             if action_queue:
-                joints = action_queue.pop(0)
+                joints = action_queue.popleft()
                 self._action_pub.send_json({
                     "timestamp": time.time(),
                     "joints": [float(j) for j in joints],
