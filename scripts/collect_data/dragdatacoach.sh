@@ -58,9 +58,7 @@ pick_datacoach_python() {
   fi
 
   local candidates=(
-    "${PROJECT_ROOT}/.conda/envs/dragdatacoach/bin/python"
-    "/home/pengyue/miniconda3/envs/datacoach/bin/python"
-    "/home/jolia/miniconda3/envs/datacoach/bin/python"
+    "${PROJECT_ROOT}/.venv/bin/python"
     "$(command -v python || true)"
   )
 

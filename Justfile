@@ -1,16 +1,19 @@
 set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 set quiet := true
 
-# Path configuration — update these if the environment moves.
-# openpi: Eric's machine hosts the openpi source + checkpoints.
-uv     := "/home/pengyue/.local/bin/uv"
-repo   := justfile_directory()
-openpi := "/home/eric/openpi"
+# ── Configuration ────────────────────────────────────────────────────────────
+# Model
+checkpoint   := "/home/eric/4999"
+openpi       := "/home/eric/openpi"
+model_config := "pi05_a1_single_arm"
+# Paths
+uv   := "/home/pengyue/.local/bin/uv"
+repo := justfile_directory()
 
 default:
     @just --list
 
-# ---------- Environment ----------
+# ── Environment ──────────────────────────────────────────────────────────────
 
 doctor:
     scripts/collect_data/dragdatacoach.sh doctor
@@ -18,7 +21,7 @@ doctor:
 which-python:
     scripts/collect_data/dragdatacoach.sh which-python
 
-# ---------- Command Groups ----------
+# ── Commands ─────────────────────────────────────────────────────────────────
 
 launch target="driver" serial="/dev/a1":
     case "{{target}}" in \
@@ -99,10 +102,10 @@ bag action="latest" bag="":
         *) echo "Usage: just bag <latest|info> [bag]"; exit 1 ;; \
     esac
 
-# ---------- Inference ----------
+# ── Inference ────────────────────────────────────────────────────────────────
 
-policy policy_dir="/home/eric/4999":
-    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/serve_policy_a1.py policy:checkpoint --policy.config pi05_a1_single_arm --policy.dir "{{policy_dir}}"
+policy policy_dir=checkpoint:
+    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/serve_policy_a1.py policy:checkpoint --policy.config {{model_config}} --policy.dir "{{policy_dir}}"
 
 # ZMQ↔WebSocket bridge: reads state+cameras from ZMQ, calls WebSocket policy server, publishes actions to ZMQ
 # Run this alongside `just policy` so the A1 server receives joint actions over ZMQ.
@@ -127,7 +130,7 @@ openloop-rollout policy_dir="" *args:
     PYTHONPATH="{{openpi}}/src:{{repo}}:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/openloop_rollout.py --policy-dir "{{policy_dir}}" {{args}}
 
 
-# ---------- Debug ----------
+# ── Debug ────────────────────────────────────────────────────────────────────
 
 debug target="camera" output_dir="{{repo}}/data/debug/model_input_frames" every_n="20" max_per_cam="300" duration_s="30" *args:
     case "{{target}}" in \
