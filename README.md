@@ -1,36 +1,36 @@
 # DragDataCoach
 
-DragDataCoach 的目标流程：
-1. 手拖机械臂录 bag。
-2. 用 bag 回放轨迹。
-3. 回放期间采集双相机视频 + 机械臂状态。
+End-to-end pipeline for the A1 robot arm:
+1. Drag the arm to record a rosbag demonstration.
+2. Replay the bag to reconstruct the trajectory.
+3. During replay, collect dual-camera video and arm state.
 
-最终每条 demo 会包含两路视频和轨迹状态数据。
+Each demo produces two video streams and a trajectory state file.
 
-## 1. 安装 `just`
+## 1. Install `just`
 
 ```bash
 sudo snap install just --classic
 just --version
 ```
 
-## 2. 一次性准备
+## 2. One-time setup
 
-环境检查：
+Install the Python environment (see `docs/SETUP_ENV.md`), then verify:
 
 ```bash
 just doctor
 just which-python
 ```
 
-## 3. 新的 `just` 风格（空格子命令）
+## 3. Command reference
 
 ```bash
 just drag start
 just drag stop
 
-just launch driver /dev/ttyACM0
-just launch ee-record /dev/ttyACM0
+just launch driver /dev/a1
+just launch ee-record /dev/a1
 just launch tracker
 just ee-tracker
 just ee-tracker -drag
@@ -47,100 +47,99 @@ just replay
 just replay /path/to/demo.bag 1.0 position
 
 just collect
-just drag-collect --serial /dev/ttyACM0 --tag drag_demo
+just drag-collect --serial /dev/a1 --tag drag_demo
 
-just camera test
-just camera raw --config configs/drag_replay.yaml
+just test camera
+just test camera-raw --config configs/drag_replay.yaml
 
 just bag latest
 just bag info /path/to/demo.bag
 ```
 
-查看全部命令：
+See all commands:
 
 ```bash
 just --list
 ```
 
-## 4. 相机链路测试
+## 4. Camera check
 
 ```bash
-just camera test
+just test camera
 ```
 
-现在只做设备枚举和串口/设备节点检查，不会尝试打开相机或保存探测图。
+Enumerates devices and checks connectivity. Does not open cameras or save frames.
 
-`just replay` 不带 bag 参数时，会自动使用 `third_party/A1_SDK/data/records/` 里的最新 bag。
+`just replay` without a bag argument automatically uses the latest bag in `third_party/A1_SDK/data/records/`.
 
-`just replay` 会在开始回放前检查 `cam_0` 和 `cam_1`；任意一个没连上就直接退出。`just drag-collect` 只会在 replay 阶段检查一次，而且检查发生在启动 `collect` 之前。
+`just replay` checks `cam_0` and `cam_1` before starting playback and exits if either is unavailable. `just drag-collect` runs the same check once before launching `collect`.
 
-## 5. 标准手动流程
+## 5. Standard manual workflow
 
-录制（拖拽）阶段：
+**Recording (drag) phase:**
 
 ```bash
-just launch ee-record /dev/ttyACM0
+just launch ee-record /dev/a1
 just drag start
-just gripper start               # 可选
+just gripper start               # optional
 just record start drag_demo
-# 完成拖拽后
+# after dragging:
 just record stop
 just drag stop
 just gripper stop
 ```
 
-如果你想快速“手掰一个目标位姿再下发给 ee-tracker”，可以直接：
+To quickly set a target pose and send it to `ee-tracker`:
 
 ```bash
 just ee-tracker -drag
 ```
 
-默认流程：
-- 自动启动 `eeTrackerdemo`（`rviz:=false`）
-- 不启动软件 drag mode
-- 你直接手动强掰到目标位置后按 Enter
-- 读取当前 `/end_effector_pose` 并发布到 `/a1_ee_target`
-- 自动保留 tracker（下发失败/中断时会自动清理）；可用 `--no-keep-tracker` 强制退出
+This will:
+- Launch `eeTrackerdemo` (`rviz:=false`)
+- Wait for you to manually move the arm to the target pose and press Enter
+- Read the current `/end_effector_pose` and publish it to `/a1_ee_target`
+- Keep the tracker alive (auto-cleanup on failure); use `--no-keep-tracker` to force exit
 
-回放 + 采集阶段（建议 3 终端）：
+**Replay + collection phase (3 terminals):**
 
 ```bash
-just launch driver /dev/ttyACM0
+just launch driver /dev/a1
 just launch tracker
 just collect
 just replay /path/to/demo.bag 1.0 position
 ```
 
-## 6. 本地麦克风阈值触发远端夹爪
+## 6. Audio-triggered gripper (local mic → remote host)
 
-你的麦克风如果在本地电脑，而控制代码跑在 SSH 连上的远端主机，建议在本地跑音量阈值监听，再通过 `ssh` 调远端 `just gripper open/close`。
+If your microphone is on a local machine and the control code runs on a remote host over SSH, run the volume-threshold listener locally and trigger `just gripper open/close` remotely via SSH.
 
-远端已经支持一次性夹爪命令：
+The remote host supports one-shot gripper commands:
 
 ```bash
 just gripper open
 just gripper close
 ```
 
-本地监听脚本在：
+Local listener script:
 
 ```bash
 scripts/collect_data/gripper_audio_threshold.py
 ```
 
-先在本地电脑安装音频依赖：
+Install audio dependencies on your local machine:
 
 ```bash
 python3 -m pip install numpy sounddevice
 ```
 
-先列出本地麦克风设备：
+List local microphone devices:
 
 ```bash
 python3 scripts/collect_data/gripper_audio_threshold.py --ssh-host <your-ssh-host> --list-devices
 ```
 
-最小用法，超过阈值就交替执行开/关：
+Toggle open/close on volume threshold:
 
 ```bash
 python3 scripts/collect_data/gripper_audio_threshold.py \
@@ -149,7 +148,7 @@ python3 scripts/collect_data/gripper_audio_threshold.py \
   --trigger-mode toggle
 ```
 
-如果你只想“声音大于阈值就打开”：
+Open only when volume exceeds threshold:
 
 ```bash
 python3 scripts/collect_data/gripper_audio_threshold.py \
@@ -158,71 +157,58 @@ python3 scripts/collect_data/gripper_audio_threshold.py \
   --trigger-mode open
 ```
 
-常用参数：
+Key parameters:
 
-- `--threshold-db`：触发阈值，单位 dBFS，越接近 `0` 越难触发。
-- `--reset-db`：重新 armed 的阈值，默认比 `threshold` 低 8 dB。
-- `--cooldown-seconds`：触发后的冷却时间，避免连续抖动。
-- `--initial-state close`：`toggle` 模式下第一次触发会执行 `open`。
-- `--device <name-or-index>`：指定本地麦克风。
+- `--threshold-db`: trigger threshold in dBFS; closer to `0` = harder to trigger.
+- `--reset-db`: re-arm threshold, defaults to 8 dB below `--threshold-db`.
+- `--cooldown-seconds`: cooldown after trigger to prevent rapid re-firing.
+- `--initial-state close`: in `toggle` mode, the first trigger executes `open`.
+- `--device <name-or-index>`: select local microphone.
 
-## 7. All-in-One 单终端脚本
+## 7. All-in-one script
 
-你可以直接用 `just` 启动 all-in-one：
-
-```bash
-just drag-collect --serial /dev/ttyACM0 --tag drag_demo
-```
-
-它等价调用脚本：
+Run the full record → replay → collect pipeline in a single command:
 
 ```bash
-scripts/collect_data/dragdatacoach_all_in_one.sh
+just drag-collect --serial /dev/a1 --tag drag_demo
 ```
 
-它会在后台创建 `tmux` 会话并自动拉起多窗口，完成录制 + 回放 + 采集的完整流程。
-在录制阶段，脚本会在当前终端打开 `just gripper start`，你可以直接键盘控制夹爪；按 `Enter` 会退出夹爪控制并停止录制。
-如果检测到同名 tmux 会话，脚本默认会直接 `restart`；你也可以用 `--on-existing` 改成 `ask / attach / new / abort`。
+This calls `scripts/collect_data/dragdatacoach_all_in_one.sh`, which creates a `tmux` session with multiple windows. During recording, `just gripper start` opens in the current terminal for keyboard gripper control; press Enter to stop recording.
 
-最常用：
+If a session with the same name already exists, the script restarts it by default. Use `--on-existing` to change this behavior.
 
-```bash
-just drag-collect --serial /dev/ttyACM0 --tag drag_demo
-```
-
-只做回放采集（跳过录制）：
+Replay-only (skip recording):
 
 ```bash
 just drag-collect \
   --skip-record \
   --bag /path/to/demo.bag \
-  --serial /dev/ttyACM0
+  --serial /dev/a1
 ```
 
-可选参数：
+Optional flags:
 
-```bash
---rate <float>              # replay 速度
---gripper-mode <mode>       # replay 夹爪模式
---session <name>            # tmux session 名称
---no-gripper-keyboard       # 录制时不启动键盘夹爪控制
---no-auto-stop              # 流程结束后不自动停掉 replay 的 launch 窗口
---on-existing <policy>      # ask|restart|attach|new|abort
+```
+--rate <float>              replay speed multiplier
+--gripper-mode <mode>       gripper mode during replay
+--session <name>            tmux session name
+--no-gripper-keyboard       skip keyboard gripper control during recording
+--no-auto-stop              do not auto-stop the replay launch window when done
+--on-existing <policy>      ask|restart|attach|new|abort
 ```
 
-## 8. 输出路径
+## 8. Output paths
 
-原始数据：
+Raw data is saved to:
 
-```bash
+```
 data/raw_data/<task_name>/demo_<index>_<YYYYMMDD_HHMMSS>/
 ```
-转化成 demo_<index>
+
+To rename timestamped folders to sequential indices:
 
 ```bash
-cd /home/pengyue/Codespace/DataCoach/data/raw_data/<task_name>
-
-# paste and enter the below commands, change task name into demo_<index>
+cd data/raw_data/<task_name>
 i=0
 for dir in */; do
     mv "$dir" "demo_$i"
@@ -230,17 +216,17 @@ for dir in */; do
 done
 ```
 
-典型文件：
+Typical files per demo:
 - `cam_0_rgb_video.mp4`
 - `cam_1_rgb_video.mp4`
 - `states.pkl`
 - `commanded_states.pkl`
 - `trajectory.csv`
 
+Process into LeRobot format:
+
 ```bash
 cd scripts/process_data
-conda activate datacoach
-python align_timestamps.py
-#TODO: need to change the 
-python process_data.py
+uv run python align_timestamps.py
+uv run python process_data.py
 ```

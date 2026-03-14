@@ -1,78 +1,82 @@
 # DragDataCoach Environment Setup
 
-This project now supports two setup modes:
+## Prerequisites
 
-1. **Use the local repo conda env** (recommended)
-2. **Reuse an existing shared conda env** (fallback)
+| Requirement | Notes |
+|-------------|-------|
+| Python 3.11–3.12 | |
+| CUDA driver ≥ 12.6 | Required for PyTorch + RTX 5090 |
+| ROS Noetic | `/opt/ros/noetic/setup.bash` |
+| A1 SDK | Built at `third_party/A1_SDK/install/` |
 
-## 1) Local repo env (recommended)
+## 1. Install uv
 
-A local env has been created at:
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
 
-- `.conda/envs/dragdatacoach`
+Verify: `uv --version`
 
-Core runtime dependencies are installed:
-- `hydra-core`
-- `pyzmq`
-- `opencv-python`
-- `numpy`
-- `scipy`
+## 2. Clone and initialise submodules
+
+```bash
+git clone <repo-url>
+cd DataCoach
+git submodule update --init --recursive
+```
+
+## 3. Sync the Python environment
+
+```bash
+uv sync
+```
+
+This creates `.venv/` and installs all dependencies including `torch==2.7.1+cu126`,
+`openpi` (editable from `third_party/openpi`), `lerobot`, `hydra-core`, etc.
 
 Verify:
 
 ```bash
-scripts/collect_data/dragdatacoach.sh which-python
-scripts/collect_data/dragdatacoach.sh doctor
+just doctor
+just which-python
 ```
 
-Expected output includes local path:
-- `DATACOACH_PYTHON=.../.conda/envs/dragdatacoach/bin/python`
-- `Missing required: <none>`
+## 4. External dependencies
 
-## 2) Shared env fallback
+Two paths in `Justfile` point to other machines. Update them if your setup differs:
 
-If local env is unavailable, the script can fall back to shared envs, e.g.:
-- `/home/jolia/miniconda3/envs/datacoach`
+```just
+uv     := "/home/pengyue/.local/bin/uv"   # path to uv binary
+openpi := "/home/eric/openpi"              # openpi source + checkpoints on Eric's machine
+```
 
-## Recreate local env (if needed)
-
-If you need to rebuild local env:
+Policy checkpoints (e.g. `/home/eric/4999`) also live on Eric's machine and are
+passed at runtime:
 
 ```bash
-mkdir -p .conda/envs
-CONDA_NO_PLUGINS=true conda create -y --solver classic -p .conda/envs/dragdatacoach python=3.10 pip
-CONDA_NO_PLUGINS=true conda run -p .conda/envs/dragdatacoach python -m pip install hydra-core pyzmq opencv-python numpy scipy
+just policy /home/eric/4999
 ```
 
-Optional packages:
+## 5. Verify CUDA + torch
 
 ```bash
-# needed only for conversion to LeRobot dataset format
-CONDA_NO_PLUGINS=true conda run -p .conda/envs/dragdatacoach python -m pip install lerobot
-
-# needed only if you use realsense in this python env
-CONDA_NO_PLUGINS=true conda run -p .conda/envs/dragdatacoach python -m pip install pyrealsense2
+uv run python -c "import torch; print(torch.__version__, torch.cuda.get_device_name(0))"
+# Expected: 2.7.1+cu126  NVIDIA GeForce RTX 5090
 ```
 
-Then force this interpreter:
+## Runtime: source ROS before hardware commands
 
-```bash
-export DATACOACH_PYTHON="$PWD/.conda/envs/dragdatacoach/bin/python"
-scripts/collect_data/dragdatacoach.sh doctor
-```
-
-## Runtime prerequisites (all modes)
-
-Before running collection scripts, source ROS and A1 SDK in that terminal:
+The `just launch` commands source ROS automatically. If you run scripts directly,
+source first:
 
 ```bash
 source /opt/ros/noetic/setup.bash
 source third_party/A1_SDK/install/setup.bash
 ```
 
-## Why `lerobot` is optional
+## Notes on PyTorch for RTX 5090
 
-- **Collection/replay pipeline** (`run_drag_replay_collection.py`) does **not** require `lerobot`.
-- **Data conversion** (`scripts/process_data/convert_data_to_lerobot.py`) requires `lerobot`.
-
-If you only collect raw/processed demos, you can skip `lerobot`.
+The Blackwell architecture (SM_100) is supported from PyTorch 2.6+. The standard
+PyPI wheel `torch==2.7.1` ships with CUDA 12.6 support (`+cu126`) and works with
+any driver ≥ 12.6. **Do not use the CUDA 11.x toolkit version to select the wheel —
+check the driver version instead (`nvidia-smi`).**

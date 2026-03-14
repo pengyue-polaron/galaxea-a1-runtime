@@ -1,91 +1,73 @@
-# A1 Live Inference (Reuse jolia uv/ckpt)
+# A1 Live Inference
 
-本文档用于在**当前仓库代码**下运行 A1 真机推理，并继续复用：
-- `uv`: `/home/jolia/.local/bin/uv`
-- checkpoint: `/home/pengyue/29000`
+This document describes the full workflow for running A1 policy inference on the real robot.
 
-## 0) 前提
+## Prerequisites
 
-- 当前代码仓库：`/home/pengyue/Codespace/DataCoach`
-- 不改动源仓库：`/home/jolia/DataCoach`
-- 串口权限（按实际端口调整）：
+- Serial port permissions (confirm the correct port):
+  ```bash
+  sudo chmod 777 /dev/ttyACM0 /dev/ttyACM1
+  ```
+  Or configure persistent udev rules (recommended): see `docs/SETUP_UDEV.md`.
 
+- Python environment installed: see `docs/SETUP_ENV.md`.
+
+## Launch Order
+
+Five terminals are required. Start them in order:
+
+### Terminal 1 — ROS master
 ```bash
-sudo chmod 777 /dev/ttyACM0
-sudo chmod 777 /dev/ttyACM1
+just launch roscore
 ```
 
-## 1) 终端启动顺序（最小集）
-
-### Terminal A: policy server（jolia uv + 你仓库脚本）
-
-二选一配置启动（可按需替换）：
-
+### Terminal 2 — A1 arm driver
 ```bash
-/home/jolia/.local/bin/uv run --project /home/jolia/DataCoach \
-  python /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py \
-  policy:checkpoint \
-  --policy.config pi05_ltc_pick_twice \
-  --policy.dir /home/pengyue/29000
+just launch driver
 ```
 
+### Terminal 3 — Camera server
 ```bash
-/home/jolia/.local/bin/uv run --project /home/jolia/DataCoach \
-  python /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py \
-  policy:checkpoint \
-  --policy.config pi05_localdata_a1_lora \
-  --policy.dir /home/pengyue/29000
+just launch camera-server   # publishes camera frames over ZMQ (port 5558)
 ```
 
-### Terminal B: ROS master
-
+### Terminal 4 — A1 ZMQ bridge
 ```bash
-roscore
+just launch a1-server       # publishes joint state (port 5557), receives policy actions (port 5559)
 ```
 
-### Terminal C: A1 arm node
-
+### Terminal 5 — Policy server (WebSocket on port 8000)
 ```bash
-roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=/dev/ttyACM1
+just policy                        # uses default checkpoint: /home/eric/4999
+just policy /path/to/checkpoint    # specify a different checkpoint
 ```
 
-### Terminal D: ee tracker
-
+### Terminal 6 — ZMQ ↔ WebSocket bridge (starts the inference loop)
 ```bash
-roslaunch mobiman eeTrackerdemo.launch
+just zmq-bridge                                        # default prompt
+just zmq-bridge --prompt "pick up the cup"             # custom prompt
+just zmq-bridge --prompt "..." --action-chunk-size 3   # tune action chunk size
 ```
 
-### Terminal E: unified data services（live 模式）
+## Inference Parameters
+
+| Parameter | Default | Description |
+|-----------|---------|-------------|
+| `--prompt` | `"swap the position of the marker and the yellow block"` | Language instruction |
+| `--action-chunk-size` | `2` | Number of consecutive actions to execute before re-querying the policy |
+| `--host` / `--port` | `127.0.0.1` / `8000` | Policy server address |
+
+## Debug Tools
 
 ```bash
-cd /home/pengyue/Codespace/DataCoach
-python scripts/collect_data/run_data_services.py service_mode=live
+just debug camera                            # dump frames the model actually receives to data/debug/
+just teacher-forcing                         # offline teacher forcing on training data → trajectory.html
+just openloop-rollout --policy-dir /home/eric/4999   # open-loop eval on processed data
 ```
 
-说明：`service_mode=live` 会启动：
-- `camera_server`
-- `a1_server`（leader udp + ros bridge + policy action subscriber）
+## Common Issues
 
-## 2) 回退方式
-
-如果 `uv run --project` 在机器上行为不一致，可改用 jolia 的 venv python：
-
-```bash
-/home/jolia/DataCoach/.venv/bin/python \
-  /home/pengyue/Codespace/DataCoach/scripts/inference/my_serve_policy.py \
-  policy:checkpoint \
-  --policy.config pi05_localdata_a1_lora \
-  --policy.dir /home/pengyue/29000
-```
-
-## 3) 常见问题
-
-- `Config 'pi05_ltc_pick_twice' not found`：
-  - 当前实现在 `my_serve_policy.py` 内做了别名兼容，会映射到 `pi05_localdata_a1_lora`。
-- `ROS master is not online`：
-  - 先确认 `roscore` 已启动。
-- 无动作输出：
-  - 检查 `run_data_services.py service_mode=live` 是否在运行。
-  - 检查 `ZMQ` 端口是否冲突（`5557/5558/5559`）。
-- 串口报错：
-  - 重新确认 `ttyACM` 号与 `chmod` 权限。
+- **`Config 'xxx' not found`**: check the config registration at the top of `serve_policy_a1.py` and confirm `pi05_a1_single_arm` is injected.
+- **`ROS master is not online`**: confirm Terminal 1 (`roscore`) is running.
+- **No actions published**: check for ZMQ port conflicts (5557/5558/5559) with `ss -lntp | grep 555`.
+- **Serial errors**: confirm the `ttyACM` number and permissions, or reload udev rules.

@@ -58,7 +58,7 @@ rosservice call /iarm_node_single_arm/function_frame 4   # Clear error data (if 
 rosservice call /iarm_node_single_arm/function_frame 1   # Enable motors
 ```
 
-3. **Verify Zero Position** # !!!! Need to double check: because 无论如何在新的标定下
+3. **Verify Zero Position** # TODO: needs re-verification after new calibration
 
 ```bash
 roslaunch mobiman eeTrackerdemo.launch # The robot arm should move to correct zero position
@@ -72,37 +72,28 @@ since like after running `roslaunch mobiman eeTrackerdemo.launch` the robot arm 
 receive A1 data --> align timestamps --> lerobot dataset --> feed into VLA 
 
 
-## Set up uv environment --- timeout
-Issue: 
-jolia@nyushrobo5090:~/DataCoach$ GIT_LFS_SKIP_SMUDGE=1 uv sync
-warning: The `tool.uv.dev-dependencies` field (used in `third_party/openpi/packages/openpi-client/pyproject.toml`) is deprecated and will be removed in a future release; use `dependency-groups.dev` instead
-Resolved 212 packages in 3ms
-  × Failed to download `rerun-sdk==0.23.1`
-  ├─▶ Failed to extract archive: rerun_sdk-0.23.1-cp39-abi3-manylinux_2_31_x86_64.whl
-  ├─▶ I/O operation failed during extraction
-  ╰─▶ Failed to download distribution due to network timeout. Try increasing UV_HTTP_TIMEOUT (current value: 30s).
-  help: `rerun-sdk` (v0.23.1) was included because `datacoach-env` (v0.0.1) depends on `openpi` (v0.1.0) which depends on `lerobot` (v0.1.0) which depends on
-        `rerun-sdk`
+## uv sync times out (large packages like rerun-sdk fail to download)
 
-Since the official uv environment is under DataCoach/third_party/openpi while we want to use this uv to run scripts under DataCoach/scripts/, we need to register a uv env which is under DataCoach and it can import openpi where the package is sourced from third_party/openpi. 
+Increase the HTTP timeout:
 
-But sometimes if you run  GIT_LFS_SKIP_SMUDGE=1 uv sync, it easily timeout. Then you leave  dependencies blank in `/DataCoach/pyproject.toml`, which is like
 ```bash
-    dependencies = [
-   #"openpi @ file:/home/jolia/DataCoach/third_party/openpi"
- ]
-
+UV_HTTP_TIMEOUT=120 uv sync
 ```
-First register the uv environment under DataCoach with 
+
+Or skip LFS files:
+
 ```bash
 GIT_LFS_SKIP_SMUDGE=1 uv sync
 ```
-Then register openpi under this uv
+
+If it still fails, install in two steps — sync everything except openpi first, then install openpi separately:
+
 ```bash
+# 1. Temporarily comment out the openpi dependency in pyproject.toml, then sync the rest
+GIT_LFS_SKIP_SMUDGE=1 uv sync
+# 2. Install openpi editable
 GIT_LFS_SKIP_SMUDGE=1 uv pip install -e ./third_party/openpi
 ```
-
-What I basically do is just split original script (`Datacoach/pyproject.toml`) into two steps: register uv, and register third_party/openpi to uv separately.
 
 
 ## Data version issue
@@ -112,11 +103,10 @@ https://docs.phospho.ai/learn/lerobot-dataset
 
 ## NVIDIA GeForce RTX 5090 with CUDA capability sm_120 is not compatible with the current PyTorch installation
 
-credit to https://github.com/lllyasviel/Fooocus/issues/3862
+**Resolved**: `torch==2.7.1` from PyPI (`+cu126`) natively supports Blackwell SM_120.
+No nightly build required — `uv sync` handles it.
 
-To use PyTorch for Linux x86_64 and Linux SBSA on NVIDIA 5080, 5090 Blackwell RTX GPUs use the latest nightly builds, or the command below.
-```bash
-pip uninstall -y torch torchvision torchaudio
-pip cache purge
-pip install --pre --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/nightly/cu128
-```
+Key points:
+- Compatibility depends on the **driver** CUDA version (shown in `nvidia-smi`), not the `nvcc` toolkit version.
+- Driver ≥ 12.6 runs `cu126` wheels without issue.
+- This machine: driver 570.x, CUDA 12.8 — fully compatible.
