@@ -4,7 +4,7 @@ set quiet := true
 # ── Configuration ────────────────────────────────────────────────────────────
 # Model
 checkpoint   := "/home/eric/4999"
-openpi       := "/home/eric/openpi"
+openpi       := "/home/pengyue/Codespace/TFP"
 model_config := "pi05_a1_single_arm"
 # Paths
 uv   := "/home/pengyue/.local/bin/uv"
