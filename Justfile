@@ -9,6 +9,8 @@ model_config := "pi05_a1_single_arm"
 # Paths
 uv   := "/home/pengyue/.local/bin/uv"
 repo := justfile_directory()
+# Teleoperation
+teleop_leader_port := "/dev/ttyACM2"
 
 default:
     @just --list
@@ -101,6 +103,136 @@ bag action="latest" bag="":
             rosbag info "{{bag}}" ;; \
         *) echo "Usage: just bag <latest|info> [bag]"; exit 1 ;; \
     esac
+
+# ── Teleoperation ────────────────────────────────────────────────────────────
+
+# One-time setup: create third_party/lerobot/.venv (Python 3.12) and install lerobot[feetech].
+# Run this once before the first `just teleop`.
+setup-teleop:
+    {{uv}} venv --python 3.12 {{repo}}/third_party/lerobot/.venv
+    {{uv}} pip install --python {{repo}}/third_party/lerobot/.venv/bin/python -e "{{repo}}/third_party/lerobot[feetech]"
+    @echo "teleop env ready: {{repo}}/third_party/lerobot/.venv"
+
+# SO leader → A1 jointTracker teleoperation.
+# Starts: roscore → single_arm_node → jointTrackerdemo → SO leader bridge.
+# Run `just setup-teleop` once before first use.
+# Example: just teleop
+# Example: LEADER_PORT=/dev/ttyACM0 just teleop
+teleop serial="/dev/a1" leader_port=teleop_leader_port:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    sdk_dir="{{repo}}/third_party/A1_SDK/install"
+    bridge_bin="{{repo}}/third_party/lerobot/.venv/bin/lerobot-a1-jointtracker-bridge"
+    run_dir="/tmp/lerobot-teleop"
+    log_dir="$run_dir/logs"
+    tail_pid_file="$run_dir/tail.pids"
+    single_arm_serial="${SINGLE_ARM_SERIAL:-{{serial}}}"
+    leader_port="${LEADER_PORT:-{{leader_port}}}"
+
+    if [[ ! -x "$bridge_bin" ]]; then
+        echo "teleop env not set up. run: just setup-teleop"
+        exit 1
+    fi
+
+    if [[ ! -e "$single_arm_serial" ]]; then
+        echo "single arm serial not found: $single_arm_serial"
+        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
+        exit 1
+    fi
+
+    if [[ ! -e "$leader_port" ]]; then
+        echo "leader port not found: $leader_port"
+        ls -l /dev/ttyACM* 2>/dev/null || true
+        exit 1
+    fi
+
+    mkdir -p "$log_dir"
+    : > "$tail_pid_file"
+
+    cleanup_tails() {
+        while IFS= read -r pid; do kill "$pid" 2>/dev/null || true; done < "$tail_pid_file"
+    }
+    trap cleanup_tails EXIT
+
+    auto_confirm="${AUTO_CONFIRM:-0}"
+
+    start_service() {
+        local name="$1" cmd="$2" prompt="$3"
+        local suppress_regex="${4:-}" ok_if_log_regex="${5:-}"
+        local log_file="$log_dir/${name}.log"
+        local pid_file="$run_dir/${name}.pid"
+
+        echo "[$name] starting..."
+        : > "$log_file"
+
+        nohup bash -lc "$cmd" >> "$log_file" 2>&1 &
+        local svc_pid=$!
+        echo "$svc_pid" > "$pid_file"
+
+        if [[ -n "$suppress_regex" ]]; then
+            tail -n 0 -F "$log_file" | grep -Eav --line-buffered "$suppress_regex" | sed -u "s/^/[$name] /" &
+        else
+            tail -n 0 -F "$log_file" | sed -u "s/^/[$name] /" &
+        fi
+        echo "$!" >> "$tail_pid_file"
+
+        sleep 1
+        if ! kill -0 "$svc_pid" 2>/dev/null; then
+            if [[ -n "$ok_if_log_regex" ]] && grep -Eq "$ok_if_log_regex" "$log_file"; then
+                echo "[$name] detected existing instance, reusing."
+                rm -f "$pid_file"
+                [[ "$auto_confirm" == "1" ]] && echo "[$name] $prompt (auto-confirmed)" || read -r -p "$prompt"
+                return 0
+            fi
+            echo "[$name] failed to start, check: $log_file"
+            exit 1
+        fi
+
+        [[ "$auto_confirm" == "1" ]] && echo "[$name] $prompt (auto-confirmed)" || read -r -p "$prompt"
+    }
+
+    start_service "roscore" \
+        "cd $sdk_dir && source setup.bash && roscore" \
+        "roscore ready, press enter to proceed" \
+        "" "another roscore/master is already running"
+
+    start_service "single_arm_node" \
+        "cd $sdk_dir && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$single_arm_serial" \
+        "single arm node ready, press enter to proceed"
+
+    start_service "joint_tracker" \
+        "cd $sdk_dir && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" \
+        "joint tracker ready, press enter to proceed" \
+        "model->njoints|start tracking|get target position"
+
+    start_service "bridge" \
+        "cd $sdk_dir && source setup.bash && $bridge_bin --leader-port $leader_port --leader-id my_leader --gripper-min-stroke-mm 0 --gripper-max-stroke-mm 200" \
+        "bridge running, press enter to finish"
+
+    echo "teleop services running in background."
+    echo "logs: $log_dir"
+    echo "stop with: just teleop-stop"
+
+# Stop all teleop background services.
+teleop-stop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    run_dir="/tmp/lerobot-teleop"
+    found=0
+    for pid_file in "$run_dir"/*.pid; do
+        [[ -f "$pid_file" ]] || continue
+        found=1
+        pid="$(cat "$pid_file")"
+        name="$(basename "$pid_file" .pid)"
+        if kill "$pid" 2>/dev/null; then
+            echo "stopped $name (pid=$pid)"
+        else
+            echo "$name (pid=$pid) already exited"
+        fi
+        rm -f "$pid_file"
+    done
+    [[ "$found" -eq 0 ]] && echo "no teleop pid files found in $run_dir"
 
 # ── Inference ────────────────────────────────────────────────────────────────
 

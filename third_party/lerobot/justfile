@@ -1,0 +1,251 @@
+set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+
+teleop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    sdk_dir="/home/eric/A1_SDK/install"
+    run_dir="/tmp/lerobot-teleop"
+    log_dir="$run_dir/logs"
+    tail_pid_file="$run_dir/tail.pids"
+    conda_sh=""
+    single_arm_serial="${SINGLE_ARM_SERIAL:-/dev/a1}"
+    leader_port="${LEADER_PORT:-/dev/ttyACM2}"
+
+    mkdir -p "$log_dir"
+    : > "$tail_pid_file"
+
+    for candidate in "$HOME/miniconda3/etc/profile.d/conda.sh" "$HOME/anaconda3/etc/profile.d/conda.sh"; do
+        if [[ -f "$candidate" ]]; then
+            conda_sh="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$conda_sh" ]]; then
+        echo "conda init script not found. expected one of:"
+        echo "  $HOME/miniconda3/etc/profile.d/conda.sh"
+        echo "  $HOME/anaconda3/etc/profile.d/conda.sh"
+        exit 1
+    fi
+
+    if [[ ! -e "$single_arm_serial" ]]; then
+        echo "single arm serial not found: $single_arm_serial"
+        echo "available serial devices:"
+        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
+        exit 1
+    fi
+
+    if [[ ! -e "$leader_port" ]]; then
+        echo "leader port not found: $leader_port"
+        echo "available serial devices:"
+        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
+        exit 1
+    fi
+
+    cleanup_tails() {
+        while IFS= read -r pid; do
+            kill "$pid" 2>/dev/null || true
+        done < "$tail_pid_file"
+    }
+    trap cleanup_tails EXIT
+
+    auto_confirm="${AUTO_CONFIRM:-0}"
+
+    start_service() {
+        local name="$1"
+        local cmd="$2"
+        local prompt="$3"
+        local suppress_regex="${4:-}"
+        local ok_if_log_regex="${5:-}"
+        local log_file="$log_dir/${name}.log"
+        local pid_file="$run_dir/${name}.pid"
+
+        echo "[$name] starting..."
+        : > "$log_file"
+
+        nohup bash -lc "$cmd" >> "$log_file" 2>&1 &
+        local svc_pid=$!
+        echo "$svc_pid" > "$pid_file"
+
+        if [[ -n "$suppress_regex" ]]; then
+            tail -n 0 -F "$log_file" | grep -Eav --line-buffered "$suppress_regex" | sed -u "s/^/[$name] /" &
+        else
+            tail -n 0 -F "$log_file" | sed -u "s/^/[$name] /" &
+        fi
+        echo "$!" >> "$tail_pid_file"
+
+        sleep 1
+        if ! kill -0 "$svc_pid" 2>/dev/null; then
+            if [[ -n "$ok_if_log_regex" ]] && grep -Eq "$ok_if_log_regex" "$log_file"; then
+                echo "[$name] detected existing instance, reusing it."
+                rm -f "$pid_file"
+                if [[ "$auto_confirm" == "1" ]]; then
+                    echo "[$name] $prompt (auto-confirmed)"
+                else
+                    read -r -p "$prompt"
+                fi
+                return 0
+            fi
+            echo "[$name] failed to start, check: $log_file"
+            exit 1
+        fi
+
+        if [[ "$auto_confirm" == "1" ]]; then
+            echo "[$name] $prompt (auto-confirmed)"
+        else
+            read -r -p "$prompt"
+        fi
+    }
+
+    start_service "roscore" "cd $sdk_dir && source setup.bash && roscore" "roscore ready, press enter to proceed" "" "another roscore/master is already running"
+    start_service "single_arm_node" "cd $sdk_dir && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$single_arm_serial" "single arm node ready, press enter to proceed"
+    start_service "joint_tracker" "cd $sdk_dir && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" "joint tracker ready, press enter to proceed" "model->njoints|start tracking|get target position"
+    start_service "bridge" "cd $sdk_dir && source setup.bash && source \"$conda_sh\" && conda activate lerobot && lerobot-a1-jointtracker-bridge --leader-port $leader_port --leader-id my_leader --gripper-min-stroke-mm 0 --gripper-max-stroke-mm 200" "bridge ready, press enter to finish"
+
+    echo "teleop services are running in background."
+    echo "logs dir: $log_dir"
+    echo "pid files: $run_dir/*.pid"
+
+teleop-stop:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    run_dir="/tmp/lerobot-teleop"
+    found=0
+
+    for pid_file in "$run_dir"/*.pid; do
+        if [[ -f "$pid_file" ]]; then
+            found=1
+            pid="$(cat "$pid_file")"
+            name="$(basename "$pid_file" .pid)"
+            if kill "$pid" 2>/dev/null; then
+                echo "stopped $name (pid=$pid)"
+            else
+                echo "failed to stop $name (pid=$pid, maybe already exited)"
+            fi
+            rm -f "$pid_file"
+        fi
+    done
+
+    if [[ "$found" -eq 0 ]]; then
+        echo "no pid files found in $run_dir"
+    fi
+
+kill-roscore:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    mapfile -t pids < <(pgrep -f '/opt/ros/.*/bin/roscore|/opt/ros/.*/bin/rosmaster --core' || true)
+
+    if [[ "${#pids[@]}" -eq 0 ]]; then
+        echo "no roscore/rosmaster process found"
+        exit 0
+    fi
+
+    echo "stopping roscore/rosmaster: ${pids[*]}"
+    kill "${pids[@]}" 2>/dev/null || true
+    sleep 1
+
+    mapfile -t remaining < <(pgrep -f '/opt/ros/.*/bin/roscore|/opt/ros/.*/bin/rosmaster --core' || true)
+    if [[ "${#remaining[@]}" -gt 0 ]]; then
+        echo "force killing remaining: ${remaining[*]}"
+        kill -9 "${remaining[@]}" 2>/dev/null || true
+    fi
+
+    echo "roscore cleanup done"
+
+collect:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    dataset_root="${DATASET_ROOT:-/home/eric/lerobot/data/a1}"
+    task="${TASK:-A1 single-arm teleop collection}"
+    cam0_serial="${CAM0_SERIAL:-}"
+    cam1_index="${CAM1_INDEX:-auto}"
+    fps="${FPS:-30}"
+
+    conda_sh=""
+    for candidate in "$HOME/miniconda3/etc/profile.d/conda.sh" "$HOME/anaconda3/etc/profile.d/conda.sh"; do
+        if [[ -f "$candidate" ]]; then
+            conda_sh="$candidate"
+            break
+        fi
+    done
+
+    if [[ -z "$conda_sh" ]]; then
+        echo "conda init script not found. expected one of:"
+        echo "  $HOME/miniconda3/etc/profile.d/conda.sh"
+        echo "  $HOME/anaconda3/etc/profile.d/conda.sh"
+        exit 1
+    fi
+
+    echo "[collect] starting teleop services..."
+    AUTO_CONFIRM=1 just teleop
+
+    source "$conda_sh"
+    conda activate lerobot
+
+    cmd=(
+        python -m lerobot.scripts.lerobot_a1_collect
+        --output-root "$dataset_root"
+        --task "$task"
+        --cam1-index "$cam1_index"
+        --fps "$fps"
+    )
+
+    if [[ -n "$cam0_serial" ]]; then
+        cmd+=(--cam0-serial "$cam0_serial")
+    fi
+
+    echo "[collect] recording started. Press Enter in recorder prompt to end and save this episode."
+    "${cmd[@]}"
+
+# Teacher-forcing evaluation of pi0.5 A1 policy.
+#
+# Runs the policy on ground-truth observations from the a1_v21_old dataset
+# and visualises trajectory and error statistics.
+#
+# Environment variables (all optional):
+#   EPISODES        space-separated episode indices, e.g. "0 1 2"  (default: all)
+#   MAX_FRAMES      max frames per episode                         (default: unlimited)
+#   STRIDE          frame stride for inference, e.g. 5             (default: 1)
+#   OUTPUT_DIR      where to save plots                            (default: /tmp/eval_teacher_forcing)
+#   SKIP_HORIZON    set to "1" to skip the horizon error analysis  (default: 0)
+#
+# Example:
+#   just teacher-forcing
+#   EPISODES="0 1 2" STRIDE=5 just teacher-forcing
+teacher-forcing:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    openpi_dir="/home/eric/openpi"
+    script="$openpi_dir/scripts/eval_teacher_forcing.py"
+    output_dir="${OUTPUT_DIR:-/tmp/eval_teacher_forcing}"
+    stride="${STRIDE:-1}"
+    skip_horizon="${SKIP_HORIZON:-0}"
+
+    cmd=(
+        "$openpi_dir/.venv/bin/python"
+        "$script"
+        --output-dir "$output_dir"
+        --stride "$stride"
+    )
+
+    if [[ -n "${EPISODES:-}" ]]; then
+        # shellcheck disable=SC2206
+        cmd+=(--episodes $EPISODES)
+    fi
+
+    if [[ -n "${MAX_FRAMES:-}" ]]; then
+        cmd+=(--max-frames "$MAX_FRAMES")
+    fi
+
+    if [[ "${skip_horizon}" == "1" ]]; then
+        cmd+=(--skip-horizon)
+    fi
+
+    echo "[teacher-forcing] running: ${cmd[*]}"
+    "${cmd[@]}"
+    echo "[teacher-forcing] done. plots saved to: $output_dir"
