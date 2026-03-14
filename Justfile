@@ -79,31 +79,6 @@ teacher-forcing demo="" processed_root="/home/pengyue/Codespace/DataCoach/data/p
 openloop-rollout policy_dir="" *args:
     if [ -z "{{policy_dir}}" ]; then echo "Usage: just openloop-rollout <policy_dir> [extra args...]"; exit 1; fi; PYTHONPATH="/home/eric/openpi/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/openloop_rollout.py --policy-dir "{{policy_dir}}" {{args}}
 
-# Zero-shot DROID bridge: streams A1 state+cameras to pi05_droid WebSocket server
-# Requires: pi05_droid server running (just policy-droid)
-# Example: just droid-bridge
-# Example: just droid-bridge --prompt "pick up the cup"
-droid-bridge prompt="swap the position of the marker and the yellow block through the white plate" *args:
-    PYTHONPATH="/home/pengyue/Codespace/openpi/packages/openpi-client/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/droid_zero_shot_bridge.py --prompt "{{prompt}}" {{args}}
-
-# Zero-shot DROID EEF bridge: streams A1 cameras+joints to pi05_droid, publishes EEF targets via ROS
-# Requires: ee-tracker + camera-server + policy-droid all running
-# Example: just droid-eef-bridge
-# Example: just droid-eef-bridge "pick up the cup" --pos-scale 0.3
-droid-eef-bridge prompt="swap the position of the marker and the yellow block through the white plate" flip_axes="y" *args:
-    PYTHONPATH="/home/pengyue/Codespace/openpi/packages/openpi-client/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/droid_eef_bridge.py "{{prompt}}" --flip-axes "{{flip_axes}}" {{args}}
-
-# Start pi05_droid policy server (WebSocket on port 8000)
-policy-droid policy_dir="/home/pengyue/pi05_droid":
-    PYTHONPATH="/home/pengyue/Codespace/openpi/src:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/openpi/scripts/serve_policy.py policy:checkpoint --policy.config pi05_droid --policy.dir "{{policy_dir}}"
-
-# Teacher-forcing with pi05_droid on training data → trajectory.html
-# Requires: just policy-droid running
-# Example: just droid-teacher-forcing
-# Example: just droid-teacher-forcing demo_0_20260227_225247
-# Example: just droid-teacher-forcing demo_0_20260227_225247 -- --max-steps 100
-droid-teacher-forcing demo="" *args:
-    PYTHONPATH="/home/pengyue/Codespace/openpi/packages/openpi-client/src:/home/pengyue/Codespace/DataCoach:${PYTHONPATH:-}" /home/jolia/.local/bin/uv run --project /home/jolia/DataCoach python /home/pengyue/Codespace/DataCoach/scripts/inference/droid_teacher_forcing.py $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
 
 # ---------- Debug ----------
 
