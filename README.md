@@ -26,34 +26,36 @@ just which-python
 ## 3. Command reference
 
 ```bash
-just drag start
-just drag stop
-
+# Data collection
+just drag start / stop
 just launch driver /dev/a1
 just launch ee-record /dev/a1
 just launch tracker
 just ee-tracker
 just ee-tracker -drag
-
-just gripper start
-just gripper open
-just gripper close
-just gripper stop
-
-just record start drag_demo
-just record stop
-
+just gripper start / open / close / stop
+just record start drag_demo / stop
 just replay
 just replay /path/to/demo.bag 1.0 position
-
 just collect
 just drag-collect --serial /dev/a1 --tag drag_demo
 
-just test camera
-just test camera-raw --config configs/drag_replay.yaml
+# Teleoperation (SO leader arm)
+just setup-teleop              # one-time setup
+just teleop                    # start SO leader → A1 bridge
+just teleop-stop               # stop all teleop services
 
+# Inference
+just policy                    # start WebSocket policy server
+just zmq-bridge                # start ZMQ↔WebSocket bridge
+just teacher-forcing           # offline eval on training data
+just openloop-rollout --policy-dir /path/to/checkpoint
+
+# Utilities
+just test camera
 just bag latest
 just bag info /path/to/demo.bag
+just print joints
 ```
 
 See all commands:
@@ -228,5 +230,35 @@ Process into LeRobot format:
 ```bash
 cd scripts/process_data
 uv run python align_timestamps.py
-uv run python process_data.py
+uv run python convert_data_to_lerobot.py
 ```
+
+## 9. Teleoperation (SO leader arm)
+
+Use a physical SO-100/101 leader arm to teleoperate the A1 in real time.
+
+**One-time setup** (creates `third_party/lerobot/.venv` with Python 3.12):
+
+```bash
+just setup-teleop
+```
+
+**Start teleoperation:**
+
+```bash
+just teleop                            # default serial=/dev/a1, leader=/dev/ttyACM2
+LEADER_PORT=/dev/ttyACM0 just teleop  # override leader port
+just teleop-stop                       # stop all background services
+```
+
+This starts four services in sequence (each waits for a keypress before the next):
+1. `roscore`
+2. `single_arm_node` — A1 driver
+3. `jointTrackerdemo` — joint tracker
+4. `lerobot-a1-jointtracker-bridge` — maps SO leader joints → A1 target
+
+Logs are written to `/tmp/lerobot-teleop/logs/`.
+
+## 10. Live inference
+
+See `docs/LIVE_INFERENCE.md` for the full six-terminal inference workflow.
