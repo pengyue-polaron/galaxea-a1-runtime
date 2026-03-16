@@ -25,7 +25,7 @@ just drag-collect [options]           # All-in-one: record + replay + collect
 # Hardware control
 just launch <roscore|camera-server|ee-tracker|a1-server|driver>
 just gripper <start|open|close|stop>
-just camera test
+just test camera
 just print joints [count] [unit]
 just bag <latest|info> [bag]
 
@@ -61,13 +61,14 @@ The system operates as a **multi-process pipeline** coordinated by shell scripts
 |------|---------|
 | `datacoach/` | Core Python package |
 | `datacoach/constants.py` | System constants (FPS, ZMQ ports, A1 scaling) |
+| `datacoach/utils.py` | Shared utilities (e.g. `cfg_get` for config access) |
 | `datacoach/data_collection/` | Runtime collection (CameraServer, DataCollector, A1ReplayBridge) |
 | `datacoach/data_processing/` | Dataset alignment and LeRobot conversion |
 | `datacoach/training/` | Training configs, data loaders, policy definitions |
 | `datacoach/inference/` | ZMQPolicyServer and policy serving |
 | `scripts/collect_data/` | Shell + Python orchestration scripts |
 | `scripts/train/train.py` | Main training entry point (Hydra) |
-| `scripts/inference/my_serve_policy.py` | Policy server (loads OpenPI checkpoint) |
+| `scripts/inference/serve_policy_a1.py` | Policy server (loads OpenPI checkpoint) |
 | `scripts/process_data/` | Data conversion scripts |
 | `configs/` | Hydra YAML configs (`collect_data.yaml`, `drag_replay.yaml`, `train.yaml`, `process_data.yaml`) |
 | `third_party/openpi/` | OpenPI submodule (foundation model policies) |
@@ -89,7 +90,7 @@ data/
 
 ## Environment Setup
 
-- **Package manager**: `uv` (path hardcoded in Justfile as `/home/jolia/.local/bin/uv`)
+- **Package manager**: `uv` (path hardcoded in Justfile as `/home/pengyue/.local/bin/uv`)
 - **Conda env**: `.conda/envs/dragdatacoach/bin/python` (preferred) or `~/miniconda3/envs/datacoach/bin/python`
 - **Python version**: 3.11+
 - **ROS**: Noetic (`/opt/ros/noetic/setup.bash` sourced at runtime)

@@ -31,8 +31,7 @@ class DataCollector:
         self.base_dir = None
 
         # === Camera setup ===
-        camera_fps_value = _cfg_get(cfg, "camera_fps", CAM_FPS)
-        self.camera_fps = int(camera_fps_value) if camera_fps_value is not None else CAM_FPS
+        self.camera_fps = int(_cfg_get(cfg, "camera_fps", CAM_FPS))
         self.wait_for_enter = bool(_cfg_get(cfg, "wait_for_enter", True))
         self.min_camera_coverage_ratio = float(_cfg_get(cfg, "min_camera_coverage_ratio", 0.9))
         self.max_camera_start_lag_s = float(_cfg_get(cfg, "max_camera_start_lag_s", 1.0))
@@ -313,61 +312,63 @@ class DataCollector:
             print("ℹ️ No recording session started, nothing to save.")
             return
 
-        with self.lock:
-            self._validate_recording_or_raise()
+        # Worker threads are already joined before save_all() is called; no lock needed.
+        self._validate_recording_or_raise()
 
         print("💾 Saving data...")
 
-        with self.lock:
-            with open(self.base_dir / "states.pkl", "wb") as f:
-                pickle.dump(self.state_data, f)
+        with open(self.base_dir / "states.pkl", "wb") as f:
+            pickle.dump(self.state_data, f)
 
-            with open(self.base_dir / "commanded_states.pkl", "wb") as f:
-                pickle.dump(self.cmd_data, f)
+        with open(self.base_dir / "commanded_states.pkl", "wb") as f:
+            pickle.dump(self.cmd_data, f)
 
-            saved_cameras = []
-            for cam_idx, cam_id in enumerate(sorted(self.image_buffers.keys())):
-                frames = self.image_buffers[cam_id]
-                if not frames:
+        def _cam_sort_key(s):
+            return [int(t) if t.isdigit() else t for t in s.split("_")]
+
+        saved_cameras = []
+        for cam_idx, cam_id in enumerate(sorted(self.image_buffers.keys(), key=_cam_sort_key)):
+            frames = self.image_buffers[cam_id]
+            if not frames:
+                continue
+
+            video_path = self.base_dir / f"{cam_id}_rgb_video.mp4"
+            timestamps = [float(ts) for ts, _ in frames]
+            video_fps = self._estimate_video_fps(timestamps)
+
+            first_img = frames[0][1]
+            h, w = first_img.shape[:2]
+            fourcc = cv2.VideoWriter_fourcc(*"mp4v")  # type: ignore[attr-defined]
+            writer = cv2.VideoWriter(str(video_path), fourcc, video_fps, (w, h))
+            if not writer.isOpened():
+                raise RuntimeError(f"Cannot open video writer for {video_path}")
+
+            for _, img in frames:
+                if img is None:
                     continue
+                ih, iw = img.shape[:2]
+                if ih != h or iw != w:
+                    img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
+                writer.write(img)
+            writer.release()
 
-                video_path = self.base_dir / f"{cam_id}_rgb_video.mp4"
-                timestamps = [float(ts) for ts, _ in frames]
-                video_fps = self._estimate_video_fps(timestamps)
+            metadata = {
+                "cam_idx": cam_idx,
+                "cam_name": cam_id,
+                "cam_fps": video_fps,
+                "cam_fps_configured": self.camera_fps,
+                "num_image_frames": len(timestamps),
+                "timestamps": timestamps,
+                "record_start_time": timestamps[0],
+                "record_end_time": timestamps[-1],
+                "filename": str(video_path),
+            }
 
-                first_img = frames[0][1]
-                h, w = first_img.shape[:2]
-                fourcc = getattr(cv2, "VideoWriter_fourcc")(*"mp4v")
-                writer = cv2.VideoWriter(str(video_path), fourcc, video_fps, (w, h))
-                if not writer.isOpened():
-                    raise RuntimeError(f"Cannot open video writer for {video_path}")
+            with open(self.base_dir / f"{cam_id}_rgb_video.metadata", "wb") as f:
+                pickle.dump(metadata, f)
 
-                for _, img in frames:
-                    if img is None:
-                        continue
-                    ih, iw = img.shape[:2]
-                    if ih != h or iw != w:
-                        img = cv2.resize(img, (w, h), interpolation=cv2.INTER_LINEAR)
-                    writer.write(img)
-                writer.release()
-
-                metadata = {
-                    "cam_idx": cam_idx,
-                    "cam_name": cam_id,
-                    "cam_fps": video_fps,
-                    "cam_fps_configured": self.camera_fps,
-                    "num_image_frames": len(timestamps),
-                    "timestamps": timestamps,
-                    "record_start_time": timestamps[0],
-                    "record_end_time": timestamps[-1],
-                    "filename": str(video_path),
-                }
-
-                with open(self.base_dir / f"{cam_id}_rgb_video.metadata", "wb") as f:
-                    pickle.dump(metadata, f)
-
-                print(f"  - {cam_id}: write_fps={video_fps:.2f}, frames={len(timestamps)}")
-                saved_cameras.append(cam_id)
+            print(f"  - {cam_id}: write_fps={video_fps:.2f}, frames={len(timestamps)}")
+            saved_cameras.append(cam_id)
 
         print("✅ Saved:")
         print(f"  - states.pkl ({len(self.state_data)})")
