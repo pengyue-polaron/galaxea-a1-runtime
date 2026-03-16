@@ -54,6 +54,12 @@ launch target="driver" serial="/dev/a1":
 joint-tracker:
     just launch joint-tracker
 
+# Relay /arm_joint_target_position (JointState) → /arm_joint_command_host (arm_control)
+# Required for inference when using /arm_joint_target_position as the control topic.
+joint-relay:
+    set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
+    {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/joint_target_relay.py
+
 ee-tracker mode="" *args:
     case "{{mode}}" in ""|run) just launch ee-tracker ;; -drag|drag) scripts/collect_data/dragdatacoach.sh ee-tracker-drag {{args}} ;; *) echo "Usage: just ee-tracker [run|-drag|drag] [args...]"; exit 1 ;; esac
 
@@ -72,11 +78,38 @@ replay bag="" rate="1.0" gripper_mode="position":
 replay-infer input="" source="auto" rate="15" speed="1.0" *args:
     if [ -z "{{input}}" ]; then echo "Usage: just replay-infer <input> [source] [rate] [speed] [extra args...]"; exit 1; fi; scripts/collect_data/dragdatacoach.sh replay-infer --input "{{input}}" --source "{{source}}" --rate "{{rate}}" --speed "{{speed}}" {{args}}
 
-collect:
-    trap '' INT; set +e; scripts/collect_data/dragdatacoach.sh collect; rc=$?; trap - INT; set -e; if [ "$rc" -eq 130 ]; then exit 0; fi; exit "$rc"
-
-drag-collect *args:
-    scripts/collect_data/dragdatacoach_all_in_one.sh {{args}}
+# Data collection. Choose mode: drag (bag-replay pipeline) or teleop (SO leader real-time).
+# Example: just collect drag
+# Example: just collect drag --skip-record
+# Example: just collect teleop
+# Example: just collect teleop -- --cam0-serial 123456 --task "pick block"
+collect action="" *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    case "{{action}}" in
+        drag)
+            scripts/collect_data/dragdatacoach_all_in_one.sh {{args}}
+            ;;
+        teleop)
+            echo "[collect] starting teleop services..."
+            AUTO_CONFIRM=1 just teleop
+            echo "[collect] starting recorder..."
+            trap '' INT; set +e
+            {{uv}} run --project {{repo}} python \
+                {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
+                --output-root "{{repo}}/data/a1" \
+                {{args}}
+            rc=$?; trap - INT; set -e
+            if [ "$rc" -eq 130 ]; then exit 0; fi; exit "$rc"
+            ;;
+        *)
+            echo "Usage: just collect <drag|teleop> [args...]"
+            echo ""
+            echo "  drag    Drag-teach → record bag → replay → collect (all-in-one)"
+            echo "  teleop  SO leader real-time teleoperation + direct camera/joint recording"
+            exit 1
+            ;;
+    esac
 
 test target="camera" *args:
     PY=$(scripts/collect_data/dragdatacoach.sh which-python)
@@ -106,21 +139,52 @@ bag action="latest" bag="":
 
 # ── Teleoperation ────────────────────────────────────────────────────────────
 
+# One-time calibration for the SO leader arm.
+# Run once before first `just teleop` to generate ~/.cache/huggingface/lerobot/calibration/teleoperators/so_leader/my_leader.json
+# Example: just calibrate-leader
+# Example: just calibrate-leader /dev/ttyACM0 my_other_leader
+calibrate-leader port=teleop_leader_port id="my_leader":
+    {{repo}}/third_party/lerobot/.venv/bin/lerobot-calibrate \
+        --teleop.type=so100_leader \
+        --teleop.port="{{port}}" \
+        --teleop.id="{{id}}"
+
 # One-time setup: create third_party/lerobot/.venv (Python 3.12) and install lerobot[feetech].
 # Run this once before the first `just teleop`.
 setup-teleop:
     {{uv}} venv --python 3.12 {{repo}}/third_party/lerobot/.venv
     {{uv}} pip install --python {{repo}}/third_party/lerobot/.venv/bin/python -e "{{repo}}/third_party/lerobot[feetech]"
+    {{uv}} pip install --python {{repo}}/third_party/lerobot/.venv/bin/python pyrealsense2
     @echo "teleop env ready: {{repo}}/third_party/lerobot/.venv"
 
 # SO leader → A1 jointTracker teleoperation.
 # Starts: roscore → single_arm_node → jointTrackerdemo → SO leader bridge.
 # Run `just setup-teleop` once before first use.
 # Example: just teleop
+# Example: just teleop stop
 # Example: LEADER_PORT=/dev/ttyACM0 just teleop
-teleop serial="/dev/a1" leader_port=teleop_leader_port:
+teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
     #!/usr/bin/env bash
     set -euo pipefail
+
+    if [[ "{{action}}" == "stop" ]]; then
+        run_dir="/tmp/lerobot-teleop"
+        found=0
+        for pid_file in "$run_dir"/*.pid; do
+            [[ -f "$pid_file" ]] || continue
+            found=1
+            pid="$(cat "$pid_file")"
+            name="$(basename "$pid_file" .pid)"
+            if kill "$pid" 2>/dev/null; then
+                echo "stopped $name (pid=$pid)"
+            else
+                echo "$name (pid=$pid) already exited"
+            fi
+            rm -f "$pid_file"
+        done
+        [[ "$found" -eq 0 ]] && echo "no teleop pid files found in $run_dir"
+        exit 0
+    fi
 
     sdk_dir="{{repo}}/third_party/A1_SDK/install"
     bridge_bin="{{repo}}/third_party/lerobot/.venv/bin/lerobot-a1-jointtracker-bridge"
@@ -212,27 +276,7 @@ teleop serial="/dev/a1" leader_port=teleop_leader_port:
 
     echo "teleop services running in background."
     echo "logs: $log_dir"
-    echo "stop with: just teleop-stop"
-
-# Stop all teleop background services.
-teleop-stop:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    run_dir="/tmp/lerobot-teleop"
-    found=0
-    for pid_file in "$run_dir"/*.pid; do
-        [[ -f "$pid_file" ]] || continue
-        found=1
-        pid="$(cat "$pid_file")"
-        name="$(basename "$pid_file" .pid)"
-        if kill "$pid" 2>/dev/null; then
-            echo "stopped $name (pid=$pid)"
-        else
-            echo "$name (pid=$pid) already exited"
-        fi
-        rm -f "$pid_file"
-    done
-    [[ "$found" -eq 0 ]] && echo "no teleop pid files found in $run_dir"
+    echo "stop with: just teleop stop"
 
 # ── Inference ────────────────────────────────────────────────────────────────
 
@@ -242,7 +286,7 @@ policy policy_dir=checkpoint:
 # ZMQ↔WebSocket bridge: reads state+cameras from ZMQ, calls WebSocket policy server, publishes actions to ZMQ
 # Run this alongside `just policy` so the A1 server receives joint actions over ZMQ.
 # Example: just zmq-bridge
-# Example: just zmq-bridge --prompt "pick up the cup" --action-chunk-size 3
+# Example: just zmq-bridge nyushrobo5090 8000 "pick up the cup"
 zmq-bridge host="127.0.0.1" port="8000" prompt="swap the position of the marker and the yellow block" *args:
     PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/zmq_ws_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
 

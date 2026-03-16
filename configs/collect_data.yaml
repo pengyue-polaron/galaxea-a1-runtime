@@ -57,7 +57,7 @@ a1_server:
   state_pose_topic: /end_effector_pose
   state_gripper_topic: /gripper_stroke_host
   cmd_pose_topic: /a1_ee_target
-  cmd_joint_topic: /arm_joint_command_host
+  cmd_joint_topic: /arm_joint_target_position
   cmd_gripper_position_topic: /gripper_position_control_host
   zmq_cmd_bind: tcp://127.0.0.1:5556
   zmq_state_bind: tcp://127.0.0.1:5557

@@ -47,6 +47,7 @@ just policy /path/to/checkpoint    # specify a different checkpoint
 just zmq-bridge                                        # default prompt
 just zmq-bridge --prompt "pick up the cup"             # custom prompt
 just zmq-bridge --prompt "..." --action-chunk-size 3   # tune action chunk size
+just zmq-bridge --step-mode --prompt "..."             # press Enter for each infer step
 ```
 
 ## Inference Parameters
@@ -55,6 +56,7 @@ just zmq-bridge --prompt "..." --action-chunk-size 3   # tune action chunk size
 |-----------|---------|-------------|
 | `--prompt` | `"swap the position of the marker and the yellow block"` | Language instruction |
 | `--action-chunk-size` | `2` | Number of consecutive actions to execute before re-querying the policy |
+| `--step-mode` | `false` | Manual stepping mode: press Enter to run one infer→publish step |
 | `--host` / `--port` | `127.0.0.1` / `8000` | Policy server address |
 
 ## Debug Tools

@@ -1,6 +1,6 @@
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from signal_arm.msg import arm_control, gripper_position_control
+from signal_arm.msg import gripper_position_control
 from std_msgs.msg import Header
 
 from collections import deque
@@ -48,9 +48,6 @@ class A1Server:
         self.zmq_policy_action_connect = str(
             self._cfg_get("zmq_policy_action_connect", f"tcp://127.0.0.1:{ZMQ_POLICY_ACTION_PORT}")
         )
-        self.joint_kp = [float(v) for v in self._cfg_get("joint_kp", [200.0] * 6)]
-        self.joint_kd = [float(v) for v in self._cfg_get("joint_kd", [10.0] * 6)]
-
         self.feedback_lock = threading.Lock()
         # Keep only the freshest leader command to prevent stale command replay.
         self._leader_queue = deque(maxlen=1)
@@ -223,66 +220,40 @@ class A1Server:
     def policy_action_subscriber(self):
         """
         Subscribe joint-angle policy actions from ZMQ and forward to ROS
-        as signal_arm/arm_control messages on cmd_joint_topic.
-        Action vector: 7D = [joint1..joint6, gripper_joint] (gripper ignored for arm control).
+        as sensor_msgs/JointState on cmd_joint_topic (/arm_joint_target_position).
+        Action vector: 7D = [joint1..joint6, gripper_joint] (gripper ignored).
+        One ZMQ message → one JointState published → robot moves to that target.
         """
-        pub = rospy.Publisher(self.cmd_joint_topic, arm_control, queue_size=10)
+        pub = rospy.Publisher(self.cmd_joint_topic, JointState, queue_size=1)
 
         context = zmq.Context()
         zmq_sub = context.socket(zmq.SUB)
-        zmq_sub.setsockopt(zmq.CONFLATE, 1)
-        zmq_sub.setsockopt(zmq.RCVHWM, 1)
         zmq_sub.connect(self.zmq_policy_action_connect)
         zmq_sub.setsockopt_string(zmq.SUBSCRIBE, "")
         print(f"[A1Server] ZMQ SUB connected to {self.zmq_policy_action_connect}")
 
-        max_action_age_s = 5.0
-        stale_action_drop_count = 0
-
-        rate = rospy.Rate(max(self.publish_rate_hz, 1.0))
         while not rospy.is_shutdown():
             try:
                 action = zmq_sub.recv_json(flags=zmq.NOBLOCK)
             except zmq.Again:
-                rate.sleep()
+                time.sleep(0.002)
                 continue
 
             if not isinstance(action, dict):
-                rate.sleep()
                 continue
 
-            action_ts = action.get("timestamp", None)
-            if action_ts is not None:
-                try:
-                    age_s = time.time() - float(action_ts)
-                except Exception:
-                    age_s = None
-                if age_s is not None and age_s > max_action_age_s:
-                    stale_action_drop_count += 1
-                    if stale_action_drop_count % 100 == 1:
-                        print(
-                            "[A1Server] Dropping stale policy action "
-                            f"(age={age_s:.3f}s, count={stale_action_drop_count})"
-                        )
-                    rate.sleep()
-                    continue
-
-            try:
-                joints = action["joints"]
-            except Exception:
-                rate.sleep()
+            joints = action.get("joints")
+            if not isinstance(joints, (list, tuple)):
                 continue
 
-            arm_joints = [float(j) for j in joints[:6]]
-            msg = arm_control()
+            msg = JointState()
             msg.header.stamp = rospy.Time.now()
             msg.header.frame_id = "world"
-            msg.p_des = arm_joints
-            msg.v_des = [0.0] * 6
-            msg.kp = self.joint_kp
-            msg.kd = self.joint_kd
-            msg.t_ff = [0.0] * 6
-            msg.mode = 1
+            msg.name = [
+                "arm_joint1", "arm_joint2", "arm_joint3",
+                "arm_joint4", "arm_joint5", "arm_joint6",
+            ]
+            msg.position = [float(j) for j in joints[:6]]
+            msg.velocity = []
+            msg.effort = []
             pub.publish(msg)
-
-            rate.sleep()
