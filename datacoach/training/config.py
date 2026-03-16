@@ -361,74 +361,6 @@ class LeRobotLiberoDataConfig(DataConfigFactory):
         )
 
 
-# @dataclasses.dataclass(frozen=True)
-# class RLDSDroidDataConfig(DataConfigFactory):
-#     """
-#     Config for training on DROID, using RLDS data format (for efficient training on larger datasets).
-#     """
-
-#     rlds_data_dir: str | None = None
-#     action_space: droid_rlds_dataset.DroidActionSpace | None = None
-
-#     # Filtering options. Can pass a path to a dictionary that maps episodes to timestep ranges
-#     # to tuples denoting ranges of time steps to keep (start, end). Episodes are uniquely identified with
-#     # f"{recording_folderpath}--{file_path}", both of which are present in the RLDS episode metadata.
-
-#     # List of datasets to sample from: name, version, weight, and optionally filter_dict_path
-#     datasets: Sequence[droid_rlds_dataset.DroidRldsDataset] = ( # ❗️ DroidRldsDataset not RLDSDataset
-#         droid_rlds_dataset.DroidRldsDataset(
-#             name="droid",
-#             version="1.0.1",
-#             weight=1.0,
-#             filter_dict_path="gs://openpi-assets/droid/droid_sample_ranges_v1_0_1.json",
-#         ),
-#     )
-
-#     @override
-#     def create(self, assets_dirs: pathlib.Path, model_config: _model.BaseModelConfig) -> DataConfig:
-#         repack_transform = _transforms.Group(
-#             inputs=[
-#                 _transforms.RepackTransform(
-#                     {
-#                         "observation/exterior_image_1_left": "observation/image",
-#                         "observation/wrist_image_left": "observation/wrist_image",
-#                         "observation/joint_position": "observation/joint_position",
-#                         "observation/gripper_position": "observation/gripper_position",
-#                         "actions": "actions",
-#                         "prompt": "prompt",
-#                     }
-#                 )
-#             ]
-#         )
-
-#         data_transforms = _transforms.Group(
-#             inputs=[droid_policy.DroidInputs(model_type=model_config.model_type)],
-#             outputs=[droid_policy.DroidOutputs()],
-#         )
-
-#         if self.action_space == droid_rlds_dataset.DroidActionSpace.JOINT_POSITION:
-#             # Data loader returns absolute joint position actions -- convert to delta actions for training.
-#             delta_action_mask = _transforms.make_bool_mask(7, -1)
-#             data_transforms = data_transforms.push(
-#                 inputs=[_transforms.DeltaActions(delta_action_mask)],
-#                 outputs=[_transforms.AbsoluteActions(delta_action_mask)],
-#             )
-
-#         model_transforms = ModelTransformFactory()(model_config)
-
-#         assert self.rlds_data_dir is not None, "Need to set rlds data dir for RLDS data loader."
-
-#         return dataclasses.replace(
-#             self.create_base_config(assets_dirs, model_config),
-#             repack_transforms=repack_transform,
-#             data_transforms=data_transforms,
-#             model_transforms=model_transforms,
-#             rlds_data_dir=self.rlds_data_dir,
-#             action_space=self.action_space,
-#             datasets=self.datasets,
-#         )
-
-
 @dataclasses.dataclass(frozen=True)
 class LeRobotDROIDDataConfig(DataConfigFactory):
     """
@@ -785,64 +717,43 @@ _CONFIGS = [
         # Check the base TrainConfig class for a full list of available hyperparameters.
         num_train_steps=30_000,
     ),
-    # TrainConfig(
-    #     name="localdata_a1_pi05",
-    #     model=pi0_config.Pi0Config(pi05=True, action_horizon=10, discrete_state_input=False),
-    #     data=LocalDataA1DataConfig(
-    #         repo_id = "local_data",
-    #         local_data_dir="/home/jolia/DataCoach/data/formatted_data/rollout",    # ❗️ about dataset location
-    #         base_config=DataConfig(prompt_from_task=True),
-    #     ),
-    #     batch_size=1, # 258 is too large
-    #     lr_schedule=_optimizer.CosineDecaySchedule(
-    #         warmup_steps=10_000,
-    #         peak_lr=5e-5,
-    #         decay_steps=1_000_000,
-    #         decay_lr=5e-5,
-    #     ),
-    #     optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
-    #     ema_decay= None, # 0.999,
-    #     weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-    #     pytorch_weight_path="/home/jolia/DataCoach/checkpoints", # "/path/to/your/pytorch_weight_path"
-    #     num_train_steps=30_000,
-    # ),
-  
-    # lora ---> input rank 
+    # Pi0.5 with LoRA fine-tuning (reduces trainable params to fit in 32 GB VRAM).
+    # Set local_data_dir via Hydra override: data.local_data_dir=/path/to/dataset
     TrainConfig(
         name="pi05_localdata_a1_lora",
-        # 标准 Pi0.5 模型
         model=pi0_config.Pi0Config(
-            pi05=True, 
-            action_horizon=10,  # 根据你的数据调整
+            pi05=True,
+            action_horizon=10,
             discrete_state_input=False,
             paligemma_variant="gemma_2b_lora",
-            action_expert_variant="gemma_300m_lora"
+            action_expert_variant="gemma_300m_lora",
         ),
         data=LocalDataA1DataConfig(
             repo_id="local_data",
-            local_data_dir="/home/jolia/DataCoach/data/formatted_data/rollout",
+            local_data_dir=None,  # must be overridden at runtime
             base_config=DataConfig(prompt_from_task=True),
         ),
-        batch_size=16,  # 从 64 降低以适应 32GB 显存
+        batch_size=16,
         lr_schedule=_optimizer.CosineDecaySchedule(
             warmup_steps=10_000,
             peak_lr=5e-5,
             decay_steps=1_000_000,
             decay_lr=5e-5,
         ),
-        # 关键：使用 LoRA freeze filter 来限制训练参数
-        freeze_filter=
-        pi0_config.Pi0Config(pi05=True, action_horizon=10,
-                             discrete_state_input=False,
-                             paligemma_variant="gemma_2b_lora",
-                             action_expert_variant="gemma_300m_lora"
-                             ).get_freeze_filter(),
+        # LoRA freeze filter: only LoRA adapter weights are trained.
+        freeze_filter=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=10,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b_lora",
+            action_expert_variant="gemma_300m_lora",
+        ).get_freeze_filter(),
         optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
-        ema_decay=None,  # 关闭 EMA 节省显存
+        ema_decay=None,
         weight_loader=weight_loaders.CheckpointWeightLoader(
-            "gs://openpi-assets/checkpoints/pi05_base/params"  # Pi0.5 base
+            "gs://openpi-assets/checkpoints/pi05_base/params"
         ),
-        num_train_steps=30000,
+        num_train_steps=30_000,
     ),
 
     TrainConfig(
@@ -856,7 +767,7 @@ _CONFIGS = [
         ),
         data=LocalDataA1DataConfig(
             assets=AssetsConfig(asset_id="pick_twice"),
-            local_data_dir="/home/jolia/DataCoach/data/formatted_data/swap",
+            local_data_dir=None,  # must be overridden at runtime
             base_config=DataConfig(prompt_from_task=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
@@ -901,7 +812,7 @@ _CONFIGS = [
         ),
         data=LocalDataA1LTCDataConfig(
             assets=AssetsConfig(asset_id="pick_twice"),
-            local_data_dir="/home/jolia/DataCoach/data/formatted_data/swap",
+            local_data_dir=None,  # must be overridden at runtime
             base_config=DataConfig(prompt_from_task=True),
         ),
         weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),

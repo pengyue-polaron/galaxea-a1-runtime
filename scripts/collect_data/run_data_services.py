@@ -9,6 +9,7 @@ if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
     
 from datacoach.data_collection import a1_replay_bridge, a1_server, camera_server
+from datacoach.utils import cfg_get as _cfg_get
 
 import hydra
 
@@ -20,16 +21,6 @@ def start_thread(target, kwargs=None):
     t.start()
     threads.append(t)
     return t
-
-
-def _cfg_get(cfg, key, default=None):
-    if cfg is None:
-        return default
-    if isinstance(cfg, dict):
-        return cfg.get(key, default)
-    if hasattr(cfg, "get"):
-        return cfg.get(key, default)
-    return getattr(cfg, key, default)
 
 
 def _start_camera_server(cfg):

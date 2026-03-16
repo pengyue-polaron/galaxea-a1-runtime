@@ -112,11 +112,13 @@ collect action="" *args:
     esac
 
 test target="camera" *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
     PY=$(scripts/collect_data/dragdatacoach.sh which-python)
-    case "{{target}}" in \
-        camera)     "$PY" scripts/collect_data/test_camera_connections.py --config configs/drag_replay.yaml --timeout-s 6.0 {{args}} ;; \
-        camera-raw) "$PY" scripts/collect_data/test_camera_connections.py {{args}} ;; \
-        *) echo "Usage: just test <camera|camera-raw> [args...]"; exit 1 ;; \
+    case "{{target}}" in
+        camera)     "$PY" scripts/collect_data/test_camera_connections.py --config configs/drag_replay.yaml --timeout-s 6.0 {{args}} ;;
+        camera-raw) "$PY" scripts/collect_data/test_camera_connections.py {{args}} ;;
+        *) echo "Usage: just test <camera|camera-raw> [args...]"; exit 1 ;;
     esac
 
 print target="joints" count="0" unit="deg":

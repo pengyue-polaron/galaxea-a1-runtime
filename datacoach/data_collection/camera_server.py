@@ -6,6 +6,7 @@ import numpy as np
 import zmq
 
 from datacoach.constants import ZMQ_CAM_PORT
+from datacoach.utils import cfg_get as _cfg_get
 
 try:
     import pyrealsense2 as rs
@@ -62,16 +63,6 @@ class RealSenseCamera:
 
     def close(self):
         self._pipeline.stop()
-
-
-def _cfg_get(cfg, key, default=None):
-    if cfg is None:
-        return default
-    if isinstance(cfg, dict):
-        return cfg.get(key, default)
-    if hasattr(cfg, "get"):
-        return cfg.get(key, default)
-    return getattr(cfg, key, default)
 
 
 def _build_camera_source(camera_cfg):

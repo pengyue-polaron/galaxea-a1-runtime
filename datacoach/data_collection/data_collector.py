@@ -14,6 +14,7 @@ import zmq
 from omegaconf import DictConfig
 
 from datacoach.constants import CAM_FPS, ZMQ_CAM_PORT, ZMQ_CMD_PORT, ZMQ_STATE_PORT
+from datacoach.utils import cfg_get as _cfg_get
 
 
 class ReplayAction(Enum):
@@ -30,12 +31,12 @@ class DataCollector:
         self.base_dir = None
 
         # === Camera setup ===
-        camera_fps_value = self._cfg_get(cfg, "camera_fps", CAM_FPS)
+        camera_fps_value = _cfg_get(cfg, "camera_fps", CAM_FPS)
         self.camera_fps = int(camera_fps_value) if camera_fps_value is not None else CAM_FPS
-        self.wait_for_enter = bool(self._cfg_get(cfg, "wait_for_enter", True))
-        self.min_camera_coverage_ratio = float(self._cfg_get(cfg, "min_camera_coverage_ratio", 0.9))
-        self.max_camera_start_lag_s = float(self._cfg_get(cfg, "max_camera_start_lag_s", 1.0))
-        self.max_camera_end_lag_s = float(self._cfg_get(cfg, "max_camera_end_lag_s", 1.0))
+        self.wait_for_enter = bool(_cfg_get(cfg, "wait_for_enter", True))
+        self.min_camera_coverage_ratio = float(_cfg_get(cfg, "min_camera_coverage_ratio", 0.9))
+        self.max_camera_start_lag_s = float(_cfg_get(cfg, "max_camera_start_lag_s", 1.0))
+        self.max_camera_end_lag_s = float(_cfg_get(cfg, "max_camera_end_lag_s", 1.0))
         self.camera_ids = self._parse_camera_ids(cfg)
         print(f"🎥 Expecting camera topics: {', '.join(self.camera_ids)}")
 
@@ -76,19 +77,9 @@ class DataCollector:
         # === Signal handler ===
         signal.signal(signal.SIGINT, self.stop_recording)
 
-    @staticmethod
-    def _cfg_get(cfg, key, default=None):
-        if cfg is None:
-            return default
-        if isinstance(cfg, dict):
-            return cfg.get(key, default)
-        if hasattr(cfg, "get"):
-            return cfg.get(key, default)
-        return getattr(cfg, key, default)
-
     def _build_base_dir(self, cfg):
         storage_root = Path(cfg.storage_path) / cfg.task_name
-        demo_index = self._cfg_get(cfg, "demo_index", 0)
+        demo_index = _cfg_get(cfg, "demo_index", 0)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         base_name = f"demo_{demo_index}_{timestamp}"
         base_dir = storage_root / base_name
@@ -102,7 +93,7 @@ class DataCollector:
         return base_dir
 
     def _parse_camera_ids(self, cfg):
-        cameras = self._cfg_get(cfg, "cameras", None)
+        cameras = _cfg_get(cfg, "cameras", None)
         if not cameras:
             return ["cam_0"]
 
@@ -111,7 +102,7 @@ class DataCollector:
             if isinstance(camera, str):
                 cam_id = camera
             else:
-                cam_id = self._cfg_get(camera, "id", None)
+                cam_id = _cfg_get(camera, "id", None)
             if cam_id:
                 ids.append(str(cam_id))
 

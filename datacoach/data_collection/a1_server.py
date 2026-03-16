@@ -20,6 +20,7 @@ from datacoach.constants import (
     ZMQ_POLICY_ACTION_PORT,
     ZMQ_STATE_PORT,
 )
+from datacoach.utils import cfg_get
 
 
 class A1Server:
@@ -27,40 +28,31 @@ class A1Server:
 
     def __init__(self, cfg=None):
         self.cfg = cfg
-        self.leader_udp_host = str(self._cfg_get("leader_udp_host", "127.0.0.1"))
-        self.leader_udp_port = int(self._cfg_get("leader_udp_port", LEROBOT_PORT))
-        self.scale = [float(v) for v in self._cfg_get("scale", SCALE)]
-        self.offset = [float(v) for v in self._cfg_get("offset", OFFSET)]
-        self.publish_rate_hz = float(self._cfg_get("publish_rate_hz", ROBOT_FPS))
+        self.leader_udp_host = str(cfg_get(self.cfg,"leader_udp_host", "127.0.0.1"))
+        self.leader_udp_port = int(cfg_get(self.cfg,"leader_udp_port", LEROBOT_PORT))
+        self.scale = [float(v) for v in cfg_get(self.cfg,"scale", SCALE)]
+        self.offset = [float(v) for v in cfg_get(self.cfg,"offset", OFFSET)]
+        self.publish_rate_hz = float(cfg_get(self.cfg,"publish_rate_hz", ROBOT_FPS))
         # Drop stale ROS feedback instead of replaying frozen state forever.
-        self.state_stale_timeout_s = float(self._cfg_get("state_stale_timeout_s", 0.3))
+        self.state_stale_timeout_s = float(cfg_get(self.cfg,"state_stale_timeout_s", 0.3))
 
-        self.state_joint_topic = str(self._cfg_get("state_joint_topic", "/joint_states_host"))
-        self.cmd_joint_topic = str(self._cfg_get("cmd_joint_topic", "/arm_joint_target_position"))
+        self.state_joint_topic = str(cfg_get(self.cfg,"state_joint_topic", "/joint_states_host"))
+        self.cmd_joint_topic = str(cfg_get(self.cfg,"cmd_joint_topic", "/arm_joint_target_position"))
         # Kept for the leader/drag path (ros_publisher).
-        self.cmd_pose_topic = str(self._cfg_get("cmd_pose_topic", "/a1_ee_target"))
+        self.cmd_pose_topic = str(cfg_get(self.cfg,"cmd_pose_topic", "/a1_ee_target"))
         self.cmd_gripper_position_topic = str(
-            self._cfg_get("cmd_gripper_position_topic", "/gripper_position_control_host")
+            cfg_get(self.cfg,"cmd_gripper_position_topic", "/gripper_position_control_host")
         )
 
-        self.zmq_cmd_bind = str(self._cfg_get("zmq_cmd_bind", f"tcp://127.0.0.1:{ZMQ_CMD_PORT}"))
-        self.zmq_state_bind = str(self._cfg_get("zmq_state_bind", f"tcp://127.0.0.1:{ZMQ_STATE_PORT}"))
+        self.zmq_cmd_bind = str(cfg_get(self.cfg,"zmq_cmd_bind", f"tcp://127.0.0.1:{ZMQ_CMD_PORT}"))
+        self.zmq_state_bind = str(cfg_get(self.cfg,"zmq_state_bind", f"tcp://127.0.0.1:{ZMQ_STATE_PORT}"))
         self.zmq_policy_action_connect = str(
-            self._cfg_get("zmq_policy_action_connect", f"tcp://127.0.0.1:{ZMQ_POLICY_ACTION_PORT}")
+            cfg_get(self.cfg,"zmq_policy_action_connect", f"tcp://127.0.0.1:{ZMQ_POLICY_ACTION_PORT}")
         )
         self.feedback_lock = threading.Lock()
         # Keep only the freshest leader command to prevent stale command replay.
         self._leader_queue = deque(maxlen=1)
         self._leader_lock = threading.Lock()
-
-    def _cfg_get(self, key, default=None):
-        if self.cfg is None:
-            return default
-        if isinstance(self.cfg, dict):
-            return self.cfg.get(key, default)
-        if hasattr(self.cfg, "get"):
-            return self.cfg.get(key, default)
-        return getattr(self.cfg, key, default)
 
     def leader_data_receiver(self):
         sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

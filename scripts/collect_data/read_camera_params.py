@@ -7,6 +7,8 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from datacoach.utils import cfg_get as _cfg_get
+
 try:
     from omegaconf import OmegaConf
 except Exception:
@@ -16,16 +18,6 @@ try:
     import yaml
 except Exception:
     yaml = None
-
-
-def _cfg_get(cfg, key, default=None):
-    if cfg is None:
-        return default
-    if isinstance(cfg, dict):
-        return cfg.get(key, default)
-    if hasattr(cfg, "get"):
-        return cfg.get(key, default)
-    return getattr(cfg, key, default)
 
 
 def _load_config(cfg_path: Path):

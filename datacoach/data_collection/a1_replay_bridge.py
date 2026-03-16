@@ -46,16 +46,7 @@ except Exception as exc:
     ) from exc
 
 from datacoach.constants import ROBOT_FPS, ZMQ_CMD_PORT, ZMQ_STATE_PORT
-
-
-def _cfg_get(cfg, key, default=None):
-    if cfg is None:
-        return default
-    if isinstance(cfg, dict):
-        return cfg.get(key, default)
-    if hasattr(cfg, "get"):
-        return cfg.get(key, default)
-    return getattr(cfg, key, default)
+from datacoach.utils import cfg_get as _cfg_get
 
 
 def _pose_to_dict(msg: PoseStamped) -> dict[str, tuple[float, ...]]:
