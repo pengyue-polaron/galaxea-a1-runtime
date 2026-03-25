@@ -29,7 +29,7 @@ HOST = "127.0.0.1"
 def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--host", default=HOST, help="WebSocket server host")
-    p.add_argument("--port", type=int, default=8000, help="WebSocket server port")
+    p.add_argument("--port", type=int, default=8001, help="WebSocket server port")
     p.add_argument(
         "--prompt", default="swap the position of the marker and the yellow block"
     )

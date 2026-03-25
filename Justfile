@@ -3,9 +3,9 @@ set quiet := true
 
 # ── Configuration ────────────────────────────────────────────────────────────
 # Model
-checkpoint   := "/home/eric/4999"
+checkpoint   := "/home/eric/19999"
 openpi       := "/home/pengyue/Codespace/TFP"
-model_config := "pi05_a1_single_arm"
+model_config := "pi05_a1_v21_lora_5k"
 # Paths
 uv   := "/home/pengyue/.local/bin/uv"
 repo := justfile_directory()
@@ -282,15 +282,242 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
 
 # ── Inference ────────────────────────────────────────────────────────────────
 
-policy policy_dir=checkpoint:
-    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/serve_policy_a1.py policy:checkpoint --policy.config {{model_config}} --policy.dir "{{policy_dir}}"
+# Live inference: real cameras + current joint state → policy → robot.
+# Starts: roscore → single_arm_node → jointTrackerdemo → camera_server → policy server → policy_ros_bridge.
+# Example: just infer
+# Example: just infer "pick up the marker and place it into the red plate"
+# Example: just infer "pick up the marker" -- --exec-rate 50
+infer prompt="pick up the marker and place it into the red plate" *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    eric_sdk="/home/eric/A1_SDK/install"
+    eric_python="/home/eric/openpi/.venv/bin/python"
+    checkpoint_dir="/home/eric/19999"
+    port="8001"
+    serial="${SINGLE_ARM_SERIAL:-/dev/a1}"
+    run_dir="/tmp/lerobot-infer"
+    log_dir="$run_dir/logs"
+    tail_pid_file="$run_dir/tail.pids"
+    mkdir -p "$log_dir"
+    : > "$tail_pid_file"
+
+    if [[ ! -e "$serial" ]]; then
+        echo "[infer] serial not found: $serial"
+        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
+        exit 1
+    fi
+
+    cleanup() {
+        echo "[infer] shutting down..."
+        while IFS= read -r pid; do kill "$pid" 2>/dev/null || true; done < "$tail_pid_file"
+        for f in "$run_dir"/*.pid; do
+            [[ -f "$f" ]] || continue; kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"
+        done
+    }
+    trap cleanup EXIT
+
+    start_service() {
+        local name="$1" cmd="$2" prompt="$3"
+        local suppress="${4:-}" ok_regex="${5:-}"
+        local log="$log_dir/$name.log" pid_file="$run_dir/$name.pid"
+        echo "[$name] starting..."; : > "$log"
+        nohup bash -lc "$cmd" >> "$log" 2>&1 &
+        local pid=$!; echo "$pid" > "$pid_file"
+        if [[ -n "$suppress" ]]; then
+            tail -n 0 -F "$log" | grep -Eav --line-buffered "$suppress" | sed -u "s/^/[$name] /" &
+        else
+            tail -n 0 -F "$log" | sed -u "s/^/[$name] /" &
+        fi
+        echo "$!" >> "$tail_pid_file"
+        sleep 1
+        if ! kill -0 "$pid" 2>/dev/null; then
+            if [[ -n "$ok_regex" ]] && grep -Eq "$ok_regex" "$log"; then
+                echo "[$name] existing instance detected, reusing."; rm -f "$pid_file"
+            else
+                echo "[$name] failed to start. log: $log"; exit 1
+            fi
+        fi
+        read -r -p "$prompt"
+    }
+
+    start_service "roscore" \
+        "cd $eric_sdk && source setup.bash && roscore" \
+        "[roscore] ready — press enter: " \
+        "" "another roscore/master is already running"
+
+    start_service "single_arm_node" \
+        "cd $eric_sdk && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$serial" \
+        "[single_arm_node] ready — press enter: "
+
+    start_service "joint_tracker" \
+        "cd $eric_sdk && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" \
+        "[joint_tracker] ready — press enter: " \
+        "model->njoints|start tracking|get target position"
+
+    start_service "camera_server" \
+        "cd {{repo}} && {{uv}} run --project {{repo}} python scripts/collect_data/run_data_services.py service_mode=live 'a1_server.components=[]'" \
+        "[camera_server] ready — press enter: "
+
+    echo "[infer] starting policy server (checkpoint=$checkpoint_dir) ..."
+    policy_log="$log_dir/policy.log"
+    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" \
+        "$eric_python" {{repo}}/scripts/inference/serve_policy_a1.py \
+        --port "$port" policy:checkpoint \
+        --policy.config {{model_config}} \
+        --policy.dir "$checkpoint_dir" \
+        > "$policy_log" 2>&1 &
+    policy_pid=$!
+    echo "$policy_pid" > "$run_dir/policy.pid"
+    tail -n 0 -F "$policy_log" | sed -u "s/^/[policy] /" &
+    echo "$!" >> "$tail_pid_file"
+
+    echo "[infer] waiting for policy server on port $port ..."
+    for i in $(seq 1 90); do
+        ss -tlnp 2>/dev/null | grep -q ":$port " && { echo "[infer] policy ready."; break; }
+        kill -0 "$policy_pid" 2>/dev/null || { echo "[infer] policy crashed. log: $policy_log"; exit 1; }
+        sleep 2
+    done
+
+    echo "[infer] running live bridge ..."
+    PYTHONPATH="$eric_sdk/lib/python3/dist-packages:/opt/ros/noetic/lib/python3/dist-packages:{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" \
+        "$eric_python" {{repo}}/scripts/inference/policy_ros_bridge.py \
+        --host 127.0.0.1 --port "$port" --prompt "{{prompt}}" {{args}}
+
+# Teacher-forcing inference: GT observations from dataset → policy → robot.
+# Starts: roscore → single_arm_node → jointTrackerdemo → policy server → lerobot_policy_bridge.
+# Example: just teacher-infer -- --episode 0 --num-chunks 10
+# Example: just teacher-infer -- --episode 0 --chunk-size 10 --no-step-mode
+teacher-infer *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+
+    eric_sdk="/home/eric/A1_SDK/install"
+    eric_python="/home/eric/openpi/.venv/bin/python"
+    checkpoint_dir="/home/eric/19999"
+    port="8001"
+    serial="${SINGLE_ARM_SERIAL:-/dev/a1}"
+    run_dir="/tmp/lerobot-infer"
+    log_dir="$run_dir/logs"
+    tail_pid_file="$run_dir/tail.pids"
+    mkdir -p "$log_dir"
+    : > "$tail_pid_file"
+
+    if [[ ! -e "$serial" ]]; then
+        echo "[teacher-infer] serial not found: $serial"
+        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
+        exit 1
+    fi
+
+    cleanup() {
+        echo "[teacher-infer] shutting down..."
+        while IFS= read -r pid; do kill "$pid" 2>/dev/null || true; done < "$tail_pid_file"
+        for f in "$run_dir"/*.pid; do
+            [[ -f "$f" ]] || continue; kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"
+        done
+    }
+    trap cleanup EXIT
+
+    start_service() {
+        local name="$1" cmd="$2" prompt="$3"
+        local suppress="${4:-}" ok_regex="${5:-}"
+        local log="$log_dir/$name.log" pid_file="$run_dir/$name.pid"
+        echo "[$name] starting..."; : > "$log"
+        nohup bash -lc "$cmd" >> "$log" 2>&1 &
+        local pid=$!; echo "$pid" > "$pid_file"
+        if [[ -n "$suppress" ]]; then
+            tail -n 0 -F "$log" | grep -Eav --line-buffered "$suppress" | sed -u "s/^/[$name] /" &
+        else
+            tail -n 0 -F "$log" | sed -u "s/^/[$name] /" &
+        fi
+        echo "$!" >> "$tail_pid_file"
+        sleep 1
+        if ! kill -0 "$pid" 2>/dev/null; then
+            if [[ -n "$ok_regex" ]] && grep -Eq "$ok_regex" "$log"; then
+                echo "[$name] existing instance detected, reusing."; rm -f "$pid_file"
+            else
+                echo "[$name] failed to start. log: $log"; exit 1
+            fi
+        fi
+        read -r -p "$prompt"
+    }
+
+    start_service "roscore" \
+        "cd $eric_sdk && source setup.bash && roscore" \
+        "[roscore] ready — press enter: " \
+        "" "another roscore/master is already running"
+
+    start_service "single_arm_node" \
+        "cd $eric_sdk && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$serial" \
+        "[single_arm_node] ready — press enter: "
+
+    start_service "joint_tracker" \
+        "cd $eric_sdk && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" \
+        "[joint_tracker] ready — press enter: " \
+        "model->njoints|start tracking|get target position"
+
+    echo "[teacher-infer] starting policy server (checkpoint=$checkpoint_dir) ..."
+    policy_log="$log_dir/policy.log"
+    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" \
+        "$eric_python" {{repo}}/scripts/inference/serve_policy_a1.py \
+        --port "$port" policy:checkpoint \
+        --policy.config {{model_config}} \
+        --policy.dir "$checkpoint_dir" \
+        > "$policy_log" 2>&1 &
+    policy_pid=$!
+    echo "$policy_pid" > "$run_dir/policy.pid"
+    tail -n 0 -F "$policy_log" | sed -u "s/^/[policy] /" &
+    echo "$!" >> "$tail_pid_file"
+
+    echo "[teacher-infer] waiting for policy server on port $port ..."
+    for i in $(seq 1 90); do
+        ss -tlnp 2>/dev/null | grep -q ":$port " && { echo "[teacher-infer] policy ready."; break; }
+        kill -0 "$policy_pid" 2>/dev/null || { echo "[teacher-infer] policy crashed. log: $policy_log"; exit 1; }
+        sleep 2
+    done
+
+    echo "[teacher-infer] running bridge ..."
+    "$eric_python" {{repo}}/scripts/inference/lerobot_policy_bridge.py {{args}}
+
+# Teacher-forcing policy bridge only (policy server must already be running).
+# Example: just lerobot-policy-bridge -- --episode 0
+# Example: just lerobot-policy-bridge -- --episode 0 --num-chunks 1
+lerobot-policy-bridge *args:
+    /home/eric/openpi/.venv/bin/python {{repo}}/scripts/inference/lerobot_policy_bridge.py {{args}}
+
+policy policy_dir=checkpoint port="8001":
+    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/serve_policy_a1.py --port {{port}} policy:checkpoint --policy.config {{model_config}} --policy.dir "{{policy_dir}}"
+
+# Policy → ROS bridge: same pipeline as just teleop but policy replaces the SO leader arm.
+# Reads live cameras (ZMQ) + /joint_states_host (ROS), calls policy, publishes to /arm_joint_target_position.
+# Requires: just launch roscore, just launch driver, just joint-tracker, just launch camera-server, just policy
+# Example: just policy-ros-bridge
+# Example: just policy-ros-bridge 127.0.0.1 8001 "pick up the marker"
+policy-ros-bridge host="127.0.0.1" port="8001" prompt="pick up the marker and place it into the red plate" *args:
+    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/policy_ros_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
 
 # ZMQ↔WebSocket bridge: reads state+cameras from ZMQ, calls WebSocket policy server, publishes actions to ZMQ
 # Run this alongside `just policy` so the A1 server receives joint actions over ZMQ.
 # Example: just zmq-bridge
-# Example: just zmq-bridge nyushrobo5090 8000 "pick up the cup"
-zmq-bridge host="127.0.0.1" port="8000" prompt="swap the position of the marker and the yellow block" *args:
+# Example: just zmq-bridge nyushrobo5090 8001 "pick up the cup"
+zmq-bridge host="127.0.0.1" port="8001" prompt="pick up the marker and place it into the red plate" *args:
     PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/zmq_ws_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
+
+# Teacher-forcing execution via ROS — same receiver pipeline as just teleop (no ZMQ).
+# Feeds GT observations from recorded demo to policy, sends outputs to /arm_joint_target_position.
+# Requires: just launch roscore, just launch driver, just joint-tracker, just policy
+# Example: just tf-exec-ros demo_0
+# Example: just tf-exec-ros demo_0 -- --no-step-mode
+# Example: just tf-exec-ros demo_0 -- --dry-run
+tf-exec-ros demo="" processed_root="{{repo}}/data/processed_data/pick_twice" *args:
+    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/tf_exec_ros.py --processed-root "{{processed_root}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
+
+# Teacher-forcing execution via ROS on a LeRobot v2.1 dataset.
+# Requires: just launch roscore, just launch driver, just joint-tracker, just policy
+# Example: just tf-exec-ros-lerobot /path/to/dataset "pick up the marker" -- --episode 0
+# Example: just tf-exec-ros-lerobot /path/to/dataset "pick up the marker" -- --episode 0 --dry-run
+tf-exec-ros-lerobot lerobot_root prompt="pick up the marker and place it into the red plate" *args:
+    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/tf_exec_ros.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
 
 # Teacher-forcing: offline policy inference on training images → trajectory.json + trajectory.html
 # Requires: just policy (WebSocket server) running first.
@@ -299,6 +526,30 @@ zmq-bridge host="127.0.0.1" port="8000" prompt="swap the position of the marker 
 # Example: just teacher-forcing demo_0 -- --max-steps 100
 teacher-forcing demo="" processed_root="{{repo}}/data/processed_data/pick_twice" *args:
     PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_infer.py --processed-root "{{processed_root}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
+
+# Teacher-forcing on a LeRobot v2.1 dataset (parquet + jpg, no mp4 videos).
+# Requires: just policy (WebSocket server) running first.
+# Example: just tf-lerobot /home/eric/lerobot/data/a1_v21_old
+# Example: just tf-lerobot /home/eric/lerobot/data/a1_v21_old "pick up the marker and place it into the red plate" -- --episode 3
+# Example: just tf-lerobot /home/eric/lerobot/data/a1_v21_old "pick up the marker and place it into the red plate" -- --episode 3 --max-steps 200
+tf-lerobot lerobot_root prompt="pick up the marker and place it into the red plate" *args:
+    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_infer.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
+
+# Teacher-forcing execution: run policy on recorded demo and send joint targets to A1 arm via ZMQ.
+# Requires: just policy + just launch a1-server + just joint-relay
+# Add --dry-run to infer without sending to robot.
+# Example: just tf-exec demo_0
+# Example: just tf-exec demo_0 -- --exec-rate 5 --dry-run
+# Example: just tf-exec demo_0 -- --max-steps 50
+tf-exec demo="" processed_root="{{repo}}/data/processed_data/pick_twice" *args:
+    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_exec.py --processed-root "{{processed_root}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
+
+# Teacher-forcing execution on a LeRobot v2.1 dataset — sends joint targets to A1 arm via ZMQ.
+# Requires: just policy + just launch a1-server + just joint-relay
+# Example: just tf-exec-lerobot /path/to/dataset "swap the marker and block" -- --episode 0
+# Example: just tf-exec-lerobot /path/to/dataset "swap the marker and block" -- --episode 0 --dry-run
+tf-exec-lerobot lerobot_root prompt="pick up the marker and place it into the red plate" *args:
+    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_exec.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
 
 # Open-loop rollout eval on processed data → per-demo trajectory.json + trajectory.html
 # Example: just openloop-rollout --policy-dir /home/eric/4999

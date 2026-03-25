@@ -10,13 +10,19 @@ Outputs per demo:
   <output_dir>/<demo_name>/trajectory.json
   <output_dir>/<demo_name>/trajectory.html  (interactive Plotly)
 
-Usage:
+Usage (processed-data mode, pkl + mp4):
     just teacher-forcing                        # all demos in default root
     just teacher-forcing demo_0                 # single demo
     just teacher-forcing -- --port 8001         # custom WebSocket port
+
+Usage (LeRobot v2.1 mode, parquet + jpg):
+    just tf-lerobot /home/eric/lerobot/data/a1_v21_old
+    just tf-lerobot /home/eric/lerobot/data/a1_v21_old "swap the position..." -- --episode 3
     # or directly:
     python scripts/inference/teacher_forcing_infer.py \\
-        --processed-root data/processed_data/pick_twice --prompt pick_twice
+        --lerobot-root /home/eric/lerobot/data/a1_v21_old \\
+        --prompt "swap the position of the marker and the yellow block" \\
+        --episode 3
 """
 from __future__ import annotations
 
@@ -115,6 +121,118 @@ def _demo_sort_key(path: Path) -> int | str:
         if p.isdigit():
             return int(p)
     return path.name
+
+
+# ---------------------------------------------------------------------------
+# LeRobot v2.1 data loader
+# ---------------------------------------------------------------------------
+
+def _load_lerobot_episode(dataset_root: Path, episode_index: int):
+    """Load one episode from a LeRobot v2.1 dataset.
+
+    Returns (df, images_dir) where:
+      df          — pandas DataFrame with columns observation.state, action, timestamp, frame_index
+      images_dir  — Path to images/chunk-000/episode_XXXXXX/
+    """
+    try:
+        import pandas as pd
+    except ImportError:
+        raise RuntimeError("pandas is required to read LeRobot data: pip install pandas pyarrow")
+
+    chunk = episode_index // 1000
+    parquet = dataset_root / "data" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}.parquet"
+    if not parquet.exists():
+        raise FileNotFoundError(f"Parquet not found: {parquet}")
+
+    df = pd.read_parquet(parquet)
+    images_dir = dataset_root / "images" / f"chunk-{chunk:03d}" / f"episode_{episode_index:06d}"
+    return df, images_dir
+
+
+def infer_demo_lerobot(
+    *,
+    dataset_root: Path,
+    episode_index: int,
+    policy,
+    prompt: str,
+    max_steps: int,
+) -> list[dict]:
+    """Teacher-forcing on a LeRobot v2.1 episode (parquet + jpg images).
+
+    State format  : observation.state  (7D) — actual joint state
+    Target format : action             (7D) — commanded joint target
+    """
+    df, images_dir = _load_lerobot_episode(dataset_root, episode_index)
+
+    n_frames = len(df)
+    n_steps = n_frames if max_steps <= 0 else min(n_frames, max_steps)
+
+    cam0_dir = images_dir / "cam0"
+    cam1_dir = images_dir / "cam1"
+    if not cam0_dir.exists() or not cam1_dir.exists():
+        raise FileNotFoundError(f"Image dirs not found: {cam0_dir}, {cam1_dir}")
+
+    print(
+        f"[TF] episode_{episode_index:06d}  steps={n_steps}  "
+        f"total_frames={n_frames}"
+    )
+
+    records: list[dict] = []
+    for t in range(n_steps):
+        row = df.iloc[t]
+        frame_idx = int(row["frame_index"])
+
+        img0 = cv2.imread(str(cam0_dir / f"{frame_idx:06d}.jpg"))
+        img1 = cv2.imread(str(cam1_dir / f"{frame_idx:06d}.jpg"))
+        if img0 is None or img1 is None:
+            print(f"[TF] Missing image at frame {frame_idx}, stopping.")
+            break
+
+        frame0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
+        frame1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
+
+        state7  = np.asarray(row["observation.state"], dtype=np.float32)[:7]
+        target7 = np.asarray(row["action"],            dtype=np.float32)[:7]
+        timestamp = float(row["timestamp"])
+
+        obs = {
+            "observation/image":       frame0,
+            "observation/wrist_image": frame1,
+            "observation/state":       state7,
+            "prompt":                  prompt,
+        }
+
+        result  = policy.infer(obs)
+        actions = np.asarray(result["actions"], dtype=np.float32)
+        if actions.ndim == 1:
+            actions = actions[np.newaxis, :]
+
+        pred7      = actions[0, :7]
+        delta_arm  = float(np.linalg.norm(pred7[:6] - target7[:6]))
+        delta_full = float(np.linalg.norm(pred7 - target7))
+        delta_grip = float(abs(float(pred7[6]) - float(target7[6])))
+
+        records.append({
+            "step":         t,
+            "timestamp":    timestamp,
+            "gt_state":     state7.tolist(),
+            "gt_target":    target7.tolist(),
+            "pred_action":  pred7.tolist(),
+            "pred_horizon": actions[:, :7].tolist(),
+            "delta_arm":    delta_arm,
+            "delta_full7":  delta_full,
+            "delta_grip":   delta_grip,
+        })
+
+        if t % 20 == 0:
+            print(
+                f"  step {t:04d}  |Δarm|={delta_arm:.4f}  |Δ7D|={delta_full:.4f}"
+                f"  j2: {float(state7[1]):.3f} pred={float(pred7[1]):.3f}"
+                f"  grip: gt={float(target7[6]):.3f} pred={float(pred7[6]):.3f}"
+            )
+
+    print(f"[TF] Done. {len(records)} steps collected.")
+    return records
 
 
 # ---------------------------------------------------------------------------
@@ -415,14 +533,28 @@ def main():
     parser = argparse.ArgumentParser(
         description="Teacher-forcing visualization using WebSocket policy server."
     )
+    # --- Processed-data mode (pkl + mp4) ---
     parser.add_argument(
         "--processed-root",
         default=str(ROOT_DIR / "data" / "processed_data" / "pick_twice"),
         help="Root dir with demo_N subdirectories (processed_data layout).",
     )
     parser.add_argument("--demo", default=None, help="Single demo name, e.g. demo_0")
+    # --- LeRobot v2.1 mode (parquet + jpg) ---
+    parser.add_argument(
+        "--lerobot-root",
+        default=None,
+        help="Root of a LeRobot v2.1 dataset (parquet + jpg). Takes priority over --processed-root.",
+    )
+    parser.add_argument(
+        "--episode",
+        type=int,
+        default=None,
+        help="Episode index for --lerobot-root mode. Default: all episodes.",
+    )
+    # --- Common ---
     parser.add_argument("--host",   default="127.0.0.1", help="WebSocket policy server host")
-    parser.add_argument("--port",   type=int, default=8000, help="WebSocket policy server port")
+    parser.add_argument("--port",   type=int, default=8001, help="WebSocket policy server port")
     parser.add_argument("--prompt", default="pick_twice")
     parser.add_argument("--max-steps", type=int, default=0, help="0 = all steps")
     parser.add_argument(
@@ -435,13 +567,53 @@ def main():
     parser.add_argument("--raw-root",      default=None)
     args = parser.parse_args()
 
-    data_root = Path(args.processed_root).expanduser().resolve()
-    if not data_root.exists():
-        raise FileNotFoundError(f"Data root not found: {data_root}")
-
     print(f"[TF] Connecting to WebSocket policy at ws://{args.host}:{args.port} ...")
     policy = _ws_policy.WebsocketClientPolicy(host=args.host, port=args.port)
     print(f"[TF] Connected. Server metadata: {policy.get_server_metadata()}")
+
+    out_root = Path(args.output_dir).expanduser().resolve()
+
+    # ---- LeRobot v2.1 mode ----
+    if args.lerobot_root:
+        dataset_root = Path(args.lerobot_root).expanduser().resolve()
+        if not dataset_root.exists():
+            raise FileNotFoundError(f"LeRobot dataset not found: {dataset_root}")
+
+        if args.episode is not None:
+            episodes = [args.episode]
+        else:
+            parquet_files = sorted(dataset_root.glob("data/chunk-*/episode_*.parquet"))
+            if not parquet_files:
+                raise FileNotFoundError(f"No parquet files found under {dataset_root}/data/")
+            episodes = [int(pf.stem.split("_")[1]) for pf in parquet_files if pf.stem.split("_")[1].isdigit()]
+
+        for ep_idx in episodes:
+            ep_name = f"episode_{ep_idx:06d}"
+            print(f"\n[TF] === {ep_name} ===")
+            records = infer_demo_lerobot(
+                dataset_root=dataset_root,
+                episode_index=ep_idx,
+                policy=policy,
+                prompt=args.prompt,
+                max_steps=args.max_steps,
+            )
+
+            out_dir = out_root / ep_name
+            out_dir.mkdir(parents=True, exist_ok=True)
+
+            json_path = out_dir / "trajectory.json"
+            json_path.write_text(json.dumps(records, indent=2), encoding="utf-8")
+            print(f"[TF] Saved JSON: {json_path}")
+
+            save_html(records, out_dir / "trajectory.html", ep_name)
+
+        print(f"\n[TF] All done. Results in: {out_root}")
+        return
+
+    # ---- Processed-data mode (pkl + mp4) ----
+    data_root = Path(args.processed_root).expanduser().resolve()
+    if not data_root.exists():
+        raise FileNotFoundError(f"Data root not found: {data_root}")
 
     if args.demo:
         demo_dirs = [data_root / args.demo]
@@ -454,8 +626,6 @@ def main():
     for d in demo_dirs:
         if not d.exists():
             raise FileNotFoundError(f"Demo not found: {d}")
-
-    out_root = Path(args.output_dir).expanduser().resolve()
 
     for demo_dir in demo_dirs:
         print(f"\n[TF] === {demo_dir.name} ===")
