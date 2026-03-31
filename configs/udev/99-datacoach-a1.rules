@@ -1,0 +1,5 @@
+# DataCoach: A1 arm controller (STM32 Virtual ComPort) -> /dev/a1
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="336635623233", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="a1"
+
+# Secondary USB serial dongle seen on this machine
+SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", ATTRS{serial}=="5A7A016967", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"

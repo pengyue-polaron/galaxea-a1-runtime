@@ -1,0 +1,27 @@
+services:
+  a1-noetic:
+    build:
+      context: .
+      dockerfile: docker/a1_noetic_arm64/Dockerfile
+    image: dragdatacoach/a1-noetic-arm64:local
+    network_mode: host
+    ipc: host
+    privileged: true
+    stdin_open: true
+    tty: true
+    working_dir: /workspace
+    environment:
+      A1_SDK_ROOT: /workspace/third_party/A1_SDK_runtime
+      DISPLAY: ${DISPLAY:-}
+      QT_X11_NO_MITSHM: "1"
+      NVIDIA_VISIBLE_DEVICES: all
+      NVIDIA_DRIVER_CAPABILITIES: all
+    volumes:
+      - .:/workspace
+      - /dev:/dev
+      - /tmp/.X11-unix:/tmp/.X11-unix:rw
+    group_add:
+      - dialout
+      - video
+      - render
+    command: bash

@@ -137,7 +137,7 @@ celerybeat.pid
 # Environments
 .env
 .envrc
-.venv
+.venv*
 .conda/
 env/
 venv/
@@ -218,6 +218,7 @@ scripts/train/wandb/
 scripts/train/checkpoints/
 data/
 uv.lock.bak
+third_party/A1_SDK_runtime/
 
 __MACOSX
 .DS_Store

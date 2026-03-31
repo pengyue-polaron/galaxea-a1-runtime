@@ -18,7 +18,19 @@ In this project machine:
 
 ## 2) Install udev rules
 
-Create `/etc/udev/rules.d/99-datacoach-a1.rules`:
+The rules file is tracked in this repo at
+`configs/udev/99-datacoach-a1.rules`.
+
+The USB CDC ACM module autoload file is tracked at
+`configs/modules-load/cdc_acm.conf`.
+
+Install it with:
+
+```bash
+scripts/collect_data/install_a1_udev.sh
+```
+
+The installed rule content is:
 
 ```udev
 # DataCoach: A1 arm controller (STM32 Virtual ComPort) -> /dev/a1
@@ -28,7 +40,7 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{seria
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", ATTRS{serial}=="5A7A016967", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
 ```
 
-Then reload:
+If you need to reload manually:
 
 ```bash
 sudo udevadm control --reload-rules
@@ -37,11 +49,13 @@ sudo udevadm trigger --subsystem-match=tty
 
 ## 3) Add user to serial group
 
-```bash
-sudo usermod -aG dialout $USER
-```
+`install_a1_udev.sh` also:
 
-Open a new terminal (or re-login) to ensure group change applies in your shell.
+- adds the current user to `dialout` if needed
+- installs `/etc/modules-load.d/cdc_acm.conf`
+- runs `modprobe cdc_acm` so STM32 virtual serial devices enumerate as `ttyACM*`
+
+Open a new terminal (or re-login) to ensure the group change applies in your shell.
 
 ## 4) Verify
 

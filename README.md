@@ -7,20 +7,36 @@ End-to-end pipeline for the A1 robot arm:
 
 Each demo produces two video streams and a trajectory state file.
 
-## 1. Install `just`
+## 1. Install `uv` and `just`
 
 ```bash
-sudo snap install just --classic
+uv --version
 just --version
 ```
 
+See [docs/SETUP_ENV.md](/home/nvidia/py-space/DragDataCoach/docs/SETUP_ENV.md) for the recommended installation flow on Ubuntu 22.04 / Jetson.
+
+ROS backend selection is dual-compatible:
+- Ubuntu 20.04 with host ROS Noetic: `just launch ...` and `just teleop` use the host ROS stack by default.
+- Ubuntu 22.04 / Jetson: the same commands automatically fall back to the Dockerized Noetic backend.
+- Override when needed with `A1_ROS_BACKEND=host` or `A1_ROS_BACKEND=docker`.
+
 ## 2. One-time setup
 
-Install the Python environment (see `docs/SETUP_ENV.md`), then verify:
+Create the host-side environments, then verify:
+
+```bash
+just setup-main
+just setup-camera
+just setup-teleop
+```
+
+Then verify:
 
 ```bash
 just doctor
 just which-python
+just which-camera-python
 ```
 
 ## 3. Command reference
@@ -41,7 +57,9 @@ just collect
 just drag-collect --serial /dev/a1 --tag drag_demo
 
 # Teleoperation (SO leader arm)
-just setup-teleop              # one-time setup
+just setup-main                # host runtime env
+just setup-camera              # RealSense/OpenCV camera env (Python 3.10)
+just setup-teleop              # SO leader teleop env
 just teleop                    # start SO leader → A1 bridge
 just teleop-stop               # stop all teleop services
 
@@ -72,11 +90,15 @@ just test camera
 
 Enumerates devices and checks connectivity. Does not open cameras or save frames.
 
+On arm64 / Jetson, camera access uses `.venv-camera` with Python 3.10 because the compatible `pyrealsense2` wheels for Ubuntu 22.04 are only available for CPython 3.10.
+
 `just replay` without a bag argument automatically uses the latest bag in `third_party/A1_SDK/data/records/`.
 
 `just replay` checks `cam_0` and `cam_1` before starting playback and exits if either is unavailable. `just drag-collect` runs the same check once before launching `collect`.
 
 ## 5. Standard manual workflow
+
+ROS1 / A1 driver commands are routed through the Dockerized Noetic environment, so you do not need a host `/opt/ros/noetic`.
 
 **Recording (drag) phase:**
 

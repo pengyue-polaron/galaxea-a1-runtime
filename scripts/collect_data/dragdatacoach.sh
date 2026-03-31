@@ -3,11 +3,36 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
-A1_SDK_ROOT="${A1_SDK_ROOT:-${PROJECT_ROOT}/third_party/A1_SDK}"
+A1_SDK_RUNTIME_ROOT="${PROJECT_ROOT}/third_party/A1_SDK_runtime"
+A1_SDK_FALLBACK_ROOT="${PROJECT_ROOT}/third_party/A1_SDK"
+A1_SDK_ROOT="${A1_SDK_ROOT:-}"
+ROS1_PYTHON_OVERLAY_ROOT="${PROJECT_ROOT}/.cache/ros1_python_overlay"
+ROS1_PYTHON_OVERLAY_SCRIPT="${PROJECT_ROOT}/scripts/collect_data/prepare_ros1_python_overlay.sh"
+
+if [[ -z "${A1_SDK_ROOT}" ]]; then
+  requested_backend="${A1_ROS_BACKEND:-auto}"
+  if [[ "${A1_USE_DOCKER:-}" == "1" ]]; then
+    requested_backend="docker"
+  elif [[ "${A1_USE_DOCKER:-}" == "0" ]]; then
+    requested_backend="host"
+  fi
+
+  if [[ "${requested_backend}" == "host" && -d "${A1_SDK_FALLBACK_ROOT}" ]]; then
+    A1_SDK_ROOT="${A1_SDK_FALLBACK_ROOT}"
+  elif [[ "${requested_backend}" == "docker" && -d "${A1_SDK_RUNTIME_ROOT}" ]]; then
+    A1_SDK_ROOT="${A1_SDK_RUNTIME_ROOT}"
+  elif [[ -f "/opt/ros/noetic/setup.bash" && -d "${A1_SDK_FALLBACK_ROOT}" ]]; then
+    A1_SDK_ROOT="${A1_SDK_FALLBACK_ROOT}"
+  elif [[ -d "${A1_SDK_RUNTIME_ROOT}" ]]; then
+    A1_SDK_ROOT="${A1_SDK_RUNTIME_ROOT}"
+  else
+    A1_SDK_ROOT="${A1_SDK_FALLBACK_ROOT}"
+  fi
+fi
 
 if [[ ! -d "${A1_SDK_ROOT}" ]]; then
   echo "A1_SDK root not found: ${A1_SDK_ROOT}"
-  echo "Run: scripts/collect_data/sync_a1_sdk.sh /home/eric/A1_SDK"
+  echo "Run: scripts/collect_data/prepare_a1_sdk_runtime.sh"
   exit 1
 fi
 
@@ -48,7 +73,47 @@ Commands:
   require-cameras [context]      # run camera preflight check
   doctor                         # check runtime dependencies and selected python
   which-python                   # print selected DataCoach python
+  which-camera-python            # print selected camera python
+  which-ros-pythonpath [python]  # print ROS-compatible PYTHONPATH for a python
 EOF
+}
+
+python_minor_version() {
+  local py="$1"
+  "${py}" - <<'PY'
+import sys
+print(f"{sys.version_info.major}.{sys.version_info.minor}")
+PY
+}
+
+prepare_ros1_python_overlay() {
+  if [[ ! -x "${ROS1_PYTHON_OVERLAY_SCRIPT}" ]]; then
+    echo "[ERROR] ROS1 overlay helper not found: ${ROS1_PYTHON_OVERLAY_SCRIPT}" >&2
+    return 1
+  fi
+  "${ROS1_PYTHON_OVERLAY_SCRIPT}" >/dev/null
+}
+
+ros_runtime_pythonpath() {
+  echo "${A1_SDK_ROOT}/install/lib/python3/dist-packages"
+}
+
+print_ros_pythonpath() {
+  local py="${1:-}"
+  if [[ -z "${py}" ]]; then
+    py="$(pick_datacoach_python || true)"
+  fi
+  [[ -n "${py}" && -x "${py}" ]] || return 1
+
+  local version
+  version="$(python_minor_version "${py}")"
+  if [[ "${version}" == "3.10" ]]; then
+    echo "$(ros_runtime_pythonpath):/usr/lib/python3/dist-packages"
+    return 0
+  fi
+
+  prepare_ros1_python_overlay
+  echo "${ROS1_PYTHON_OVERLAY_ROOT}:$(ros_runtime_pythonpath)"
 }
 
 pick_datacoach_python() {
@@ -59,6 +124,7 @@ pick_datacoach_python() {
 
   local candidates=(
     "${PROJECT_ROOT}/.venv/bin/python"
+    "${PROJECT_ROOT}/third_party/lerobot/.venv/bin/python"
     "$(command -v python || true)"
   )
 
@@ -79,25 +145,118 @@ PY
   return 1
 }
 
+pick_camera_python() {
+  if [[ -n "${DATACOACH_CAMERA_PYTHON:-}" ]] && [[ -x "${DATACOACH_CAMERA_PYTHON}" ]]; then
+    echo "${DATACOACH_CAMERA_PYTHON}"
+    return 0
+  fi
+
+  local candidates=(
+    "${PROJECT_ROOT}/.venv-camera/bin/python"
+    "${PROJECT_ROOT}/.venv/bin/python"
+    "$(command -v python || true)"
+  )
+
+  local py
+  for py in "${candidates[@]}"; do
+    [[ -n "${py}" && -x "${py}" ]] || continue
+    if "${py}" - <<'PY' >/dev/null 2>&1
+import importlib
+required = ("hydra", "zmq", "cv2", "pyrealsense2")
+missing = []
+for name in required:
+    try:
+        importlib.import_module(name)
+    except Exception:
+        missing.append(name)
+raise SystemExit(1 if missing else 0)
+PY
+    then
+      echo "${py}"
+      return 0
+    fi
+  done
+  return 1
+}
+
 check_python_deps() {
   local py="$1"
   "${py}" - <<'PY'
-import importlib.util
+import importlib
 required = ("hydra", "zmq", "cv2", "numpy", "scipy")
-optional = ("lerobot", "pyrealsense2")
+optional = ()
 
-missing = [m for m in required if importlib.util.find_spec(m) is None]
 print("Required:", ", ".join(required))
-if missing:
-    print("Missing required:", ", ".join(missing))
+required_failures = {}
+for name in required:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        required_failures[name] = f"{type(exc).__name__}: {exc}"
+
+if required_failures:
+    print("Missing required:", ", ".join(sorted(required_failures)))
+    for name, detail in required_failures.items():
+        print(f"  - {name}: {detail}")
     raise SystemExit(1)
 print("Missing required: <none>")
 
-missing_optional = [m for m in optional if importlib.util.find_spec(m) is None]
+missing_optional = []
+for name in optional:
+    try:
+        importlib.import_module(name)
+    except Exception:
+        missing_optional.append(name)
 if missing_optional:
     print("Missing optional:", ", ".join(missing_optional))
 else:
     print("Missing optional: <none>")
+PY
+}
+
+check_camera_python_deps() {
+  local py="$1"
+  local ros_pythonpath="$2"
+  PYTHONPATH="${ros_pythonpath}:${PYTHONPATH:-}" "${py}" - <<'PY'
+import importlib
+required = ("hydra", "zmq", "cv2", "pyrealsense2", "rospy")
+failures = {}
+for name in required:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        failures[name] = f"{type(exc).__name__}: {exc}"
+
+print("Camera env required:", ", ".join(required))
+if failures:
+    print("Camera env status: missing", ", ".join(sorted(failures)))
+    for name, detail in failures.items():
+        print(f"  - {name}: {detail}")
+    raise SystemExit(1)
+print("Camera env status: ready")
+PY
+}
+
+check_teleop_python_deps() {
+  local py="$1"
+  local ros_pythonpath="$2"
+  PYTHONPATH="${ros_pythonpath}:${PYTHONPATH:-}" "${py}" - <<'PY'
+import importlib
+required = ("lerobot", "rospy", "sensor_msgs", "signal_arm")
+failures = {}
+for name in required:
+    try:
+        importlib.import_module(name)
+    except Exception as exc:
+        failures[name] = f"{type(exc).__name__}: {exc}"
+
+print("Teleop env required:", ", ".join(required))
+if failures:
+    print("Teleop env status: missing", ", ".join(sorted(failures)))
+    for name, detail in failures.items():
+        print(f"  - {name}: {detail}")
+    raise SystemExit(1)
+print("Teleop env status: ready")
 PY
 }
 
@@ -112,9 +271,10 @@ require_all_cameras() {
     return 0
   fi
 
-  py="$(pick_datacoach_python || true)"
+  py="$(pick_camera_python || true)"
   if [[ -z "${py}" ]]; then
     echo "[ERROR] Could not find a usable DataCoach python for camera checks."
+    echo "[ERROR] Run: just setup-camera"
     return 1
   fi
 
@@ -498,18 +658,19 @@ EOF
     DATACOACH_PYTHON="${py}" "${py}" "${PROJECT_ROOT}/scripts/collect_data/replay_inferred_trajectory.py" "$@"
     ;;
   collect)
-    py="$(pick_datacoach_python || true)"
+    py="$(pick_camera_python || true)"
     if [[ -z "${py}" ]]; then
-      echo "Could not find a usable DataCoach python interpreter."
-      echo "Set DATACOACH_PYTHON explicitly, or prepare env with hydra/zmq/cv2."
+      echo "Could not find a usable camera python interpreter."
+      echo "Set DATACOACH_CAMERA_PYTHON explicitly, or run: just setup-camera"
       exit 1
     fi
-    DATACOACH_PYTHON="${py}" "${py}" "${PROJECT_ROOT}/scripts/collect_data/run_drag_replay_collection.py"
+    ros_pythonpath="$(print_ros_pythonpath "${py}")"
+    DATACOACH_PYTHON="${py}" PYTHONPATH="${ros_pythonpath}:${PYTHONPATH:-}" "${py}" "${PROJECT_ROOT}/scripts/collect_data/run_drag_replay_collection.py"
     ;;
   doctor)
     echo "A1_SDK_ROOT=${A1_SDK_ROOT}"
     if ! command -v roscore >/dev/null 2>&1; then
-      echo "ROS tools not found in PATH. Source ROS setup first."
+      echo "ROS tools not found in PATH. Host ROS1 CLI is optional; use docker-backed just launch recipes for ROS nodes."
     fi
     py="$(pick_datacoach_python || true)"
     if [[ -z "${py}" ]]; then
@@ -517,7 +678,28 @@ EOF
       exit 1
     fi
     echo "DATACOACH_PYTHON=${py}"
+    echo "DATACOACH_ROS_PYTHONPATH=$(print_ros_pythonpath "${py}")"
     check_python_deps "${py}"
+    camera_py="$(pick_camera_python || true)"
+    if [[ -n "${camera_py}" ]]; then
+      camera_ros_pythonpath="$(print_ros_pythonpath "${camera_py}")"
+      echo "DATACOACH_CAMERA_PYTHON=${camera_py}"
+      echo "DATACOACH_CAMERA_ROS_PYTHONPATH=${camera_ros_pythonpath}"
+      check_camera_python_deps "${camera_py}" "${camera_ros_pythonpath}" || true
+    else
+      echo "DATACOACH_CAMERA_PYTHON=NOT_FOUND"
+      echo "Camera env status: missing (run: just setup-camera)"
+    fi
+    teleop_py="${PROJECT_ROOT}/third_party/lerobot/.venv/bin/python"
+    if [[ -x "${teleop_py}" ]]; then
+      teleop_ros_pythonpath="$(print_ros_pythonpath "${teleop_py}")"
+      echo "TELEOP_PYTHON=${teleop_py}"
+      echo "TELEOP_ROS_PYTHONPATH=${teleop_ros_pythonpath}"
+      check_teleop_python_deps "${teleop_py}" "${teleop_ros_pythonpath}" || true
+    else
+      echo "TELEOP_PYTHON=NOT_FOUND"
+      echo "Teleop env status: missing (run: just setup-teleop)"
+    fi
     ;;
   which-python)
     py="$(pick_datacoach_python || true)"
@@ -526,6 +708,23 @@ EOF
       exit 1
     fi
     echo "${py}"
+    ;;
+  which-camera-python)
+    py="$(pick_camera_python || true)"
+    if [[ -z "${py}" ]]; then
+      echo "NOT_FOUND"
+      exit 1
+    fi
+    echo "${py}"
+    ;;
+  which-ros-pythonpath)
+    py="${2:-}"
+    py="${py:-$(pick_datacoach_python || true)}"
+    if [[ -z "${py}" ]]; then
+      echo "NOT_FOUND"
+      exit 1
+    fi
+    print_ros_pythonpath "${py}"
     ;;
   *)
     usage
