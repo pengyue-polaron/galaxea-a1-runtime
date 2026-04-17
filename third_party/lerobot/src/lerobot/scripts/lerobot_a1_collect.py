@@ -1,9 +1,15 @@
 #!/usr/bin/env python
 """Multi-episode A1 teleop data collection.
 
+Data layout:
+    data/raw/{experiment}/
+        task.txt                          # task prompt (created once)
+        episode_000_20260418_120000/      # episode directories
+        episode_001_20260418_120030/
+        ...
+
 Usage:
     just collect pick_block
-    just collect pick_block --task "pick up the red block" --fps 20
 """
 
 from __future__ import annotations
@@ -15,18 +21,17 @@ import os
 import sys
 import threading
 import time
-from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Any
+from dataclasses import dataclass
 
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 import cv2
 import numpy as np
 
-# ROS Python path setup (dynamic, works on any machine)
+# ROS Python path setup
 import pathlib as _pathlib
-
 _A1_SDK = _pathlib.Path(__file__).parents[4] / "A1_SDK" / "install"
 for _p in (
     "/opt/ros/noetic/lib/python3/dist-packages",
@@ -67,34 +72,41 @@ class JointStateCache:
         if not names or not positions:
             return None
         n = min(len(names), len(positions))
-        stamp = _ros_stamp_s(msg)
+        h = getattr(msg, "header", None)
+        s = getattr(h, "stamp", None) if h else None
+        fn = getattr(s, "to_sec", None) if s else None
+        if callable(fn):
+            try:
+                stamp = float(fn())
+            except Exception:
+                stamp = 0.0
+        elif s:
+            stamp = float(getattr(s, "secs", 0)) + float(getattr(s, "nsecs", 0)) / 1e9
+        else:
+            stamp = 0.0
         return JointSnapshot(ros_stamp_s=stamp, names=names[:n], positions=positions[:n])
-
-
-def _ros_stamp_s(msg: Any) -> float:
-    h = getattr(msg, "header", None)
-    if h is None:
-        return 0.0
-    s = getattr(h, "stamp", None)
-    if s is None:
-        return 0.0
-    fn = getattr(s, "to_sec", None)
-    if callable(fn):
-        try:
-            return float(fn())
-        except Exception:
-            return 0.0
-    return float(getattr(s, "secs", 0)) + float(getattr(s, "nsecs", 0)) / 1e9
 
 
 def _open_realsense(serial, w, h, fps):
     import pyrealsense2 as rs
+    ctx = rs.context()
+    devices = ctx.query_devices()
+    if len(devices) == 0:
+        print("\n  ERROR: No RealSense camera detected.")
+        print("  Check: is the USB cable plugged in? Try a different port.")
+        print("  Run 'lsusb | grep -i intel' to verify.\n")
+        sys.exit(1)
     pipe = rs.pipeline()
     cfg = rs.config()
     if serial:
         cfg.enable_device(serial)
     cfg.enable_stream(rs.stream.color, w, h, rs.format.bgr8, fps)
-    pipe.start(cfg)
+    try:
+        pipe.start(cfg)
+    except RuntimeError as e:
+        print(f"\n  ERROR: RealSense failed to start: {e}")
+        print("  Try unplugging and replugging the camera.\n")
+        sys.exit(1)
     return pipe
 
 
@@ -109,7 +121,7 @@ def _video_device_name(idx: int) -> str:
 def _open_cam1_auto(index_or_auto: str, w: int, h: int, fps: int):
     if index_or_auto.strip().lower() != "auto":
         idx = int(index_or_auto)
-        cap = cv2.VideoCapture(idx)
+        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
         if not cap.isOpened():
             raise RuntimeError(f"Cannot open cam1 index={idx}")
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, w)
@@ -143,15 +155,12 @@ def _open_cam1_auto(index_or_auto: str, w: int, h: int, fps: int):
 # ---------------------------------------------------------------------------
 
 def record_episode(episode_dir, rs_pipe, cam1, joint_cache, fps, max_dur, jpeg_q):
-    """Record frames. Returns (frame_count, joint_names, discard).
-
-    discard=True if user typed 'd' to discard this episode.
-    """
+    """Returns (frame_count, joint_names, discard)."""
     (episode_dir / "cam0").mkdir(parents=True)
     (episode_dir / "cam1").mkdir(parents=True)
 
     stop = threading.Event()
-    user_input = [None]  # mutable container for thread result
+    user_input = [None]
 
     def _wait():
         try:
@@ -219,14 +228,36 @@ def record_episode(episode_dir, rs_pipe, cam1, joint_cache, fps, max_dur, jpeg_q
 
 
 # ---------------------------------------------------------------------------
+# Task prompt management
+# ---------------------------------------------------------------------------
+
+def load_or_prompt_task(experiment_dir: Path) -> str:
+    """Load task from task.txt, or prompt user to enter it (first time only)."""
+    task_file = experiment_dir / "task.txt"
+    if task_file.exists():
+        task = task_file.read_text().strip()
+        if task:
+            return task
+
+    print(f"  [first run] Enter task prompt for this experiment:")
+    task = input("  > ").strip()
+    if not task:
+        print("  ERROR: task prompt cannot be empty.")
+        sys.exit(1)
+
+    experiment_dir.mkdir(parents=True, exist_ok=True)
+    task_file.write_text(task + "\n")
+    return task
+
+
+# ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
 
 def main():
     p = argparse.ArgumentParser()
     p.add_argument("--experiment", required=True)
-    p.add_argument("--output-root", default="data/a1")
-    p.add_argument("--task", default="A1 single-arm teleop collection")
+    p.add_argument("--data-root", default="data/raw")
     p.add_argument("--fps", type=float, default=30.0)
     p.add_argument("--max-duration-s", type=float, default=0.0)
     p.add_argument("--jpeg-quality", type=int, default=95)
@@ -242,10 +273,14 @@ def main():
     p.add_argument("--cam1-fps", type=int, default=30)
     args = p.parse_args()
 
-    root = Path(args.output_root).expanduser().resolve()
-    root.mkdir(parents=True, exist_ok=True)
+    data_root = Path(args.data_root).expanduser().resolve()
+    exp_dir = data_root / args.experiment
+    exp_dir.mkdir(parents=True, exist_ok=True)
 
-    # ── Init (one-time) ──────────────────────────────────────────────────
+    # ── Task prompt (saved to task.txt, asked only once) ─────────────────
+    task = load_or_prompt_task(exp_dir)
+
+    # ── Init ROS + cameras ───────────────────────────────────────────────
     import rospy
     from sensor_msgs.msg import JointState
 
@@ -267,11 +302,13 @@ def main():
     cam1, cam1_idx = _open_cam1_auto(args.cam1_index, args.cam1_width, args.cam1_height, args.cam1_fps)
     print(f"ok (cam1=video{cam1_idx})")
 
-    existing = sorted(root.glob(f"episode_{args.experiment}_*"))
+    # ── Count existing episodes ──────────────────────────────────────────
+    existing = sorted(d for d in exp_dir.glob("episode_*") if d.is_dir())
     ep = len(existing)
 
     print(f"\n  experiment : {args.experiment}")
-    print(f"  output     : {root}")
+    print(f"  task       : {task}")
+    print(f"  output     : {exp_dir}")
     print(f"  next episode: {ep}")
     print(f"  Ctrl+C to quit\n")
 
@@ -281,8 +318,8 @@ def main():
             input(f"  [{ep}] press Enter to START recording ...")
 
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-            name = f"episode_{args.experiment}_{ep:03d}_{ts}"
-            edir = root / name
+            name = f"episode_{ep:03d}_{ts}"
+            edir = exp_dir / name
 
             print(f"  [{ep}] recording ... Enter=save, d+Enter=discard")
 
@@ -296,7 +333,6 @@ def main():
                 discard = True
                 n_frames = 0
 
-            # Discard: user typed 'd', error, or 0 frames
             if discard or n_frames == 0:
                 import shutil
                 shutil.rmtree(edir, ignore_errors=True)
@@ -306,7 +342,7 @@ def main():
 
             # Save metadata
             meta = {
-                "task": args.task,
+                "task": task,
                 "experiment": args.experiment,
                 "episode_index": ep,
                 "frame_count": n_frames,
@@ -322,7 +358,7 @@ def main():
             ep += 1
 
     except (KeyboardInterrupt, EOFError):
-        print(f"\n[collect] done. {ep} episodes recorded.")
+        print(f"\n[collect] done. {ep} episodes for '{args.experiment}'.")
     finally:
         cam1.release()
         rs_pipe.stop()

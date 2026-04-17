@@ -82,9 +82,8 @@ def write_jsonl(records: list[dict], path: Path) -> None:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Convert A1 teleop episodes to LeRobot v2.1 (7D joint).")
-    parser.add_argument("--source-root", type=Path, required=True, help="Directory containing episode_* folders.")
+    parser.add_argument("--source-root", type=Path, required=True, help="data/raw/{experiment} directory.")
     parser.add_argument("--output-root", type=Path, required=True, help="Output LeRobot dataset directory.")
-    parser.add_argument("--task", default="A1 single-arm teleop collection", help="Task description.")
     parser.add_argument("--fps", type=int, default=30, help="Fallback FPS if metadata missing.")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--max-episodes", type=int, default=0, help="0 = all.")
@@ -95,6 +94,14 @@ def main() -> None:
 
     if not source_root.exists():
         raise FileNotFoundError(f"source-root does not exist: {source_root}")
+
+    # Read task from task.txt (created during collection)
+    task_file = source_root / "task.txt"
+    if not task_file.exists():
+        raise FileNotFoundError(f"No task.txt in {source_root}. Was this created by 'just collect'?")
+    args.task = task_file.read_text().strip()
+    if not args.task:
+        raise ValueError(f"task.txt is empty in {source_root}")
     if output_root.exists():
         if not args.overwrite:
             raise FileExistsError(f"output-root exists: {output_root}. Use --overwrite.")

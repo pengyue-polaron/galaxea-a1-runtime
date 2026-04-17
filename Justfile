@@ -9,6 +9,7 @@ model_config := "pi05_a1_joint_lora"
 # Paths
 uv   := env("UV_BIN", "uv")
 repo := justfile_directory()
+vpy  := repo + "/.venv/bin/python"
 # Teleoperation
 teleop_leader_port := "/dev/ttyACM0"
 
@@ -80,11 +81,10 @@ replay-infer input="" source="auto" rate="15" speed="1.0" *args:
 
 # Data collection.
 # Teleop mode: starts services, then loops recording episodes.
-#   Enter=start episode, Enter=stop episode, Enter=next, Ctrl+C=quit.
+#   First run: prompts for task description (saved to task.txt, never asked again).
+#   Enter=start, Enter=save, d+Enter=discard, Ctrl+C=quit.
 # Example: just collect pick_block
-# Example: just collect pick_block --task "pick up the red block"
 # Example: just collect pick_block --fps 20
-# Drag mode: just collect-drag [options]
 collect experiment *args:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -95,20 +95,23 @@ collect experiment *args:
     AUTO_CONFIRM=1 just teleop > /dev/null 2>&1
     echo "[collect] teleop ready"
     export ROS_MASTER_URI="${ROS_MASTER_URI:-http://localhost:11311}"
-    python3 {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
+    {{vpy}} {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
         --experiment "{{experiment}}" \
-        --output-root "{{repo}}/data/a1" \
+        --data-root "{{repo}}/data/raw" \
         {{args}} || true
 
 collect-drag *args:
     scripts/collect_data/a1_all_in_one.sh {{args}}
 
-# Convert raw teleop episodes to LeRobot v2.1 dataset (7D joint space).
-# Example: just convert data/a1 data/a1_lerobot
-# Example: just convert data/a1 data/a1_lerobot --task "pick up the block" --overwrite
-convert source_root="{{repo}}/data/a1" output_root="{{repo}}/data/a1_lerobot" *args:
-    {{uv}} run --project {{repo}} python {{repo}}/scripts/process_data/convert_episodes_to_lerobot_v21.py \
-        --source-root "{{source_root}}" --output-root "{{output_root}}" {{args}}
+# Convert raw episodes to LeRobot v2.1 dataset.
+# Task prompt is read from data/raw/{experiment}/task.txt (created during collection).
+# Example: just convert pick_block
+# Example: just convert pick_block --overwrite
+convert experiment *args:
+    {{vpy}} {{repo}}/scripts/process_data/convert_episodes_to_lerobot_v21.py \
+        --source-root "{{repo}}/data/raw/{{experiment}}" \
+        --output-root "{{repo}}/data/processed/{{experiment}}" \
+        {{args}}
 
 test target="camera" *args:
     #!/usr/bin/env bash
