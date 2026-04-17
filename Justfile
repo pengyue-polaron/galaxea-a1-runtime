@@ -78,38 +78,30 @@ replay bag="" rate="1.0" gripper_mode="position":
 replay-infer input="" source="auto" rate="15" speed="1.0" *args:
     if [ -z "{{input}}" ]; then echo "Usage: just replay-infer <input> [source] [rate] [speed] [extra args...]"; exit 1; fi; scripts/collect_data/a1.sh replay-infer --input "{{input}}" --source "{{source}}" --rate "{{rate}}" --speed "{{speed}}" {{args}}
 
-# Data collection. Choose mode: drag (bag-replay pipeline) or teleop (SO leader real-time).
-# Example: just collect drag
-# Example: just collect drag --skip-record
-# Example: just collect teleop
-# Example: just collect teleop -- --cam0-serial 123456 --task "pick block"
-collect action="" *args:
+# Data collection.
+# Teleop mode: starts services, then loops recording episodes.
+#   Enter=start episode, Enter=stop episode, Enter=next, Ctrl+C=quit.
+# Example: just collect pick_block
+# Example: just collect pick_block --task "pick up the red block"
+# Example: just collect pick_block --fps 20
+# Drag mode: just collect-drag [options]
+collect experiment *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    case "{{action}}" in
-        drag)
-            scripts/collect_data/a1_all_in_one.sh {{args}}
-            ;;
-        teleop)
-            echo "[collect] starting teleop services..."
-            AUTO_CONFIRM=1 just teleop
-            echo "[collect] starting recorder..."
-            trap '' INT; set +e
-            {{uv}} run --project {{repo}} python \
-                {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
-                --output-root "{{repo}}/data/a1" \
-                {{args}}
-            rc=$?; trap - INT; set -e
-            if [ "$rc" -eq 130 ]; then exit 0; fi; exit "$rc"
-            ;;
-        *)
-            echo "Usage: just collect <drag|teleop> [args...]"
-            echo ""
-            echo "  drag    Drag-teach → record bag → replay → collect (all-in-one)"
-            echo "  teleop  SO leader real-time teleoperation + direct camera/joint recording"
-            exit 1
-            ;;
-    esac
+    cleanup() { echo "[collect] stopping teleop ..."; just teleop stop > /dev/null 2>&1 || true; }
+    trap cleanup EXIT
+    just teleop stop > /dev/null 2>&1 || true
+    echo "[collect] starting teleop services ..."
+    AUTO_CONFIRM=1 just teleop > /dev/null 2>&1
+    echo "[collect] teleop ready"
+    export ROS_MASTER_URI="${ROS_MASTER_URI:-http://localhost:11311}"
+    python3 {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
+        --experiment "{{experiment}}" \
+        --output-root "{{repo}}/data/a1" \
+        {{args}} || true
+
+collect-drag *args:
+    scripts/collect_data/a1_all_in_one.sh {{args}}
 
 # Convert raw teleop episodes to LeRobot v2.1 dataset (7D joint space).
 # Example: just convert data/a1 data/a1_lerobot
@@ -204,7 +196,7 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
     single_arm_serial="${SINGLE_ARM_SERIAL:-{{serial}}}"
     leader_port="${LEADER_PORT:-{{leader_port}}}"
 
-    if [[ ! -x "$bridge_bin" ]]; then
+    if [[ ! -x "{{repo}}/third_party/lerobot/.venv/bin/lerobot-a1-jointtracker-bridge" ]]; then
         echo "teleop env not set up. run: just setup-teleop"
         exit 1
     fi
