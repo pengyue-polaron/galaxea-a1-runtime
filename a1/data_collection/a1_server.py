@@ -11,7 +11,7 @@ import time
 import rospy
 import zmq
 
-from datacoach.constants import (
+from a1.constants import (
     LEROBOT_PORT,
     OFFSET,
     ROBOT_FPS,
@@ -20,7 +20,7 @@ from datacoach.constants import (
     ZMQ_POLICY_ACTION_PORT,
     ZMQ_STATE_PORT,
 )
-from datacoach.utils import cfg_get
+from a1.utils import cfg_get
 
 
 class A1Server:

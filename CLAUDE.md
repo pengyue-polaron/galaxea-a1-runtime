@@ -4,114 +4,88 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**DragDataCoach** is an end-to-end robotics imitation learning pipeline for the A1 robot arm. It covers: drag-based demonstration recording → data processing → policy training (LeRobot/OpenPI) → live inference.
+A1 robot arm imitation learning pipeline: data collection (drag-teach & SO leader teleop) → LeRobot v2.1 dataset → OpenPI pi0.5 training → live inference.
 
 ## Task Runner (just)
 
 All common operations use `just` (see `Justfile`). Key commands:
 
 ```bash
-# Environment
-just doctor                           # Check runtime dependencies
-just which-python                     # Show active Python interpreter
+# Data collection (teleop)
+just collect teleop --task "pick up the block"
 
-# Data collection workflow
-just drag start / stop                # Enable/disable drag mode on robot
-just record start <tag> / stop        # Record bag file during drag demo
-just replay [bag] [rate]              # Replay a bag file
-just collect                          # Collect data (run during replay)
-just drag-collect [options]           # All-in-one: record + replay + collect
+# Data conversion → LeRobot v2.1 (7D joint space)
+just convert
 
-# Hardware control
-just launch <roscore|camera-server|ee-tracker|a1-server|driver>
+# Training
+cd scripts/train && python compute_norm_stats.py pi05_a1_joint_lora --data.local_data_dir=../../data/a1_lerobot
+python scripts/train/train.py pi05_a1_joint_lora --data.local_data_dir=data/a1_lerobot --exp_name=my_run
+
+# Inference
+just policy <checkpoint_dir>
+just policy-ros-bridge
+
+# Hardware
+just teleop / just teleop stop
+just launch <roscore|camera-server|joint-tracker|ee-tracker|a1-server|driver>
 just gripper <start|open|close|stop>
 just test camera
 just print joints [count] [unit]
-just bag <latest|info> [bag]
-
-# Inference and debugging
-just replay-infer <input> [options]   # Replay with policy inference
-just policy [policy_dir]             # Start policy server
-just debug camera [options]          # Dump model input frames
 ```
 
 ## Architecture
 
-The system operates as a **multi-process pipeline** coordinated by shell scripts and tmux:
-
 ```
-1. RECORDING (drag mode):  A1 Robot → ROS topics → rosbag file
-2. REPLAY + COLLECTION:    Bag → A1ReplayBridge → ROS
-                           CameraServer → ZMQ(cam, port 5558)
-                           DataCollector ← ZMQ streams → disk
-3. PROCESSING:             align_timestamps.py → data_converter.py → LeRobot dataset
-4. TRAINING:               train.py (Hydra + JAX/Flax) → policy checkpoint
-5. INFERENCE:              ZMQPolicyServer (port 5559) → A1Server → robot
+1. COLLECTION (teleop):  SO leader → jointTracker bridge → A1 + cameras → JPEG/CSV → disk
+2. CONVERSION:           convert_episodes_to_lerobot_v21.py → LeRobot v2.1 parquet + images
+3. TRAINING:             pi0.5 LoRA fine-tuning (7D joint, DeltaActions, quantile norm)
+4. INFERENCE:            Policy server (WebSocket) → policy_ros_bridge → ROS → A1 robot
 ```
 
 **Communication layers:**
-- **ROS Noetic** — arm/gripper control at 50 Hz (`/end_effector_pose`, `/gripper_stroke_host`)
-- **ZMQ** — camera frames, robot state, commands, policy actions
-  - Port 5556: commands, 5557: state, 5558: camera, 5559: policy actions
-- **tmux** — multi-pane session management for all-in-one collection
+- **ROS Noetic** (via Docker) — arm/gripper control (`/joint_states_host`, `/arm_joint_target_position`)
+- **ZMQ** — camera frames (5558), robot state (5557), policy actions (5559)
 
 ## Key Source Locations
 
 | Path | Purpose |
 |------|---------|
-| `datacoach/` | Core Python package |
-| `datacoach/constants.py` | System constants (FPS, ZMQ ports, A1 scaling) |
-| `datacoach/utils.py` | Shared utilities (e.g. `cfg_get` for config access) |
-| `datacoach/data_collection/` | Runtime collection (CameraServer, DataCollector, A1ReplayBridge) |
-| `datacoach/data_processing/` | Dataset alignment and LeRobot conversion |
-| `datacoach/training/` | Training configs, data loaders, policy definitions |
-| `datacoach/inference/` | ZMQPolicyServer and policy serving |
+| `a1/` | Core Python package |
+| `a1/constants.py` | System constants (FPS, ZMQ ports) |
+| `a1/data_collection/` | CameraServer, DataCollector, A1ReplayBridge |
+| `a1/training/config.py` | Training configs including `pi05_a1_joint_lora` |
+| `a1/training/a1_policy.py` | A1Inputs/A1JointInputs/A1Outputs transforms |
 | `scripts/collect_data/` | Shell + Python orchestration scripts |
-| `scripts/train/train.py` | Main training entry point (Hydra) |
-| `scripts/inference/serve_policy_a1.py` | Policy server (loads OpenPI checkpoint) |
-| `scripts/process_data/` | Data conversion scripts |
-| `configs/` | Hydra YAML configs (`collect_data.yaml`, `drag_replay.yaml`, `train.yaml`, `process_data.yaml`) |
-| `third_party/openpi/` | OpenPI submodule (foundation model policies) |
+| `scripts/process_data/` | Data conversion (episodes → LeRobot v2.1) |
+| `scripts/train/` | Training entry point (train.py, compute_norm_stats.py) |
+| `scripts/inference/` | Policy server + ROS/ZMQ bridges |
+| `configs/` | Hydra YAML configs |
 | `third_party/A1_SDK/` | A1 robot ROS packages |
+| `third_party/lerobot/` | LeRobot SDK (modified for v2.1 compat) |
 
 ## Data Layout
 
 ```
 data/
-├── raw_data/<task_name>/demo_<idx>_<timestamp>/
-│   ├── cam_0_rgb_video.mp4          # RealSense camera (640x480)
-│   ├── cam_1_rgb_video.mp4          # USB camera (640x480)
-│   ├── *.metadata                   # Timestamp files
-│   ├── states.pkl                   # Robot state history
-│   ├── commanded_states.pkl
-│   └── trajectory.csv
-└── processed_data/<task_name>/      # LeRobot-format dataset
+├── a1/episode_<timestamp>/                  # Raw teleop collection
+│   ├── cam0/*.jpg, cam1/*.jpg
+│   ├── frames.csv                           # [frame_index, timestamps, joint1..6, gripper]
+│   └── metadata.json
+└── a1_lerobot/                              # LeRobot v2.1 dataset (after conversion)
+    ├── data/chunk-000/episode_000000.parquet # [state(7), action(7), cam_0, cam_1, ...]
+    ├── meta/{info.json, tasks.jsonl, episodes.jsonl, stats.json}
+    └── images/chunk-000/episode_000000/{cam_0,cam_1}/*.jpg
 ```
 
-## Environment Setup
+## Training Pipeline Details
 
-- **Package manager**: `uv` (path hardcoded in Justfile as `/home/pengyue/.local/bin/uv`)
-- **Conda env**: `.conda/envs/dragdatacoach/bin/python` (preferred) or `~/miniconda3/envs/datacoach/bin/python`
-- **Python version**: 3.11+
-- **ROS**: Noetic (`/opt/ros/noetic/setup.bash` sourced at runtime)
-- See `docs/SETUP_ENV.md` for full setup, `docs/SETUP_UDEV.md` for serial device rules
+- **State/action**: 7D joint space `[arm_joint1..6, gripper]`
+- **Action definition**: `action[t] = state[t+1]` (absolute joint targets)
+- **DeltaActions**: Automatically applied during training (6 joint dims → delta, gripper → absolute)
+- **Normalization**: Quantile normalization (q01/q99), computed by `compute_norm_stats.py`
+- **Config name**: `pi05_a1_joint_lora` (Pi0.5 with LoRA, action_dim=7)
 
-## Key Constants (`datacoach/constants.py`)
+## Key Constants (`a1/constants.py`)
 
 - `ROBOT_FPS = 50`, `CAM_FPS = 20`
 - ZMQ ports: 5556 (cmd), 5557 (state), 5558 (camera), 5559 (policy)
-- A1 coordinate scaling/offset parameters
-
-## Config System
-
-Uses **Hydra** with YAML configs in `configs/`. Training configs support Hydra overrides:
-```bash
-python scripts/train/train.py dataset.path=data/processed_data/my_task model.lr=1e-4
-```
-
-## Tech Stack
-
-- **Training framework**: JAX + Flax (functional, compiled)
-- **Policies**: LeRobot (`lerobot>=0.4.0`) + OpenPI (foundation models, in `third_party/`)
-- **Data I/O**: Pickle, MP4, LeRobot tensor format
-- **Vision**: OpenCV, `pyrealsense2` (RealSense), PyTorch/torchvision

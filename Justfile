@@ -3,11 +3,11 @@ set quiet := true
 
 # ── Configuration ────────────────────────────────────────────────────────────
 # Model
-checkpoint   := "/home/eric/19999"
-openpi       := "/home/pengyue/Codespace/TFP"
-model_config := "pi05_a1_v21_lora_5k"
+checkpoint   := env("A1_CHECKPOINT", "checkpoints/latest")
+openpi       := env("OPENPI_ROOT", justfile_directory() + "/third_party/openpi")
+model_config := "pi05_a1_joint_lora"
 # Paths
-uv   := "/home/pengyue/.local/bin/uv"
+uv   := env("UV_BIN", "uv")
 repo := justfile_directory()
 # Teleoperation
 teleop_leader_port := "/dev/ttyACM0"
@@ -18,10 +18,10 @@ default:
 # ── Environment ──────────────────────────────────────────────────────────────
 
 doctor:
-    scripts/collect_data/dragdatacoach.sh doctor
+    scripts/collect_data/a1.sh doctor
 
 which-python:
-    scripts/collect_data/dragdatacoach.sh which-python
+    scripts/collect_data/a1.sh which-python
 
 # ── Commands ─────────────────────────────────────────────────────────────────
 
@@ -43,11 +43,11 @@ launch target="driver" serial="/dev/a1":
             set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
             {{uv}} run --project {{repo}} python scripts/collect_data/run_a1_server.py "a1_server.components=[ros_subscriber,policy_action_subscriber]" ;; \
         driver) \
-            scripts/collect_data/dragdatacoach.sh launch-driver "{{serial}}" ;; \
+            scripts/collect_data/a1.sh launch-driver "{{serial}}" ;; \
         ee-record) \
-            scripts/collect_data/dragdatacoach.sh launch-ee-record "{{serial}}" ;; \
+            scripts/collect_data/a1.sh launch-ee-record "{{serial}}" ;; \
         tracker) \
-            scripts/collect_data/dragdatacoach.sh launch-tracker ;; \
+            scripts/collect_data/a1.sh launch-tracker ;; \
         *) echo "Usage: just launch <roscore|camera-server|joint-tracker|ee-tracker|a1-server|driver|ee-record|tracker> [serial]"; exit 1 ;; \
     esac
 
@@ -61,22 +61,22 @@ joint-relay:
     {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/joint_target_relay.py
 
 ee-tracker mode="" *args:
-    case "{{mode}}" in ""|run) just launch ee-tracker ;; -drag|drag) scripts/collect_data/dragdatacoach.sh ee-tracker-drag {{args}} ;; *) echo "Usage: just ee-tracker [run|-drag|drag] [args...]"; exit 1 ;; esac
+    case "{{mode}}" in ""|run) just launch ee-tracker ;; -drag|drag) scripts/collect_data/a1.sh ee-tracker-drag {{args}} ;; *) echo "Usage: just ee-tracker [run|-drag|drag] [args...]"; exit 1 ;; esac
 
 drag action="start" *args:
-    case "{{action}}" in start) scripts/collect_data/dragdatacoach.sh drag-start {{args}} ;; stop) scripts/collect_data/dragdatacoach.sh drag-stop ;; *) echo "Usage: just drag <start|stop> [args...]"; exit 1 ;; esac
+    case "{{action}}" in start) scripts/collect_data/a1.sh drag-start {{args}} ;; stop) scripts/collect_data/a1.sh drag-stop ;; *) echo "Usage: just drag <start|stop> [args...]"; exit 1 ;; esac
 
 gripper action="start" *args:
-    case "{{action}}" in start|keyboard) scripts/collect_data/dragdatacoach.sh gripper-keyboard {{args}} ;; open) scripts/collect_data/dragdatacoach.sh gripper-open {{args}} ;; close) scripts/collect_data/dragdatacoach.sh gripper-close {{args}} ;; stop) scripts/collect_data/dragdatacoach.sh gripper-stop ;; *) echo "Usage: just gripper <start|keyboard|open|close|stop> [args...]"; exit 1 ;; esac
+    case "{{action}}" in start|keyboard) scripts/collect_data/a1.sh gripper-keyboard {{args}} ;; open) scripts/collect_data/a1.sh gripper-open {{args}} ;; close) scripts/collect_data/a1.sh gripper-close {{args}} ;; stop) scripts/collect_data/a1.sh gripper-stop ;; *) echo "Usage: just gripper <start|keyboard|open|close|stop> [args...]"; exit 1 ;; esac
 
 record action="start" tag="drag_demo":
-    case "{{action}}" in start) scripts/collect_data/dragdatacoach.sh record-start "{{tag}}" ;; stop) scripts/collect_data/dragdatacoach.sh record-stop ;; *) echo "Usage: just record <start|stop> [tag]"; exit 1 ;; esac
+    case "{{action}}" in start) scripts/collect_data/a1.sh record-start "{{tag}}" ;; stop) scripts/collect_data/a1.sh record-stop ;; *) echo "Usage: just record <start|stop> [tag]"; exit 1 ;; esac
 
 replay bag="" rate="1.0" gripper_mode="position":
-    BAG="{{bag}}"; if [ -z "$BAG" ]; then BAG=$(ls -t third_party/A1_SDK/data/records/*.bag | head -n 1); fi; scripts/collect_data/dragdatacoach.sh replay --bag "$BAG" --gripper-mode "{{gripper_mode}}" --rate "{{rate}}"
+    BAG="{{bag}}"; if [ -z "$BAG" ]; then BAG=$(ls -t third_party/A1_SDK/data/records/*.bag | head -n 1); fi; scripts/collect_data/a1.sh replay --bag "$BAG" --gripper-mode "{{gripper_mode}}" --rate "{{rate}}"
 
 replay-infer input="" source="auto" rate="15" speed="1.0" *args:
-    if [ -z "{{input}}" ]; then echo "Usage: just replay-infer <input> [source] [rate] [speed] [extra args...]"; exit 1; fi; scripts/collect_data/dragdatacoach.sh replay-infer --input "{{input}}" --source "{{source}}" --rate "{{rate}}" --speed "{{speed}}" {{args}}
+    if [ -z "{{input}}" ]; then echo "Usage: just replay-infer <input> [source] [rate] [speed] [extra args...]"; exit 1; fi; scripts/collect_data/a1.sh replay-infer --input "{{input}}" --source "{{source}}" --rate "{{rate}}" --speed "{{speed}}" {{args}}
 
 # Data collection. Choose mode: drag (bag-replay pipeline) or teleop (SO leader real-time).
 # Example: just collect drag
@@ -88,7 +88,7 @@ collect action="" *args:
     set -euo pipefail
     case "{{action}}" in
         drag)
-            scripts/collect_data/dragdatacoach_all_in_one.sh {{args}}
+            scripts/collect_data/a1_all_in_one.sh {{args}}
             ;;
         teleop)
             echo "[collect] starting teleop services..."
@@ -111,10 +111,17 @@ collect action="" *args:
             ;;
     esac
 
+# Convert raw teleop episodes to LeRobot v2.1 dataset (7D joint space).
+# Example: just convert data/a1 data/a1_lerobot
+# Example: just convert data/a1 data/a1_lerobot --task "pick up the block" --overwrite
+convert source_root="{{repo}}/data/a1" output_root="{{repo}}/data/a1_lerobot" *args:
+    {{uv}} run --project {{repo}} python {{repo}}/scripts/process_data/convert_episodes_to_lerobot_v21.py \
+        --source-root "{{source_root}}" --output-root "{{output_root}}" {{args}}
+
 test target="camera" *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    PY=$(scripts/collect_data/dragdatacoach.sh which-python)
+    PY=$(scripts/collect_data/a1.sh which-python)
     case "{{target}}" in
         camera)     "$PY" scripts/collect_data/test_camera_connections.py --config configs/drag_replay.yaml --timeout-s 6.0 {{args}} ;;
         camera-raw) "$PY" scripts/collect_data/test_camera_connections.py {{args}} ;;
@@ -185,14 +192,12 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
             rm -f "$pid_file"
         done
         [[ "$found" -eq 0 ]] && echo "no teleop pid files found in $run_dir"
-        for cid in $(docker ps -q --filter "ancestor=dragdatacoach/a1-noetic-arm64:local" 2>/dev/null); do
+        for cid in $(docker ps -q --filter "ancestor=a1-research/a1-noetic-arm64:local" 2>/dev/null); do
             docker kill "$cid" 2>/dev/null && echo "stopped container $cid"
         done
         exit 0
     fi
 
-    sdk_dir="{{repo}}/third_party/A1_SDK/install"
-    bridge_bin="{{repo}}/third_party/lerobot/.venv/bin/lerobot-a1-jointtracker-bridge"
     run_dir="/tmp/lerobot-teleop"
     log_dir="$run_dir/logs"
     tail_pid_file="$run_dir/tail.pids"
@@ -287,209 +292,6 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
 
 # ── Inference ────────────────────────────────────────────────────────────────
 
-# Live inference: real cameras + current joint state → policy → robot.
-# Starts: roscore → single_arm_node → jointTrackerdemo → camera_server → policy server → policy_ros_bridge.
-# Example: just infer
-# Example: just infer "pick up the marker and place it into the red plate"
-# Example: just infer "pick up the marker" -- --exec-rate 50
-infer prompt="pick up the marker and place it into the red plate" *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    eric_sdk="/home/eric/A1_SDK/install"
-    eric_python="/home/eric/openpi/.venv/bin/python"
-    checkpoint_dir="/home/eric/19999"
-    port="8001"
-    serial="${SINGLE_ARM_SERIAL:-/dev/a1}"
-    run_dir="/tmp/lerobot-infer"
-    log_dir="$run_dir/logs"
-    tail_pid_file="$run_dir/tail.pids"
-    mkdir -p "$log_dir"
-    : > "$tail_pid_file"
-
-    if [[ ! -e "$serial" ]]; then
-        echo "[infer] serial not found: $serial"
-        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
-        exit 1
-    fi
-
-    cleanup() {
-        echo "[infer] shutting down..."
-        while IFS= read -r pid; do kill "$pid" 2>/dev/null || true; done < "$tail_pid_file"
-        for f in "$run_dir"/*.pid; do
-            [[ -f "$f" ]] || continue; kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"
-        done
-    }
-    trap cleanup EXIT
-
-    start_service() {
-        local name="$1" cmd="$2" prompt="$3"
-        local suppress="${4:-}" ok_regex="${5:-}"
-        local log="$log_dir/$name.log" pid_file="$run_dir/$name.pid"
-        echo "[$name] starting..."; : > "$log"
-        nohup bash -lc "$cmd" >> "$log" 2>&1 &
-        local pid=$!; echo "$pid" > "$pid_file"
-        if [[ -n "$suppress" ]]; then
-            tail -n 0 -F "$log" | grep -Eav --line-buffered "$suppress" | sed -u "s/^/[$name] /" &
-        else
-            tail -n 0 -F "$log" | sed -u "s/^/[$name] /" &
-        fi
-        echo "$!" >> "$tail_pid_file"
-        sleep 1
-        if ! kill -0 "$pid" 2>/dev/null; then
-            if [[ -n "$ok_regex" ]] && grep -Eq "$ok_regex" "$log"; then
-                echo "[$name] existing instance detected, reusing."; rm -f "$pid_file"
-            else
-                echo "[$name] failed to start. log: $log"; exit 1
-            fi
-        fi
-        read -r -p "$prompt"
-    }
-
-    start_service "roscore" \
-        "cd $eric_sdk && source setup.bash && roscore" \
-        "[roscore] ready — press enter: " \
-        "" "another roscore/master is already running"
-
-    start_service "single_arm_node" \
-        "cd $eric_sdk && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$serial" \
-        "[single_arm_node] ready — press enter: "
-
-    start_service "joint_tracker" \
-        "cd $eric_sdk && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" \
-        "[joint_tracker] ready — press enter: " \
-        "model->njoints|start tracking|get target position"
-
-    start_service "camera_server" \
-        "cd {{repo}} && {{uv}} run --project {{repo}} python scripts/collect_data/run_data_services.py service_mode=live 'a1_server.components=[]'" \
-        "[camera_server] ready — press enter: "
-
-    echo "[infer] starting policy server (checkpoint=$checkpoint_dir) ..."
-    policy_log="$log_dir/policy.log"
-    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" \
-        "$eric_python" {{repo}}/scripts/inference/serve_policy_a1.py \
-        --port "$port" policy:checkpoint \
-        --policy.config {{model_config}} \
-        --policy.dir "$checkpoint_dir" \
-        > "$policy_log" 2>&1 &
-    policy_pid=$!
-    echo "$policy_pid" > "$run_dir/policy.pid"
-    tail -n 0 -F "$policy_log" | sed -u "s/^/[policy] /" &
-    echo "$!" >> "$tail_pid_file"
-
-    echo "[infer] waiting for policy server on port $port ..."
-    for i in $(seq 1 90); do
-        ss -tlnp 2>/dev/null | grep -q ":$port " && { echo "[infer] policy ready."; break; }
-        kill -0 "$policy_pid" 2>/dev/null || { echo "[infer] policy crashed. log: $policy_log"; exit 1; }
-        sleep 2
-    done
-
-    echo "[infer] running live bridge ..."
-    PYTHONPATH="$eric_sdk/lib/python3/dist-packages:/opt/ros/noetic/lib/python3/dist-packages:{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" \
-        "$eric_python" {{repo}}/scripts/inference/policy_ros_bridge.py \
-        --host 127.0.0.1 --port "$port" --prompt "{{prompt}}" {{args}}
-
-# Teacher-forcing inference: GT observations from dataset → policy → robot.
-# Starts: roscore → single_arm_node → jointTrackerdemo → policy server → lerobot_policy_bridge.
-# Example: just teacher-infer -- --episode 0 --num-chunks 10
-# Example: just teacher-infer -- --episode 0 --chunk-size 10 --no-step-mode
-teacher-infer *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    eric_sdk="/home/eric/A1_SDK/install"
-    eric_python="/home/eric/openpi/.venv/bin/python"
-    checkpoint_dir="/home/eric/19999"
-    port="8001"
-    serial="${SINGLE_ARM_SERIAL:-/dev/a1}"
-    run_dir="/tmp/lerobot-infer"
-    log_dir="$run_dir/logs"
-    tail_pid_file="$run_dir/tail.pids"
-    mkdir -p "$log_dir"
-    : > "$tail_pid_file"
-
-    if [[ ! -e "$serial" ]]; then
-        echo "[teacher-infer] serial not found: $serial"
-        ls -l /dev/ttyACM* /dev/a1 2>/dev/null || true
-        exit 1
-    fi
-
-    cleanup() {
-        echo "[teacher-infer] shutting down..."
-        while IFS= read -r pid; do kill "$pid" 2>/dev/null || true; done < "$tail_pid_file"
-        for f in "$run_dir"/*.pid; do
-            [[ -f "$f" ]] || continue; kill "$(cat "$f")" 2>/dev/null || true; rm -f "$f"
-        done
-    }
-    trap cleanup EXIT
-
-    start_service() {
-        local name="$1" cmd="$2" prompt="$3"
-        local suppress="${4:-}" ok_regex="${5:-}"
-        local log="$log_dir/$name.log" pid_file="$run_dir/$name.pid"
-        echo "[$name] starting..."; : > "$log"
-        nohup bash -lc "$cmd" >> "$log" 2>&1 &
-        local pid=$!; echo "$pid" > "$pid_file"
-        if [[ -n "$suppress" ]]; then
-            tail -n 0 -F "$log" | grep -Eav --line-buffered "$suppress" | sed -u "s/^/[$name] /" &
-        else
-            tail -n 0 -F "$log" | sed -u "s/^/[$name] /" &
-        fi
-        echo "$!" >> "$tail_pid_file"
-        sleep 1
-        if ! kill -0 "$pid" 2>/dev/null; then
-            if [[ -n "$ok_regex" ]] && grep -Eq "$ok_regex" "$log"; then
-                echo "[$name] existing instance detected, reusing."; rm -f "$pid_file"
-            else
-                echo "[$name] failed to start. log: $log"; exit 1
-            fi
-        fi
-        read -r -p "$prompt"
-    }
-
-    start_service "roscore" \
-        "cd $eric_sdk && source setup.bash && roscore" \
-        "[roscore] ready — press enter: " \
-        "" "another roscore/master is already running"
-
-    start_service "single_arm_node" \
-        "cd $eric_sdk && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$serial" \
-        "[single_arm_node] ready — press enter: "
-
-    start_service "joint_tracker" \
-        "cd $eric_sdk && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" \
-        "[joint_tracker] ready — press enter: " \
-        "model->njoints|start tracking|get target position"
-
-    echo "[teacher-infer] starting policy server (checkpoint=$checkpoint_dir) ..."
-    policy_log="$log_dir/policy.log"
-    PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" \
-        "$eric_python" {{repo}}/scripts/inference/serve_policy_a1.py \
-        --port "$port" policy:checkpoint \
-        --policy.config {{model_config}} \
-        --policy.dir "$checkpoint_dir" \
-        > "$policy_log" 2>&1 &
-    policy_pid=$!
-    echo "$policy_pid" > "$run_dir/policy.pid"
-    tail -n 0 -F "$policy_log" | sed -u "s/^/[policy] /" &
-    echo "$!" >> "$tail_pid_file"
-
-    echo "[teacher-infer] waiting for policy server on port $port ..."
-    for i in $(seq 1 90); do
-        ss -tlnp 2>/dev/null | grep -q ":$port " && { echo "[teacher-infer] policy ready."; break; }
-        kill -0 "$policy_pid" 2>/dev/null || { echo "[teacher-infer] policy crashed. log: $policy_log"; exit 1; }
-        sleep 2
-    done
-
-    echo "[teacher-infer] running bridge ..."
-    "$eric_python" {{repo}}/scripts/inference/lerobot_policy_bridge.py {{args}}
-
-# Teacher-forcing policy bridge only (policy server must already be running).
-# Example: just lerobot-policy-bridge -- --episode 0
-# Example: just lerobot-policy-bridge -- --episode 0 --num-chunks 1
-lerobot-policy-bridge *args:
-    /home/eric/openpi/.venv/bin/python {{repo}}/scripts/inference/lerobot_policy_bridge.py {{args}}
-
 policy policy_dir=checkpoint port="8001":
     PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/serve_policy_a1.py --port {{port}} policy:checkpoint --policy.config {{model_config}} --policy.dir "{{policy_dir}}"
 
@@ -534,9 +336,8 @@ teacher-forcing demo="" processed_root="{{repo}}/data/processed_data/pick_twice"
 
 # Teacher-forcing on a LeRobot v2.1 dataset (parquet + jpg, no mp4 videos).
 # Requires: just policy (WebSocket server) running first.
-# Example: just tf-lerobot /home/eric/lerobot/data/a1_v21_old
-# Example: just tf-lerobot /home/eric/lerobot/data/a1_v21_old "pick up the marker and place it into the red plate" -- --episode 3
-# Example: just tf-lerobot /home/eric/lerobot/data/a1_v21_old "pick up the marker and place it into the red plate" -- --episode 3 --max-steps 200
+# Example: just tf-lerobot data/a1_lerobot
+# Example: just tf-lerobot data/a1_lerobot "pick up the block" -- --episode 3
 tf-lerobot lerobot_root prompt="pick up the marker and place it into the red plate" *args:
     PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_infer.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
 
@@ -557,8 +358,8 @@ tf-exec-lerobot lerobot_root prompt="pick up the marker and place it into the re
     PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_exec.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
 
 # Open-loop rollout eval on processed data → per-demo trajectory.json + trajectory.html
-# Example: just openloop-rollout --policy-dir /home/eric/4999
-# Example: just openloop-rollout --policy-dir /home/eric/4999 --max-demos 1 --max-steps-per-demo 100
+# Example: just openloop-rollout --policy-dir checkpoints/my_run/4999
+# Example: just openloop-rollout --policy-dir checkpoints/my_run/4999 --max-demos 1 --max-steps-per-demo 100
 openloop-rollout policy_dir="" *args:
     if [ -z "{{policy_dir}}" ]; then echo "Usage: just openloop-rollout <policy_dir> [extra args...]"; exit 1; fi
     PYTHONPATH="{{openpi}}/src:{{repo}}:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/openloop_rollout.py --policy-dir "{{policy_dir}}" {{args}}

@@ -3,7 +3,7 @@ services:
     build:
       context: .
       dockerfile: docker/a1_noetic_arm64/Dockerfile
-    image: dragdatacoach/a1-noetic-arm64:local
+    image: a1-research/a1-noetic-arm64:local
     network_mode: host
     ipc: host
     privileged: true

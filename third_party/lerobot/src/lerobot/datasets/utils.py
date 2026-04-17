@@ -338,9 +338,22 @@ def write_tasks(tasks: pandas.DataFrame, local_dir: Path) -> None:
 
 
 def load_tasks(local_dir: Path) -> pandas.DataFrame:
-    tasks = pd.read_parquet(local_dir / DEFAULT_TASKS_PATH)
-    tasks.index.name = "task"
-    return tasks
+    parquet_path = local_dir / DEFAULT_TASKS_PATH
+    jsonl_path = local_dir / LEGACY_TASKS_PATH
+    if parquet_path.exists():
+        tasks = pd.read_parquet(parquet_path)
+        tasks.index.name = "task"
+        return tasks
+    if jsonl_path.exists():
+        import json
+        records = []
+        with jsonl_path.open() as f:
+            for line in f:
+                records.append(json.loads(line))
+        tasks = pandas.DataFrame(records).set_index("task_index")
+        tasks.index.name = "task_index"
+        return tasks
+    raise FileNotFoundError(f"No tasks file found at {parquet_path} or {jsonl_path}")
 
 
 def load_subtasks(local_dir: Path) -> pandas.DataFrame | None:
@@ -374,12 +387,20 @@ def write_episodes(episodes: Dataset, local_dir: Path) -> None:
 
 
 def load_episodes(local_dir: Path) -> datasets.Dataset:
-    episodes = load_nested_dataset(local_dir / EPISODES_DIR)
-    # Select episode features/columns containing references to episode data and videos
-    # (e.g. tasks, dataset_from_index, dataset_to_index, data/chunk_index, data/file_index, etc.)
-    # This is to speedup access to these data, instead of having to load episode stats.
-    episodes = episodes.select_columns([key for key in episodes.features if not key.startswith("stats/")])
-    return episodes
+    episodes_dir = local_dir / EPISODES_DIR
+    jsonl_path = local_dir / LEGACY_EPISODES_PATH
+    if episodes_dir.exists() and any(episodes_dir.rglob("*.parquet")):
+        episodes = load_nested_dataset(episodes_dir)
+        episodes = episodes.select_columns([key for key in episodes.features if not key.startswith("stats/")])
+        return episodes
+    if jsonl_path.exists():
+        import json
+        records = []
+        with jsonl_path.open() as f:
+            for line in f:
+                records.append(json.loads(line))
+        return datasets.Dataset.from_list(records)
+    raise FileNotFoundError(f"No episodes metadata found in {episodes_dir} or {jsonl_path}")
 
 
 def load_image_as_numpy(
@@ -478,7 +499,10 @@ def check_version_compatibility(
         else current_version
     )
     if v_check.major < v_current.major and enforce_breaking_major:
-        raise BackwardCompatibilityError(repo_id, v_check)
+        # Allow v2.1 datasets to be loaded by v3.0 codebase (backward compat for local data)
+        if not (v_check.major == 2 and v_current.major == 3):
+            raise BackwardCompatibilityError(repo_id, v_check)
+        logging.warning(f"Loading v{v_check} dataset '{repo_id}' with v{v_current} codebase (backward compat).")
     elif v_check.minor < v_current.minor:
         logging.warning(FUTURE_MESSAGE.format(repo_id=repo_id, version=v_check))
 

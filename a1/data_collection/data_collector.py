@@ -13,8 +13,8 @@ import numpy as np
 import zmq
 from omegaconf import DictConfig
 
-from datacoach.constants import CAM_FPS, ZMQ_CAM_PORT, ZMQ_CMD_PORT, ZMQ_STATE_PORT
-from datacoach.utils import cfg_get as _cfg_get
+from a1.constants import CAM_FPS, ZMQ_CAM_PORT, ZMQ_CMD_PORT, ZMQ_STATE_PORT
+from a1.utils import cfg_get as _cfg_get
 
 
 class ReplayAction(Enum):

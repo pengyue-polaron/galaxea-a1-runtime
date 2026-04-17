@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-SESSION="dragdatacoach"
+SESSION="a1-collect"
 SERIAL="/dev/ttyACM0"
 TAG="drag_demo"
 BAG=""
@@ -14,7 +14,7 @@ SKIP_RECORD=0
 WITH_GRIPPER_KEYBOARD=1
 AUTO_STOP=1
 ON_EXISTING="restart"
-RUN_STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/dragdatacoach.XXXXXX")"
+RUN_STATUS_DIR="$(mktemp -d "${TMPDIR:-/tmp}/a1-collect.XXXXXX")"
 COLLECT_STATUS_FILE="${RUN_STATUS_DIR}/collect.exit"
 COLLECT_PID_FILE="${RUN_STATUS_DIR}/collect.pid"
 COLLECT_LOG_FILE="${RUN_STATUS_DIR}/collect.log"
@@ -23,7 +23,7 @@ KEEP_RUN_STATUS_DIR=0
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/collect_data/dragdatacoach_all_in_one.sh [options]
+  scripts/collect_data/a1_all_in_one.sh [options]
 
 Options:
   --serial <path>            Serial device for A1 driver (default: /dev/ttyACM0)
@@ -31,7 +31,7 @@ Options:
   --bag <path>               Replay bag path. If omitted, use latest recorded bag.
   --rate <float>             Replay rate (default: 1.0)
   --gripper-mode <mode>      Replay gripper mode (default: position)
-  --session <name>           tmux session name (default: dragdatacoach)
+  --session <name>           tmux session name (default: a1-collect)
   --skip-record              Skip drag recording stage, replay from provided/latest bag.
   --no-gripper-keyboard      Do not launch keyboard gripper during drag stage.
   --no-auto-stop             Keep replay launch windows running at the end.
@@ -363,7 +363,7 @@ run_stage2_attempt() {
   sleep 2
   tmux_new_window "tracker" "just launch tracker"
   sleep 2
-  if ! scripts/collect_data/dragdatacoach.sh require-cameras "replay attempt ${attempt}"; then
+  if ! scripts/collect_data/a1.sh require-cameras "replay attempt ${attempt}"; then
     KEEP_RUN_STATUS_DIR=1
     stop_stage2_windows
     if prompt_retry_same_replay "Camera preflight failed for replay attempt ${attempt}."; then

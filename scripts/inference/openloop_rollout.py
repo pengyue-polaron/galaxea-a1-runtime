@@ -39,7 +39,7 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from datacoach.training import config as train_config_lib
+from a1.training import config as train_config_lib
 from openpi.policies import policy_config
 
 

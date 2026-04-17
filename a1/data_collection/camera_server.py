@@ -5,8 +5,8 @@ import cv2
 import numpy as np
 import zmq
 
-from datacoach.constants import ZMQ_CAM_PORT
-from datacoach.utils import cfg_get as _cfg_get
+from a1.constants import ZMQ_CAM_PORT
+from a1.utils import cfg_get as _cfg_get
 
 try:
     import pyrealsense2 as rs

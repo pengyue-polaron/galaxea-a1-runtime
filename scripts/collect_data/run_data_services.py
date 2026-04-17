@@ -8,8 +8,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent # scripts/../ -> DataCo
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
     
-from datacoach.data_collection import a1_replay_bridge, a1_server, camera_server
-from datacoach.utils import cfg_get as _cfg_get
+from a1.data_collection import a1_replay_bridge, a1_server, camera_server
+from a1.utils import cfg_get as _cfg_get
 
 import hydra
 

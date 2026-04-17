@@ -17,7 +17,7 @@ mkdir -p "$(dirname "${STATUS_FILE}")"
 mkdir -p "$(dirname "${LOG_FILE}")"
 rm -f "${STATUS_FILE}" "${PID_FILE}"
 
-py="$(scripts/collect_data/dragdatacoach.sh which-python || true)"
+py="$(scripts/collect_data/a1.sh which-python || true)"
 if [[ -z "${py}" || "${py}" == "NOT_FOUND" ]]; then
   echo "Could not find a usable DataCoach python interpreter." | tee -a "${LOG_FILE}" >&2
   echo "Set DATACOACH_PYTHON explicitly, or prepare env with hydra/zmq/cv2." | tee -a "${LOG_FILE}" >&2

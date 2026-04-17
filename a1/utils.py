@@ -1,4 +1,4 @@
-"""Shared utility helpers used across the datacoach package."""
+"""Shared utility helpers used across the a1 package."""
 
 from __future__ import annotations
 

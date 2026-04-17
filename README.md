@@ -197,7 +197,7 @@ Run the full record → replay → collect pipeline in a single command:
 just drag-collect --serial /dev/a1 --tag drag_demo
 ```
 
-This calls `scripts/collect_data/dragdatacoach_all_in_one.sh`, which creates a `tmux` session with multiple windows. During recording, `just gripper start` opens in the current terminal for keyboard gripper control; press Enter to stop recording.
+This calls `scripts/collect_data/a1_all_in_one.sh`, which creates a `tmux` session with multiple windows. During recording, `just gripper start` opens in the current terminal for keyboard gripper control; press Enter to stop recording.
 
 If a session with the same name already exists, the script restarts it by default. Use `--on-existing` to change this behavior.
 

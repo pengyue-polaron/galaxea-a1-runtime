@@ -17,7 +17,7 @@ from openpi.training.droid_rlds_dataset import DroidRldsDataset
 import openpi.transforms as _transforms
 import pandas as pd
 
-# from datacoach.constants import ROBOT_FPS
+# from a1.constants import ROBOT_FPS
 ROBOT_FPS = 50
 
 T_co = TypeVar("T_co", covariant=True)
@@ -172,15 +172,22 @@ def create_torch_dataset(
         return FakeDataset(model_config, num_samples=1024)
 
     if repo_id == "local_data":
-        dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(revision="v3.0", repo_id="local_data", root=data_config.local_data_dir)
-        tasks = dataset_meta.tasks.reset_index().set_index("task_index")["index"].to_dict()
+        dataset_meta = lerobot_dataset.LeRobotDatasetMetadata(revision="v2.1", repo_id="local_data", root=data_config.local_data_dir)
+        _tasks_df = dataset_meta.tasks.reset_index()
+        # Normalize column names: v2.1 jsonl uses "task", v3.0 parquet may use "index" or "task"
+        if "task_index" not in _tasks_df.columns:
+            _tasks_df = _tasks_df.rename(columns={_tasks_df.columns[0]: "task_index"})
+        _tasks_df = _tasks_df.set_index("task_index")
+        _task_col = "task" if "task" in _tasks_df.columns else "index"
+        tasks = _tasks_df[_task_col].to_dict()
+        fps = dataset_meta.fps  # Use actual dataset FPS, not hardcoded ROBOT_FPS
         dataset = lerobot_dataset.LeRobotDataset(
-            revision="v3.0",
-            repo_id="local_data", 
+            revision="v2.1",
+            repo_id="local_data",
             root=data_config.local_data_dir,
             delta_timestamps={
-                key: [t / ROBOT_FPS for t in range(action_horizon)] for key in data_config.action_sequence_keys
-            }, # 50 is action fps for local_data
+                key: [t / fps for t in range(action_horizon)] for key in data_config.action_sequence_keys
+            },
             )
         
     

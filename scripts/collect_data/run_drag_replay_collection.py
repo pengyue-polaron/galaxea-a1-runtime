@@ -8,8 +8,8 @@ ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from datacoach.data_collection import a1_replay_bridge, camera_server, data_collector
-from datacoach.data_collection.data_collector import ReplayAction
+from a1.data_collection import a1_replay_bridge, camera_server, data_collector
+from a1.data_collection.data_collector import ReplayAction
 import hydra
 
 

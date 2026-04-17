@@ -8,7 +8,7 @@ ROOT_DIR = Path(__file__).resolve().parents[2]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from datacoach.utils import cfg_get as _cfg_get
+from a1.utils import cfg_get as _cfg_get
 
 try:
     from omegaconf import OmegaConf

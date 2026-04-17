@@ -21,30 +21,16 @@ import openpi.transforms as _transforms
 from openpi.serving import websocket_policy_server
 
 
-@dataclasses.dataclass(frozen=True)
-class _HWCToCHW(_transforms.DataTransformFn):
-    """Transpose images in data["images"] from (H, W, C) to (C, H, W) for AlohaInputs."""
-    def __call__(self, data: dict) -> dict:
-        data["images"] = {
-            k: np.asarray(v).transpose(2, 0, 1) for k, v in data["images"].items()
-        }
-        return data
-
-
 # Remap client keys (observation/image, observation/wrist_image, observation/state)
-# to the keys expected by AlohaInputs: data["state"] and data["images"]["cam_*"] in (C,H,W).
+# to the keys expected by A1JointInputs: data["image/cam_0_rgb"], data["image/cam_1_rgb"], data["state"].
 _CLIENT_REPACK = _transforms.Group(
     inputs=[
         _transforms.RepackTransform({
-            "images": {
-                "cam_high":        "observation/image",
-                "cam_left_wrist":  "observation/wrist_image",
-                "cam_right_wrist": "observation/wrist_image",
-            },
-            "state":  "observation/state",
-            "prompt": "prompt",
+            "image/cam_0_rgb": "observation/image",
+            "image/cam_1_rgb": "observation/wrist_image",
+            "state":           "observation/state",
+            "prompt":          "prompt",
         }),
-        _HWCToCHW(),
     ]
 )
 

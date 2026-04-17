@@ -45,8 +45,8 @@ except Exception as exc:
         f"Original error: {exc}"
     ) from exc
 
-from datacoach.constants import ROBOT_FPS, ZMQ_CMD_PORT, ZMQ_STATE_PORT
-from datacoach.utils import cfg_get as _cfg_get
+from a1.constants import ROBOT_FPS, ZMQ_CMD_PORT, ZMQ_STATE_PORT
+from a1.utils import cfg_get as _cfg_get
 
 
 def _pose_to_dict(msg: PoseStamped) -> dict[str, tuple[float, ...]]:

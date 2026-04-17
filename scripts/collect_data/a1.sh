@@ -52,7 +52,7 @@ set -u
 usage() {
   cat <<'EOF'
 Usage:
-  scripts/collect_data/dragdatacoach.sh <command> [args...]
+  scripts/collect_data/a1.sh <command> [args...]
 
 Commands:
   launch-driver [serial]          # default serial=/dev/a1
@@ -344,7 +344,7 @@ case "${cmd}" in
 [ERROR] /end_effector_pose is not being published.
 [ERROR] This recording will NOT replay arm motion (gripper-only replay).
 [ERROR] Start one of these before recording:
-  1) scripts/collect_data/dragdatacoach.sh launch-ee-record /dev/a1
+  1) scripts/collect_data/a1.sh launch-ee-record /dev/a1
   2) roslaunch mobiman jointTrackerdemo.launch
 EOF
           if [[ "${A1_RECORD_ALLOW_NO_EE_POSE:-0}" != "1" ]]; then
@@ -433,7 +433,7 @@ EOF
             ;;
           -h|--help)
             cat <<'EOF'
-Usage: scripts/collect_data/dragdatacoach.sh ee-tracker-drag [options]
+Usage: scripts/collect_data/a1.sh ee-tracker-drag [options]
 
 Options:
   --rviz <true|false>      Launch eeTrackerdemo with rviz (default: false)
@@ -552,7 +552,7 @@ EOF
 [ERROR] Detected running a1_gripper_keyboard.py.
 [ERROR] It continuously publishes gripper commands and will conflict with bag replay.
 [ERROR] Stop it first:
-  scripts/collect_data/dragdatacoach.sh gripper-stop
+  scripts/collect_data/a1.sh gripper-stop
 EOF
       if [[ "${A1_REPLAY_ALLOW_GRIPPER_KEYBOARD:-0}" != "1" ]]; then
         echo "[ERROR] Aborting replay. Set A1_REPLAY_ALLOW_GRIPPER_KEYBOARD=1 to bypass."
@@ -599,7 +599,7 @@ EOF
         cat <<'EOF'
 [WARN] /arm_joint_target_position topic is missing. jointTrackerdemo may not be running.
 [WARN] Start:
-  scripts/collect_data/dragdatacoach.sh launch-tracker
+  scripts/collect_data/a1.sh launch-tracker
 EOF
       fi
     fi

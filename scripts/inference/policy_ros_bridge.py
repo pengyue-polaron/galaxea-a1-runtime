@@ -241,20 +241,20 @@ def main():
         help="Rate (Hz) at which each action in a chunk is sent to the robot.",
     )
     parser.add_argument(
-        "--gripper-scale", type=float, default=-58.14,
-        help="Multiply policy action[6] by this to get gripper stroke mm.",
+        "--gripper-scale", type=float, default=1.0,
+        help="Multiply policy action[6] by this to get gripper stroke. Default 1.0 (no conversion).",
     )
     parser.add_argument(
-        "--gripper-offset", type=float, default=-18.84,
-        help="Add this to (action[6] * scale) to get gripper stroke mm.",
+        "--gripper-offset", type=float, default=0.0,
+        help="Add this to (action[6] * scale) to get gripper stroke. Default 0.0 (no conversion).",
     )
     parser.add_argument(
-        "--state-gripper-scale", type=float, default=-0.01720,
-        help="Multiply live gripper state (mm) by this to convert to training radians.",
+        "--state-gripper-scale", type=float, default=1.0,
+        help="Multiply live gripper state by this before sending to policy. Default 1.0 (no conversion).",
     )
     parser.add_argument(
-        "--state-gripper-offset", type=float, default=-0.324,
-        help="Add this to (gripper_mm * scale) to convert to training radians.",
+        "--state-gripper-offset", type=float, default=0.0,
+        help="Add this to gripper state before sending to policy. Default 0.0 (no conversion).",
     )
     args = parser.parse_args()
 
