@@ -2,18 +2,15 @@ set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
 set quiet := true
 
 # ── Configuration ────────────────────────────────────────────────────────────
-# Paths
-repo := justfile_directory()
-uv   := env_var_or_default("UV_BIN", "uv")
-a1_ros_backend := repo + "/scripts/collect_data/a1_ros_backend.sh"
-a1_runtime_pythonpath := repo + "/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:/usr/lib/python3/dist-packages"
-
 # Model
-checkpoint   := env_var_or_default("CHECKPOINT_DIR", repo + "/checkpoints/19999")
-openpi       := env_var_or_default("OPENPI_ROOT", repo + "/../TFP")
+checkpoint   := "/home/eric/19999"
+openpi       := "/home/pengyue/Codespace/TFP"
 model_config := "pi05_a1_v21_lora_5k"
+# Paths
+uv   := "/home/pengyue/.local/bin/uv"
+repo := justfile_directory()
 # Teleoperation
-teleop_leader_port := "/dev/ttyACM2"
+teleop_leader_port := "/dev/ttyACM0"
 
 default:
     @just --list
@@ -26,51 +23,31 @@ doctor:
 which-python:
     scripts/collect_data/dragdatacoach.sh which-python
 
-which-camera-python:
-    scripts/collect_data/dragdatacoach.sh which-camera-python
-
-setup-main:
-    {{uv}} venv --clear --python 3.12 {{repo}}/.venv
-    {{uv}} pip install --python {{repo}}/.venv/bin/python -e {{repo}} --no-deps
-    {{uv}} pip install --python {{repo}}/.venv/bin/python hydra-core omegaconf pyzmq opencv-python-headless numpy scipy pandas rospkg catkin-pkg pyparsing pyyaml pyserial pillow
-    @echo "main env ready: {{repo}}/.venv"
-
-setup-camera:
-    {{uv}} venv --clear --python 3.10 {{repo}}/.venv-camera
-    {{uv}} pip install --python {{repo}}/.venv-camera/bin/python hydra-core omegaconf pyzmq opencv-python-headless numpy scipy pandas rospkg catkin-pkg pyparsing pyyaml pyserial pillow "pyrealsense2==2.56.5.9235"
-    @echo "camera env ready: {{repo}}/.venv-camera"
-
-setup-all:
-    just setup-main
-    just setup-camera
-    just setup-teleop
-
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 launch target="driver" serial="/dev/a1":
     case "{{target}}" in \
         roscore) \
-            {{a1_ros_backend}} roscore ;; \
+            set +u; source /opt/ros/noetic/setup.bash; set -u; \
+            roscore ;; \
         camera-server) \
-            DATACOACH_PYTHON=$(scripts/collect_data/dragdatacoach.sh which-camera-python) \
-            DATACOACH_ROS_PYTHONPATH=$(scripts/collect_data/dragdatacoach.sh which-ros-pythonpath "$DATACOACH_PYTHON") \
-            PYTHONPATH="$DATACOACH_ROS_PYTHONPATH:${PYTHONPATH:-}" \
-            "$DATACOACH_PYTHON" scripts/collect_data/run_data_services.py service_mode=live "a1_server.components=[]" ;; \
+            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
+            {{uv}} run --project {{repo}} python scripts/collect_data/run_data_services.py service_mode=live "a1_server.components=[]" ;; \
         joint-tracker) \
-            {{a1_ros_backend}} tracker ;; \
+            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
+            roslaunch mobiman jointTrackerdemo.launch ;; \
         ee-tracker) \
-            {{a1_ros_backend}} ee-tracker ;; \
+            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
+            roslaunch mobiman eeTrackerdemo.launch ;; \
         a1-server) \
-            DATACOACH_PYTHON=$(scripts/collect_data/dragdatacoach.sh which-python) \
-            DATACOACH_ROS_PYTHONPATH=$(scripts/collect_data/dragdatacoach.sh which-ros-pythonpath "$DATACOACH_PYTHON") \
-            PYTHONPATH="$DATACOACH_ROS_PYTHONPATH:${PYTHONPATH:-}" \
-            "$DATACOACH_PYTHON" scripts/collect_data/run_a1_server.py "a1_server.components=[ros_subscriber,policy_action_subscriber]" ;; \
+            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
+            {{uv}} run --project {{repo}} python scripts/collect_data/run_a1_server.py "a1_server.components=[ros_subscriber,policy_action_subscriber]" ;; \
         driver) \
-            {{a1_ros_backend}} driver "{{serial}}" ;; \
+            scripts/collect_data/dragdatacoach.sh launch-driver "{{serial}}" ;; \
         ee-record) \
-            {{a1_ros_backend}} ee-record "{{serial}}" ;; \
+            scripts/collect_data/dragdatacoach.sh launch-ee-record "{{serial}}" ;; \
         tracker) \
-            {{a1_ros_backend}} tracker ;; \
+            scripts/collect_data/dragdatacoach.sh launch-tracker ;; \
         *) echo "Usage: just launch <roscore|camera-server|joint-tracker|ee-tracker|a1-server|driver|ee-record|tracker> [serial]"; exit 1 ;; \
     esac
 
@@ -80,10 +57,8 @@ joint-tracker:
 # Relay /arm_joint_target_position (JointState) → /arm_joint_command_host (arm_control)
 # Required for inference when using /arm_joint_target_position as the control topic.
 joint-relay:
-    DATACOACH_PYTHON=$(scripts/collect_data/dragdatacoach.sh which-python) \
-    DATACOACH_ROS_PYTHONPATH=$(scripts/collect_data/dragdatacoach.sh which-ros-pythonpath "$DATACOACH_PYTHON") \
-    PYTHONPATH="$DATACOACH_ROS_PYTHONPATH:${PYTHONPATH:-}" \
-    "$DATACOACH_PYTHON" {{repo}}/scripts/inference/joint_target_relay.py
+    set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
+    {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/joint_target_relay.py
 
 ee-tracker mode="" *args:
     case "{{mode}}" in ""|run) just launch ee-tracker ;; -drag|drag) scripts/collect_data/dragdatacoach.sh ee-tracker-drag {{args}} ;; *) echo "Usage: just ee-tracker [run|-drag|drag] [args...]"; exit 1 ;; esac
@@ -119,11 +94,8 @@ collect action="" *args:
             echo "[collect] starting teleop services..."
             AUTO_CONFIRM=1 just teleop
             echo "[collect] starting recorder..."
-            DATACOACH_PYTHON=$(scripts/collect_data/dragdatacoach.sh which-camera-python)
-            DATACOACH_ROS_PYTHONPATH=$(scripts/collect_data/dragdatacoach.sh which-ros-pythonpath "$DATACOACH_PYTHON")
             trap '' INT; set +e
-            PYTHONPATH="$DATACOACH_ROS_PYTHONPATH:${PYTHONPATH:-}" \
-            "$DATACOACH_PYTHON" \
+            {{uv}} run --project {{repo}} python \
                 {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
                 --output-root "{{repo}}/data/a1" \
                 {{args}}
@@ -139,16 +111,10 @@ collect action="" *args:
             ;;
     esac
 
-drag-collect *args:
-    scripts/collect_data/dragdatacoach_all_in_one.sh {{args}}
-
-teleop-stop:
-    just teleop stop
-
 test target="camera" *args:
     #!/usr/bin/env bash
     set -euo pipefail
-    PY=$(scripts/collect_data/dragdatacoach.sh which-camera-python)
+    PY=$(scripts/collect_data/dragdatacoach.sh which-python)
     case "{{target}}" in
         camera)     "$PY" scripts/collect_data/test_camera_connections.py --config configs/drag_replay.yaml --timeout-s 6.0 {{args}} ;;
         camera-raw) "$PY" scripts/collect_data/test_camera_connections.py {{args}} ;;
@@ -158,10 +124,8 @@ test target="camera" *args:
 print target="joints" count="0" unit="deg":
     case "{{target}}" in \
         joints) \
-            DATACOACH_PYTHON=$(scripts/collect_data/dragdatacoach.sh which-python) \
-            DATACOACH_ROS_PYTHONPATH=$(scripts/collect_data/dragdatacoach.sh which-ros-pythonpath "$DATACOACH_PYTHON") \
-            PYTHONPATH="$DATACOACH_ROS_PYTHONPATH:${PYTHONPATH:-}" \
-            "$DATACOACH_PYTHON" scripts/collect_data/print_joint_angles.py --count "{{count}}" --unit "{{unit}}" ;; \
+            set +u; source /opt/ros/noetic/setup.bash; source third_party/A1_SDK/install/setup.bash; set -u; \
+            python3 scripts/collect_data/print_joint_angles.py --count "{{count}}" --unit "{{unit}}" ;; \
         *) echo "Usage: just print joints [count] [unit]"; exit 1 ;; \
     esac
 
@@ -182,49 +146,25 @@ bag action="latest" bag="":
 # Example: just calibrate-leader
 # Example: just calibrate-leader /dev/ttyACM0 my_other_leader
 calibrate-leader port=teleop_leader_port id="my_leader":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    port="${LEADER_PORT:-{{port}}}"
-    resolve_dev() { readlink -f "$1" 2>/dev/null || echo "$1"; }
-    arm_real="$(resolve_dev /dev/a1)"
-    if [[ ! -e "$port" ]]; then
-        for candidate in /dev/ttyACM* /dev/ttyUSB*; do
-            [[ -e "$candidate" ]] || continue
-            candidate_real="$(resolve_dev "$candidate")"
-            [[ "$candidate_real" == "$arm_real" ]] && continue
-            port="$candidate"
-            break
-        done
-    fi
-    if [[ ! -e "$port" ]]; then
-        echo "leader port not found: ${LEADER_PORT:-{{port}}}"
-        ls -l /dev/ttyACM* /dev/ttyUSB* /dev/a1 2>/dev/null || true
-        exit 1
-    fi
-    echo "using leader port: $port"
     {{repo}}/third_party/lerobot/.venv/bin/lerobot-calibrate \
         --teleop.type=so100_leader \
-        --teleop.port="$port" \
+        --teleop.port="{{port}}" \
         --teleop.id="{{id}}"
 
 # One-time setup: create third_party/lerobot/.venv (Python 3.12) and install lerobot[feetech].
 # Run this once before the first `just teleop`.
 setup-teleop:
-    {{uv}} venv --clear --python 3.12 {{repo}}/third_party/lerobot/.venv
+    {{uv}} venv --python 3.12 {{repo}}/third_party/lerobot/.venv
     {{uv}} pip install --python {{repo}}/third_party/lerobot/.venv/bin/python -e "{{repo}}/third_party/lerobot[feetech]"
-    {{uv}} pip install --python {{repo}}/third_party/lerobot/.venv/bin/python pyparsing pytz
+    {{uv}} pip install --python {{repo}}/third_party/lerobot/.venv/bin/python pyrealsense2
     @echo "teleop env ready: {{repo}}/third_party/lerobot/.venv"
 
 # SO leader → A1 jointTracker teleoperation.
 # Starts: roscore → single_arm_node → jointTrackerdemo → SO leader bridge.
-# Backend selection:
-#   auto   -> host ROS Noetic on Ubuntu 20.04 when available, otherwise Docker
-#   docker -> force Docker Noetic
-#   host   -> force host ROS Noetic
 # Run `just setup-teleop` once before first use.
 # Example: just teleop
 # Example: just teleop stop
-# Example: LEADER_PORT=/dev/ttyACM1 just teleop
+# Example: LEADER_PORT=/dev/ttyACM0 just teleop
 teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -245,6 +185,9 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
             rm -f "$pid_file"
         done
         [[ "$found" -eq 0 ]] && echo "no teleop pid files found in $run_dir"
+        for cid in $(docker ps -q --filter "ancestor=dragdatacoach/a1-noetic-arm64:local" 2>/dev/null); do
+            docker kill "$cid" 2>/dev/null && echo "stopped container $cid"
+        done
         exit 0
     fi
 
@@ -255,7 +198,6 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
     tail_pid_file="$run_dir/tail.pids"
     single_arm_serial="${SINGLE_ARM_SERIAL:-{{serial}}}"
     leader_port="${LEADER_PORT:-{{leader_port}}}"
-    resolve_dev() { readlink -f "$1" 2>/dev/null || echo "$1"; }
 
     if [[ ! -x "$bridge_bin" ]]; then
         echo "teleop env not set up. run: just setup-teleop"
@@ -268,27 +210,11 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
         exit 1
     fi
 
-    single_arm_real="$(resolve_dev "$single_arm_serial")"
-    leader_real="$(resolve_dev "$leader_port")"
-    if [[ ! -e "$leader_port" || "$leader_real" == "$single_arm_real" ]]; then
-        for candidate in /dev/ttyACM* /dev/ttyUSB*; do
-            [[ -e "$candidate" ]] || continue
-            candidate_real="$(resolve_dev "$candidate")"
-            [[ "$candidate_real" == "$single_arm_real" ]] && continue
-            leader_port="$candidate"
-            leader_real="$candidate_real"
-            break
-        done
-    fi
-
     if [[ ! -e "$leader_port" ]]; then
         echo "leader port not found: $leader_port"
-        ls -l /dev/ttyACM* /dev/ttyUSB* 2>/dev/null || true
+        ls -l /dev/ttyACM* 2>/dev/null || true
         exit 1
     fi
-
-    echo "using single arm serial: $single_arm_serial"
-    echo "using leader port: $leader_port"
 
     mkdir -p "$log_dir"
     : > "$tail_pid_file"
@@ -335,22 +261,24 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
         [[ "$auto_confirm" == "1" ]] && echo "[$name] $prompt (auto-confirmed)" || read -r -p "$prompt"
     }
 
+    a1_backend="{{repo}}/scripts/collect_data/a1_ros_backend.sh"
+
     start_service "roscore" \
-        "{{a1_ros_backend}} roscore" \
+        "$a1_backend roscore" \
         "roscore ready, press enter to proceed" \
         "" "another roscore/master is already running"
 
     start_service "single_arm_node" \
-        "{{a1_ros_backend}} driver $single_arm_serial" \
+        "$a1_backend driver $single_arm_serial" \
         "single arm node ready, press enter to proceed"
 
     start_service "joint_tracker" \
-        "{{a1_ros_backend}} tracker" \
+        "$a1_backend tracker" \
         "joint tracker ready, press enter to proceed" \
         "model->njoints|start tracking|get target position"
 
     start_service "bridge" \
-        "cd {{repo}} && BRIDGE_PYTHONPATH=\$(scripts/collect_data/dragdatacoach.sh which-ros-pythonpath {{repo}}/third_party/lerobot/.venv/bin/python) && PYTHONPATH=\"\$BRIDGE_PYTHONPATH:\${PYTHONPATH:-}\" $bridge_bin --leader-port $leader_port --leader-id my_leader --gripper-min-stroke-mm 0 --gripper-max-stroke-mm 200" \
+        "$a1_backend bridge $leader_port" \
         "bridge running, press enter to finish"
 
     echo "teleop services running in background."

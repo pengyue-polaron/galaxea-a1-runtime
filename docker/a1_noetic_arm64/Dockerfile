@@ -48,6 +48,15 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-noetic-xacro \
     && rm -rf /var/lib/apt/lists/*
 
+# Install uv + Python 3.12 for the lerobot bridge (needs Python >=3.12)
+RUN curl -LsSf https://astral.sh/uv/install.sh | sh \
+    && /root/.local/bin/uv python install 3.12
+ENV PATH="/root/.local/bin:${PATH}"
+
+# Patch rosgraph/roslogging.py for Python 3.12+ (infinite loop in findCaller)
+RUN sed -i 's/while hasattr(f, "f_code"):/max_depth = 20\n        while hasattr(f, "f_code") and max_depth > 0:\n            max_depth -= 1/' \
+    /opt/ros/noetic/lib/python3/dist-packages/rosgraph/roslogging.py
+
 COPY docker/a1_noetic_arm64/entrypoint.sh /usr/local/bin/a1-noetic-entrypoint.sh
 RUN chmod +x /usr/local/bin/a1-noetic-entrypoint.sh
 

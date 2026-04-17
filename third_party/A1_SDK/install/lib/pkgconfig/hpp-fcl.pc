@@ -1,0 +1,22 @@
+prefix=/home/systemg/work/ws_arm_usb/install
+exec_prefix=/home/systemg/work/ws_arm_usb/install
+libdir=/home/systemg/work/ws_arm_usb/install/lib
+bindir=/home/systemg/work/ws_arm_usb/install/bin
+pkglibdir=/home/systemg/work/ws_arm_usb/install/lib/hpp-fcl
+includedir=/home/systemg/work/ws_arm_usb/install/include
+datarootdir=/home/systemg/work/ws_arm_usb/install/share
+pkgdatarootdir=/home/systemg/work/ws_arm_usb/install/share
+docdir=/home/systemg/work/ws_arm_usb/install/share/doc/hpp-fcl
+doxygendocdir=/home/systemg/work/ws_arm_usb/install/share/doc/hpp-fcl/doxygen-html
+
+Name: hpp-fcl
+Description: HPP fork of FCL -- The Flexible Collision Library
+URL: https://github.com/humanoid-path-planner/hpp-fcl
+Version: 1.6.0
+Requires: eigen3 >= 3.0.0, octomap >= 1.6
+Conflicts: 
+Libs: -L${libdir}  -lhpp-fcl
+Libs.private: 
+Cflags:  -I${includedir} -DHPP_FCL_HAVE_OCTOMAP -DFCL_HAVE_OCTOMAP -DOCTOMAP_MAJOR_VERSION=1 -DOCTOMAP_MINOR_VERSION=9 -DOCTOMAP_PATCH_VERSION=8
+
+

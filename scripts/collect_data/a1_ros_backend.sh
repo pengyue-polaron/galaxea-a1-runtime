@@ -95,6 +95,14 @@ run_host() {
     shell)
       exec bash -lc "source '${HOST_ROS_SETUP}' && source '${sdk_root}/install/setup.bash' && exec bash -i"
       ;;
+    joint-relay)
+      exec bash -lc "source '${HOST_ROS_SETUP}' && source '${sdk_root}/install/setup.bash' && PYTHONPATH='${sdk_root}/install/lib/python3/dist-packages:\${PYTHONPATH:-}' exec python3 '${PROJECT_ROOT}/scripts/inference/joint_target_relay.py'"
+      ;;
+    bridge)
+      local leader_port="${1:-/dev/ttyACM0}"
+      local bridge_bin="${PROJECT_ROOT}/third_party/lerobot/.venv/bin/lerobot-a1-jointtracker-bridge"
+      exec bash -lc "source '${HOST_ROS_SETUP}' && source '${sdk_root}/install/setup.bash' && PYTHONPATH='${sdk_root}/install/lib/python3/dist-packages:\${PYTHONPATH:-}' exec '${bridge_bin}' --leader-port '${leader_port}' --leader-id my_leader --gripper-min-stroke-mm 0 --gripper-max-stroke-mm 200"
+      ;;
     build|prepare)
       echo "[INFO] Host backend selected; no Docker image build required."
       ;;

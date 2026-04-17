@@ -1,0 +1,3 @@
+# Intel RealSense camera permissions (D400/L500/SR300 families)
+# Install: sudo cp this-file /etc/udev/rules.d/ && sudo udevadm control --reload-rules && sudo udevadm trigger
+SUBSYSTEMS=="usb", ATTRS{idVendor}=="8086", MODE:="0666", GROUP:="plugdev"

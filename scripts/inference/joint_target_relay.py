@@ -11,8 +11,8 @@ import rospy
 from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control
 
-KP = [20.0, 20.0, 16.0, 12.0, 8.0, 8.0]
-KD = [1.0,  1.0,  0.8,  0.6,  0.4, 0.4]
+KP = [30.0, 30.0, 30.0, 30.0, 30.0, 30.0]
+KD = [1.0,  1.0,  1.0,  1.0,  1.0, 1.0]
 
 
 def main():

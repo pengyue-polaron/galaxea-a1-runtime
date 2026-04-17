@@ -4,7 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-OFFICIAL_SDK_ROOT="${1:-${PROJECT_ROOT}/third_party/A1_SDK_official_arm}"
+OFFICIAL_SDK_ROOT="${1:-${PROJECT_ROOT}/third_party/A1_SDK}"
 OVERLAY_SDK_ROOT="${2:-${PROJECT_ROOT}/third_party/A1_SDK}"
 RUNTIME_SDK_ROOT="${A1_SDK_RUNTIME_ROOT:-${PROJECT_ROOT}/third_party/A1_SDK_runtime}"
 
@@ -35,7 +35,7 @@ mkdir -p "${RUNTIME_SDK_ROOT}"
 
 echo "[INFO] Syncing official arm SDK into runtime root:"
 echo "       ${OFFICIAL_SDK_ROOT} -> ${RUNTIME_SDK_ROOT}"
-rsync -a --delete --exclude '.git' "${OFFICIAL_SDK_ROOT}/" "${RUNTIME_SDK_ROOT}/"
+rsync -a --delete --exclude '.git' --exclude '__pycache__' "${OFFICIAL_SDK_ROOT}/" "${RUNTIME_SDK_ROOT}/"
 
 echo "[INFO] Overlaying DragDataCoach tools and launch files..."
 mkdir -p "${RUNTIME_SDK_ROOT}/tools"

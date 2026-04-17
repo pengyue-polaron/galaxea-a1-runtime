@@ -4,30 +4,16 @@ teleop:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    sdk_dir="/home/eric/A1_SDK/install"
+    # -- paths (only change vs source: Docker backend instead of host ROS) --
+    a1_backend="$(cd ../.. && pwd)/scripts/collect_data/a1_ros_backend.sh"
     run_dir="/tmp/lerobot-teleop"
     log_dir="$run_dir/logs"
     tail_pid_file="$run_dir/tail.pids"
-    conda_sh=""
     single_arm_serial="${SINGLE_ARM_SERIAL:-/dev/a1}"
-    leader_port="${LEADER_PORT:-/dev/ttyACM2}"
+    leader_port="${LEADER_PORT:-/dev/ttyACM0}"
 
     mkdir -p "$log_dir"
     : > "$tail_pid_file"
-
-    for candidate in "$HOME/miniconda3/etc/profile.d/conda.sh" "$HOME/anaconda3/etc/profile.d/conda.sh"; do
-        if [[ -f "$candidate" ]]; then
-            conda_sh="$candidate"
-            break
-        fi
-    done
-
-    if [[ -z "$conda_sh" ]]; then
-        echo "conda init script not found. expected one of:"
-        echo "  $HOME/miniconda3/etc/profile.d/conda.sh"
-        echo "  $HOME/anaconda3/etc/profile.d/conda.sh"
-        exit 1
-    fi
 
     if [[ ! -e "$single_arm_serial" ]]; then
         echo "single arm serial not found: $single_arm_serial"
@@ -75,7 +61,13 @@ teleop:
         fi
         echo "$!" >> "$tail_pid_file"
 
-        sleep 1
+        local wait_secs="${TELEOP_SVC_TIMEOUT:-120}"
+        local elapsed=0
+        while (( elapsed < wait_secs )); do
+            sleep 1
+            elapsed=$((elapsed + 1))
+            kill -0 "$svc_pid" 2>/dev/null && break
+        done
         if ! kill -0 "$svc_pid" 2>/dev/null; then
             if [[ -n "$ok_if_log_regex" ]] && grep -Eq "$ok_if_log_regex" "$log_file"; then
                 echo "[$name] detected existing instance, reusing it."
@@ -98,10 +90,10 @@ teleop:
         fi
     }
 
-    start_service "roscore" "cd $sdk_dir && source setup.bash && roscore" "roscore ready, press enter to proceed" "" "another roscore/master is already running"
-    start_service "single_arm_node" "cd $sdk_dir && source setup.bash && roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=$single_arm_serial" "single arm node ready, press enter to proceed"
-    start_service "joint_tracker" "cd $sdk_dir && source setup.bash && roslaunch mobiman jointTrackerdemo.launch" "joint tracker ready, press enter to proceed" "model->njoints|start tracking|get target position"
-    start_service "bridge" "cd $sdk_dir && source setup.bash && source \"$conda_sh\" && conda activate lerobot && lerobot-a1-jointtracker-bridge --leader-port $leader_port --leader-id my_leader --gripper-min-stroke-mm 0 --gripper-max-stroke-mm 200" "bridge ready, press enter to finish"
+    start_service "roscore" "$a1_backend roscore" "roscore ready, press enter to proceed" "" "another roscore/master is already running"
+    start_service "single_arm_node" "$a1_backend driver $single_arm_serial" "single arm node ready, press enter to proceed"
+    start_service "joint_tracker" "$a1_backend tracker" "joint tracker ready, press enter to proceed" "model->njoints|start tracking|get target position"
+    start_service "bridge" "$a1_backend bridge $leader_port" "bridge ready, press enter to finish"
 
     echo "teleop services are running in background."
     echo "logs dir: $log_dir"
@@ -132,6 +124,11 @@ teleop-stop:
         echo "no pid files found in $run_dir"
     fi
 
+    # Also stop Docker containers used for ROS Noetic backend
+    for cid in $(docker ps -q --filter "ancestor=dragdatacoach/a1-noetic-arm64:local" 2>/dev/null); do
+        docker kill "$cid" 2>/dev/null && echo "stopped container $cid"
+    done
+
 kill-roscore:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -159,35 +156,18 @@ collect:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    dataset_root="${DATASET_ROOT:-/home/eric/lerobot/data/a1}"
+    lerobot_root="$(pwd)"
+    dataset_root="${DATASET_ROOT:-$lerobot_root/data/a1}"
     task="${TASK:-A1 single-arm teleop collection}"
     cam0_serial="${CAM0_SERIAL:-}"
     cam1_index="${CAM1_INDEX:-auto}"
     fps="${FPS:-30}"
 
-    conda_sh=""
-    for candidate in "$HOME/miniconda3/etc/profile.d/conda.sh" "$HOME/anaconda3/etc/profile.d/conda.sh"; do
-        if [[ -f "$candidate" ]]; then
-            conda_sh="$candidate"
-            break
-        fi
-    done
-
-    if [[ -z "$conda_sh" ]]; then
-        echo "conda init script not found. expected one of:"
-        echo "  $HOME/miniconda3/etc/profile.d/conda.sh"
-        echo "  $HOME/anaconda3/etc/profile.d/conda.sh"
-        exit 1
-    fi
-
     echo "[collect] starting teleop services..."
     AUTO_CONFIRM=1 just teleop
 
-    source "$conda_sh"
-    conda activate lerobot
-
     cmd=(
-        python -m lerobot.scripts.lerobot_a1_collect
+        "$lerobot_root/.venv/bin/python" -m lerobot.scripts.lerobot_a1_collect
         --output-root "$dataset_root"
         --task "$task"
         --cam1-index "$cam1_index"

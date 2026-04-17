@@ -156,28 +156,16 @@ def _video_device_name(index: int) -> str:
 
 
 def _probe_cam_indices(max_index: int = 12) -> list[tuple[int, str]]:
-    import os
     readable: list[tuple[int, str]] = []
-    # Suppress OpenCV and driver noise (WARN/ERROR on stderr) while probing.
-    devnull_fd = os.open(os.devnull, os.O_WRONLY)
-    saved_stderr = os.dup(2)
-    os.dup2(devnull_fd, 2)
-    os.close(devnull_fd)
-    cv2.setLogLevel(0)
-    try:
-        for idx in range(max_index + 1):
-            cap = cv2.VideoCapture(idx)
-            if not cap.isOpened():
-                cap.release()
-                continue
-            ok, frame = cap.read()
+    for idx in range(max_index + 1):
+        cap = cv2.VideoCapture(idx)
+        if not cap.isOpened():
             cap.release()
-            if ok and frame is not None:
-                readable.append((idx, _video_device_name(idx)))
-    finally:
-        os.dup2(saved_stderr, 2)
-        os.close(saved_stderr)
-        cv2.setLogLevel(3)  # restore default log level
+            continue
+        ok, frame = cap.read()
+        cap.release()
+        if ok and frame is not None:
+            readable.append((idx, _video_device_name(idx)))
     return readable
 
 

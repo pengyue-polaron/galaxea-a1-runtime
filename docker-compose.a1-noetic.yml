@@ -11,7 +11,7 @@ services:
     tty: true
     working_dir: /workspace
     environment:
-      A1_SDK_ROOT: /workspace/third_party/A1_SDK_runtime
+      A1_SDK_ROOT: /workspace/third_party/A1_SDK
       DISPLAY: ${DISPLAY:-}
       QT_X11_NO_MITSHM: "1"
       NVIDIA_VISIBLE_DEVICES: all
@@ -20,6 +20,7 @@ services:
       - .:/workspace
       - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
+      - /home/nyu/.cache/huggingface:/home/nyu/.cache/huggingface:ro
     group_add:
       - dialout
       - video

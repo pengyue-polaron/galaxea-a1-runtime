@@ -33,7 +33,13 @@ compose() {
 
 run_service() {
   local shell_cmd="$1"
-  compose run --rm --service-ports "${SERVICE}" bash -lc "${shell_cmd}"
+  local cid
+  cid=$(compose run -d --service-ports "${SERVICE}" bash -lc "${shell_cmd}")
+  # Follow logs in foreground so nohup/start_service can track the process.
+  # docker wait keeps this process alive until the container exits,
+  # even when docker logs -f finishes early (no stdout).
+  "${DOCKER_CMD[@]}" logs -f "${cid}" &
+  "${DOCKER_CMD[@]}" wait "${cid}" >/dev/null 2>&1
 }
 
 usage() {
@@ -92,6 +98,13 @@ case "${cmd}" in
   tracker)
     "${PREPARE_SCRIPT}"
     run_service 'source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash" && exec roslaunch mobiman jointTrackerdemo.launch'
+    ;;
+  joint-relay)
+    run_service 'source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash" && exec python3 /workspace/scripts/inference/joint_target_relay.py'
+    ;;
+  bridge)
+    leader_port="${2:-/dev/ttyACM0}"
+    run_service "PY312=\$(uv python find 3.12) && export HF_LEROBOT_CALIBRATION=/home/nyu/.cache/huggingface/lerobot/calibration && PYTHONPATH=\"/workspace/third_party/lerobot/.venv/lib/python3.12/site-packages:/workspace/third_party/lerobot/src:/opt/ros/noetic/lib/python3/dist-packages:/usr/lib/python3/dist-packages:\${A1_SDK_ROOT}/install/lib/python3/dist-packages\" exec \$PY312 /workspace/third_party/lerobot/src/lerobot/scripts/lerobot_a1_jointtracker_bridge.py --leader-port ${leader_port} --leader-id my_leader --gripper-min-stroke-mm 0 --gripper-max-stroke-mm 200"
     ;;
   *)
     usage

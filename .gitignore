@@ -226,5 +226,10 @@ __MACOSX
 # CppADCodeGen runtime-generated temporary directories (A1 SDK dynamics)
 third_party/A1_SDK/install/share/mobiman/auto_generated/
 
+# Un-ignore A1 SDK prebuilt binaries (overrides global *.so, lib/ rules)
+!third_party/A1_SDK/install/lib/
+!third_party/A1_SDK/install/lib/**
+!third_party/A1_SDK/install/lib/**/*.so
+
 # Compiled object files
 *.o

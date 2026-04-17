@@ -14,8 +14,7 @@
   <node pkg="mobiman" type="jointTracker_demo_node"
         name="jointTracker_demo_node" output="screen">
       <param name="joint_states_sub_topic" value="$(arg joint_states_sub_topic)"/>
-      <!-- <param name="arm_joint_command_topic" value="$(arg arm_joint_command_topic)"/> -->
-      <param name="joint_command" value="$(arg arm_joint_command_topic)"/>
+      <param name="arm_joint_command_topic" value="$(arg arm_joint_command_topic)"/>
       <param name="arm_joint_target_position" value="$(arg arm_joint_target_position)"/>
       <param name="taskFile" value="$(arg taskFile)" />
       <param name="urdfFile" value="$(arg urdfFile)" />
