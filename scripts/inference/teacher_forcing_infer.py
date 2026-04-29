@@ -167,8 +167,12 @@ def infer_demo_lerobot(
     n_frames = len(df)
     n_steps = n_frames if max_steps <= 0 else min(n_frames, max_steps)
 
-    cam0_dir = images_dir / "cam0"
-    cam1_dir = images_dir / "cam1"
+    cam0_dir = images_dir / "cam_0"
+    cam1_dir = images_dir / "cam_1"
+    if not cam0_dir.exists():
+        cam0_dir = images_dir / "cam0"
+    if not cam1_dir.exists():
+        cam1_dir = images_dir / "cam1"
     if not cam0_dir.exists() or not cam1_dir.exists():
         raise FileNotFoundError(f"Image dirs not found: {cam0_dir}, {cam1_dir}")
 
@@ -191,7 +195,8 @@ def infer_demo_lerobot(
         frame0 = cv2.cvtColor(img0, cv2.COLOR_BGR2RGB)
         frame1 = cv2.cvtColor(img1, cv2.COLOR_BGR2RGB)
 
-        state7  = np.asarray(row["observation.state"], dtype=np.float32)[:7]
+        state_key = "observation.state" if "observation.state" in df.columns else "state"
+        state7  = np.asarray(row[state_key], dtype=np.float32)[:7]
         target7 = np.asarray(row["action"],            dtype=np.float32)[:7]
         timestamp = float(row["timestamp"])
 

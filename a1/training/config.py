@@ -819,6 +819,26 @@ _CONFIGS = [
         ),
         num_train_steps=30_000,
     ),
+    # Pi0.5 inference config — 7D joint data, merged LoRA checkpoint (action_dim=32 at model level).
+    # The model uses action_dim=32 internally; 7D data is padded/truncated by transforms.
+    TrainConfig(
+        name="pi05_a1_merged",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_horizon=10,
+            action_dim=32,
+            discrete_state_input=False,
+            paligemma_variant="gemma_2b",
+            action_expert_variant="gemma_300m",
+        ),
+        data=LocalDataA1JointDataConfig(
+            repo_id="local_data",
+            assets=AssetsConfig(asset_id="pick_up_the_banana_and_place_it_into_the_red_plate"),
+            local_data_dir="/dev/null",  # placeholder — not used during inference
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        num_train_steps=30_000,
+    ),
     # Pi0.5 LoRA fine-tuning — 7D joint space (6 arm joints + gripper).
     # Expects LeRobot v2.1 dataset with state/action shape (7,).
     # Usage: python scripts/train/train.py pi05_a1_joint_lora --data.local_data_dir=data/a1_lerobot
@@ -858,6 +878,40 @@ _CONFIGS = [
             "gs://openpi-assets/checkpoints/pi05_base/params"
         ),
         num_train_steps=30_000,
+    ),
+
+    # Pi0.5 fine-tune on the A1 banana → red plate task (LeRobot v2.1, 7D joint).
+    # Mirrors TFP_pro/src/openpi/training/config.py:pi05_a1_banana_red_plate so a
+    # checkpoint trained there can be served from this repo.
+    # repo_id is used as the asset_id, so norm_stats load from
+    # <checkpoint>/assets/pick_up_the_banana_and_place_it_into_the_red_plate/.
+    TrainConfig(
+        name="pi05_a1_banana_red_plate",
+        model=pi0_config.Pi0Config(
+            pi05=True,
+            action_dim=32,
+            action_horizon=16,
+        ),
+        data=LocalDataA1JointDataConfig(
+            repo_id="pick_up_the_banana_and_place_it_into_the_red_plate",
+            local_data_dir="/dev/null",  # placeholder — not used during inference
+            base_config=DataConfig(prompt_from_task=True),
+        ),
+        weight_loader=weight_loaders.CheckpointWeightLoader(
+            "gs://openpi-assets/checkpoints/pi05_base/params"
+        ),
+        batch_size=32,
+        lr_schedule=_optimizer.CosineDecaySchedule(
+            warmup_steps=1_000,
+            peak_lr=2e-5,
+            decay_steps=20_000,
+            decay_lr=2e-5,
+        ),
+        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+        ema_decay=0.99,
+        num_train_steps=20_000,
+        save_interval=1_000,
+        log_interval=100,
     ),
 
     TrainConfig(
@@ -903,41 +957,47 @@ _CONFIGS = [
         wandb_enabled=False,
     ),
     
-    TrainConfig(
-        name="pi05_ltc_swap",
-        model=pi0_config.Pi05LTCConfig(
-            action_horizon=10,
-            discrete_state_input=False,
-            paligemma_variant="gemma_2b",
-            action_expert_variant="gemma_300m",
-            bptt_len=8,
-            state_dropout_prob=0.2,
-            dyn_loss_weight=1.0,
-        ),
-        data=LocalDataA1LTCDataConfig(
-            assets=AssetsConfig(asset_id="pick_twice"),
-            local_data_dir=None,  # must be overridden at runtime
-            base_config=DataConfig(prompt_from_task=True),
-        ),
-        weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
-        batch_size=16,
-        lr_schedule=_optimizer.CosineDecaySchedule(
-            warmup_steps=10_000,
-            peak_lr=5e-5,
-            decay_steps=1_000_000,
-            decay_lr=5e-5,
-        ),
-        optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
-        ema_decay=None,
-        policy_metadata={
-            "ltc_dt_s": 1.0 / 50.0,
-            "ltc_use_measured_dt": False,
-            "ltc_dt_min_s": 1.0 / 50.0,
-            "ltc_dt_max_s": 1.0 / 50.0,
-            "ltc_history_reset_gap_s": 1.0,
-            "ltc_episode_id": "a1_zmq",
-        },
-        num_train_steps=30_000,
+    *(
+        [
+            TrainConfig(
+                name="pi05_ltc_swap",
+                model=pi0_config.Pi05LTCConfig(
+                    action_horizon=10,
+                    discrete_state_input=False,
+                    paligemma_variant="gemma_2b",
+                    action_expert_variant="gemma_300m",
+                    bptt_len=8,
+                    state_dropout_prob=0.2,
+                    dyn_loss_weight=1.0,
+                ),
+                data=LocalDataA1LTCDataConfig(
+                    assets=AssetsConfig(asset_id="pick_twice"),
+                    local_data_dir=None,  # must be overridden at runtime
+                    base_config=DataConfig(prompt_from_task=True),
+                ),
+                weight_loader=weight_loaders.CheckpointWeightLoader("gs://openpi-assets/checkpoints/pi05_base/params"),
+                batch_size=16,
+                lr_schedule=_optimizer.CosineDecaySchedule(
+                    warmup_steps=10_000,
+                    peak_lr=5e-5,
+                    decay_steps=1_000_000,
+                    decay_lr=5e-5,
+                ),
+                optimizer=_optimizer.AdamW(clip_gradient_norm=1.0),
+                ema_decay=None,
+                policy_metadata={
+                    "ltc_dt_s": 1.0 / 50.0,
+                    "ltc_use_measured_dt": False,
+                    "ltc_dt_min_s": 1.0 / 50.0,
+                    "ltc_dt_max_s": 1.0 / 50.0,
+                    "ltc_history_reset_gap_s": 1.0,
+                    "ltc_episode_id": "a1_zmq",
+                },
+                num_train_steps=30_000,
+            ),
+        ]
+        if hasattr(pi0_config, "Pi05LTCConfig")
+        else []
     ),
    
 ]

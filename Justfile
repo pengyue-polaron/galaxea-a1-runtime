@@ -5,7 +5,7 @@ set quiet := true
 # Model
 checkpoint   := env("A1_CHECKPOINT", "checkpoints/latest")
 openpi       := env("OPENPI_ROOT", justfile_directory() + "/third_party/openpi")
-model_config := "pi05_a1_joint_lora"
+model_config := env("A1_MODEL_CONFIG", "pi05_a1_banana_red_plate")
 # Paths
 uv   := env("UV_BIN", "uv")
 repo := justfile_directory()
@@ -27,29 +27,34 @@ which-python:
 # ── Commands ─────────────────────────────────────────────────────────────────
 
 launch target="driver" serial="/dev/a1":
-    case "{{target}}" in \
-        roscore) \
-            set +u; source /opt/ros/noetic/setup.bash; set -u; \
-            roscore ;; \
-        camera-server) \
-            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
-            {{uv}} run --project {{repo}} python scripts/collect_data/run_data_services.py service_mode=live "a1_server.components=[]" ;; \
-        joint-tracker) \
-            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
-            roslaunch mobiman jointTrackerdemo.launch ;; \
-        ee-tracker) \
-            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
-            roslaunch mobiman eeTrackerdemo.launch ;; \
-        a1-server) \
-            set +u; source /opt/ros/noetic/setup.bash; source {{repo}}/third_party/A1_SDK/install/setup.bash; set -u; \
-            {{uv}} run --project {{repo}} python scripts/collect_data/run_a1_server.py "a1_server.components=[ros_subscriber,policy_action_subscriber]" ;; \
-        driver) \
-            scripts/collect_data/a1.sh launch-driver "{{serial}}" ;; \
-        ee-record) \
-            scripts/collect_data/a1.sh launch-ee-record "{{serial}}" ;; \
-        tracker) \
-            scripts/collect_data/a1.sh launch-tracker ;; \
-        *) echo "Usage: just launch <roscore|camera-server|joint-tracker|ee-tracker|a1-server|driver|ee-record|tracker> [serial]"; exit 1 ;; \
+    #!/usr/bin/env bash
+    set -eu -o pipefail
+    _source_ros() {
+        set +u
+        [[ -f /opt/ros/noetic/setup.bash ]] && source /opt/ros/noetic/setup.bash
+        [[ -f "{{repo}}/third_party/A1_SDK/install/setup.bash" ]] && source "{{repo}}/third_party/A1_SDK/install/setup.bash"
+        set -u
+    }
+    case "{{target}}" in
+        roscore)
+            _source_ros; roscore ;;
+        camera-server)
+            _source_ros
+            {{uv}} run --project {{repo}} python scripts/collect_data/run_data_services.py service_mode=live "a1_server.components=[]" ;;
+        joint-tracker)
+            _source_ros; roslaunch mobiman jointTrackerdemo.launch ;;
+        ee-tracker)
+            _source_ros; roslaunch mobiman eeTrackerdemo.launch ;;
+        a1-server)
+            _source_ros
+            {{uv}} run --project {{repo}} python scripts/collect_data/run_a1_server.py "a1_server.components=[ros_subscriber,policy_action_subscriber]" ;;
+        driver)
+            scripts/collect_data/a1.sh launch-driver "{{serial}}" ;;
+        ee-record)
+            scripts/collect_data/a1.sh launch-ee-record "{{serial}}" ;;
+        tracker)
+            scripts/collect_data/a1.sh launch-tracker ;;
+        *) echo "Usage: just launch <roscore|camera-server|joint-tracker|ee-tracker|a1-server|driver|ee-record|tracker> [serial]"; exit 1 ;;
     esac
 
 joint-tracker:
@@ -95,13 +100,36 @@ collect experiment *args:
     AUTO_CONFIRM=1 just teleop > /dev/null 2>&1
     echo "[collect] teleop ready"
     export ROS_MASTER_URI="${ROS_MASTER_URI:-http://localhost:11311}"
-    {{vpy}} {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
+    # Use system Python 3.10 (rospy is built for 3.10 and hangs under 3.12).
+    # Strip ROS2 Humble paths from PYTHONPATH so rospy's rosgraph_msgs isn't shadowed.
+    export PYTHONPATH="$(echo "${PYTHONPATH:-}" | tr ':' '\n' | grep -v '/opt/ros/humble' | tr '\n' ':')"
+    export PYTHONPATH="/usr/lib/python3/dist-packages:{{repo}}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH}"
+    PYTHONUNBUFFERED=1 python3 {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
         --experiment "{{experiment}}" \
         --data-root "{{repo}}/data/raw" \
-        {{args}} || true
+        {{args}}
 
 collect-drag *args:
     scripts/collect_data/a1_all_in_one.sh {{args}}
+
+# Same as `just collect` but records only the RealSense (cam0); wrist cam1 disabled.
+# For experiments isolating whether observation/trajectory miscorrespondence comes from cam1.
+# Example: just collect1 pick_block
+collect1 experiment *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    cleanup() { echo "[collect1] stopping teleop ..."; just teleop stop > /dev/null 2>&1 || true; }
+    trap cleanup EXIT
+    just teleop stop > /dev/null 2>&1 || true
+    echo "[collect1] starting teleop services ..."
+    AUTO_CONFIRM=1 just teleop > /dev/null 2>&1
+    echo "[collect1] teleop ready"
+    export ROS_MASTER_URI="${ROS_MASTER_URI:-http://localhost:11311}"
+    PYTHONUNBUFFERED=1 {{vpy}} {{repo}}/third_party/lerobot/src/lerobot/scripts/lerobot_a1_collect.py \
+        --experiment "{{experiment}}" \
+        --data-root "{{repo}}/data/raw" \
+        --disable-cam1 \
+        {{args}}
 
 # Convert raw episodes to LeRobot v2.1 dataset.
 # Task prompt is read from data/raw/{experiment}/task.txt (created during collection).
@@ -111,6 +139,15 @@ convert experiment *args:
     {{vpy}} {{repo}}/scripts/process_data/convert_episodes_to_lerobot_v21.py \
         --source-root "{{repo}}/data/raw/{{experiment}}" \
         --output-root "{{repo}}/data/processed/{{experiment}}" \
+        {{args}}
+
+# Same as `just convert` but for cam0-only episodes (recorded with `just collect1`).
+# Example: just convert1 pick_block
+convert1 experiment *args:
+    {{vpy}} {{repo}}/scripts/process_data/convert_episodes_to_lerobot_v21.py \
+        --source-root "{{repo}}/data/raw/{{experiment}}" \
+        --output-root "{{repo}}/data/processed/{{experiment}}" \
+        --disable-cam1 \
         {{args}}
 
 test target="camera" *args:
@@ -290,20 +327,93 @@ teleop action="start" serial="/dev/a1" leader_port=teleop_leader_port:
 policy policy_dir=checkpoint port="8001":
     PYTHONPATH="{{openpi}}/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/serve_policy_a1.py --port {{port}} policy:checkpoint --policy.config {{model_config}} --policy.dir "{{policy_dir}}"
 
-# Policy → ROS bridge: same pipeline as just teleop but policy replaces the SO leader arm.
-# Reads live cameras (ZMQ) + /joint_states_host (ROS), calls policy, publishes to /arm_joint_target_position.
-# Requires: just launch roscore, just launch driver, just joint-tracker, just launch camera-server, just policy
+# Policy → ROS bridge: captures cameras directly, reads /joint_states_host (ROS),
+# calls remote policy (WebSocket), publishes actions to /arm_joint_target_position (ROS).
+# Requires: roscore + driver + tracker (via Docker), remote policy server
 # Example: just policy-ros-bridge
-# Example: just policy-ros-bridge 127.0.0.1 8001 "pick up the marker"
+# Example: just policy-ros-bridge 10.208.2.251 8001 "pick up the banana"
 policy-ros-bridge host="127.0.0.1" port="8001" prompt="pick up the marker and place it into the red plate" *args:
-    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/policy_ros_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
+    python3 {{repo}}/scripts/inference/policy_ros_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
 
-# ZMQ↔WebSocket bridge: reads state+cameras from ZMQ, calls WebSocket policy server, publishes actions to ZMQ
-# Run this alongside `just policy` so the A1 server receives joint actions over ZMQ.
-# Example: just zmq-bridge
-# Example: just zmq-bridge nyushrobo5090 8001 "pick up the cup"
-zmq-bridge host="127.0.0.1" port="8001" prompt="pick up the marker and place it into the red plate" *args:
-    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/zmq_ws_bridge.py --host "{{host}}" --port "{{port}}" --prompt "{{prompt}}" {{args}}
+# One-shot full inference pipeline (everything driven from py-a1):
+#   1. rsync the inference-relevant files to the remote GPU box
+#   2. start the policy server on the remote (skipped if already up; force-restart with A1_RESTART_SERVER=1)
+#   3. wait for the websocket to come up, mirroring [server] log lines locally
+#   4. run the policy-ros-bridge in the foreground
+# Prereqs on this machine: ssh to {{remote}} works (key auth), driver + joint-tracker running.
+# Env overrides:
+#   A1_MODEL_CONFIG=<name>     train-config to serve (default: {{model_config}})
+#   A1_RESTART_SERVER=1        kill the current remote server and relaunch
+# Example: just infer
+# Example: just infer "pick up the marker"
+# Example: just infer "..." pengyue@10.208.2.251 8001 ~/checkpoints/pi05_a1_banana_red_plate/latest
+infer prompt="pick up the banana and place it into the red plate" remote="pengyue@10.208.2.251" port="8001" remote_ckpt="~/checkpoints/pi05_a1_banana_red_plate/latest":
+    #!/usr/bin/env bash
+    set -eu -o pipefail
+
+    config="${A1_MODEL_CONFIG:-{{model_config}}}"
+    host="{{remote}}"; host="${host##*@}"
+
+    server_up() {
+        (exec 3<>"/dev/tcp/${host}/{{port}}") 2>/dev/null && { exec 3<&-; return 0; } || return 1
+    }
+
+    echo "[infer 1/4] rsync code → {{remote}}:~/A1-Research/"
+    rsync -az \
+        {{repo}}/a1/training/config.py     {{remote}}:~/A1-Research/a1/training/config.py
+    rsync -az \
+        {{repo}}/a1/training/a1_policy.py  {{remote}}:~/A1-Research/a1/training/a1_policy.py
+    rsync -az \
+        {{repo}}/scripts/inference/serve_policy_a1.py \
+        {{remote}}:~/A1-Research/scripts/inference/serve_policy_a1.py
+    rsync -az \
+        {{repo}}/Justfile                  {{remote}}:~/A1-Research/Justfile
+
+    need_start=1
+    if server_up; then
+        if [[ "${A1_RESTART_SERVER:-0}" == "1" ]]; then
+            echo "[infer 2/4] A1_RESTART_SERVER=1 — killing existing server on ${host}:{{port}}"
+            ssh {{remote}} "pkill -f 'serve_policy_a1.py.*--port {{port}}' 2>/dev/null || true" || true
+            sleep 2
+        else
+            echo "[infer 2/4] policy server already up on ${host}:{{port}} — reusing (set A1_RESTART_SERVER=1 to force restart)"
+            need_start=0
+        fi
+    fi
+
+    tail_pid=""
+    cleanup() { [[ -n "${tail_pid:-}" ]] && kill "${tail_pid}" 2>/dev/null || true; }
+    trap cleanup EXIT INT TERM
+
+    if [[ "${need_start}" == "1" ]]; then
+        echo "[infer 2/4] starting remote policy server: config=${config} ckpt={{remote_ckpt}} port={{port}}"
+        remote_cmd="cd ~/A1-Research && A1_MODEL_CONFIG=${config} nohup just policy {{remote_ckpt}} {{port}} </dev/null >/tmp/a1_policy_server.log 2>&1 &"
+        ssh {{remote}} "bash -lc '${remote_cmd}'"
+
+        ssh -o BatchMode=yes {{remote}} "tail -n 0 -F /tmp/a1_policy_server.log 2>/dev/null" 2>/dev/null \
+            | sed -u 's/^/[server] /' &
+        tail_pid=$!
+
+        echo "[infer 3/4] waiting for ws://${host}:{{port}} (up to 240s)"
+        deadline=$(( $(date +%s) + 240 ))
+        while (( $(date +%s) < deadline )); do
+            if server_up; then
+                echo "[infer 3/4] policy server is up"
+                break
+            fi
+            sleep 2
+        done
+        if ! server_up; then
+            echo "[infer ERROR] server did not come up in time. See [server] log lines above; full log: ssh {{remote}} cat /tmp/a1_policy_server.log"
+            exit 1
+        fi
+    else
+        echo "[infer 3/4] server already up — skipping wait"
+    fi
+
+    echo "[infer 4/4] launching policy → ROS bridge (Ctrl-C to stop)"
+    python3 {{repo}}/scripts/inference/policy_ros_bridge.py \
+        --host "${host}" --port "{{port}}" --prompt "{{prompt}}"
 
 # Teacher-forcing execution via ROS — same receiver pipeline as just teleop (no ZMQ).
 # Feeds GT observations from recorded demo to policy, sends outputs to /arm_joint_target_position.
@@ -333,24 +443,26 @@ teacher-forcing demo="" processed_root="{{repo}}/data/processed_data/pick_twice"
 # Requires: just policy (WebSocket server) running first.
 # Example: just tf-lerobot data/a1_lerobot
 # Example: just tf-lerobot data/a1_lerobot "pick up the block" -- --episode 3
-tf-lerobot lerobot_root prompt="pick up the marker and place it into the red plate" *args:
-    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_infer.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
+tf-lerobot *args:
+    {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_infer.py --lerobot-root "{{repo}}/data/processed/pick_up_the_banana_and_place_it_into_the_red_plate" --prompt "pick up the banana and place it into the red plate" {{args}}
 
-# Teacher-forcing execution: run policy on recorded demo and send joint targets to A1 arm via ZMQ.
-# Requires: just policy + just launch a1-server + just joint-relay
+# Teacher-forcing execution: run policy on recorded demo and send actions to A1 arm via ROS.
+# Requires: roscore + driver + tracker (via Docker), remote policy server
 # Add --dry-run to infer without sending to robot.
 # Example: just tf-exec demo_0
 # Example: just tf-exec demo_0 -- --exec-rate 5 --dry-run
-# Example: just tf-exec demo_0 -- --max-steps 50
 tf-exec demo="" processed_root="{{repo}}/data/processed_data/pick_twice" *args:
-    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_exec.py --processed-root "{{processed_root}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
+    python3 {{repo}}/scripts/inference/teacher_forcing_exec.py --processed-root "{{processed_root}}" $([ -n "{{demo}}" ] && echo "--demo {{demo}}") {{args}}
 
-# Teacher-forcing execution on a LeRobot v2.1 dataset — sends joint targets to A1 arm via ZMQ.
-# Requires: just policy + just launch a1-server + just joint-relay
-# Example: just tf-exec-lerobot /path/to/dataset "swap the marker and block" -- --episode 0
-# Example: just tf-exec-lerobot /path/to/dataset "swap the marker and block" -- --episode 0 --dry-run
-tf-exec-lerobot lerobot_root prompt="pick up the marker and place it into the red plate" *args:
-    PYTHONPATH="{{openpi}}/packages/openpi-client/src:${PYTHONPATH:-}" {{uv}} run --project {{repo}} python {{repo}}/scripts/inference/teacher_forcing_exec.py --lerobot-root "{{lerobot_root}}" --prompt "{{prompt}}" {{args}}
+# Teacher-forcing execution on LeRobot v2.1 dataset — sends actions to A1 arm via ROS.
+# Requires: roscore + driver + tracker, remote policy server
+# Example: just tf-exec-lerobot --host 10.208.2.251 --port 8001 --episode 0
+# Example: just tf-exec-lerobot --host 10.208.2.251 --port 8001 --episode 0 --dry-run
+tf-exec-lerobot *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    export PYTHONPATH="$(echo "${PYTHONPATH:-}" | tr ':' '\n' | grep -v '/opt/ros/humble' | tr '\n' ':')"
+    python3 {{repo}}/scripts/inference/teacher_forcing_exec.py --lerobot-root "{{repo}}/data/processed/pick_up_the_banana_and_place_it_into_the_red_plate" --prompt "pick up the banana and place it into the red plate" {{args}}
 
 # Open-loop rollout eval on processed data → per-demo trajectory.json + trajectory.html
 # Example: just openloop-rollout --policy-dir checkpoints/my_run/4999

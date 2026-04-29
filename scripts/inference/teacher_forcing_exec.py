@@ -29,14 +29,32 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
+import signal
+import socket
+import subprocess
 import time
 from pathlib import Path
 import pickle
 import sys
 
+# Remove ROS2 Humble paths — they shadow ROS1 packages (e.g. rosgraph_msgs)
+sys.path = [p for p in sys.path if "/opt/ros/humble" not in p]
+
+import pathlib
+_A1_SDK = pathlib.Path(__file__).resolve().parents[2] / "third_party" / "A1_SDK" / "install"
+_USER_SITE = pathlib.Path.home() / ".local" / "lib" / f"python{sys.version_info.major}.{sys.version_info.minor}" / "site-packages"
+for candidate in (
+    "/opt/ros/noetic/lib/python3/dist-packages",
+    "/usr/lib/python3/dist-packages",
+    str(_A1_SDK / "lib" / "python3" / "dist-packages"),
+    str(_USER_SITE),
+):
+    if os.path.isdir(candidate) and candidate not in sys.path:
+        sys.path.append(candidate)
+
 import cv2
 import numpy as np
-import zmq
 
 ROOT_DIR = Path(__file__).resolve().parent.parent.parent
 if str(ROOT_DIR) not in sys.path:
@@ -44,8 +62,9 @@ if str(ROOT_DIR) not in sys.path:
 
 from openpi_client import websocket_client_policy as _ws_policy
 
-ACTION_PORT = 5559
-ACTION_HOST = "127.0.0.1"
+import rospy
+from sensor_msgs.msg import JointState
+from signal_arm.msg import gripper_position_control
 
 
 # ---------------------------------------------------------------------------
@@ -84,26 +103,103 @@ def _demo_sort_key(path: Path) -> int | str:
 
 
 # ---------------------------------------------------------------------------
-# ZMQ publisher
+# Auto-start roscore
 # ---------------------------------------------------------------------------
 
-class ZmqActionPublisher:
-    def __init__(self, host: str = ACTION_HOST, port: int = ACTION_PORT):
-        ctx = zmq.Context()
-        self._pub = ctx.socket(zmq.PUB)
-        self._pub.bind(f"tcp://{host}:{port}")
-        # Allow subscribers to connect (ZMQ slow-joiner: give a1-server time to reconnect)
-        print(f"[Exec] ZMQ action publisher bound to tcp://{host}:{port} — waiting 2s for subscribers...")
-        time.sleep(2.0)
-        print("[Exec] Ready.")
+def _ros_master_reachable(timeout: float = 1.0) -> bool:
+    try:
+        from urllib.parse import urlparse
+        uri = os.environ.get("ROS_MASTER_URI", "http://localhost:11311")
+        parsed = urlparse(uri)
+        sock = socket.create_connection(
+            (parsed.hostname or "localhost", parsed.port or 11311), timeout=timeout
+        )
+        sock.close()
+        return True
+    except (OSError, socket.timeout):
+        return False
+
+_roscore_proc: subprocess.Popen | None = None
+
+def _ensure_roscore() -> None:
+    global _roscore_proc
+    if _ros_master_reachable():
+        return
+    print("[Exec] ROS master not found — starting roscore automatically ...")
+    env = os.environ.copy()
+    for var in ("PYTHONPATH", "LD_LIBRARY_PATH", "PATH", "CMAKE_PREFIX_PATH"):
+        paths = env.get(var, "")
+        env[var] = ":".join(p for p in paths.split(":") if "/opt/ros/humble" not in p)
+    for var in ("AMENT_PREFIX_PATH", "COLCON_PREFIX_PATH", "ROS_DISTRO"):
+        env.pop(var, None)
+    _roscore_proc = subprocess.Popen(
+        ["roscore"], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE,
+    )
+    for _ in range(100):
+        if _ros_master_reachable(timeout=0.5):
+            print("[Exec] roscore is up.")
+            return
+        time.sleep(0.1)
+    stderr = ""
+    if _roscore_proc.poll() is not None:
+        stderr = _roscore_proc.stderr.read().decode(errors="replace")
+    _roscore_proc = None
+    raise RuntimeError(f"Failed to start roscore.\n{stderr}")
+
+def _cleanup_roscore() -> None:
+    global _roscore_proc
+    if _roscore_proc is not None:
+        print("[Exec] Stopping roscore ...")
+        _roscore_proc.send_signal(signal.SIGINT)
+        _roscore_proc.wait(timeout=5)
+        _roscore_proc = None
+
+# ---------------------------------------------------------------------------
+# ROS action publisher
+# ---------------------------------------------------------------------------
+
+_JOINT_NAMES = [
+    "arm_joint1", "arm_joint2", "arm_joint3",
+    "arm_joint4", "arm_joint5", "arm_joint6",
+]
+
+class RosActionPublisher:
+    def __init__(self, gripper_scale: float, gripper_offset: float):
+        self._gripper_scale = gripper_scale
+        self._gripper_offset = gripper_offset
+        _ensure_roscore()
+        rospy.init_node("tf_exec", anonymous=True)
+        self._joint_pub = rospy.Publisher(
+            "/arm_joint_target_position", JointState, queue_size=10
+        )
+        self._gripper_pub = rospy.Publisher(
+            "/gripper_position_control_host", gripper_position_control, queue_size=10
+        )
+        time.sleep(0.5)  # let publishers register
+        print("[Exec] ROS publishers ready.")
 
     def publish(self, joints7: np.ndarray) -> None:
-        """Publish 7D joint target (joints[:6] forwarded by A1 server to robot)."""
-        msg = {
-            "timestamp": time.time(),
-            "joints": [float(j) for j in joints7],
-        }
-        self._pub.send_json(msg)
+        now = rospy.Time.now()
+        js = JointState()
+        js.header.stamp = now
+        js.name = _JOINT_NAMES
+        js.position = [float(v) for v in joints7[:6]]
+        self._joint_pub.publish(js)
+
+        gripper_val = float(joints7[6])
+        stroke_mm = gripper_val * self._gripper_scale + self._gripper_offset
+        # Clamp to [0, 100] mm — matches training command range, prevents motor heating.
+        stroke_mm = max(0.0, min(100.0, stroke_mm))
+        # Debug print every ~30 calls (~1s at 30Hz)
+        if not hasattr(self, "_grip_count"):
+            self._grip_count = 0
+        self._grip_count += 1
+        if self._grip_count % 30 == 1:
+            print(f"  [Gripper] rad={gripper_val:+.3f} → stroke_mm={stroke_mm:.1f}")
+        gm = gripper_position_control()
+        gm.header.stamp = now
+        gm.gripper_stroke = stroke_mm
+        self._gripper_pub.publish(gm)
 
 
 # ---------------------------------------------------------------------------
@@ -112,7 +208,7 @@ class ZmqActionPublisher:
 
 def _exec_chunk(
     actions: np.ndarray,          # (horizon, 7) float32
-    action_pub: ZmqActionPublisher | None,
+    action_pub: RosActionPublisher | None,
     step_dt: float,
     dry_run: bool,
     chunk_idx: int,
@@ -151,7 +247,7 @@ def exec_demo(
     *,
     demo_dir: Path,
     policy,
-    action_pub: ZmqActionPublisher | None,
+    action_pub: RosActionPublisher | None,
     prompt: str,
     max_steps: int,
     exec_rate_hz: float,
@@ -313,7 +409,7 @@ def exec_demo_lerobot(
     dataset_root: Path,
     episode_index: int,
     policy,
-    action_pub: ZmqActionPublisher | None,
+    action_pub: RosActionPublisher | None,
     prompt: str,
     max_steps: int,
     exec_rate_hz: float,
@@ -329,8 +425,12 @@ def exec_demo_lerobot(
         # v2.1: images stored as files in images/ dir
         chunk_ds = episode_index // 1000
         images_dir = dataset_root / "images" / f"chunk-{chunk_ds:03d}" / f"episode_{episode_index:06d}"
-        cam0_dir = images_dir / "cam0"
-        cam1_dir = images_dir / "cam1"
+        cam0_dir = images_dir / "cam_0"
+        cam1_dir = images_dir / "cam_1"
+        if not cam0_dir.exists():
+            cam0_dir = images_dir / "cam0"
+        if not cam1_dir.exists():
+            cam1_dir = images_dir / "cam1"
         if not cam0_dir.exists() or not cam1_dir.exists():
             raise FileNotFoundError(f"Image dirs not found under {images_dir}")
     else:
@@ -368,8 +468,9 @@ def exec_demo_lerobot(
             print(f"[Exec] Missing image at frame {frame_idx}, stopping.")
             break
 
-        state7  = np.asarray(row["observation.state"], dtype=np.float32)[:7]
-        target7 = np.asarray(row["action"],            dtype=np.float32)[:7]
+        state_key = "observation.state" if "observation.state" in df.columns else "state"
+        state7  = np.asarray(row[state_key], dtype=np.float32)[:7]
+        target7 = np.asarray(row["action"],  dtype=np.float32)[:7]
         timestamp = float(row["timestamp"])
 
         obs = {
@@ -445,15 +546,15 @@ def main():
     # --- Policy ---
     parser.add_argument("--host",   default="127.0.0.1", help="WebSocket policy server host")
     parser.add_argument("--port",   type=int, default=8001)
-    parser.add_argument("--prompt", default="swap the position of the marker and the yellow block")
+    parser.add_argument("--prompt", default="pick up the banana and place it into the red plate")
     # --- Execution ---
     parser.add_argument(
-        "--exec-rate", type=float, default=10.0,
-        help="Rate (Hz) at which each action in a chunk is sent to the robot. Default: 10 Hz.",
+        "--exec-rate", type=float, default=30.0,
+        help="Rate (Hz) at which each action is sent to the robot. Match training fps (30).",
     )
     parser.add_argument(
-        "--step-mode", action="store_true", default=True,
-        help="Pause after each chunk and wait for Enter before the next inference (default: on).",
+        "--step-mode", action="store_true", default=False,
+        help="Pause after each chunk and wait for Enter before the next inference (default: off).",
     )
     parser.add_argument(
         "--no-step-mode", dest="step_mode", action="store_false",
@@ -463,14 +564,11 @@ def main():
         "--dry-run", action="store_true",
         help="Run inference but do NOT publish actions to robot.",
     )
-    parser.add_argument(
-        "--action-port", type=int, default=ACTION_PORT,
-        help=f"ZMQ port to publish joint targets (default: {ACTION_PORT})",
-    )
-    parser.add_argument(
-        "--action-host", default=ACTION_HOST,
-        help="ZMQ bind host for action publisher",
-    )
+    parser.add_argument("--gripper-scale",  type=float, default=38.36,
+        help="Multiply action[6] (radians) by this to get stroke mm. "
+             "Forward mapping: rad -2.602 → stroke 0 (closed), rad 0.005 → stroke 100 (open).")
+    parser.add_argument("--gripper-offset", type=float, default=99.81,
+        help="Add this to (action[6] * scale) to get stroke mm.")
     parser.add_argument("--max-steps", type=int, default=0, help="0 = all steps")
     parser.add_argument(
         "--output-dir",
@@ -485,9 +583,12 @@ def main():
     policy = _ws_policy.WebsocketClientPolicy(host=args.host, port=args.port)
     print(f"[Exec] Connected. Server metadata: {policy.get_server_metadata()}")
 
-    action_pub: ZmqActionPublisher | None = None
+    action_pub: RosActionPublisher | None = None
     if not args.dry_run:
-        action_pub = ZmqActionPublisher(host=args.action_host, port=args.action_port)
+        action_pub = RosActionPublisher(
+            gripper_scale=args.gripper_scale,
+            gripper_offset=args.gripper_offset,
+        )
         print(f"[Exec] Execution ENABLED at {args.exec_rate:.1f} Hz — robot will move!")
     else:
         print("[Exec] DRY RUN — inference only, no commands sent to robot.")
@@ -571,4 +672,7 @@ def main():
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO, force=True)
-    main()
+    try:
+        main()
+    finally:
+        _cleanup_roscore()

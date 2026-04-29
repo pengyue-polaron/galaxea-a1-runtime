@@ -18,6 +18,9 @@ camera_server:
       height: 480
       fps: 30
       enabled: true
+      auto_exposure: false
+      exposure: 60        # range ~1-10000, lower = darker. Start here and adjust.
+      gain: 20             # range 0-128, lower = less amplification
     - id: cam_1
       backend: opencv
       device: /dev/video6

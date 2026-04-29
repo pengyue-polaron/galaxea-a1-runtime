@@ -38,8 +38,6 @@ from tqdm import tqdm
 V21 = "v2.1"
 # Columns in frames.csv that are NOT joint angles
 NON_JOINT_COLS = {"frame_index", "wall_time_ns", "ros_stamp_s", "cam0_relpath", "cam1_relpath"}
-# Camera name mapping: raw directory name → dataset feature name
-CAM_MAP = {"cam0": "cam_0", "cam1": "cam_1"}
 
 
 # ---------------------------------------------------------------------------
@@ -87,7 +85,10 @@ def main() -> None:
     parser.add_argument("--fps", type=int, default=30, help="Fallback FPS if metadata missing.")
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--max-episodes", type=int, default=0, help="0 = all.")
+    parser.add_argument("--disable-cam1", action="store_true",
+                        help="Convert cam0-only data (episodes recorded with `just collect1`).")
     args = parser.parse_args()
+    cam_map = {"cam0": "cam_0"} if args.disable_cam1 else {"cam0": "cam_0", "cam1": "cam_1"}
 
     source_root = args.source_root.expanduser().resolve()
     output_root = args.output_root.expanduser().resolve()
@@ -159,10 +160,15 @@ def main() -> None:
         all_actions.append(action)
 
         # ── Timestamps ───────────────────────────────────────────────────
+        # Use relative timestamps (seconds since episode start) so they fit in float32.
+        # Casting raw Unix epoch (~1.78e9) to float32 has ~128s precision — collapses
+        # all frames in an episode to the same value and breaks LeRobot delta_timestamps.
         if "ros_stamp_s" in df.columns:
-            timestamp = df["ros_stamp_s"].to_numpy(dtype=np.float32)
+            ts_full = df["ros_stamp_s"].to_numpy(dtype=np.float64)
+            timestamp = (ts_full - ts_full[0]).astype(np.float32)
         elif "wall_time_ns" in df.columns:
-            timestamp = (df["wall_time_ns"].to_numpy(dtype=np.float64) / 1e9).astype(np.float32)
+            ts_full = df["wall_time_ns"].to_numpy(dtype=np.float64) / 1e9
+            timestamp = (ts_full - ts_full[0]).astype(np.float32)
         else:
             timestamp = np.arange(n_frames, dtype=np.float32) / float(dataset_fps)
 
@@ -174,27 +180,29 @@ def main() -> None:
         ti = task_to_index.setdefault(task, len(task_to_index))
         task_index = np.full(n_frames, ti, dtype=np.int64)
 
-        # ── Copy images (cam0 → cam_0, cam1 → cam_1) ────────────────────
+        # ── Copy images (cam0 → cam_0, cam1 → cam_1 if enabled) ─────────
         img_base = output_root / "images" / "chunk-000" / f"episode_{ep_idx:06d}"
-        for src_name, dst_name in CAM_MAP.items():
+        for src_name, dst_name in cam_map.items():
             src_dir = episode_dir / src_name
             dst_dir = img_base / dst_name
             if src_dir.exists():
                 shutil.copytree(src_dir, dst_dir, dirs_exist_ok=True)
+            elif src_name == "cam1" and not args.disable_cam1:
+                raise FileNotFoundError(
+                    f"{src_dir} missing — episode was recorded without cam1. "
+                    f"Re-run with --disable-cam1 (or use `just convert1`)."
+                )
 
-        cam0_paths = [
-            str((img_base / "cam_0" / f"{fi:06d}.jpg").relative_to(output_root))
-            for fi in frame_index
-        ]
-        cam1_paths = [
-            str((img_base / "cam_1" / f"{fi:06d}.jpg").relative_to(output_root))
-            for fi in frame_index
-        ]
+        cam_paths = {
+            dst_name: [
+                str((img_base / dst_name / f"{fi:06d}.jpg").relative_to(output_root))
+                for fi in frame_index
+            ]
+            for dst_name in cam_map.values()
+        }
 
         # ── Build features on first episode ──────────────────────────────
         if features is None:
-            cam0_shape = infer_image_shape(episode_dir / "cam0" / f"{frame_index[0]:06d}.jpg")
-            cam1_shape = infer_image_shape(episode_dir / "cam1" / f"{frame_index[0]:06d}.jpg")
             features = {
                 "timestamp": {"dtype": "float32", "shape": (1,), "names": None},
                 "frame_index": {"dtype": "int64", "shape": (1,), "names": None},
@@ -203,20 +211,17 @@ def main() -> None:
                 "task_index": {"dtype": "int64", "shape": (1,), "names": None},
                 "state": {"dtype": "float32", "shape": (n_joints,), "names": joint_names},
                 "action": {"dtype": "float32", "shape": (n_joints,), "names": joint_names},
-                "cam_0": {
-                    "dtype": "image",
-                    "shape": cam0_shape,
-                    "names": ["height", "width", "channels"],
-                },
-                "cam_1": {
-                    "dtype": "image",
-                    "shape": cam1_shape,
-                    "names": ["height", "width", "channels"],
-                },
             }
+            for src_name, dst_name in cam_map.items():
+                shape = infer_image_shape(episode_dir / src_name / f"{frame_index[0]:06d}.jpg")
+                features[dst_name] = {
+                    "dtype": "image",
+                    "shape": shape,
+                    "names": ["height", "width", "channels"],
+                }
 
         # ── Write parquet ────────────────────────────────────────────────
-        episode_df = pd.DataFrame({
+        df_cols = {
             "timestamp": timestamp,
             "frame_index": frame_index,
             "episode_index": episode_index,
@@ -224,9 +229,10 @@ def main() -> None:
             "task_index": task_index,
             "state": state.tolist(),
             "action": action.tolist(),
-            "cam_0": [{"path": p, "bytes": None} for p in cam0_paths],
-            "cam_1": [{"path": p, "bytes": None} for p in cam1_paths],
-        })
+        }
+        for dst_name, paths in cam_paths.items():
+            df_cols[dst_name] = [{"path": p, "bytes": None} for p in paths]
+        episode_df = pd.DataFrame(df_cols)
         parquet_path = output_root / "data" / "chunk-000" / f"episode_{ep_idx:06d}.parquet"
         episode_df.to_parquet(parquet_path, index=False)
 

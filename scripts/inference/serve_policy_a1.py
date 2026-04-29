@@ -16,7 +16,11 @@ import numpy as np
 
 import openpi.policies.policy as _policy
 import openpi.policies.policy_config as _policy_config
-import openpi.training.config as _config
+try:
+    from a1.training.config import get_config as _get_config
+except ImportError:
+    import openpi.training.config as _config
+    _get_config = _config.get_config
 import openpi.transforms as _transforms
 from openpi.serving import websocket_policy_server
 
@@ -60,7 +64,7 @@ def create_policy(args: Args) -> _policy.Policy:
     match args.policy:
         case Checkpoint():
             return _policy_config.create_trained_policy(
-                _config.get_config(args.policy.config),
+                _get_config(args.policy.config),
                 args.policy.dir,
                 repack_transforms=_CLIENT_REPACK,
                 default_prompt=args.default_prompt,

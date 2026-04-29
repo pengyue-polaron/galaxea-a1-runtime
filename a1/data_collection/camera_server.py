@@ -40,7 +40,9 @@ class OpenCVCamera:
 
 
 class RealSenseCamera:
-    def __init__(self, *, serial: str | None, width: int, height: int, fps: int):
+    def __init__(self, *, serial: str | None, width: int, height: int, fps: int,
+                 auto_exposure: bool = True, exposure: int | None = None,
+                 gain: int | None = None, white_balance: int | None = None):
         if rs is None:
             raise RuntimeError("pyrealsense2 is not installed")
 
@@ -49,7 +51,18 @@ class RealSenseCamera:
         if serial:
             config.enable_device(serial)
         config.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
-        self._pipeline.start(config)
+        profile = self._pipeline.start(config)
+
+        # Configure exposure settings on the color sensor
+        color_sensor = profile.get_device().query_sensors()[1]  # index 1 = RGB sensor
+        if not auto_exposure and exposure is not None:
+            color_sensor.set_option(rs.option.enable_auto_exposure, 0)
+            color_sensor.set_option(rs.option.exposure, exposure)
+        if gain is not None:
+            color_sensor.set_option(rs.option.gain, gain)
+        if white_balance is not None:
+            color_sensor.set_option(rs.option.enable_auto_white_balance, 0)
+            color_sensor.set_option(rs.option.white_balance, white_balance)
 
     def read(self):
         frames = self._pipeline.poll_for_frames()
@@ -78,7 +91,21 @@ def _build_camera_source(camera_cfg):
 
     if backend == "realsense":
         serial = _cfg_get(camera_cfg, "serial", None)
-        source = RealSenseCamera(serial=serial, width=width, height=height, fps=fps)
+        auto_exposure = bool(_cfg_get(camera_cfg, "auto_exposure", True))
+        exposure = _cfg_get(camera_cfg, "exposure", None)
+        if exposure is not None:
+            exposure = int(exposure)
+        gain = _cfg_get(camera_cfg, "gain", None)
+        if gain is not None:
+            gain = int(gain)
+        white_balance = _cfg_get(camera_cfg, "white_balance", None)
+        if white_balance is not None:
+            white_balance = int(white_balance)
+        source = RealSenseCamera(
+            serial=serial, width=width, height=height, fps=fps,
+            auto_exposure=auto_exposure, exposure=exposure, gain=gain,
+            white_balance=white_balance,
+        )
     elif backend == "opencv":
         device = _cfg_get(camera_cfg, "device", 0)
         backend_api = str(_cfg_get(camera_cfg, "backend_api", "auto")).lower()

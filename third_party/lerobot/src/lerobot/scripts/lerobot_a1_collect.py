@@ -155,9 +155,13 @@ def _open_cam1_auto(index_or_auto: str, w: int, h: int, fps: int):
 # ---------------------------------------------------------------------------
 
 def record_episode(episode_dir, rs_pipe, cam1, joint_cache, fps, max_dur, jpeg_q):
-    """Returns (frame_count, joint_names, discard)."""
+    """Returns (frame_count, joint_names, discard).
+
+    When cam1 is None, only cam0 (RealSense) is recorded.
+    """
     (episode_dir / "cam0").mkdir(parents=True)
-    (episode_dir / "cam1").mkdir(parents=True)
+    if cam1 is not None:
+        (episode_dir / "cam1").mkdir(parents=True)
 
     stop = threading.Event()
     user_input = [None]
@@ -194,9 +198,10 @@ def record_episode(episode_dir, rs_pipe, cam1, joint_cache, fps, max_dur, jpeg_q
                 continue
             img0 = np.asanyarray(cf.get_data())
 
-            ok, img1 = cam1.read()
-            if not ok:
-                continue
+            if cam1 is not None:
+                ok, img1 = cam1.read()
+                if not ok:
+                    continue
 
             snap = joint_cache.snapshot()
             if snap is None:
@@ -204,17 +209,23 @@ def record_episode(episode_dir, rs_pipe, cam1, joint_cache, fps, max_dur, jpeg_q
 
             if names is None:
                 names = snap.names
-                w.writerow(["frame_index", "wall_time_ns", "ros_stamp_s",
-                             "cam0_relpath", "cam1_relpath", *names])
+                header = ["frame_index", "wall_time_ns", "ros_stamp_s", "cam0_relpath"]
+                if cam1 is not None:
+                    header.append("cam1_relpath")
+                header.extend(names)
+                w.writerow(header)
 
             fn = f"{idx:06d}.jpg"
             cv2.imwrite(str(episode_dir / "cam0" / fn), img0, jp)
-            cv2.imwrite(str(episode_dir / "cam1" / fn), img1, jp)
+            if cam1 is not None:
+                cv2.imwrite(str(episode_dir / "cam1" / fn), img1, jp)
 
             pm = dict(zip(snap.names, snap.positions))
-            w.writerow([idx, time.time_ns(), f"{snap.ros_stamp_s:.9f}",
-                         f"cam0/{fn}", f"cam1/{fn}",
-                         *[pm.get(n, "") for n in names]])
+            row = [idx, time.time_ns(), f"{snap.ros_stamp_s:.9f}", f"cam0/{fn}"]
+            if cam1 is not None:
+                row.append(f"cam1/{fn}")
+            row.extend(pm.get(n, "") for n in names)
+            w.writerow(row)
             if idx % 30 == 0:
                 f.flush()
             idx += 1
@@ -271,6 +282,8 @@ def main():
     p.add_argument("--cam1-width", type=int, default=640)
     p.add_argument("--cam1-height", type=int, default=480)
     p.add_argument("--cam1-fps", type=int, default=30)
+    p.add_argument("--disable-cam1", action="store_true",
+                   help="Skip wrist camera (cam1); record only RealSense (cam0).")
     args = p.parse_args()
 
     data_root = Path(args.data_root).expanduser().resolve()
@@ -281,10 +294,13 @@ def main():
     task = load_or_prompt_task(exp_dir)
 
     # ── Init ROS + cameras ───────────────────────────────────────────────
+    print("[collect] importing rospy ...", flush=True)
     import rospy
     from sensor_msgs.msg import JointState
 
+    print("[collect] rospy.init_node ...", flush=True)
     rospy.init_node("a1_collect", anonymous=False, disable_signals=True)
+    print("[collect] subscribing to joint topic ...", flush=True)
     jc = JointStateCache()
     rospy.Subscriber(args.joint_topic, JointState, jc.callback, queue_size=10)
 
@@ -299,8 +315,12 @@ def main():
 
     print("[collect] opening cameras ...", end=" ", flush=True)
     rs_pipe = _open_realsense(args.cam0_serial, args.cam0_width, args.cam0_height, args.cam0_fps)
-    cam1, cam1_idx = _open_cam1_auto(args.cam1_index, args.cam1_width, args.cam1_height, args.cam1_fps)
-    print(f"ok (cam1=video{cam1_idx})")
+    if args.disable_cam1:
+        cam1, cam1_idx = None, None
+        print("ok (cam1=DISABLED)")
+    else:
+        cam1, cam1_idx = _open_cam1_auto(args.cam1_index, args.cam1_width, args.cam1_height, args.cam1_fps)
+        print(f"ok (cam1=video{cam1_idx})")
 
     # ── Count existing episodes ──────────────────────────────────────────
     existing = sorted(d for d in exp_dir.glob("episode_*") if d.is_dir())
@@ -349,8 +369,9 @@ def main():
                 "fps_target": args.fps,
                 "joint_names": joint_names or [],
                 "cam0": {"serial": args.cam0_serial, "width": args.cam0_width, "height": args.cam0_height},
-                "cam1": {"index": cam1_idx, "width": args.cam1_width, "height": args.cam1_height},
             }
+            if cam1 is not None:
+                meta["cam1"] = {"index": cam1_idx, "width": args.cam1_width, "height": args.cam1_height}
             with (edir / "metadata.json").open("w") as f:
                 json.dump(meta, f, indent=2)
 
@@ -360,7 +381,8 @@ def main():
     except (KeyboardInterrupt, EOFError):
         print(f"\n[collect] done. {ep} episodes for '{args.experiment}'.")
     finally:
-        cam1.release()
+        if cam1 is not None:
+            cam1.release()
         rs_pipe.stop()
 
 
