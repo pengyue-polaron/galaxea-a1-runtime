@@ -219,6 +219,63 @@ class _OpenCVCamera:
 
 
 # ---------------------------------------------------------------------------
+# Keyboard-controlled gripper (bypass model output)
+# ---------------------------------------------------------------------------
+
+class _KeyboardGripper:
+    """Manual gripper control. Reads single keystrokes from stdin without blocking.
+       'o' = open, 'c' = close, space = toggle."""
+
+    def __init__(self, default_open: bool = True,
+                 stroke_open_mm: float = 100.0, stroke_close_mm: float = 0.0):
+        self._target_open = default_open
+        self._stroke_open = stroke_open_mm
+        self._stroke_close = stroke_close_mm
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, daemon=True)
+        self._thread.start()
+        state = "OPEN" if default_open else "CLOSED"
+        print(f"[Manual Gripper] Active. Keys: 'o'=open, 'c'=close, space=toggle. Initial: {state}")
+
+    def _loop(self):
+        try:
+            import termios, tty, select
+            old_settings = termios.tcgetattr(sys.stdin)
+        except Exception:
+            print("[Manual Gripper] WARNING: cannot read keyboard (no TTY). Gripper stays at initial state.")
+            return
+        try:
+            tty.setcbreak(sys.stdin.fileno())
+            while not self._stop.is_set():
+                if select.select([sys.stdin], [], [], 0.1)[0]:
+                    try:
+                        key = sys.stdin.read(1).lower()
+                    except Exception:
+                        continue
+                    if key == 'o':
+                        self._target_open = True
+                        print("[Manual Gripper] -> OPEN")
+                    elif key == 'c':
+                        self._target_open = False
+                        print("[Manual Gripper] -> CLOSED")
+                    elif key == ' ':
+                        self._target_open = not self._target_open
+                        print(f"[Manual Gripper] toggle -> {'OPEN' if self._target_open else 'CLOSED'}")
+        finally:
+            try:
+                termios.tcsetattr(sys.stdin, termios.TCSADRAIN, old_settings)
+            except Exception:
+                pass
+
+    @property
+    def stroke_mm(self) -> float:
+        return self._stroke_open if self._target_open else self._stroke_close
+
+    def stop(self):
+        self._stop.set()
+
+
+# ---------------------------------------------------------------------------
 # Bridge
 # ---------------------------------------------------------------------------
 
@@ -229,6 +286,11 @@ class PolicyRosBridge:
         self._state7: np.ndarray | None = None
         self._state_ts: float = 0.0
         self._state_lock = threading.Lock()
+
+        # Optional keyboard-controlled gripper (bypasses model output for gripper only)
+        self._kb_gripper: _KeyboardGripper | None = None
+        if args.manual_gripper:
+            self._kb_gripper = _KeyboardGripper(default_open=True)
 
         # --- Direct camera capture ---
         self._cameras: dict[str, _RealSenseCamera | _OpenCVCamera] = {}
@@ -307,16 +369,21 @@ class PolicyRosBridge:
         self._joint_pub.publish(js)
 
         gripper_val = float(action7[6])
-        stroke_mm = gripper_val * self.args.gripper_scale + self.args.gripper_offset
-        # Clamp to [0, 100] mm. Negative strokes force motor past mechanical limit
-        # → continuous high current → motor heating. 0 mm matches training command range.
-        stroke_mm = max(0.0, min(100.0, stroke_mm))
+        if self._kb_gripper is not None:
+            # Bypass model gripper: use keyboard-controlled stroke
+            stroke_mm = self._kb_gripper.stroke_mm
+        else:
+            stroke_mm = gripper_val * self.args.gripper_scale + self.args.gripper_offset
+            # Clamp to [0, 100] mm. Negative strokes force motor past mechanical limit
+            # → continuous high current → motor heating. 0 mm matches training command range.
+            stroke_mm = max(0.0, min(100.0, stroke_mm))
         # Debug print every ~30 calls (~1s at 30Hz)
         if not hasattr(self, "_grip_count"):
             self._grip_count = 0
         self._grip_count += 1
         if self._grip_count % 30 == 1:
-            print(f"  [Gripper] rad={gripper_val:+.3f} → stroke_mm={stroke_mm:.1f}")
+            src = "KEYBOARD" if self._kb_gripper else "model"
+            print(f"  [Gripper {src}] rad={gripper_val:+.3f} → stroke_mm={stroke_mm:.1f}")
         gm = gripper_position_control()
         gm.header.stamp = now
         gm.gripper_stroke = stroke_mm
@@ -397,6 +464,8 @@ class PolicyRosBridge:
     def close(self):
         for cam in self._cameras.values():
             cam.close()
+        if self._kb_gripper is not None:
+            self._kb_gripper.stop()
 
 
 def main():
@@ -441,6 +510,9 @@ def main():
     parser.add_argument("--state-gripper-offset", type=float, default=0.0)
     parser.add_argument("--step-mode", action="store_true", default=False,
         help="Pause after each chunk and wait for Enter before next inference.")
+    parser.add_argument("--manual-gripper", action="store_true", default=False,
+        help="BYPASS the model's gripper output. Manually control gripper via keyboard: "
+             "'o'=open, 'c'=close, space=toggle. Arm joints (j1-j6) still follow the model.")
     args = parser.parse_args()
 
     bridge = PolicyRosBridge(args)
