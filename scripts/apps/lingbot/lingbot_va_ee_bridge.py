@@ -34,15 +34,9 @@ for candidate in (
     if os.path.isdir(candidate) and candidate not in sys.path:
         sys.path.append(candidate)
 
-import cv2
 import msgpack
 import numpy as np
 import websockets.sync.client
-
-try:
-    import pyrealsense2 as rs
-except ImportError:
-    rs = None
 
 import rospy
 from galaxea_a1_runtime.apps.eef_bridge import (
@@ -65,6 +59,7 @@ from galaxea_a1_runtime.apps.lingbot.actions import (
     sanitize_policy_action,
     tracker_command_action,
 )
+from galaxea_a1_runtime.hardware.cameras import OpenCVColorCamera, RealSenseColorCamera
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
@@ -113,76 +108,6 @@ class LingBotClient:
         self.infer({"reset": True, "prompt": prompt})
 
 
-class OpenCVCamera:
-    def __init__(self, device: str, width: int, height: int, fps: int, backend_api: str = "v4l2"):
-        source = int(device) if str(device).isdigit() else str(device)
-        api = cv2.CAP_V4L2 if backend_api == "v4l2" else 0
-        self.cap = cv2.VideoCapture(source, api)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Cannot open camera device={device}")
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.cap.set(cv2.CAP_PROP_FPS, fps)
-        for _ in range(10):
-            self.cap.read()
-
-    def read_rgb(self) -> np.ndarray | None:
-        ok, frame = self.cap.read()
-        if not ok:
-            return None
-        return cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-
-    def close(self):
-        self.cap.release()
-
-
-class RealSenseCamera:
-    def __init__(
-        self,
-        serial: str | None,
-        width: int,
-        height: int,
-        fps: int,
-        auto_exposure: bool = True,
-        exposure: int = 140,
-        gain: int = 32,
-        auto_white_balance: bool = True,
-        white_balance: int = 4600,
-    ):
-        if rs is None:
-            raise RuntimeError("pyrealsense2 is not installed in this environment")
-        self.pipeline = rs.pipeline()
-        cfg = rs.config()
-        if serial:
-            cfg.enable_device(serial)
-        cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
-        profile = self.pipeline.start(cfg)
-        color_sensor = profile.get_device().query_sensors()[1]
-        color_sensor.set_option(rs.option.enable_auto_exposure, 1 if auto_exposure else 0)
-        if not auto_exposure:
-            color_sensor.set_option(rs.option.exposure, float(exposure))
-            color_sensor.set_option(rs.option.gain, float(gain))
-        if color_sensor.supports(rs.option.enable_auto_white_balance):
-            color_sensor.set_option(rs.option.enable_auto_white_balance, 1 if auto_white_balance else 0)
-        if not auto_white_balance and color_sensor.supports(rs.option.white_balance):
-            color_sensor.set_option(rs.option.white_balance, float(white_balance))
-        for _ in range(30):
-            self.pipeline.wait_for_frames()
-
-    def read_rgb(self) -> np.ndarray | None:
-        frames = self.pipeline.poll_for_frames()
-        if not frames:
-            return None
-        color = frames.get_color_frame()
-        if not color:
-            return None
-        bgr = np.asanyarray(color.get_data())
-        return cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-
-    def close(self):
-        self.pipeline.stop()
-
-
 class A1LingBotEEBridge:
     def __init__(self, args):
         self.args = args
@@ -215,7 +140,7 @@ class A1LingBotEEBridge:
         rospy.Subscriber(args.relay_status_topic, String, self._relay_status_cb, queue_size=1)
         self.pose_keepalive_timer = rospy.Timer(rospy.Duration(0.05), self._publish_active_pose_target)
 
-        self.cam_high = RealSenseCamera(
+        self.cam_high = RealSenseColorCamera(
             args.cam0_serial,
             args.cam_width,
             args.cam_height,
@@ -226,7 +151,13 @@ class A1LingBotEEBridge:
             auto_white_balance=args.cam0_auto_white_balance,
             white_balance=args.cam0_white_balance,
         )
-        self.cam_wrist = OpenCVCamera(args.cam1_device, args.cam_width, args.cam_height, args.cam_fps, args.cam1_backend_api)
+        self.cam_wrist = OpenCVColorCamera(
+            args.cam1_device,
+            args.cam_width,
+            args.cam_height,
+            args.cam_fps,
+            backend_api=args.cam1_backend_api,
+        )
         self.client = LingBotClient(args.host, args.port)
         self.client.reset(args.prompt)
 

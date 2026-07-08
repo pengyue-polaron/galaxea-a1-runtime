@@ -41,3 +41,16 @@ def test_vendored_lerobot_so_leader_keeps_a1_custom_six_axis_shape():
         assert f'"joint{index}": Motor({index}, "sts3215", norm_mode_body)' in leader
     assert '"gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100)' in leader
     assert '"shoulder_pan": Motor(' not in leader
+
+
+def test_teleop_camera_io_is_shared_and_snapshot_command_exists():
+    collector = (REPO / "scripts/apps/teleop/teleop_collect.py").read_text()
+    runtime = (REPO / "scripts/apps/teleop/a1_teleop_runtime.sh").read_text()
+    snapshot = REPO / "scripts/apps/teleop/camera_snapshot.py"
+
+    assert "from galaxea_a1_runtime.hardware.cameras import" in collector
+    assert "class RealSenseCamera" not in collector
+    assert "class OpenCVCamera" not in collector
+    assert snapshot.is_file()
+    assert "camera_snapshot.py" in runtime
+    assert "cameras)" in runtime

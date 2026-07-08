@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -eo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
 SESSION="${A1_LINGBOT_TMUX:-lingbot-a1}"
 WRIST_CAMERA="${A1_WRIST_CAMERA:-/dev/v4l/by-id/usb-Global_Shutter_Camera_Global_Shutter_Camera_01.00.00-video-index0}"

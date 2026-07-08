@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 
 from galaxea_a1_runtime.apps.eef_bridge import (
@@ -141,3 +143,12 @@ def test_eef_command_publisher_dry_run_keeps_active_target_without_publishing():
 
     assert publisher.active_pose_target is not None
     assert pose_pub.published == []
+
+
+def test_eef_nudge_tool_uses_safe_target_topic_and_explicit_execute():
+    repo = Path(__file__).resolve().parents[1]
+    text = (repo / "scripts/runtime/eef_nudge.py").read_text()
+
+    assert 'parser.add_argument("--execute"' in text
+    assert 'default="/a1_ee_target"' in text
+    assert 'default="/arm_joint_command_host"' not in text

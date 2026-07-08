@@ -29,12 +29,74 @@ just a1-runtime stop
 Only use `--require-execution` after the arm is powered on and in a clear
 workspace.
 
+For manual EEF motion acceptance after `just a1-runtime services`:
+
+```bash
+just a1-runtime eef-nudge --execute
+```
+
+The tool holds the current EEF pose, then waits for Enter before each small
+`x+/x-/y+/y-/z+/z-` target. It publishes through `/a1_ee_target` and disables
+motion on exit.
+
+## Hardware Acceptance Flow
+
+Use this after reconnecting all hardware:
+
+```bash
+just a1-runtime stop
+just a1-teleop stop
+just runtime doctor
+just a1-teleop doctor
+just a1-teleop cameras
+```
+
+Check the printed `cam0_front`, `cam1_wrist`, and `contact_sheet` images before
+moving the arm.
+
+Then test EEF tracking:
+
+```bash
+just a1-runtime services
+just a1-runtime eef-nudge --execute
+```
+
+Press Enter for `x+`, `x-`, `y+`, `y-`, `z+`, `z-` one at a time. Observe that
+the A1 EEF moves in the printed direction and then stop:
+
+```bash
+just a1-runtime stop
+```
+
+Then test SO leader teleop:
+
+```bash
+just a1-teleop start
+just a1-teleop logs
+```
+
+Confirm the bridge log prints `leader_keys=['joint0.pos', ..., 'joint5.pos']`.
+Move one leader joint at a time by a small amount and verify the corresponding
+A1 joint direction matches the old working behavior. Test the gripper open and
+close, then stop:
+
+```bash
+just a1-teleop stop
+```
+
+Finally record a short smoke episode:
+
+```bash
+just collect teleop smoke_test
+```
+
 ## Teleop Collection
 
 Use this for SO leader demonstration collection:
 
 ```bash
 just a1-teleop doctor
+just a1-teleop cameras
 just collect teleop pick_cube
 ```
 

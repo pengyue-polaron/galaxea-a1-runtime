@@ -84,6 +84,8 @@ arm is disconnected.
     `joint0..joint5` plus an independent `gripper`; do not replace it with the
     upstream five-axis `shoulder_*`/`wrist_*` naming unless the hardware is
     deliberately changed.
+  - Unknown leader action key layouts should fail loudly instead of falling back
+    to sorted `*.pos` keys.
   - Relative leader-to-A1 joint mapping from startup pose.
   - Sign mapping `[-1, 1, 1, -1, 1, -1]`.
   - Default collected state mode `joint`.
@@ -204,9 +206,12 @@ arm is disconnected.
 ```bash
 just a1-runtime doctor
 just a1-runtime services
+just a1-runtime eef-nudge --execute
 just a1-runtime status
 just a1-runtime stop
 
+just a1-teleop doctor
+just a1-teleop cameras
 just collect teleop pick_cube
 just a1-teleop stop
 

@@ -43,11 +43,6 @@ from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
 
-try:
-    import pyrealsense2 as rs
-except ImportError:
-    rs = None
-
 from galaxea_a1_runtime.collection import (
     CameraMetadata,
     EpisodeDecision,
@@ -60,6 +55,7 @@ from galaxea_a1_runtime.collection import (
     teleop_frame_header,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
+from galaxea_a1_runtime.hardware.cameras import OpenCVColorCamera, RealSenseColorCamera
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
 
 
@@ -214,53 +210,6 @@ class RosTeleopState:
         return 0.0 if joint is None else joint.ros_stamp_s
 
 
-class RealSenseCamera:
-    def __init__(self, serial: str | None, width: int, height: int, fps: int):
-        if rs is None:
-            raise RuntimeError("pyrealsense2 is not installed")
-        self.pipeline = rs.pipeline()
-        cfg = rs.config()
-        if serial:
-            cfg.enable_device(serial)
-        cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
-        self.pipeline.start(cfg)
-        for _ in range(20):
-            self.pipeline.wait_for_frames()
-
-    def read_bgr(self) -> np.ndarray | None:
-        frames = self.pipeline.poll_for_frames()
-        if not frames:
-            return None
-        frame = frames.get_color_frame()
-        if not frame:
-            return None
-        return np.asanyarray(frame.get_data())
-
-    def close(self) -> None:
-        self.pipeline.stop()
-
-
-class OpenCVCamera:
-    def __init__(self, device: str, width: int, height: int, fps: int):
-        source, label = _resolve_video_source(device)
-        self.label = label
-        self.cap = cv2.VideoCapture(source, cv2.CAP_V4L2)
-        if not self.cap.isOpened():
-            raise RuntimeError(f"Cannot open camera device={device}")
-        self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
-        self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
-        self.cap.set(cv2.CAP_PROP_FPS, fps)
-        for _ in range(10):
-            self.cap.read()
-
-    def read_bgr(self) -> np.ndarray | None:
-        ok, frame = self.cap.read()
-        return frame if ok else None
-
-    def close(self) -> None:
-        self.cap.release()
-
-
 def load_or_prompt_task(experiment_dir: Path, explicit_task: str | None) -> str:
     task_path = experiment_dir / "task.txt"
     if explicit_task:
@@ -283,8 +232,8 @@ def load_or_prompt_task(experiment_dir: Path, explicit_task: str | None) -> str:
 def record_episode(
     *,
     episode_dir: Path,
-    front: RealSenseCamera,
-    wrist: OpenCVCamera,
+    front: RealSenseColorCamera,
+    wrist: OpenCVColorCamera,
     ros_state: RosTeleopState,
     state_mode: StateMode,
     fps: float,
@@ -450,12 +399,24 @@ def main() -> int:
     print("ok")
 
     episode_index = next_episode_index(experiment_dir)
-    front: RealSenseCamera | None = None
-    wrist: OpenCVCamera | None = None
+    front: RealSenseColorCamera | None = None
+    wrist: OpenCVColorCamera | None = None
     try:
         print("[collect] opening cameras ...", end=" ", flush=True)
-        front = RealSenseCamera(args.cam0_serial, args.cam0_width, args.cam0_height, args.cam0_fps)
-        wrist = OpenCVCamera(args.cam1_device, args.cam1_width, args.cam1_height, args.cam1_fps)
+        front = RealSenseColorCamera(
+            args.cam0_serial,
+            args.cam0_width,
+            args.cam0_height,
+            args.cam0_fps,
+            warmup_frames=20,
+        )
+        wrist = OpenCVColorCamera(
+            args.cam1_device,
+            args.cam1_width,
+            args.cam1_height,
+            args.cam1_fps,
+            warmup_frames=10,
+        )
         print(f"ok (wrist={wrist.label})")
 
         print(f"\n  experiment  : {args.experiment}")
@@ -556,34 +517,6 @@ def _poll_stdin_line() -> str | None:
     if line == "":
         return "q"
     return line.strip().lower()
-
-
-def _resolve_video_source(device: str) -> tuple[int | str, str]:
-    if device.strip().lower() != "auto":
-        source: int | str = int(device) if device.isdigit() else device
-        return source, str(device)
-    for idx in range(16):
-        cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
-        if not cap.isOpened():
-            cap.release()
-            continue
-        ok, _ = cap.read()
-        cap.release()
-        if not ok:
-            continue
-        name = _video_device_name(idx)
-        if "realsense" in name.lower() or "intel" in name.lower():
-            continue
-        return idx, f"video{idx}:{name}"
-    raise RuntimeError("No suitable wrist camera found")
-
-
-def _video_device_name(index: int) -> str:
-    path = Path(f"/sys/class/video4linux/video{index}/name")
-    try:
-        return path.read_text().strip() if path.is_file() else "unknown"
-    except OSError:
-        return "unknown"
 
 
 if __name__ == "__main__":

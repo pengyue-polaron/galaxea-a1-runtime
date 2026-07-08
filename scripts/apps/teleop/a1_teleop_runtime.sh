@@ -238,6 +238,13 @@ logs() {
   tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/bridge.log" 2>/dev/null || true
 }
 
+camera_snapshot() {
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/camera_snapshot.py" \
+      --config "${CONFIG_PATH}" \
+      "$@"
+}
+
 case "${1:-help}" in
   start)
     start_services
@@ -266,9 +273,13 @@ case "${1:-help}" in
   logs)
     logs
     ;;
+  cameras)
+    shift
+    camera_snapshot "$@"
+    ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect|stop|doctor|status|logs>
+Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect|stop|doctor|status|logs|cameras>
 
   start     Start staged joint teleop services and SO leader bridge
   services  Start ROS master, A1 driver, staged joint tracker, locked relay
@@ -278,6 +289,7 @@ Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect
   doctor    Static/import checks plus base runtime doctor
   status    Containers and bridge process state
   logs      Runtime and bridge logs
+  cameras   Capture front/wrist snapshots from the tracked teleop config
 
 Config:
   ${CONFIG_PATH}

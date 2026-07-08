@@ -10,7 +10,7 @@ LeRobotDataset v3.0.
    - `safety.py`: pure relay and limit checks.
    - `collection/`: teleop raw state/action schema and episode helpers.
    - `teleop/`: pure SO leader to A1 joint mapping helpers.
-   - `hardware/`: IO protocol, EEF helpers, ROS1 safe adapter.
+   - `hardware/`: IO protocol, EEF helpers, ROS1 safe adapter, shared camera IO.
    - `policies/`: normalized action contract and policy profile metadata.
    - `apps/`: reusable app helpers plus app-specific transforms.
    - `lerobot/`: `GalaxeaA1Robot`, writer helpers, passive recorder, migration.
@@ -70,6 +70,8 @@ The reusable parts now live in package modules:
 - `galaxea_a1_runtime.apps.lingbot.actions`: LingBot-specific 8D action
   sanitation, workspace bounds, orientation behavior, gripper mapping, and
   optional tracker compensation.
+- `galaxea_a1_runtime.hardware.cameras`: shared RealSense/OpenCV color camera
+  wrappers used by teleop collection, camera snapshots, and LingBot.
 
 Future FastWAM/GR00T app scripts should reuse `apps.eef_bridge` and only provide
 their own model IO plus action conversion into the normalized A1 EEF contract.
@@ -83,6 +85,8 @@ Teleop is the built-in demonstration collection mode.
 - `scripts/apps/teleop/teleop_collect.py`: records synchronized front/wrist
   images, A1 state, and target actions. It does not command the robot. Episode
   metadata records the state topics, action topics, and staged relay path.
+- `scripts/apps/teleop/camera_snapshot.py`: captures front/wrist snapshots from
+  the same tracked config without starting ROS or moving the robot.
 - `scripts/apps/teleop/a1_teleop_runtime.sh`: starts/stops ROS, driver, staged
   joint tracker, relay, bridge, and recorder.
 - `configs/teleop/a1_so100.toml`: tracked runtime contract for leader port,
@@ -104,7 +108,9 @@ per-run collection flags.
 
 - Static checks: `just runtime doctor`, `just runtime safety`, `just runtime test`.
 - Safe hardware runtime: `just a1-runtime services|doctor|status|logs|stop`.
+- Manual EEF acceptance: `just a1-runtime eef-nudge --execute`.
 - Teleop collection: `just collect teleop <experiment>`.
+- Teleop camera check: `just a1-teleop cameras`.
 - Generic LeRobot robot adapter: safe EEF translation/delta actions through
   `/a1_ee_target`; rejects `joint_absolute`.
 - LingBot app: step-gated inference and publishing, relay guard, EEF state
@@ -115,5 +121,5 @@ per-run collection flags.
 ## Intentionally Not Done Yet
 
 - FastWAM and GR00T have profiles but not dedicated A1 app scripts yet.
-- LingBot still keeps camera/model/interactive loop in one script; that is
-  acceptable for now because the reusable A1 execution pieces are extracted.
+- LingBot still keeps model protocol and the interactive loop in one script; the
+  camera IO, action transforms, and A1 EEF execution pieces are reusable.

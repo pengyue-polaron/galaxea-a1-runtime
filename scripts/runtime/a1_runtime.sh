@@ -164,6 +164,11 @@ logs() {
   done
 }
 
+eef_nudge() {
+  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" "$@"
+}
+
 case "${1:-help}" in
   start|services)
     start_services
@@ -181,9 +186,13 @@ case "${1:-help}" in
   logs)
     logs
     ;;
+  eef-nudge)
+    shift
+    eef_nudge "$@"
+    ;;
   *)
     cat <<EOF
-Usage: $0 <start|services|stop|doctor|status|logs>
+Usage: $0 <start|services|stop|doctor|status|logs|eef-nudge>
 
   start     Start ROS master, A1 driver, isolated tracker, and locked relay
   services  Alias for start
@@ -191,6 +200,7 @@ Usage: $0 <start|services|stop|doctor|status|logs>
   doctor    Layered health check; add --require-execution after power-on
   status    Containers and doctor summary
   logs      Tail runtime logs
+  eef-nudge Interactive safe EEF nudge tool; pass --execute to move hardware
 
 Environment:
   A1_SERIAL=${SERIAL}

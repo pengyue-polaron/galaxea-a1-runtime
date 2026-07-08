@@ -68,6 +68,7 @@ Safe hardware runtime:
 ```bash
 just a1-runtime doctor
 just a1-runtime services
+just a1-runtime eef-nudge --execute
 just a1-runtime status
 just a1-runtime stop
 ```
@@ -76,6 +77,7 @@ Teleoperation collection:
 
 ```bash
 just a1-teleop doctor
+just a1-teleop cameras
 just collect teleop pick_cube
 just a1-teleop stop
 ```
@@ -148,6 +150,9 @@ Teleop actions are recorded as `joint_absolute` targets from
 `/arm_joint_target_position`. Each saved episode contains `frames.csv`,
 `metadata.json`, `cam0/`, and `cam1/`; the metadata records the state topics,
 action topics, and staged relay control path used for that episode.
+
+`just a1-teleop cameras` captures `cam0_front.jpg`, `cam1_wrist.jpg`, and a
+contact sheet from the same tracked camera config without moving the arm.
 
 ## Dependency Baseline
 

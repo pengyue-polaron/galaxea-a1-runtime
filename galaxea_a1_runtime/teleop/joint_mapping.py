@@ -62,10 +62,11 @@ def detect_leader_joint_keys(action: Mapping[str, float], dof: int) -> tuple[str
     if all(key in action for key in legacy):
         return legacy
 
-    fallback = tuple(sorted(key for key in action if key.endswith(".pos") and "gripper" not in key)[:dof])
-    if len(fallback) == dof:
-        return fallback
-    raise RuntimeError(f"Could not detect {dof} leader joint keys from action keys: {sorted(action)}")
+    raise RuntimeError(
+        f"Could not detect {dof} leader joint keys from action keys: {sorted(action)}. "
+        "Expected custom A1 SO leader keys joint0.pos..joint5.pos, or legacy SO keys "
+        "shoulder_pan.pos..gripper.pos."
+    )
 
 
 def map_leader_joints_to_a1(

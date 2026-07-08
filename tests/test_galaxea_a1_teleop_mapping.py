@@ -34,6 +34,13 @@ def test_detect_leader_joint_keys_supports_legacy_names():
     )
 
 
+def test_detect_leader_joint_keys_rejects_unknown_order_instead_of_sorting():
+    action = {f"axis_{index}.pos": float(index) for index in range(6)}
+
+    with pytest.raises(RuntimeError, match="joint0.pos"):
+        detect_leader_joint_keys(action, 6)
+
+
 def test_relative_mapping_starts_at_current_a1_pose_and_applies_signs():
     config = JointMappingConfig(
         sign=(-1.0, 1.0),
