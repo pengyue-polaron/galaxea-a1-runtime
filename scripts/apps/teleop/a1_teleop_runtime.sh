@@ -183,6 +183,7 @@ leader = Path(sys.argv[1])
 checks = {
     "leader_port": leader.exists(),
     "so_leader_import": importlib.util.find_spec("lerobot.teleoperators.so_leader") is not None,
+    "a1_so_leader_import": importlib.util.find_spec("galaxea_a1_runtime.teleop.a1_so_leader") is not None,
     "ros_import": importlib.util.find_spec("rospy") is not None,
     "signal_arm_import": importlib.util.find_spec("signal_arm") is not None,
 }

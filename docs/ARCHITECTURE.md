@@ -83,6 +83,9 @@ Teleop is the built-in demonstration collection mode.
 
 - `scripts/apps/teleop/so100_joint_bridge.py`: reads an SO leader, maps it to
   A1 joint targets, publishes `/arm_joint_target_position`, and arms the relay.
+- `galaxea_a1_runtime.teleop.a1_so_leader`: A1-specific SO leader motor layout
+  (`joint0..joint5` plus gripper) built on LeRobot motor primitives without
+  patching vendored LeRobot source.
 - `scripts/apps/teleop/teleop_collect.py`: records synchronized front RGB,
   optional front depth, wrist RGB, A1 state, and target actions. It does not
   command the robot. Episode metadata records the state topics, action topics,

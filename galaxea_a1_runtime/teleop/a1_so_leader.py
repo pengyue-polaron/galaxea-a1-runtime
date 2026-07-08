@@ -1,37 +1,25 @@
-# !/usr/bin/env python
+"""A1-specific SO leader adapter built on LeRobot motor primitives."""
 
-# Copyright 2026 The HuggingFace Inc. team. All rights reserved.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
+from __future__ import annotations
 
 import logging
 import time
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
-from lerobot.motors.feetech import (
-    FeetechMotorsBus,
-    OperatingMode,
-)
+from lerobot.motors.feetech import FeetechMotorsBus, OperatingMode
+from lerobot.teleoperators.so_leader.config_so_leader import SOLeaderTeleopConfig
+from lerobot.teleoperators.teleoperator import Teleoperator
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
-
-from ..teleoperator import Teleoperator
-from .config_so_leader import SOLeaderTeleopConfig
 
 logger = logging.getLogger(__name__)
 
 
-class SOLeader(Teleoperator):
-    """Generic SO leader base for SO-100/101/10X teleoperators."""
+class A1SOLeader(Teleoperator):
+    """SO leader wiring used by the A1 teleop rig.
+
+    Official LeRobot SO leaders expose shoulder/wrist names. This hardware uses
+    six generic arm axes, motor IDs 0..5, plus an independent gripper at ID 6.
+    """
 
     config_class = SOLeaderTeleopConfig
     name = "so_leader"
@@ -43,11 +31,12 @@ class SOLeader(Teleoperator):
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
-                "shoulder_pan": Motor(1, "sts3215", norm_mode_body),
-                "shoulder_lift": Motor(2, "sts3215", norm_mode_body),
-                "elbow_flex": Motor(3, "sts3215", norm_mode_body),
-                "wrist_flex": Motor(4, "sts3215", norm_mode_body),
-                "wrist_roll": Motor(5, "sts3215", norm_mode_body),
+                "joint0": Motor(0, "sts3215", norm_mode_body),
+                "joint1": Motor(1, "sts3215", norm_mode_body),
+                "joint2": Motor(2, "sts3215", norm_mode_body),
+                "joint3": Motor(3, "sts3215", norm_mode_body),
+                "joint4": Motor(4, "sts3215", norm_mode_body),
+                "joint5": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
             calibration=self.calibration,
@@ -73,9 +62,8 @@ class SOLeader(Teleoperator):
                 "Mismatch between calibration values in the motor and the calibration file or no calibration file found"
             )
             self.calibrate()
-
         self.configure()
-        logger.info(f"{self} connected.")
+        logger.info("%s connected.", self)
 
     @property
     def is_calibrated(self) -> bool:
@@ -83,32 +71,27 @@ class SOLeader(Teleoperator):
 
     def calibrate(self) -> None:
         if self.calibration:
-            # Calibration file exists, ask user whether to use it or run new calibration
             user_input = input(
-                f"Press ENTER to use provided calibration file associated with the id {self.id}, or type 'c' and press ENTER to run calibration: "
+                f"Press ENTER to use provided calibration file associated with the id {self.id}, "
+                "or type 'c' and press ENTER to run calibration: "
             )
             if user_input.strip().lower() != "c":
-                logger.info(f"Writing calibration file associated with the id {self.id} to the motors")
+                logger.info("Writing calibration file associated with the id %s to the motors", self.id)
                 self.bus.write_calibration(self.calibration)
                 return
 
-        logger.info(f"\nRunning calibration of {self}")
+        logger.info("\nRunning calibration of %s", self)
         self.bus.disable_torque()
         for motor in self.bus.motors:
             self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
 
         input(f"Move {self} to the middle of its range of motion and press ENTER....")
         homing_offsets = self.bus.set_half_turn_homings()
-
-        full_turn_motor = "wrist_roll"
-        unknown_range_motors = [motor for motor in self.bus.motors if motor != full_turn_motor]
         print(
-            f"Move all joints except '{full_turn_motor}' sequentially through their "
-            "entire ranges of motion.\nRecording positions. Press ENTER to stop..."
+            "Move all joints sequentially through their entire ranges of motion.\n"
+            "Recording positions. Press ENTER to stop..."
         )
-        range_mins, range_maxes = self.bus.record_ranges_of_motion(unknown_range_motors)
-        range_mins[full_turn_motor] = 0
-        range_maxes[full_turn_motor] = 4095
+        range_mins, range_maxes = self.bus.record_ranges_of_motion(list(self.bus.motors))
 
         self.calibration = {}
         for motor, m in self.bus.motors.items():
@@ -148,20 +131,16 @@ class SOLeader(Teleoperator):
         action = self.bus.sync_read("Present_Position")
         action = {f"{motor}.pos": val for motor, val in action.items()}
         dt_ms = (time.perf_counter() - start) * 1e3
-        logger.debug(f"{self} read action: {dt_ms:.1f}ms")
+        logger.debug("%s read action: %.1fms", self, dt_ms)
         return action
 
     @check_if_not_connected
     def send_feedback(self, feedback: dict[str, float]) -> None:
-        goals = {k.removesuffix(".pos"): v for k, v in feedback.items() if k.endswith(".pos")}
+        goals = {key.removesuffix(".pos"): value for key, value in feedback.items() if key.endswith(".pos")}
         if goals:
             self.bus.sync_write("Goal_Position", goals)
 
     @check_if_not_connected
     def disconnect(self) -> None:
         self.bus.disconnect()
-        logger.info(f"{self} disconnected.")
-
-
-SO100Leader = SOLeader
-SO101Leader = SOLeader
+        logger.info("%s disconnected.", self)

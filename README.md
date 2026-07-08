@@ -144,10 +144,12 @@ Edit that tracked file when the SO leader port, cameras, topics, state mode,
 FPS, joint mapping, or gripper stroke range changes. The normal collection
 entrypoint does not take per-run collector flags.
 
-The vendored LeRobot `SOLeader` is patched for the A1 setup: leader actions use
-six arm axes `joint0.pos..joint5.pos` plus an independent `gripper.pos`. The
-bridge also recognizes the older upstream SO names, but `joint0..joint5` is the
-intended hardware contract for this repo.
+The A1 leader adapter lives in
+[galaxea_a1_runtime/teleop/a1_so_leader.py](galaxea_a1_runtime/teleop/a1_so_leader.py):
+leader actions use six arm axes `joint0.pos..joint5.pos` plus an independent
+`gripper.pos`. The bridge also recognizes the older upstream SO names, but
+`joint0..joint5` is the intended hardware contract for this repo. Vendored
+LeRobot source stays on the official v0.6.0 baseline.
 
 The raw teleop schema records configurable state modes:
 

@@ -80,9 +80,9 @@ arm is disconnected.
 
 - The old working teleop behavior is the compatibility baseline:
   - SO leader port `/dev/ttyACM0`, id `my_leader`.
-  - Vendored LeRobot `SOLeader` is intentionally shaped as six arm axes
-    `joint0..joint5` plus an independent `gripper`; do not replace it with the
-    upstream five-axis `shoulder_*`/`wrist_*` naming unless the hardware is
+  - The first-party `A1SOLeader` adapter is intentionally shaped as six arm
+    axes `joint0..joint5` plus an independent `gripper`; do not replace it with
+    the upstream five-axis `shoulder_*`/`wrist_*` naming unless the hardware is
     deliberately changed.
   - Unknown leader action key layouts should fail loudly instead of falling back
     to sorted `*.pos` keys.
@@ -264,4 +264,5 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   sidecar (`cam0_depth/`) when enabled.
 - `third_party/lerobot` is vendored for the LeRobot v0.6 runtime baseline. Do
   not patch it for A1-specific app behavior; put A1 integration code under
-  `galaxea_a1_runtime/` or `scripts/apps/`.
+  `galaxea_a1_runtime/` or `scripts/apps/`. The A1 SO leader motor layout lives
+  in `galaxea_a1_runtime.teleop.a1_so_leader`.

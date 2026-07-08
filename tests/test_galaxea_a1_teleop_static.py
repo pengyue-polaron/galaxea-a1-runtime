@@ -32,15 +32,24 @@ def test_teleop_bridge_accepts_old_gripper_topic_flag():
     assert '"--gripper-max-stroke-mm", type=float, default=200.0' in bridge
 
 
-def test_vendored_lerobot_so_leader_keeps_a1_custom_six_axis_shape():
-    leader = (
+def test_a1_so_leader_keeps_custom_six_axis_shape_outside_third_party():
+    leader = (REPO / "galaxea_a1_runtime/teleop/a1_so_leader.py").read_text()
+    vendored = (
         REPO / "third_party/lerobot/src/lerobot/teleoperators/so_leader/so_leader.py"
     ).read_text()
 
     for index in range(6):
         assert f'"joint{index}": Motor({index}, "sts3215", norm_mode_body)' in leader
     assert '"gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100)' in leader
-    assert '"shoulder_pan": Motor(' not in leader
+    assert '"shoulder_pan": Motor(' in vendored
+    assert '"joint0": Motor(' not in vendored
+
+
+def test_teleop_bridge_uses_first_party_a1_leader_adapter():
+    bridge = (REPO / "scripts/apps/teleop/so100_joint_bridge.py").read_text()
+
+    assert "from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader" in bridge
+    assert "leader = A1SOLeader(" in bridge
 
 
 def test_teleop_camera_io_is_shared_and_snapshot_command_exists():

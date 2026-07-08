@@ -47,7 +47,7 @@ from galaxea_a1_runtime.teleop import (
     parse_csv_floats,
     parse_csv_strings,
 )
-from lerobot.teleoperators.so_leader import SOLeader, SOLeaderTeleopConfig
+from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
 
 
 class LatestCache:
@@ -141,7 +141,7 @@ def main() -> int:
     motion_enable_pub = rospy.Publisher(args.motion_enable_topic, Bool, queue_size=1, latch=True)
     gripper_pub = rospy.Publisher(args.gripper_topic, gripper_position_control, queue_size=10)
 
-    leader = SOLeader(
+    leader = A1SOLeader(
         SOLeaderTeleopConfig(
             id=args.leader_id,
             port=args.leader_port,
