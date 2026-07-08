@@ -13,6 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 EXPECTED_LEROBOT_V060_COMMIT = "30da8e687a6dfc617fcd94afc367ac7071c376ce"
+EXPECTED_VENDOR_NAMES = ("A1_SDK", "A1_SDK_runtime", "lerobot")
 REMOVED_MAINLINE_PATHS = (
     "a1",
     "CLAUDE.md",
@@ -46,6 +47,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("safety_doc", safety_doc.is_file(), str(safety_doc))
     third_party_doc = repo_root / "third_party" / "README.md"
     add("third_party_policy_doc", third_party_doc.is_file(), str(third_party_doc))
+    vendor_manifest = repo_root / "third_party" / "vendors.toml"
+    add("third_party_vendor_manifest", vendor_manifest.is_file(), str(vendor_manifest))
 
     package_dir = repo_root / "galaxea_a1_runtime"
     add("runtime_package", package_dir.is_dir(), str(package_dir))
@@ -107,6 +110,49 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
 
     third_party_lerobot = repo_root / "third_party" / "lerobot"
     add("third_party_lerobot", third_party_lerobot.is_dir(), str(third_party_lerobot))
+    try:
+        vendor_data = tomllib.loads(vendor_manifest.read_text())
+        vendors = _vendor_entries(vendor_data)
+        vendor_names = tuple(vendor["name"] for vendor in vendors)
+        add(
+            "third_party_vendor_manifest_entries",
+            set(EXPECTED_VENDOR_NAMES) <= set(vendor_names) and len(vendor_names) == len(set(vendor_names)),
+            ", ".join(vendor_names),
+        )
+        for vendor in vendors:
+            name = str(vendor["name"])
+            rel_path = Path(str(vendor["path"]))
+            vendor_path = repo_root / rel_path
+            add(f"vendor_{name}_path", vendor_path.exists(), str(rel_path))
+            nested = sorted(
+                str(path.relative_to(repo_root))
+                for path in vendor_path.glob("**/.git")
+                if path.is_dir()
+            )
+            add(
+                f"vendor_{name}_no_nested_git",
+                not nested,
+                "none" if not nested else ", ".join(nested),
+            )
+            policy = str(vendor.get("patch_policy", "")).strip()
+            add(f"vendor_{name}_patch_policy", bool(policy), policy or "missing")
+            overrides = tuple(str(item) for item in vendor.get("local_overrides", ()))
+            missing_overrides = [item for item in overrides if not (vendor_path / item).exists()]
+            add(
+                f"vendor_{name}_local_overrides",
+                not missing_overrides,
+                "none" if not overrides else "tracked: " + ", ".join(overrides),
+                required=False,
+            )
+        lerobot_vendor = next((vendor for vendor in vendors if vendor["name"] == "lerobot"), None)
+        add(
+            "vendor_lerobot_rev",
+            lerobot_vendor is not None and lerobot_vendor.get("upstream_rev") == EXPECTED_LEROBOT_V060_COMMIT,
+            "missing" if lerobot_vendor is None else str(lerobot_vendor.get("upstream_rev")),
+            required=False,
+        )
+    except Exception as exc:
+        add("third_party_vendor_manifest_entries", False, repr(exc))
     nested_git_dirs = sorted(
         str(path.relative_to(repo_root))
         for path in (repo_root / "third_party").glob("**/.git")
@@ -182,6 +228,26 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
 
 def checks_to_json(checks: list[Check]) -> str:
     return json.dumps([asdict(check) for check in checks], indent=2, sort_keys=True)
+
+
+def _vendor_entries(data: dict) -> tuple[dict, ...]:
+    if int(data.get("schema_version", 0)) != 1:
+        raise ValueError("third_party/vendors.toml schema_version must be 1")
+    vendors = data.get("vendor")
+    if not isinstance(vendors, list) or not vendors:
+        raise ValueError("third_party/vendors.toml must contain [[vendor]] entries")
+    required = {"name", "path", "mode", "upstream", "patch_policy"}
+    out: list[dict] = []
+    for index, vendor in enumerate(vendors):
+        if not isinstance(vendor, dict):
+            raise ValueError(f"vendor entry {index} must be a table")
+        missing = sorted(required - set(vendor))
+        if missing:
+            raise ValueError(f"vendor entry {index} missing fields: {missing}")
+        if vendor["mode"] != "snapshot":
+            raise ValueError(f"vendor {vendor['name']!r} has unsupported mode {vendor['mode']!r}")
+        out.append(vendor)
+    return tuple(out)
 
 
 def checks_exit_code(checks: list[Check]) -> int:

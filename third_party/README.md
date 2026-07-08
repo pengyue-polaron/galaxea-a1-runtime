@@ -5,6 +5,8 @@ app behavior, safety policy, teleop mapping, or LingBot integration should live.
 
 ## Current Vendors
 
+Vendor source metadata is tracked in `vendors.toml`.
+
 - `A1_SDK/`: Galaxea ROS1 A1 SDK snapshot used by Docker/ROS runtime scripts.
 - `A1_SDK_runtime/`: trimmed runtime import overlay for ROS Python packages.
 - `lerobot/`: LeRobot v0.6.0 source snapshot, pinned in root `pyproject.toml`.
@@ -17,8 +19,8 @@ app behavior, safety policy, teleop mapping, or LingBot integration should live.
   and keep a test proving why it exists.
 - Do not use nested vendor `.git` directories as the source of truth. The parent
   repository tracks the snapshot that will be reviewed and committed.
-- Update vendor snapshots intentionally, in their own commit, with the upstream
-  URL/revision noted in the commit message or this file.
+- Update vendor snapshots intentionally, in their own commit, and update
+  `vendors.toml` in the same change.
 
 ## A1-Specific Adapters
 

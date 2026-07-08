@@ -34,8 +34,9 @@ LeRobotDataset v3.0.
   daily commands should remain short.
 - Runtime behavior is controlled by tracked config files, especially
   `configs/teleop/a1_so100.toml`.
-- `third_party/` contains reproducible vendor snapshots. A1-specific behavior
-  belongs in `galaxea_a1_runtime/` or `scripts/apps/`, not vendor patches.
+- `third_party/` contains reproducible vendor snapshots listed in
+  `third_party/vendors.toml`. A1-specific behavior belongs in
+  `galaxea_a1_runtime/` or `scripts/apps/`, not vendor patches.
 - `just check` is the hardware-free gate for docs, vendor boundaries, pure
   imports, safety logic, and static app structure.
 
