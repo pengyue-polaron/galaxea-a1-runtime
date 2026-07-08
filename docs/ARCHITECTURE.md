@@ -28,6 +28,17 @@ LeRobotDataset v3.0.
 4. Data tools: `scripts/process_data`
    - Migration and diagnostic utilities only.
 
+## Infra Policy
+
+- `Justfile` exposes the small operator surface; scripts can stay detailed, but
+  daily commands should remain short.
+- Runtime behavior is controlled by tracked config files, especially
+  `configs/teleop/a1_so100.toml`.
+- `third_party/` contains reproducible vendor snapshots. A1-specific behavior
+  belongs in `galaxea_a1_runtime/` or `scripts/apps/`, not vendor patches.
+- `just check` is the hardware-free gate for docs, vendor boundaries, pure
+  imports, safety logic, and static app structure.
+
 ## Safe Control Path
 
 Normal apps must use:

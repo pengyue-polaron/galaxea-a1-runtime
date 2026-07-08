@@ -44,6 +44,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("runbook_doc", runbook_doc.is_file(), str(runbook_doc))
     safety_doc = repo_root / "docs" / "SAFETY.md"
     add("safety_doc", safety_doc.is_file(), str(safety_doc))
+    third_party_doc = repo_root / "third_party" / "README.md"
+    add("third_party_policy_doc", third_party_doc.is_file(), str(third_party_doc))
 
     package_dir = repo_root / "galaxea_a1_runtime"
     add("runtime_package", package_dir.is_dir(), str(package_dir))
@@ -105,6 +107,17 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
 
     third_party_lerobot = repo_root / "third_party" / "lerobot"
     add("third_party_lerobot", third_party_lerobot.is_dir(), str(third_party_lerobot))
+    nested_git_dirs = sorted(
+        str(path.relative_to(repo_root))
+        for path in (repo_root / "third_party").glob("**/.git")
+        if path.is_dir()
+    )
+    add(
+        "third_party_nested_git_dirs",
+        not nested_git_dirs,
+        "none" if not nested_git_dirs else "local artifact(s): " + ", ".join(nested_git_dirs),
+        required=False,
+    )
     vendored_pyproject = third_party_lerobot / "pyproject.toml"
     try:
         vendored = tomllib.loads(vendored_pyproject.read_text())
@@ -117,6 +130,19 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         )
     except Exception as exc:
         add("vendored_lerobot_v060", False, repr(exc), required=False)
+    vendored_so_leader = third_party_lerobot / "src" / "lerobot" / "teleoperators" / "so_leader" / "so_leader.py"
+    a1_so_leader = repo_root / "galaxea_a1_runtime" / "teleop" / "a1_so_leader.py"
+    add("a1_so_leader_adapter", a1_so_leader.is_file(), str(a1_so_leader))
+    try:
+        text = vendored_so_leader.read_text()
+        add(
+            "vendored_so_leader_unpatched",
+            '"shoulder_pan": Motor(' in text and '"joint0": Motor(' not in text,
+            str(vendored_so_leader),
+            required=False,
+        )
+    except Exception as exc:
+        add("vendored_so_leader_unpatched", False, repr(exc), required=False)
 
     relay_core = repo_root / "scripts" / "runtime" / "a1_relay_core.py"
     add("relay_core_shim", relay_core.is_file(), str(relay_core))
