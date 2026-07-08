@@ -1,0 +1,186 @@
+"""Pure safety helpers for the Galaxea A1 runtime.
+
+This module must stay free of ROS imports and hardware side effects.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from math import isfinite
+from typing import Sequence
+
+from .constants import (
+    ARM_JOINT_COUNT,
+    DEFAULT_MAX_COMMAND_AGE_S,
+    DEFAULT_MAX_EEF_DELTA_M,
+    DEFAULT_MAX_ROT_DELTA_RAD,
+    IDLE_TIMEOUT_CODE,
+)
+
+
+@dataclass(frozen=True)
+class RelayInputs:
+    """Snapshot used to decide whether the relay may forward one command."""
+
+    enabled: bool
+    joint_age: float
+    source_age: float
+    status_age: float
+    joint_count: int
+    source_count: int
+    motor_error_codes: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class SafetyDecision:
+    """Result of a fail-closed safety check."""
+
+    allowed: bool
+    reason: str | None = None
+
+    @classmethod
+    def allow(cls) -> "SafetyDecision":
+        return cls(True, None)
+
+    @classmethod
+    def block(cls, reason: str) -> "SafetyDecision":
+        return cls(False, reason)
+
+
+@dataclass(frozen=True)
+class WorkspaceBounds:
+    """Axis-aligned EEF workspace bounds in meters."""
+
+    x: tuple[float, float]
+    y: tuple[float, float]
+    z: tuple[float, float]
+
+    def clamp(self, xyz: Sequence[float]) -> tuple[float, float, float]:
+        if len(xyz) != 3:
+            raise ValueError(f"workspace clamp expects 3 values, got {len(xyz)}")
+        return (
+            clamp_float(xyz[0], self.x[0], self.x[1]),
+            clamp_float(xyz[1], self.y[0], self.y[1]),
+            clamp_float(xyz[2], self.z[0], self.z[1]),
+        )
+
+
+def clamp_float(value: float, lower: float, upper: float) -> float:
+    if lower > upper:
+        raise ValueError(f"invalid bounds: lower={lower} upper={upper}")
+    if not isfinite(value):
+        raise ValueError(f"value must be finite, got {value!r}")
+    return min(max(value, lower), upper)
+
+
+def validate_relay_inputs(
+    inputs: RelayInputs,
+    *,
+    arm_joints: int = ARM_JOINT_COUNT,
+    max_age: float = DEFAULT_MAX_COMMAND_AGE_S,
+) -> SafetyDecision:
+    """Return a fail-closed decision for one staged joint command."""
+
+    reason = relay_block_reason(inputs, arm_joints=arm_joints, max_age=max_age)
+    if reason is not None:
+        return SafetyDecision.block(reason)
+    return SafetyDecision.allow()
+
+
+def relay_block_reason(
+    inputs: RelayInputs,
+    *,
+    arm_joints: int = ARM_JOINT_COUNT,
+    max_age: float = DEFAULT_MAX_COMMAND_AGE_S,
+) -> str | None:
+    if not inputs.enabled:
+        return "locked"
+    if arm_joints <= 0:
+        return f"invalid arm joint count: {arm_joints}"
+    if max_age <= 0:
+        return f"invalid max age: {max_age}"
+    if inputs.joint_count < arm_joints:
+        return f"joint feedback has {inputs.joint_count} positions, need {arm_joints}"
+    if inputs.source_count < arm_joints:
+        return f"tracker command has {inputs.source_count} positions, need {arm_joints}"
+    if inputs.joint_age > max_age:
+        return f"joint feedback stale ({inputs.joint_age:.3f}s)"
+    if inputs.source_age > max_age:
+        return f"tracker command stale ({inputs.source_age:.3f}s)"
+    if inputs.status_age > max_age:
+        return f"motor status stale ({inputs.status_age:.3f}s)"
+    if len(inputs.motor_error_codes) < arm_joints:
+        return f"motor status has {len(inputs.motor_error_codes)} entries, need {arm_joints}"
+
+    bad = [
+        (i + 1, code)
+        for i, code in enumerate(inputs.motor_error_codes[:arm_joints])
+        if code not in (0, IDLE_TIMEOUT_CODE)
+    ]
+    if bad:
+        return "motor errors: " + ", ".join(f"J{joint}={code}" for joint, code in bad)
+    return None
+
+
+def validate_initial_alignment(
+    current: Sequence[float],
+    raw: Sequence[float],
+    *,
+    max_abs_error: float,
+) -> None:
+    """Reject a large first tracker jump without modifying the command."""
+
+    _require_same_length(current, raw, "current", "raw")
+    if max_abs_error < 0:
+        raise ValueError(f"max_abs_error must be non-negative, got {max_abs_error}")
+    error = tuple(raw[i] - current[i] for i in range(len(current)))
+    if error and max(abs(v) for v in error) > max_abs_error:
+        raise ValueError(f"initial command error exceeds {max_abs_error}: {list(error)}")
+
+
+def clamp_eef_delta(
+    delta: Sequence[float],
+    *,
+    max_translation: float = DEFAULT_MAX_EEF_DELTA_M,
+    max_rotation: float = DEFAULT_MAX_ROT_DELTA_RAD,
+) -> tuple[float, ...]:
+    """Clamp an EEF delta action.
+
+    Supported shapes are translation-only `[dx, dy, dz]`, translation plus
+    gripper `[dx, dy, dz, gripper]`, or full pose delta plus gripper
+    `[dx, dy, dz, droll, dpitch, dyaw, gripper]`.
+    """
+
+    if len(delta) not in (3, 4, 7):
+        raise ValueError(f"unsupported EEF delta length: {len(delta)}")
+    if max_translation < 0:
+        raise ValueError(f"max_translation must be non-negative, got {max_translation}")
+    if max_rotation < 0:
+        raise ValueError(f"max_rotation must be non-negative, got {max_rotation}")
+
+    values = [float(v) for v in delta]
+    clamped = [
+        clamp_float(values[i], -max_translation, max_translation)
+        for i in range(3)
+    ]
+    if len(values) == 7:
+        clamped.extend(
+            clamp_float(values[i], -max_rotation, max_rotation)
+            for i in range(3, 6)
+        )
+        clamped.append(clamp_float(values[6], 0.0, 1.0))
+    elif len(values) == 4:
+        clamped.append(clamp_float(values[3], 0.0, 1.0))
+    return tuple(clamped)
+
+
+def _require_same_length(
+    left: Sequence[float],
+    right: Sequence[float],
+    left_name: str,
+    right_name: str,
+) -> None:
+    if len(left) != len(right):
+        raise ValueError(
+            f"{left_name} and {right_name} length mismatch: {len(left)} != {len(right)}"
+        )

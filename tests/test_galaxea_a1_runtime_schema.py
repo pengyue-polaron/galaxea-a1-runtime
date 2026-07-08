@@ -1,0 +1,54 @@
+import pytest
+
+from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
+from galaxea_a1_runtime.schema import (
+    ActionMode,
+    CameraSpec,
+    default_dataset_contract,
+    validate_frame_keys,
+)
+
+
+def test_default_contract_targets_lerobot_v3():
+    contract = default_dataset_contract()
+
+    assert contract.dataset_format == LEROBOT_DATASET_FORMAT
+    assert contract.dataset_format == "v3.0"
+
+
+def test_default_contract_exposes_expected_feature_keys():
+    contract = default_dataset_contract(
+        cameras=(CameraSpec("front", height=480, width=640),)
+    )
+    features = contract.features()
+
+    assert sorted(features) == [
+        "action",
+        "observation.images.front",
+        "observation.state",
+    ]
+    assert features["observation.images.front"]["dtype"] == "video"
+    assert features["observation.state"]["shape"] == (14,)
+    assert features["action"]["shape"] == (7,)
+
+
+def test_translation_action_contract_uses_four_actions():
+    contract = default_dataset_contract(action_mode=ActionMode.EEF_TRANSLATION)
+
+    assert contract.action_names == ("delta_x", "delta_y", "delta_z", "gripper")
+    assert contract.features()["action"]["shape"] == (4,)
+
+
+def test_validate_frame_keys_reports_missing_required_keys():
+    contract = default_dataset_contract(
+        cameras=(CameraSpec("front", height=480, width=640),)
+    )
+
+    with pytest.raises(ValueError, match="observation.images.front"):
+        validate_frame_keys(
+            {
+                "observation.state": [0.0] * 14,
+                "action": [0.0] * 7,
+            },
+            contract=contract,
+        )

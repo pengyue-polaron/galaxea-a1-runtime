@@ -1,0 +1,32 @@
+from pathlib import Path
+
+
+REPO = Path(__file__).resolve().parents[1]
+
+
+def test_teleop_runtime_reads_tracked_config_and_disables_extra_args():
+    runtime = (REPO / "scripts/apps/teleop/a1_teleop_runtime.sh").read_text()
+
+    assert "configs/teleop/a1_so100.toml" in runtime
+    assert "galaxea_a1_runtime.teleop.config" in runtime
+    assert '"${BRIDGE_ARGS[@]}"' in runtime
+    assert '"${COLLECT_ARGS[@]}"' in runtime
+    assert "Per-run teleop collector args are disabled" in runtime
+    assert "A1_TELEOP_BRIDGE_EXTRA_ARGS" not in runtime
+    assert "A1_TELEOP_COLLECT_EXTRA_ARGS" not in runtime
+
+
+def test_teleop_collector_keeps_old_default_and_cli_aliases():
+    collector = (REPO / "scripts/apps/teleop/teleop_collect.py").read_text()
+
+    assert "default=StateMode.JOINT.value" in collector
+    assert '"--joint-wait-timeout-s"' in collector
+    assert '"--cam1-index"' in collector
+    assert "default=200.0" in collector
+
+
+def test_teleop_bridge_accepts_old_gripper_topic_flag():
+    bridge = (REPO / "scripts/apps/teleop/so100_joint_bridge.py").read_text()
+
+    assert '"--gripper-position-topic"' in bridge
+    assert '"--gripper-max-stroke-mm", type=float, default=200.0' in bridge

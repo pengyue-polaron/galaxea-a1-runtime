@@ -219,6 +219,13 @@ scripts/train/checkpoints/
 data/
 uv.lock.bak
 third_party/A1_SDK_runtime/
+third_party/TFP_pro/
+video_exports/
+.tmp_uv/
+
+# Local Orbax/OCDBT checkpoint exports accidentally created at repo root.
+/4000/
+/7000/
 
 __MACOSX
 .DS_Store

@@ -20,7 +20,7 @@ services:
       - .:/workspace
       - /dev:/dev
       - /tmp/.X11-unix:/tmp/.X11-unix:rw
-      - /home/nyu/.cache/huggingface:/home/nyu/.cache/huggingface:ro
+      - ${HOME}/.cache/huggingface:/root/.cache/huggingface:rw
     group_add:
       - dialout
       - video

@@ -43,12 +43,11 @@ class SOLeader(Teleoperator):
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
-                "joint0": Motor(0, "sts3215", norm_mode_body),
-                "joint1": Motor(1, "sts3215", norm_mode_body),
-                "joint2": Motor(2, "sts3215", norm_mode_body),
-                "joint3": Motor(3, "sts3215", norm_mode_body),
-                "joint4": Motor(4, "sts3215", norm_mode_body),
-                "joint5": Motor(5, "sts3215", norm_mode_body),
+                "shoulder_pan": Motor(1, "sts3215", norm_mode_body),
+                "shoulder_lift": Motor(2, "sts3215", norm_mode_body),
+                "elbow_flex": Motor(3, "sts3215", norm_mode_body),
+                "wrist_flex": Motor(4, "sts3215", norm_mode_body),
+                "wrist_roll": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
             calibration=self.calibration,
@@ -60,7 +59,7 @@ class SOLeader(Teleoperator):
 
     @property
     def feedback_features(self) -> dict[str, type]:
-        return {}
+        return self.action_features
 
     @property
     def is_connected(self) -> bool:
@@ -101,26 +100,15 @@ class SOLeader(Teleoperator):
         input(f"Move {self} to the middle of its range of motion and press ENTER....")
         homing_offsets = self.bus.set_half_turn_homings()
 
-        # Legacy SO builds have one full-turn wrist roll joint that should keep full
-        # encoder span (0..4095). For custom joint naming, default to calibrating all
-        # joints unless "wrist_roll" exists explicitly.
-        full_turn_motors = [motor for motor in ("wrist_roll",) if motor in self.bus.motors]
-        unknown_range_motors = [motor for motor in self.bus.motors if motor not in full_turn_motors]
-        if full_turn_motors:
-            skipped = ", ".join(f"'{motor}'" for motor in full_turn_motors)
-            print(
-                f"Move all joints except {skipped} sequentially through their "
-                "entire ranges of motion.\nRecording positions. Press ENTER to stop..."
-            )
-        else:
-            print(
-                "Move all joints sequentially through their entire ranges of motion.\n"
-                "Recording positions. Press ENTER to stop..."
-            )
+        full_turn_motor = "wrist_roll"
+        unknown_range_motors = [motor for motor in self.bus.motors if motor != full_turn_motor]
+        print(
+            f"Move all joints except '{full_turn_motor}' sequentially through their "
+            "entire ranges of motion.\nRecording positions. Press ENTER to stop..."
+        )
         range_mins, range_maxes = self.bus.record_ranges_of_motion(unknown_range_motors)
-        for motor in full_turn_motors:
-            range_mins[motor] = 0
-            range_maxes[motor] = 4095
+        range_mins[full_turn_motor] = 0
+        range_maxes[full_turn_motor] = 4095
 
         self.calibration = {}
         for motor, m in self.bus.motors.items():
@@ -142,6 +130,12 @@ class SOLeader(Teleoperator):
         for motor in self.bus.motors:
             self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
 
+    def enable_torque(self) -> None:
+        self.bus.enable_torque()
+
+    def disable_torque(self) -> None:
+        self.bus.disable_torque()
+
     def setup_motors(self) -> None:
         for motor in reversed(self.bus.motors):
             input(f"Connect the controller board to the '{motor}' motor only and press enter.")
@@ -157,9 +151,11 @@ class SOLeader(Teleoperator):
         logger.debug(f"{self} read action: {dt_ms:.1f}ms")
         return action
 
+    @check_if_not_connected
     def send_feedback(self, feedback: dict[str, float]) -> None:
-        # TODO: Implement force feedback
-        raise NotImplementedError
+        goals = {k.removesuffix(".pos"): v for k, v in feedback.items() if k.endswith(".pos")}
+        if goals:
+            self.bus.sync_write("Goal_Position", goals)
 
     @check_if_not_connected
     def disconnect(self) -> None:
