@@ -8,7 +8,6 @@ app behavior, safety policy, teleop mapping, or LingBot integration should live.
 Vendor source metadata is tracked in `vendors.toml`.
 
 - `A1_SDK/`: Galaxea ROS1 A1 SDK snapshot used by Docker/ROS runtime scripts.
-- `A1_SDK_runtime/`: trimmed runtime import overlay for ROS Python packages.
 - `lerobot/`: LeRobot v0.6.0 source snapshot, pinned in root `pyproject.toml`.
 
 ## Rules

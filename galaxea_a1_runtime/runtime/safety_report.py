@@ -7,9 +7,7 @@ from typing import Any
 
 from galaxea_a1_runtime.constants import (
     DEFAULT_MAX_COMMAND_AGE_S,
-    DEFAULT_MAX_EEF_DELTA_M,
     DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD,
-    DEFAULT_MAX_ROT_DELTA_RAD,
     DEFAULT_RELAY_ARMING_TIMEOUT_S,
     EE_TARGET_TOPIC,
     GRIPPER_COMMAND_TOPIC,
@@ -84,12 +82,15 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
             operator_note="This matches the observed A1 idle behavior and keeps 68-style faults blocking.",
         ),
         SafetySetting(
-            name="generic_policy_delta_clamp",
+            name="generic_policy_delta_limits",
             path="GalaxeaA1Robot.send_action",
-            default=f"xyz=+/-{DEFAULT_MAX_EEF_DELTA_M:.2f}m, rpy=+/-{DEFAULT_MAX_ROT_DELTA_RAD:.2f}rad",
-            behavior="LeRobot EEF delta actions are normalized and clamped before reaching hardware IO.",
-            visibility="Returned action dict shows the clamped action.",
-            operator_note="The returned action is not the raw model output; compare upstream if debugging policy scale.",
+            default="off unless RuntimeConfig.safety sets max_eef_delta_m or max_rot_delta_rad",
+            behavior=(
+                "LeRobot EEF delta actions are forwarded unchanged by default; explicit runtime "
+                "limits clamp them before hardware IO."
+            ),
+            visibility="Returned action dict shows the post-limit action when limits are configured.",
+            operator_note="No model-output delta clamp is active in the default generic robot config.",
         ),
         SafetySetting(
             name="generic_ros1_adapter_arm_motion",
@@ -139,7 +140,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_workspace_clamp",
-            path="--xyz-min / --xyz-max",
+            path="configs/inference/lingbot_va_a1.toml [eef.xyz_min / eef.xyz_max]",
             default="x=[0.06,0.44], y=[-0.27,0.14], z=[0.06,0.50]",
             behavior="Absolute LingBot targets outside the configured workspace are clamped.",
             visibility="Bridge preview prints clamp=workspace:<axis>.",
@@ -147,7 +148,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_orientation_mode",
-            path="--orientation-mode",
+            path="configs/inference/lingbot_va_a1.toml [eef.orientation_mode]",
             default="hold-current",
             behavior="LingBot quaternion channels are ignored unless orientation mode is model-quat.",
             visibility="Bridge preview prints orientation_mode.",
@@ -155,7 +156,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_eef_servo_compensation",
-            path="A1_LINGBOT_BRIDGE_EXTRA_ARGS / --eef-servo-gain",
+            path="configs/inference/lingbot_va_a1.toml [servo.gain]",
             default="1.0/off",
             behavior="When gain is greater than 1, the bridge sends an amplified tracker target toward the policy target.",
             visibility="Bridge preview prints tracker_cmd_xyz whenever it differs from the policy target.",
@@ -163,7 +164,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_cache_actual_feedback",
-            path="--cache-actual-feedback",
+            path="configs/inference/lingbot_va_a1.toml [servo.cache_actual_feedback]",
             default="on",
             behavior="LingBot KV-cache action state is updated with measured EEF feedback instead of the commanded target.",
             visibility="Runbook documents this; publish logs show commanded and actual tracking diagnostics when settle is enabled.",
@@ -171,7 +172,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_relay_status_guard",
-            path="--max-relay-status-age",
+            path="configs/inference/lingbot_va_a1.toml [relay.max_status_age_s]",
             default="1.0s",
             behavior="The bridge refuses to keep publishing if relay status is stale or no longer ACTIVE.",
             visibility="RuntimeError includes last relay state.",
@@ -187,7 +188,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="gripper_scale_mapping",
-            path="--gripper-stroke-scale / --gripper-stroke-min / --gripper-stroke-max",
+            path="configs/inference/lingbot_va_a1.toml [gripper]",
             default="normalized 0..1 -> 0..60mm",
             behavior="The LingBot bridge clips normalized gripper to 0..1, then maps it linearly to the physical stroke range.",
             visibility="Bridge preview and publish log print gripper_norm and gripper_mm.",

@@ -3,15 +3,31 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
-SESSION="${A1_LINGBOT_TMUX:-lingbot-a1}"
-WRIST_CAMERA="${A1_WRIST_CAMERA:-/dev/v4l/by-id/usb-Global_Shutter_Camera_Global_Shutter_Camera_01.00.00-video-index0}"
-PROMPT="${A1_LINGBOT_PROMPT:-pick up that bowl}"
-LINGBOT_HOST="${A1_LINGBOT_HOST:-127.0.0.1}"
-LINGBOT_PORT="${A1_LINGBOT_PORT:-1106}"
-BRIDGE_EXTRA_ARGS="${A1_LINGBOT_BRIDGE_EXTRA_ARGS:-}"
+CONFIG_PATH="${A1_LINGBOT_CONFIG:-${ROOT}/configs/inference/lingbot_va_a1.toml}"
+
+if [[ "${1:-}" == "--config" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    echo "Usage: $0 --config <path> <start|services|tmux|stop|doctor|status|logs>" >&2
+    exit 2
+  fi
+  CONFIG_PATH="$2"
+  shift 2
+fi
+
+PYTHON_BIN="${ROOT}/.venv/bin/python"
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="python3"
+fi
+
+eval "$(
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.apps.lingbot.config \
+    --repo-root "${ROOT}" \
+    --shell \
+    "${CONFIG_PATH}"
+)"
 
 check_lingbot_app() {
-  if [[ ! -e "${WRIST_CAMERA}" ]]; then
+  if [[ "${WRIST_CAMERA}" != "auto" && ! -e "${WRIST_CAMERA}" ]]; then
     echo "[FAIL] Wrist camera not found: ${WRIST_CAMERA}" >&2
     exit 2
   fi
@@ -38,14 +54,25 @@ PY
 }
 
 start_services() {
-  "${BASE_RUNTIME}" services
+  echo "Using LingBot config: ${CONFIG_PATH}"
+  A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
+    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
+    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
+    "${BASE_RUNTIME}" services
 }
 
 start_tmux() {
   check_lingbot_app
+  echo "Using LingBot config: ${CONFIG_PATH}"
   tmux kill-session -t "${SESSION}" >/dev/null 2>&1 || true
+  local bridge_command=(
+    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/lingbot/lingbot_va_ee_bridge.py"
+    "${BRIDGE_ARGS[@]}"
+  )
+  local bridge_command_q
+  printf -v bridge_command_q "%q " "${bridge_command[@]}"
   tmux new-session -d -s "${SESSION}" -c "${ROOT}" \
-    "bash -lc 'PYTHONPATH=\"${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\" uv run --project \"${ROOT}\" python \"${ROOT}/scripts/apps/lingbot/lingbot_va_ee_bridge.py\" --host \"${LINGBOT_HOST}\" --port \"${LINGBOT_PORT}\" --prompt \"${PROMPT}\" --step-actions --execute-frames 1 --max-model-calls 0 --orientation-mode hold-current --execute --cam1-device \"${WRIST_CAMERA}\" ${BRIDGE_EXTRA_ARGS}; rc=\$?; echo BRIDGE_EXIT=\$rc; exec bash'"
+    "bash -lc 'export PYTHONPATH=\"${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo BRIDGE_EXIT=\$rc; exec bash'"
   sleep 4
   if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
     echo "[FAIL] tmux session exited during startup." >&2
@@ -56,12 +83,17 @@ start_tmux() {
 
 doctor() {
   local args=("$@")
-  "${BASE_RUNTIME}" doctor "${args[@]}"
-  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+  A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
+    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
+    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
+    "${BASE_RUNTIME}" doctor "${args[@]}"
+  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/lingbot/a1_lingbot_doctor.py" \
       --lingbot-host "${LINGBOT_HOST}" \
       --lingbot-port "${LINGBOT_PORT}" \
       --wrist-camera "${WRIST_CAMERA}" \
+      --staged-command-topic "${STAGED_TOPIC}" \
+      --relay-status-topic "${RELAY_STATUS_TOPIC}" \
       "${args[@]}"
 }
 
@@ -72,7 +104,10 @@ stop_runtime() {
 }
 
 status() {
-  "${BASE_RUNTIME}" status
+  A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
+    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
+    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
+    "${BASE_RUNTIME}" status
   echo
   echo "tmux:"
   tmux list-sessions 2>/dev/null | grep "${SESSION}" || echo "${SESSION}: not running"
@@ -107,7 +142,7 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 <start|services|tmux|stop|doctor|status|logs>
+Usage: $0 [--config configs/inference/lingbot_va_a1.toml] <start|services|tmux|stop|doctor|status|logs>
 
   start     Start A1 base runtime, then open the interactive LingBot bridge tmux
   services  Start only the decoupled A1 base runtime
@@ -117,8 +152,8 @@ Usage: $0 <start|services|tmux|stop|doctor|status|logs>
   status    Base runtime status plus tmux state
   logs      Tail base runtime logs
 
-Environment:
-  A1_LINGBOT_BRIDGE_EXTRA_ARGS  Advanced flags passed directly to lingbot_va_ee_bridge.py.
+Config:
+  ${CONFIG_PATH}
 EOF
     ;;
 esac

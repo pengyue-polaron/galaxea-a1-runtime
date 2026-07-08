@@ -157,7 +157,7 @@ start_bridge() {
   stop_bridge
   local log_file="${LOG_DIR}/bridge.log"
   : > "${log_file}"
-  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/so100_joint_bridge.py" \
       "${BRIDGE_ARGS[@]}" \
       >> "${log_file}" 2>&1 &
@@ -173,7 +173,7 @@ start_bridge() {
 
 doctor() {
   local args=("$@")
-  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python - "${LEADER_PORT}" <<'PY'
 import importlib.util
 import sys
@@ -212,7 +212,7 @@ collect() {
   trap cleanup_collect EXIT
   start_services
   start_bridge
-  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/teleop_collect.py" \
       --experiment "${experiment}" \
       "${COLLECT_ARGS[@]}"

@@ -222,6 +222,11 @@ Teleop hardware/data semantics are configured in
 RealSense depth capture, leader port, state mode, FPS, gripper stroke range, or
 joint mapping changes.
 
+LingBot inference semantics are configured in
+`configs/inference/lingbot_va_a1.toml`. Edit and commit that file when the
+server, prompt, cameras, EEF workspace, orientation mode, relay topics,
+execution cadence, or gripper mapping changes.
+
 Useful direct-debug checks inside the ROS/Docker environment:
 
 ```bash

@@ -1,6 +1,6 @@
 # Git-tracked runtime contract for Galaxea A1 SO leader teleoperation.
 # Edit this file when hardware ports, cameras, topics, or collection semantics
-# change. The normal `just collect teleop <experiment>` path reads this file
+# change. The normal `just teleop <experiment>` path reads this file
 # and does not require per-run bridge/collector CLI flags.
 
 [host]

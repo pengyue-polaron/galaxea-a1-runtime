@@ -16,16 +16,6 @@ local_overrides = [
 ]
 
 [[vendor]]
-name = "A1_SDK_runtime"
-path = "third_party/A1_SDK_runtime"
-mode = "snapshot"
-upstream = "https://github.com/userguide-galaxea/A1_SDK.git"
-upstream_branch = "galaxea/main"
-upstream_rev_observed = "a61290fb6b44914f81320dae32590ab381c04457"
-status = "runtime import overlay derived from A1_SDK"
-patch_policy = "Keep as a runtime dependency snapshot; do not add app behavior here."
-
-[[vendor]]
 name = "lerobot"
 path = "third_party/lerobot"
 mode = "snapshot"

@@ -89,7 +89,7 @@ def main() -> None:
     parser.add_argument(
         "--default-globs",
         action="store_true",
-        help="Also include standard A1_SDK and A1_SDK_runtime records folders.",
+        help="Also include the standard tracked A1_SDK records folder.",
     )
     args = parser.parse_args()
 
@@ -98,7 +98,6 @@ def main() -> None:
         patterns.extend(
             [
                 "/workspace/third_party/A1_SDK/data/records/*.bag",
-                "/workspace/third_party/A1_SDK_runtime/data/records/*.bag",
             ]
         )
     bags = expand_bags(patterns)
@@ -164,11 +163,7 @@ def main() -> None:
     out_path.parent.mkdir(parents=True, exist_ok=True)
     out_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
     print(json.dumps(out, indent=2))
-    print("\nPython snippet for va_galaxea_a1_cfg.py:")
-    print("va_galaxea_a1_cfg.norm_stat = {")
-    print(f"    'q01': {norm_q01!r},")
-    print(f"    'q99': {norm_q99!r},")
-    print("}")
+    print("\nUse the lingbot_norm_stat JSON field from this output in the policy server config you own.")
 
 
 if __name__ == "__main__":

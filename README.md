@@ -75,6 +75,11 @@ tmux attach -t lingbot-a1
 just stop
 ```
 
+LingBot runtime parameters live in
+[configs/inference/lingbot_va_a1.toml](configs/inference/lingbot_va_a1.toml).
+Edit that tracked file when the server, prompt, cameras, EEF workspace,
+execution cadence, or gripper mapping changes.
+
 Dataset conversion:
 
 ```bash

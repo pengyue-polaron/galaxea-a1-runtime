@@ -8,8 +8,6 @@ from pathlib import Path
 
 from .constants import (
     DEFAULT_MAX_COMMAND_AGE_S,
-    DEFAULT_MAX_EEF_DELTA_M,
-    DEFAULT_MAX_ROT_DELTA_RAD,
     EE_TARGET_TOPIC,
     GRIPPER_COMMAND_TOPIC,
     RELAY_ENABLE_TOPIC,
@@ -30,8 +28,8 @@ class RuntimeProfile(StrEnum):
 @dataclass(frozen=True)
 class SafetyConfig:
     max_command_age_s: float = DEFAULT_MAX_COMMAND_AGE_S
-    max_eef_delta_m: float = DEFAULT_MAX_EEF_DELTA_M
-    max_rot_delta_rad: float = DEFAULT_MAX_ROT_DELTA_RAD
+    max_eef_delta_m: float | None = None
+    max_rot_delta_rad: float | None = None
 
 
 @dataclass(frozen=True)

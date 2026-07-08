@@ -137,7 +137,7 @@ start_services() {
 
 doctor() {
   local args=("$@")
-  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_runtime_doctor.py" \
       --serial "${SERIAL}" \
       --staged-command-topic "${STAGED_TOPIC}" \
@@ -165,7 +165,7 @@ logs() {
 }
 
 eef_nudge() {
-  PYTHONPATH="${ROOT}/third_party/A1_SDK_runtime/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" "$@"
 }
 

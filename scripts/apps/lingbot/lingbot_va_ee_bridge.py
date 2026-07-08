@@ -17,7 +17,6 @@ from pathlib import Path
 # Keep ROS1 ahead of any ROS2 paths, and expose A1 custom messages.
 ROOT_DIR = Path(__file__).resolve().parents[3]
 _A1_SDK = ROOT_DIR / "third_party" / "A1_SDK" / "install"
-_A1_SDK_RUNTIME = ROOT_DIR / "third_party" / "A1_SDK_runtime" / "install"
 _ROS1_OVERLAY = ROOT_DIR / ".cache" / "ros1_python_overlay"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
@@ -27,7 +26,6 @@ for p in list(sys.path):
 for candidate in (
     "/opt/ros/noetic/lib/python3/dist-packages",
     "/usr/lib/python3/dist-packages",
-    str(_A1_SDK_RUNTIME / "lib" / "python3" / "dist-packages"),
     str(_ROS1_OVERLAY),
     str(_A1_SDK / "lib" / "python3" / "dist-packages"),
 ):

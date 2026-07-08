@@ -28,7 +28,10 @@ def normalize_action(
     max_translation: float | None = None,
     max_rotation: float | None = None,
 ) -> RuntimeAction:
-    """Convert model output to a clamped runtime action."""
+    """Convert model output to a typed runtime action.
+
+    EEF deltas are forwarded unchanged unless explicit limits are supplied.
+    """
 
     names = action_names_for_mode(mode)
     values = _ordered_values(action, names)
@@ -39,7 +42,7 @@ def normalize_action(
             kwargs["max_translation"] = max_translation
         if max_rotation is not None:
             kwargs["max_rotation"] = max_rotation
-        values = clamp_eef_delta(values, **kwargs)
+        values = clamp_eef_delta(values, **kwargs) if kwargs else tuple(float(v) for v in values)
     elif mode == ActionMode.JOINT_ABSOLUTE:
         values = tuple(float(v) for v in values)
         if len(values) == len(names):

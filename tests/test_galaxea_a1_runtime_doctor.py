@@ -22,7 +22,6 @@ def test_static_doctor_has_no_failures_for_repo_root():
         "vendor_A1_SDK_path",
         "vendor_A1_SDK_no_nested_git",
         "vendor_A1_SDK_local_overrides",
-        "vendor_A1_SDK_runtime_path",
         "vendor_lerobot_path",
         "vendor_lerobot_no_nested_git",
         "vendor_lerobot_rev",

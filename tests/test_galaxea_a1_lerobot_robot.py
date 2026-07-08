@@ -23,15 +23,15 @@ def test_galaxea_a1_robot_uses_null_io_without_hardware():
 
     robot.connect()
     observation = robot.get_observation()
-    sent = robot.send_action({"action": [0.2, -0.2, 0.01, 2.0]})
+    sent = robot.send_action({"action": [0.2, -0.2, 0.01, 0.5]})
 
     assert observation["observation.state"] == pytest.approx((0.0,) * 14)
     assert observation["observation.images.front"] == "front-image"
     assert sent == {
-        "delta_x": 0.03,
-        "delta_y": -0.03,
+        "delta_x": 0.2,
+        "delta_y": -0.2,
         "delta_z": 0.01,
-        "gripper": 1.0,
+        "gripper": 0.5,
     }
     assert io.last_action is not None
     robot.disconnect()

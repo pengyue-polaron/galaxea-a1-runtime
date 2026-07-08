@@ -13,7 +13,7 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 
 EXPECTED_LEROBOT_V060_COMMIT = "30da8e687a6dfc617fcd94afc367ac7071c376ce"
-EXPECTED_VENDOR_NAMES = ("A1_SDK", "A1_SDK_runtime", "lerobot")
+EXPECTED_VENDOR_NAMES = ("A1_SDK", "lerobot")
 REMOVED_MAINLINE_PATHS = (
     "a1",
     "CLAUDE.md",

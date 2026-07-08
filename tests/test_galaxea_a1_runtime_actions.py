@@ -4,7 +4,7 @@ from galaxea_a1_runtime.policies.actions import normalize_action
 from galaxea_a1_runtime.schema import ActionMode
 
 
-def test_normalize_eef_delta_from_mapping_clamps_values():
+def test_normalize_eef_delta_from_mapping_clamps_values_when_limits_are_explicit():
     action = normalize_action(
         {
             "delta_x": 0.2,
@@ -32,7 +32,7 @@ def test_normalize_translation_action_from_sequence():
         "delta_x": 0.01,
         "delta_y": 0.02,
         "delta_z": 0.03,
-        "gripper": 0.0,
+        "gripper": -1.0,
     }
 
 

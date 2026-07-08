@@ -82,6 +82,8 @@ The reusable parts now live in package modules:
 - `galaxea_a1_runtime.apps.lingbot.actions`: LingBot-specific 8D action
   sanitation, workspace bounds, orientation behavior, gripper mapping, and
   optional tracker compensation.
+- `galaxea_a1_runtime.apps.lingbot.config`: tracked LingBot runtime config
+  loading and conversion into the bridge arguments used by `just lingbot`.
 - `galaxea_a1_runtime.hardware.cameras`: shared RealSense color/depth and
   OpenCV color camera wrappers used by teleop collection, camera snapshots, and
   LingBot.
@@ -159,5 +161,6 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 ## Intentionally Not Done Yet
 
 - FastWAM and GR00T have profiles but not dedicated A1 app scripts yet.
-- LingBot still keeps model protocol and the interactive loop in one script; the
-  camera IO, action transforms, and A1 EEF execution pieces are reusable.
+- LingBot still keeps model protocol and the interactive operator loop in one
+  script; config loading, camera IO, action transforms, and A1 EEF execution
+  pieces are reusable.

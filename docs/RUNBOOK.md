@@ -92,6 +92,10 @@ just lingbot
 tmux attach -t lingbot-a1
 ```
 
+Runtime behavior is locked by `configs/inference/lingbot_va_a1.toml`: server,
+prompt, cameras, EEF workspace, orientation mode, relay topics, execution
+cadence, and gripper mapping.
+
 The bridge is step-gated:
 
 - `INFERENCE #N READY`: Enter runs one new model inference.

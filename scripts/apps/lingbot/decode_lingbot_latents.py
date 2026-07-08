@@ -9,23 +9,16 @@ touching the robot execution path.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import torch
 from diffusers.video_processor import VideoProcessor
 from diffusers.utils import export_to_video
 from PIL import Image, ImageDraw
-
-
-LINGBOT_ROOT = Path("/home/pengyue/lingbot-va")
-WAN_VA_ROOT = LINGBOT_ROOT / "wan_va"
-if str(WAN_VA_ROOT) not in sys.path:
-    sys.path.insert(0, str(WAN_VA_ROOT))
-
-from configs import VA_CONFIGS  # noqa: E402
-from modules.utils import load_vae  # noqa: E402
 
 
 def _to_uint8(frame: np.ndarray) -> np.ndarray:
@@ -58,13 +51,15 @@ def decode_latents(
     latents_path: Path,
     output_path: Path,
     *,
+    lingbot_root: Path,
     config_name: str,
     device: str,
     dtype_name: str,
     fps: int,
     contact_sheet_path: Path | None,
 ) -> None:
-    config = VA_CONFIGS[config_name]
+    va_configs, load_vae = _load_lingbot_va(lingbot_root)
+    config = va_configs[config_name]
     torch_dtype = getattr(torch, dtype_name)
     vae_path = Path(config.wan22_pretrained_model_name_or_path) / "vae"
 
@@ -102,9 +97,30 @@ def decode_latents(
         print(f"[decode] wrote contact sheet: {contact_sheet_path}")
 
 
+def _load_lingbot_va(lingbot_root: Path) -> tuple[dict[str, Any], Any]:
+    wan_va_root = lingbot_root.expanduser().resolve() / "wan_va"
+    if not wan_va_root.is_dir():
+        raise FileNotFoundError(
+            f"LingBot wan_va package not found at {wan_va_root}. "
+            "Pass --lingbot-root or set LINGBOT_VA_ROOT."
+        )
+    if str(wan_va_root) not in sys.path:
+        sys.path.insert(0, str(wan_va_root))
+    from configs import VA_CONFIGS
+    from modules.utils import load_vae
+
+    return VA_CONFIGS, load_vae
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("latents_path", type=Path)
+    parser.add_argument(
+        "--lingbot-root",
+        type=Path,
+        default=Path(os.environ.get("LINGBOT_VA_ROOT", "~/lingbot-va")),
+        help="Path to the external LingBot checkout containing wan_va/.",
+    )
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--contact-sheet", type=Path)
     parser.add_argument("--config-name", default="galaxea_a1")
@@ -119,6 +135,7 @@ def main() -> None:
     decode_latents(
         args.latents_path,
         args.output,
+        lingbot_root=args.lingbot_root,
         config_name=args.config_name,
         device=args.device,
         dtype_name=args.dtype,

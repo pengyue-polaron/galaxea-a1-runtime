@@ -45,14 +45,16 @@ host commands directly:
 
 ## Action Behavior
 
-- Generic `GalaxeaA1Robot` clamps LeRobot EEF deltas to `+/-0.03m` and
-  `+/-0.15rad` before hardware IO.
+- Generic `GalaxeaA1Robot` forwards LeRobot EEF deltas unchanged by default.
+  Optional `RuntimeConfig.safety` delta limits must be set explicitly.
 - Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
 - Generic ROS1 adapter rejects `joint_absolute`.
 - Generic gripper input must be normalized `0..1`; direct adapter misuse raises
   instead of silently clipping.
 - LingBot workspace bounds apply to outgoing targets, not feedback state.
 - LingBot orientation defaults to `hold-current`.
+- LingBot execution settings live in `configs/inference/lingbot_va_a1.toml`;
+  avoid per-run hidden flags.
 - LingBot gripper mapping is linear: normalized `0..1 -> 0..60mm`.
 - LingBot waits for relay `ACTIVE` before gripper publish because the gripper
   topic is independent of the arm relay.
