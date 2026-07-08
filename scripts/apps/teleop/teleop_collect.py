@@ -373,7 +373,7 @@ def write_metadata(
             args.action_topic,
             "jointTracker_demo_node",
             args.staged_command_topic,
-            "safe_arm_command_relay_v2.py",
+            "safe_arm_command_relay.py",
             args.host_command_topic,
         ),
         cameras=tuple(cameras),
@@ -390,7 +390,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--max-duration-s", type=float, default=0.0)
     parser.add_argument("--jpeg-quality", type=int, default=95)
-    parser.add_argument("--ready-timeout-s", "--joint-wait-timeout-s", dest="ready_timeout_s", type=float, default=10.0)
+    parser.add_argument("--ready-timeout-s", type=float, default=10.0)
     parser.add_argument("--joint-topic", default="/joint_states_host")
     parser.add_argument("--eef-topic", default="/end_effector_pose")
     parser.add_argument("--action-topic", default="/arm_joint_target_position")
@@ -407,7 +407,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam0-depth-width", type=int, default=640)
     parser.add_argument("--cam0-depth-height", type=int, default=480)
     parser.add_argument("--cam0-align-depth-to-color", action=argparse.BooleanOptionalAction, default=True)
-    parser.add_argument("--cam1-device", "--cam1-index", dest="cam1_device", default="auto")
+    parser.add_argument("--cam1-device", default="auto")
     parser.add_argument("--cam1-width", type=int, default=640)
     parser.add_argument("--cam1-height", type=int, default=480)
     parser.add_argument("--cam1-fps", type=int, default=30)

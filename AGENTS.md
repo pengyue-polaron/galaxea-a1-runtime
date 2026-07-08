@@ -30,7 +30,7 @@ arm is disconnected.
   /a1_ee_target
     -> isolated eeTracker
     -> /arm_joint_command_a1_staged
-    -> safe_arm_command_relay_v2.py
+    -> safe_arm_command_relay.py
     -> /arm_joint_command_host
   ```
 
@@ -49,7 +49,7 @@ arm is disconnected.
   /arm_joint_target_position
     -> isolated jointTracker
     -> /arm_joint_command_a1_staged
-    -> safe_arm_command_relay_v2.py
+    -> safe_arm_command_relay.py
     -> /arm_joint_command_host
   ```
 
@@ -72,10 +72,10 @@ arm is disconnected.
   stroke range, topics, joint mapping, or joint limits change, edit and commit
   the TOML config instead.
 - For an alternate tracked hardware setup, add another TOML file under
-  `configs/teleop/` and run it explicitly:
+  `configs/teleop/` and run the app script with an explicit config path:
 
   ```bash
-  A1_TELEOP_CONFIG=configs/teleop/my_setup.toml just teleop pick_cube
+  scripts/apps/teleop/a1_teleop_runtime.sh --config configs/teleop/my_setup.toml collect pick_cube
   ```
 
 - The old working teleop behavior is the compatibility baseline:

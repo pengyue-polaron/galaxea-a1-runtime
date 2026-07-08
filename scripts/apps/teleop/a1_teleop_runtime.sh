@@ -3,7 +3,7 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
-CONFIG_PATH="${A1_TELEOP_CONFIG:-${ROOT}/configs/teleop/a1_so100.toml}"
+CONFIG_PATH="${ROOT}/configs/teleop/a1_so100.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -114,6 +114,7 @@ check_host_inputs() {
 }
 
 start_services() {
+  echo "Using teleop config: ${CONFIG_PATH}"
   check_host_inputs
   "${BASE_RUNTIME}" stop >/dev/null 2>&1 || true
   stop_runtime >/dev/null 2>&1 || true
@@ -145,13 +146,14 @@ start_services() {
 
   echo "[3/4] Starting fail-closed relay (LOCKED)..."
   container_run "${RELAY_CONTAINER}" \
-    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay_v2.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
+    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
   wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
   echo "[4/4] Teleop services ready. The leader bridge will arm the relay after publishing its first target."
 }
 
 start_bridge() {
+  echo "Using teleop config: ${CONFIG_PATH}"
   check_host_inputs
   mkdir -p "${LOG_DIR}"
   stop_bridge
@@ -191,7 +193,11 @@ for name, ok in checks.items():
     print(f"[{'PASS' if ok else 'FAIL'}] {name}  {leader if name == 'leader_port' else ''}")
 raise SystemExit(0 if all(checks.values()) else 1)
 PY
-  "${BASE_RUNTIME}" doctor "${args[@]}"
+  A1_SERIAL="${SERIAL}" \
+    A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
+    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
+    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
+    "${BASE_RUNTIME}" doctor "${args[@]}"
 }
 
 collect() {

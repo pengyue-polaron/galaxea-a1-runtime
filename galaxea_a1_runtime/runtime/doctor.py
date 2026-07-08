@@ -58,6 +58,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         from galaxea_a1_runtime.safety import RelayInputs, validate_relay_inputs
         from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
         from galaxea_a1_runtime.collection import state_names_for_mode
+        from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
         from galaxea_a1_runtime.teleop import JointMappingConfig
         from galaxea_a1_runtime.teleop.config import load_teleop_config
 
@@ -66,6 +67,10 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         teleop_state_names = state_names_for_mode("eef_joint")
         teleop_mapping = JointMappingConfig()
         teleop_config = load_teleop_config(repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root)
+        lingbot_config = load_lingbot_config(
+            repo_root / "configs" / "inference" / "lingbot_va_a1.toml",
+            repo_root=repo_root,
+        )
         decision = validate_relay_inputs(
             RelayInputs(
                 enabled=False,
@@ -91,6 +96,13 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             teleop_config.collection.state_mode.value == "joint"
             and teleop_config.gripper.max_stroke_mm == 200.0,
             str(teleop_config.path),
+        )
+        add(
+            "lingbot_config",
+            lingbot_config.server.port == 1106
+            and lingbot_config.eef.orientation_mode == "hold-current"
+            and lingbot_config.topics.cmd_pose == "/a1_ee_target",
+            str(lingbot_config.path),
         )
     except Exception as exc:
         add("pure_imports", False, repr(exc))
@@ -190,8 +202,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     except Exception as exc:
         add("vendored_so_leader_unpatched", False, repr(exc), required=False)
 
-    relay_core = repo_root / "scripts" / "runtime" / "a1_relay_core.py"
-    add("relay_core_shim", relay_core.is_file(), str(relay_core))
+    relay_script = repo_root / "scripts" / "runtime" / "safe_arm_command_relay.py"
+    add("safe_relay_script", relay_script.is_file(), str(relay_script))
     joint_tracker_launch = repo_root / "scripts" / "runtime" / "joint_tracker_staged.launch"
     add("joint_tracker_staged_launch", joint_tracker_launch.is_file(), str(joint_tracker_launch))
     teleop_runtime = repo_root / "scripts" / "apps" / "teleop" / "a1_teleop_runtime.sh"
@@ -200,6 +212,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("teleop_bridge_script", teleop_bridge.is_file(), str(teleop_bridge))
     teleop_collect = repo_root / "scripts" / "apps" / "teleop" / "teleop_collect.py"
     add("teleop_collect_script", teleop_collect.is_file(), str(teleop_collect))
+    lingbot_runtime = repo_root / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh"
+    add("lingbot_runtime_script", lingbot_runtime.is_file(), str(lingbot_runtime))
 
     existing_removed_paths = [
         path for path in REMOVED_MAINLINE_PATHS if (repo_root / path).exists()

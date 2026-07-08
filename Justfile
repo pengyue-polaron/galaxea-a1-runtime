@@ -53,7 +53,7 @@ test:
         {{repo}}/tests/test_galaxea_a1_lerobot_writer.py \
         {{repo}}/tests/test_galaxea_a1_migration.py \
         {{repo}}/tests/test_galaxea_a1_convert_raw.py \
-        {{repo}}/tests/test_a1_relay_core.py
+        {{repo}}/tests/test_galaxea_a1_relay_safety.py
 
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 

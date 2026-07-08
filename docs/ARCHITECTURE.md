@@ -14,7 +14,7 @@ LeRobotDataset v3.0.
    - `policies/`: normalized action contract and policy profile metadata.
    - `apps/`: reusable app helpers plus app-specific transforms.
    - `lerobot/`: `GalaxeaA1Robot`, writer helpers, passive recorder, migration.
-   - `runtime/`: doctor, safety report, dry-run plans.
+   - `runtime/`: doctor and safety report.
 
 2. Base runtime: `scripts/runtime`
    - Owns ROS master, A1 driver, isolated EE tracker, and safe relay.
@@ -48,7 +48,7 @@ Normal apps must use:
 /a1_ee_target
   -> isolated eeTracker
   -> /arm_joint_command_a1_staged
-  -> safe_arm_command_relay_v2.py
+  -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
 
@@ -61,7 +61,7 @@ Teleop joint control uses the same relay, but with a joint tracker:
 /arm_joint_target_position
   -> isolated jointTracker
   -> /arm_joint_command_a1_staged
-  -> safe_arm_command_relay_v2.py
+  -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
 

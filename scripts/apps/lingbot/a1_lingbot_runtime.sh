@@ -3,7 +3,7 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
-CONFIG_PATH="${A1_LINGBOT_CONFIG:-${ROOT}/configs/inference/lingbot_va_a1.toml}"
+CONFIG_PATH="${ROOT}/configs/inference/lingbot_va_a1.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then

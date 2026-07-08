@@ -22,7 +22,7 @@ Normal EEF apps and inference code must use:
 /a1_ee_target
   -> isolated eeTracker
   -> /arm_joint_command_a1_staged
-  -> safe_arm_command_relay_v2.py
+  -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
 
@@ -35,7 +35,7 @@ Teleop collection uses the same relay with staged jointTracker output:
 /arm_joint_target_position
   -> isolated jointTracker
   -> /arm_joint_command_a1_staged
-  -> safe_arm_command_relay_v2.py
+  -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
 
@@ -104,7 +104,7 @@ galaxea_a1_runtime/
   lerobot/            # Robot adapter, dataset writer, recorder, migration
   policies/           # action normalization and policy profiles
   apps/               # reusable app helpers and app-specific transforms
-  runtime/            # static doctor and dry-run supervisor
+  runtime/            # static doctor and safety disclosure
 ```
 
 ## Policy Targets
@@ -152,9 +152,9 @@ entrypoint does not take per-run collector flags.
 The A1 leader adapter lives in
 [galaxea_a1_runtime/teleop/a1_so_leader.py](galaxea_a1_runtime/teleop/a1_so_leader.py):
 leader actions use six arm axes `joint0.pos..joint5.pos` plus an independent
-`gripper.pos`. The bridge also recognizes the older upstream SO names, but
-`joint0..joint5` is the intended hardware contract for this repo. Vendored
-LeRobot source stays on the official v0.6.0 baseline.
+`gripper.pos`. The bridge intentionally rejects upstream SO arm names so a
+miswired leader cannot treat gripper input as an A1 arm joint. Vendored LeRobot
+source stays on the official v0.6.0 baseline.
 
 The raw teleop schema records configurable state modes:
 

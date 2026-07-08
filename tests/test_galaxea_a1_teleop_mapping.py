@@ -14,7 +14,7 @@ def test_detect_leader_joint_keys_supports_current_so_leader_names():
     assert detect_leader_joint_keys(action, 6) == tuple(f"joint{i}.pos" for i in range(6))
 
 
-def test_detect_leader_joint_keys_supports_legacy_names():
+def test_detect_leader_joint_keys_rejects_upstream_so_names():
     action = {
         "shoulder_pan.pos": 0.0,
         "shoulder_lift.pos": 0.0,
@@ -24,14 +24,8 @@ def test_detect_leader_joint_keys_supports_legacy_names():
         "gripper.pos": 0.0,
     }
 
-    assert detect_leader_joint_keys(action, 6) == (
-        "shoulder_pan.pos",
-        "shoulder_lift.pos",
-        "elbow_flex.pos",
-        "wrist_flex.pos",
-        "wrist_roll.pos",
-        "gripper.pos",
-    )
+    with pytest.raises(RuntimeError, match="joint0.pos"):
+        detect_leader_joint_keys(action, 6)
 
 
 def test_detect_leader_joint_keys_rejects_unknown_order_instead_of_sorting():

@@ -122,7 +122,7 @@ start_services() {
 
   echo "[3/4] Starting fail-closed relay (LOCKED)..."
   container_run "${RELAY_CONTAINER}" \
-    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay_v2.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
+    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
   wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
   echo "[4/4] Running execution doctor..."

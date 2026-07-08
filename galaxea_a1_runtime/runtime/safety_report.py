@@ -51,7 +51,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="freshness_gate",
-            path="safe_arm_command_relay_v2.py",
+            path="safe_arm_command_relay.py",
             default=f"{DEFAULT_MAX_COMMAND_AGE_S:.2f}s",
             behavior="Joint feedback, staged tracker command, and motor status must all be fresh.",
             visibility="ARMING reason names the stale input; FAULT latches after arming timeout.",
@@ -59,7 +59,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="arming_timeout",
-            path="safe_arm_command_relay_v2.py",
+            path="safe_arm_command_relay.py",
             default=f"{DEFAULT_RELAY_ARMING_TIMEOUT_S:.1f}s",
             behavior="If enabled but validation cannot become healthy, the relay latches FAULT.",
             visibility=f"FAULT reason on {RELAY_STATUS_TOPIC}",
@@ -67,7 +67,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="initial_command_alignment",
-            path="safe_arm_command_relay_v2.py",
+            path="safe_arm_command_relay.py",
             default=f"{DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD:.2f}rad",
             behavior="Only the first staged tracker command is checked against current joint feedback.",
             visibility="FAULT with initial command error values if exceeded.",

@@ -1,9 +1,4 @@
-import sys
-from pathlib import Path
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts" / "runtime"))
-
-from a1_relay_core import RelayInputs, check_initial_alignment, validate_inputs
+from galaxea_a1_runtime.safety import RelayInputs, relay_block_reason, validate_initial_alignment
 
 
 def healthy_inputs(**overrides):
@@ -22,7 +17,7 @@ def healthy_inputs(**overrides):
 
 def test_validate_inputs_accepts_idle_timeout_code():
     assert (
-        validate_inputs(
+        relay_block_reason(
             healthy_inputs(motor_error_codes=(64, 64, 64, 64, 64, 64, 64)),
             arm_joints=6,
             max_age=0.25,
@@ -32,7 +27,7 @@ def test_validate_inputs_accepts_idle_timeout_code():
 
 
 def test_validate_inputs_rejects_motor_error_with_extra_bits():
-    reason = validate_inputs(
+    reason = relay_block_reason(
         healthy_inputs(motor_error_codes=(0, 0, 68, 0, 0, 0, 0)),
         arm_joints=6,
         max_age=0.25,
@@ -41,24 +36,24 @@ def test_validate_inputs_rejects_motor_error_with_extra_bits():
 
 
 def test_validate_inputs_rejects_empty_joint_feedback():
-    reason = validate_inputs(healthy_inputs(joint_count=0), arm_joints=6, max_age=0.25)
+    reason = relay_block_reason(healthy_inputs(joint_count=0), arm_joints=6, max_age=0.25)
     assert "joint feedback has 0" in reason
 
 
 def test_validate_inputs_locked_is_not_a_fault():
-    assert validate_inputs(healthy_inputs(enabled=False), arm_joints=6, max_age=0.25) == "locked"
+    assert relay_block_reason(healthy_inputs(enabled=False), arm_joints=6, max_age=0.25) == "locked"
 
 
 def test_initial_alignment_check_accepts_small_start_error():
     current = [0.1, -0.2, 0.3]
     raw = [0.08, -0.22, 0.31]
 
-    assert check_initial_alignment(current, raw, max_abs_error=0.05) is None
+    assert validate_initial_alignment(current, raw, max_abs_error=0.05) is None
 
 
 def test_initial_alignment_check_rejects_large_start_error():
     try:
-        check_initial_alignment([0.0], [0.1], max_abs_error=0.05)
+        validate_initial_alignment([0.0], [0.1], max_abs_error=0.05)
     except ValueError as exc:
         assert "initial command error exceeds" in str(exc)
     else:

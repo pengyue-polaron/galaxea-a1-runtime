@@ -11,7 +11,7 @@ Normal apps must publish EEF targets only:
 /a1_ee_target
   -> isolated eeTracker
   -> /arm_joint_command_a1_staged
-  -> safe_arm_command_relay_v2.py
+  -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
 
@@ -24,7 +24,7 @@ host commands directly:
 /arm_joint_target_position
   -> isolated jointTracker
   -> /arm_joint_command_a1_staged
-  -> safe_arm_command_relay_v2.py
+  -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
 

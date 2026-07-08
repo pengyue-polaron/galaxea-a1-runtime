@@ -274,12 +274,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--a1-state-timeout", type=float, default=10.0)
     parser.add_argument("--gripper-enabled", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--gripper-source-key", default="gripper.pos")
-    parser.add_argument(
-        "--gripper-topic",
-        "--gripper-position-topic",
-        dest="gripper_topic",
-        default="/gripper_position_control_host",
-    )
+    parser.add_argument("--gripper-topic", default="/gripper_position_control_host")
     parser.add_argument("--gripper-min-stroke-mm", type=float, default=0.0)
     parser.add_argument("--gripper-max-stroke-mm", type=float, default=200.0)
     parser.add_argument("--gripper-invert", action="store_true", default=False)

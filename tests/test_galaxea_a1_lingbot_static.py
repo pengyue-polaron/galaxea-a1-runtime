@@ -39,6 +39,7 @@ def test_lingbot_runtime_wrapper_reads_tracked_config_without_extra_args():
     assert "configs/inference/lingbot_va_a1.toml" in text
     assert "galaxea_a1_runtime.apps.lingbot.config" in text
     assert '"${BRIDGE_ARGS[@]}"' in text
+    assert "A1_LINGBOT_CONFIG" not in text
     assert "A1_LINGBOT_BRIDGE_EXTRA_ARGS" not in text
     assert "A1_LINGBOT_MAX_XYZ_DELTA" not in text
     assert "--max-xyz-delta" not in text

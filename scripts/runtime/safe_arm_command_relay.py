@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# ruff: noqa: E402
 """Fail-closed command relay for the Galaxea A1 arm."""
 
 from __future__ import annotations
@@ -7,21 +8,29 @@ import argparse
 import copy
 import json
 import math
+import sys
 import threading
 import time
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[2]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
 import rospy
 from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, status_stamped
 from std_msgs.msg import Bool, String
 
-from a1_relay_core import (
+from galaxea_a1_runtime.constants import (  # noqa: E402
     DEFAULT_MAX_COMMAND_AGE_S,
     DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD,
     DEFAULT_RELAY_ARMING_TIMEOUT_S,
+)
+from galaxea_a1_runtime.safety import (  # noqa: E402
     RelayInputs,
-    check_initial_alignment,
-    validate_inputs,
+    relay_block_reason,
+    validate_initial_alignment,
 )
 
 
@@ -117,7 +126,7 @@ class SafeArmCommandRelay:
         last_status_time = 0.0
         while not rospy.is_shutdown():
             now, joints, command, inputs, fault_reason = self._snapshot()
-            reason = validate_inputs(inputs, arm_joints=self.args.arm_joints, max_age=self.args.max_input_age)
+            reason = relay_block_reason(inputs, arm_joints=self.args.arm_joints, max_age=self.args.max_input_age)
 
             if fault_reason:
                 state, reason = "FAULT", fault_reason
@@ -130,7 +139,7 @@ class SafeArmCommandRelay:
                 raw = [float(v) for v in command.p_des[: self.args.arm_joints]]
                 try:
                     if not self.initial_alignment_checked:
-                        check_initial_alignment(
+                        validate_initial_alignment(
                             joints,
                             raw,
                             max_abs_error=self.args.max_initial_error,

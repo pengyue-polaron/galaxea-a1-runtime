@@ -96,7 +96,7 @@ def test_metadata_json_explains_topics_and_control_path():
             "/arm_joint_target_position",
             "jointTracker_demo_node",
             "/arm_joint_command_a1_staged",
-            "safe_arm_command_relay_v2.py",
+            "safe_arm_command_relay.py",
             "/arm_joint_command_host",
         ),
         cameras=(CameraMetadata("front", "cam0", 640, 480),),
