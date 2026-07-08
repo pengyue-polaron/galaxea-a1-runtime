@@ -22,7 +22,8 @@ just stop
 just cameras
 ```
 
-Check the printed `cam0_front`, `cam1_wrist`, and `contact_sheet` image paths.
+Check the printed `cam0_front`, `cam1_wrist`, `contact_sheet`, and, when
+enabled, `cam0_depth`/`cam0_depth_preview` image paths.
 
 2. Test EEF control:
 
@@ -69,6 +70,7 @@ q+Enter=quit
 
 Teleop behavior is locked by `configs/teleop/a1_so100.toml`: leader port,
 cameras, state mode, FPS, topics, joint mapping, limits, and gripper range.
+The default front RealSense config records color plus aligned 16-bit depth.
 
 Recorded state modes:
 
@@ -78,6 +80,8 @@ Recorded state modes:
 
 Actions are recorded as `joint_absolute` targets from
 `/arm_joint_target_position`.
+Saved episodes contain `frames.csv`, `metadata.json`, `cam0/`, `cam1/`, and
+`cam0_depth/` when depth is enabled.
 
 ## LingBot-VA
 

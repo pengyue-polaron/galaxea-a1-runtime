@@ -27,6 +27,8 @@ def test_default_teleop_config_locks_old_working_behavior():
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
     assert config.gripper.source_key == "gripper.pos"
     assert config.gripper.max_stroke_mm == 200.0
+    assert config.front_camera.depth is True
+    assert config.front_camera.align_depth_to_color is True
 
 
 def test_config_builds_bridge_args_without_per_run_env_overrides():
@@ -47,3 +49,5 @@ def test_config_builds_collector_args_from_tracked_file():
     assert args[args.index("--state-mode") + 1] == "joint"
     assert args[args.index("--gripper-stroke-scale") + 1] == "200"
     assert args[args.index("--cam1-device") + 1] == "auto"
+    assert "--cam0-depth-enabled" in args
+    assert args[args.index("--cam0-depth-width") + 1] == "640"

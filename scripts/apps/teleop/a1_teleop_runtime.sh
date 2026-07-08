@@ -289,7 +289,7 @@ Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect
   doctor    Static/import checks plus base runtime doctor
   status    Containers and bridge process state
   logs      Runtime and bridge logs
-  cameras   Capture front/wrist snapshots from the tracked teleop config
+  cameras   Capture front/wrist/depth snapshots from the tracked teleop config
 
 Config:
   ${CONFIG_PATH}

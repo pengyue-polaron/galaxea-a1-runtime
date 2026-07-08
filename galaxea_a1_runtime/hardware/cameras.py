@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -17,8 +18,14 @@ except ImportError:
     rs = None
 
 
+@dataclass(frozen=True)
+class RealSenseFrameSet:
+    color_bgr: np.ndarray
+    depth_mm: np.ndarray | None = None
+
+
 class RealSenseColorCamera:
-    """RealSense color stream wrapper with BGR/RGB read helpers."""
+    """RealSense color stream wrapper with optional aligned depth frames."""
 
     def __init__(
         self,
@@ -32,16 +39,30 @@ class RealSenseColorCamera:
         gain: int = 32,
         auto_white_balance: bool = True,
         white_balance: int = 4600,
+        enable_depth: bool = False,
+        depth_width: int | None = None,
+        depth_height: int | None = None,
+        align_depth_to_color: bool = True,
         warmup_frames: int = 30,
     ):
         if rs is None:
             raise RuntimeError("pyrealsense2 is not installed")
+        self._enable_depth = enable_depth
         self.pipeline = rs.pipeline()
         cfg = rs.config()
         if serial:
             cfg.enable_device(serial)
         cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
+        if enable_depth:
+            cfg.enable_stream(
+                rs.stream.depth,
+                depth_width or width,
+                depth_height or height,
+                rs.format.z16,
+                fps,
+            )
         profile = self.pipeline.start(cfg)
+        self._align = rs.align(rs.stream.color) if enable_depth and align_depth_to_color else None
         _configure_realsense_color_sensor(
             profile,
             auto_exposure=auto_exposure,
@@ -53,18 +74,37 @@ class RealSenseColorCamera:
         for _ in range(max(0, warmup_frames)):
             self.pipeline.wait_for_frames()
 
-    def read_bgr(self) -> np.ndarray | None:
+    def read_frameset(self) -> RealSenseFrameSet | None:
         frames = self.pipeline.poll_for_frames()
         if not frames:
             return None
-        frame = frames.get_color_frame()
-        if not frame:
+        if self._align is not None:
+            frames = self._align.process(frames)
+        color_frame = frames.get_color_frame()
+        if not color_frame:
             return None
-        return np.asanyarray(frame.get_data())
+        depth_mm = None
+        if self._enable_depth:
+            depth_frame = frames.get_depth_frame()
+            if not depth_frame:
+                return None
+            depth_mm = np.asanyarray(depth_frame.get_data()).astype(np.uint16, copy=False)
+        return RealSenseFrameSet(
+            color_bgr=np.asanyarray(color_frame.get_data()),
+            depth_mm=depth_mm,
+        )
+
+    def read_bgr(self) -> np.ndarray | None:
+        frameset = self.read_frameset()
+        return None if frameset is None else frameset.color_bgr
 
     def read_rgb(self) -> np.ndarray | None:
         bgr = self.read_bgr()
         return None if bgr is None else cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
+
+    def read_depth_mm(self) -> np.ndarray | None:
+        frameset = self.read_frameset()
+        return None if frameset is None else frameset.depth_mm
 
     def close(self) -> None:
         self.pipeline.stop()
@@ -151,9 +191,9 @@ def _configure_realsense_color_sensor(
     white_balance: int,
 ) -> None:
     sensors = profile.get_device().query_sensors()
-    if len(sensors) < 2:
+    color_sensor = _find_realsense_color_sensor(sensors)
+    if color_sensor is None:
         return
-    color_sensor = sensors[1]
     color_sensor.set_option(rs.option.enable_auto_exposure, 1 if auto_exposure else 0)
     if not auto_exposure:
         color_sensor.set_option(rs.option.exposure, float(exposure))
@@ -162,3 +202,12 @@ def _configure_realsense_color_sensor(
         color_sensor.set_option(rs.option.enable_auto_white_balance, 1 if auto_white_balance else 0)
     if not auto_white_balance and color_sensor.supports(rs.option.white_balance):
         color_sensor.set_option(rs.option.white_balance, float(white_balance))
+
+
+def _find_realsense_color_sensor(sensors: Any) -> Any | None:
+    for sensor in sensors:
+        if sensor.supports(rs.option.enable_auto_white_balance):
+            return sensor
+    if len(sensors) >= 2:
+        return sensors[1]
+    return None

@@ -67,6 +67,10 @@ serial = ""
 width = 640
 height = 480
 fps = 30
+depth = true
+depth_width = 640
+depth_height = 480
+align_depth_to_color = true
 
 [cameras.wrist]
 device = "auto"

@@ -44,7 +44,7 @@ def test_teleop_frame_header_prefixes_state_and_action_columns():
     header = teleop_frame_header(
         state_names=("eef_x", "joint_1"),
         action_names=("joint_1", "gripper"),
-        camera_dirs=("cam0",),
+        camera_dirs=("cam0", "cam0_depth"),
     )
 
     assert header == (
@@ -52,6 +52,7 @@ def test_teleop_frame_header_prefixes_state_and_action_columns():
         "wall_time_ns",
         "ros_stamp_s",
         "cam0_relpath",
+        "cam0_depth_relpath",
         "state.eef_x",
         "state.joint_1",
         "action.joint_1",
@@ -107,3 +108,4 @@ def test_metadata_json_explains_topics_and_control_path():
     assert payload["action_mode"] == "joint_absolute"
     assert payload["action_topics"]["joint_target"] == "/arm_joint_target_position"
     assert payload["control_path"][-1] == "/arm_joint_command_host"
+    assert payload["cameras"][0]["modality"] == "rgb"

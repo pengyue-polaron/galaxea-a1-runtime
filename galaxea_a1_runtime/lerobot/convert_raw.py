@@ -24,7 +24,14 @@ from galaxea_a1_runtime.config import DatasetConfig
 from galaxea_a1_runtime.lerobot.dataset import create_lerobot_dataset
 from galaxea_a1_runtime.schema import ActionMode, CameraSpec, DatasetContract, validate_frame_keys
 
-NON_JOINT_COLS = {"frame_index", "wall_time_ns", "ros_stamp_s", "cam0_relpath", "cam1_relpath"}
+NON_JOINT_COLS = {
+    "frame_index",
+    "wall_time_ns",
+    "ros_stamp_s",
+    "cam0_relpath",
+    "cam1_relpath",
+    "cam0_depth_relpath",
+}
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-?]*[ -/]*[@-~]")
 CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 

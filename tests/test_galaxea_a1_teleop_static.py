@@ -54,3 +54,4 @@ def test_teleop_camera_io_is_shared_and_snapshot_command_exists():
     assert snapshot.is_file()
     assert "camera_snapshot.py" in runtime
     assert "cameras)" in runtime
+    assert "cam0_depth" in snapshot.read_text()

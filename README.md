@@ -120,11 +120,24 @@ hardware adapter supports EEF translation/delta actions by reading
 `/end_effector_pose`, publishing `/a1_ee_target`, and enabling the safe relay.
 Joint-space arm execution is not implemented in the generic adapter.
 
+## Original SDK Coverage
+
+The vendored A1 SDK exposes mobiman tracker demos for EEF targets
+(`/a1_ee_target`), EEF trajectories (`/arm_target_trajectory`), joint targets
+(`/arm_joint_target_position`), gripper topics, FK feedback, and RViz
+visualization. This runtime wraps the EEF and joint target paths through the
+fail-closed relay. It does not currently expose the upstream EEF trajectory
+demo as a first-class `just` command.
+
+There is no standard MoveIt `move_group`/MoveIt config path in this repo. The
+Docker/runtime baseline includes RViz and TRAC-IK/mobiman pieces, not a MoveIt
+planning stack.
+
 ## Teleoperation Collection
 
 `just teleop <experiment>` starts the staged joint teleop runtime,
-records camera frames plus A1 state/action data, and keeps the old episode loop:
-Enter starts recording, Enter saves, `d` discards, and `q` exits.
+records front RGB/depth, wrist RGB, and A1 state/action data, and keeps the old
+episode loop: Enter starts recording, Enter saves, `d` discards, and `q` exits.
 
 Runtime parameters live in [configs/teleop/a1_so100.toml](configs/teleop/a1_so100.toml).
 Edit that tracked file when the SO leader port, cameras, topics, state mode,
@@ -145,11 +158,13 @@ The raw teleop schema records configurable state modes:
 
 Teleop actions are recorded as `joint_absolute` targets from
 `/arm_joint_target_position`. Each saved episode contains `frames.csv`,
-`metadata.json`, `cam0/`, and `cam1/`; the metadata records the state topics,
-action topics, and staged relay control path used for that episode.
+`metadata.json`, `cam0/`, `cam1/`, and `cam0_depth/` when RealSense depth is
+enabled; the metadata records the state topics, action topics, cameras, and
+staged relay control path used for that episode.
 
-`just cameras` captures `cam0_front.jpg`, `cam1_wrist.jpg`, and a
-contact sheet from the same tracked camera config without moving the arm.
+`just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
+`cam0_depth_preview.jpg`, `cam1_wrist.jpg`, and a contact sheet from the same
+tracked camera config without moving the arm.
 
 ## Dependency Baseline
 

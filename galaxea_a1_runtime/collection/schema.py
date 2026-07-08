@@ -34,6 +34,9 @@ class CameraMetadata:
     width: int
     height: int
     source: str | int | None = None
+    modality: str = "rgb"
+    dtype: str = "uint8"
+    encoding: str = "bgr8_jpeg"
 
 
 @dataclass(frozen=True)

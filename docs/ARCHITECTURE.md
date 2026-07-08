@@ -58,7 +58,7 @@ Teleop joint control uses the same relay, but with a joint tracker:
 The LingBot bridge used to be too large because it did four jobs in one file:
 
 - model protocol: LingBot WebSocket and KV-cache updates
-- observation IO: RealSense and wrist cameras
+- observation IO: RealSense color/depth and wrist color cameras
 - policy action transforms: LingBot 8D action cleanup
 - A1 execution: EEF target publishing, relay enable, gripper publish, feedback
 
@@ -70,8 +70,9 @@ The reusable parts now live in package modules:
 - `galaxea_a1_runtime.apps.lingbot.actions`: LingBot-specific 8D action
   sanitation, workspace bounds, orientation behavior, gripper mapping, and
   optional tracker compensation.
-- `galaxea_a1_runtime.hardware.cameras`: shared RealSense/OpenCV color camera
-  wrappers used by teleop collection, camera snapshots, and LingBot.
+- `galaxea_a1_runtime.hardware.cameras`: shared RealSense color/depth and
+  OpenCV color camera wrappers used by teleop collection, camera snapshots, and
+  LingBot.
 
 Future FastWAM/GR00T app scripts should reuse `apps.eef_bridge` and only provide
 their own model IO plus action conversion into the normalized A1 EEF contract.
@@ -82,15 +83,17 @@ Teleop is the built-in demonstration collection mode.
 
 - `scripts/apps/teleop/so100_joint_bridge.py`: reads an SO leader, maps it to
   A1 joint targets, publishes `/arm_joint_target_position`, and arms the relay.
-- `scripts/apps/teleop/teleop_collect.py`: records synchronized front/wrist
-  images, A1 state, and target actions. It does not command the robot. Episode
-  metadata records the state topics, action topics, and staged relay path.
+- `scripts/apps/teleop/teleop_collect.py`: records synchronized front RGB,
+  optional front depth, wrist RGB, A1 state, and target actions. It does not
+  command the robot. Episode metadata records the state topics, action topics,
+  cameras, and staged relay path.
 - `scripts/apps/teleop/camera_snapshot.py`: captures front/wrist snapshots from
   the same tracked config without starting ROS or moving the robot.
 - `scripts/apps/teleop/a1_teleop_runtime.sh`: starts/stops ROS, driver, staged
   joint tracker, relay, bridge, and recorder.
 - `configs/teleop/a1_so100.toml`: tracked runtime contract for leader port,
-  cameras, topics, joint mapping, gripper range, state mode, and FPS.
+  cameras, topics, joint mapping, gripper range, state mode, FPS, and
+  RealSense depth capture.
 
 The episode interaction is:
 
@@ -103,6 +106,23 @@ The default recorded state is joint-space to match the old working collector.
 EEF and combined EEF+joint state are explicit opt-in modes.
 Those options are changed in the tracked config file, not through ad hoc
 per-run collection flags.
+
+## Original SDK Feature Coverage
+
+The vendored Galaxea SDK exposes:
+
+- EEF target tracking with `mobiman eeTrackerdemo.launch` and `/a1_ee_target`.
+- EEF trajectory tracking with `mobiman eeTrajTrackerdemo.launch` and
+  `/arm_target_trajectory`.
+- Joint target tracking with `mobiman jointTrackerdemo.launch` and
+  `/arm_joint_target_position`.
+- RViz visualization, FK `/end_effector_pose`, and gripper command/status
+  topics.
+
+The current runtime wraps the EEF target path and joint target path through the
+staged relay. The EEF trajectory demo and RViz launch remain SDK/debug
+capabilities, but are not first-class daily `just` commands. Standard MoveIt
+`move_group` support is not present in the current repo or Docker baseline.
 
 ## Current Capabilities
 
@@ -118,7 +138,8 @@ per-run collection flags.
 - LingBot app: step-gated inference and publishing, relay guard, EEF state
   conditioning, workspace validation, linear gripper mapping.
 - Dataset: LeRobotDataset v3 contract, writer helpers, passive episode recorder,
-  teleop raw migration, v2.1 migration plan.
+  teleop raw migration, v2.1 migration plan, and raw RealSense depth sidecar
+  capture for teleop episodes.
 
 ## Intentionally Not Done Yet
 

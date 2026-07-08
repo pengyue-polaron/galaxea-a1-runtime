@@ -239,15 +239,19 @@ def record_episode(
     fps: float,
     max_duration_s: float,
     jpeg_quality: int,
+    depth_enabled: bool,
 ) -> tuple[int, EpisodeDecision]:
     (episode_dir / "cam0").mkdir(parents=True)
     (episode_dir / "cam1").mkdir(parents=True)
+    if depth_enabled:
+        (episode_dir / "cam0_depth").mkdir(parents=True)
     state_names = state_names_for_mode(state_mode)
     action_names = JOINT_ACTION_NAMES
+    camera_dirs = ("cam0", "cam1", *(("cam0_depth",) if depth_enabled else ()))
     header = teleop_frame_header(
         state_names=state_names,
         action_names=action_names,
-        camera_dirs=("cam0", "cam1"),
+        camera_dirs=camera_dirs,
     )
 
     frame_index = 0
@@ -267,30 +271,36 @@ def record_episode(
             if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
                 break
 
-            img0 = front.read_bgr()
+            frameset0 = front.read_frameset()
             img1 = wrist.read_bgr()
             state = ros_state.state_values(state_mode)
             action = ros_state.action_values()
-            if img0 is None or img1 is None or state is None or action is None:
+            if frameset0 is None or img1 is None or state is None or action is None:
+                time.sleep(0.005)
+                continue
+            if depth_enabled and frameset0.depth_mm is None:
                 time.sleep(0.005)
                 continue
 
-            filename = f"{frame_index:06d}.jpg"
-            ok0 = cv2.imwrite(str(episode_dir / "cam0" / filename), img0, jpeg_params)
-            ok1 = cv2.imwrite(str(episode_dir / "cam1" / filename), img1, jpeg_params)
+            color_filename = f"{frame_index:06d}.jpg"
+            ok0 = cv2.imwrite(str(episode_dir / "cam0" / color_filename), frameset0.color_bgr, jpeg_params)
+            ok1 = cv2.imwrite(str(episode_dir / "cam1" / color_filename), img1, jpeg_params)
             if not ok0 or not ok1:
-                raise RuntimeError(f"failed to write camera frame {filename}")
-            writer.writerow(
-                [
-                    frame_index,
-                    time.time_ns(),
-                    f"{ros_state.ros_stamp():.9f}",
-                    f"cam0/{filename}",
-                    f"cam1/{filename}",
-                    *state,
-                    *action,
-                ]
-            )
+                raise RuntimeError(f"failed to write camera frame {color_filename}")
+            row: list[Any] = [
+                frame_index,
+                time.time_ns(),
+                f"{ros_state.ros_stamp():.9f}",
+                f"cam0/{color_filename}",
+                f"cam1/{color_filename}",
+            ]
+            if depth_enabled:
+                depth_filename = f"{frame_index:06d}.png"
+                ok_depth = cv2.imwrite(str(episode_dir / "cam0_depth" / depth_filename), frameset0.depth_mm)
+                if not ok_depth:
+                    raise RuntimeError(f"failed to write depth frame {depth_filename}")
+                row.append(f"cam0_depth/{depth_filename}")
+            writer.writerow([*row, *state, *action])
             if frame_index % 30 == 0:
                 handle.flush()
             frame_index += 1
@@ -314,11 +324,32 @@ def write_metadata(
     cam0_serial: str | None,
     cam0_width: int,
     cam0_height: int,
+    cam0_depth_enabled: bool,
+    cam0_depth_width: int,
+    cam0_depth_height: int,
+    cam0_depth_aligned: bool,
     cam1_label: str,
     cam1_width: int,
     cam1_height: int,
     args: argparse.Namespace,
 ) -> None:
+    cameras = [
+        CameraMetadata("front", "cam0", cam0_width, cam0_height, cam0_serial),
+        CameraMetadata("wrist", "cam1", cam1_width, cam1_height, cam1_label),
+    ]
+    if cam0_depth_enabled:
+        cameras.append(
+            CameraMetadata(
+                "front_depth",
+                "cam0_depth",
+                cam0_depth_width,
+                cam0_depth_height,
+                cam0_serial,
+                modality="depth",
+                dtype="uint16",
+                encoding="z16_mm_aligned_to_color" if cam0_depth_aligned else "z16_mm",
+            )
+        )
     metadata = TeleopRawEpisodeMetadata(
         schema_version=TELEOP_RAW_SCHEMA_VERSION,
         collection_mode="teleop",
@@ -347,10 +378,7 @@ def write_metadata(
             "safe_arm_command_relay_v2.py",
             args.host_command_topic,
         ),
-        cameras=(
-            CameraMetadata("front", "cam0", cam0_width, cam0_height, cam0_serial),
-            CameraMetadata("wrist", "cam1", cam1_width, cam1_height, cam1_label),
-        ),
+        cameras=tuple(cameras),
     )
     (episode_dir / "metadata.json").write_text(json.dumps(metadata_to_json_dict(metadata), indent=2))
 
@@ -377,6 +405,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam0-width", type=int, default=640)
     parser.add_argument("--cam0-height", type=int, default=480)
     parser.add_argument("--cam0-fps", type=int, default=30)
+    parser.add_argument("--cam0-depth-enabled", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--cam0-depth-width", type=int, default=640)
+    parser.add_argument("--cam0-depth-height", type=int, default=480)
+    parser.add_argument("--cam0-align-depth-to-color", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--cam1-device", "--cam1-index", dest="cam1_device", default="auto")
     parser.add_argument("--cam1-width", type=int, default=640)
     parser.add_argument("--cam1-height", type=int, default=480)
@@ -388,6 +420,8 @@ def main() -> int:
     args = parse_args()
     if args.fps <= 0:
         raise ValueError("--fps must be positive")
+    if args.cam0_depth_enabled and (args.cam0_depth_width <= 0 or args.cam0_depth_height <= 0):
+        raise ValueError("--cam0-depth-width and --cam0-depth-height must be positive when depth is enabled")
     state_mode = StateMode(args.state_mode)
     experiment_dir = args.data_root.expanduser().resolve() / args.experiment
     task = load_or_prompt_task(experiment_dir, args.task)
@@ -408,6 +442,10 @@ def main() -> int:
             args.cam0_width,
             args.cam0_height,
             args.cam0_fps,
+            enable_depth=args.cam0_depth_enabled,
+            depth_width=args.cam0_depth_width,
+            depth_height=args.cam0_depth_height,
+            align_depth_to_color=args.cam0_align_depth_to_color,
             warmup_frames=20,
         )
         wrist = OpenCVColorCamera(
@@ -417,7 +455,8 @@ def main() -> int:
             args.cam1_fps,
             warmup_frames=10,
         )
-        print(f"ok (wrist={wrist.label})")
+        depth_label = "on" if args.cam0_depth_enabled else "off"
+        print(f"ok (wrist={wrist.label}, realsense_depth={depth_label})")
 
         print(f"\n  experiment  : {args.experiment}")
         print(f"  task        : {task}")
@@ -444,6 +483,7 @@ def main() -> int:
                 fps=args.fps,
                 max_duration_s=args.max_duration_s,
                 jpeg_quality=args.jpeg_quality,
+                depth_enabled=args.cam0_depth_enabled,
             )
 
             if decision != EpisodeDecision.SAVE or frame_count == 0:
@@ -465,6 +505,10 @@ def main() -> int:
                 cam0_serial=args.cam0_serial,
                 cam0_width=args.cam0_width,
                 cam0_height=args.cam0_height,
+                cam0_depth_enabled=args.cam0_depth_enabled,
+                cam0_depth_width=args.cam0_width if args.cam0_align_depth_to_color else args.cam0_depth_width,
+                cam0_depth_height=args.cam0_height if args.cam0_align_depth_to_color else args.cam0_depth_height,
+                cam0_depth_aligned=args.cam0_align_depth_to_color,
                 cam1_label=wrist.label,
                 cam1_width=args.cam1_width,
                 cam1_height=args.cam1_height,

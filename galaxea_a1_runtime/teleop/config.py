@@ -81,6 +81,10 @@ class TeleopCameraConfig:
     fps: int
     serial: str = ""
     device: str = ""
+    depth: bool = False
+    depth_width: int = 0
+    depth_height: int = 0
+    align_depth_to_color: bool = True
 
 
 @dataclass(frozen=True)
@@ -129,6 +133,13 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         upper_limits=_float_tuple(bridge, "upper_limits", dof),
     )
     mapping.validate(dof)
+
+    front_width = int(front.get("width", 640))
+    front_height = int(front.get("height", 480))
+    front_depth_width = int(front.get("depth_width", front_width))
+    front_depth_height = int(front.get("depth_height", front_height))
+    wrist_width = int(wrist.get("width", 640))
+    wrist_height = int(wrist.get("height", 480))
 
     config = TeleopConfig(
         path=path,
@@ -180,14 +191,18 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         ),
         front_camera=TeleopCameraConfig(
             serial=str(front.get("serial", "")),
-            width=int(front.get("width", 640)),
-            height=int(front.get("height", 480)),
+            width=front_width,
+            height=front_height,
             fps=int(front.get("fps", 30)),
+            depth=bool(front.get("depth", False)),
+            depth_width=front_depth_width,
+            depth_height=front_depth_height,
+            align_depth_to_color=bool(front.get("align_depth_to_color", True)),
         ),
         wrist_camera=TeleopCameraConfig(
             device=_string(wrist, "device"),
-            width=int(wrist.get("width", 640)),
-            height=int(wrist.get("height", 480)),
+            width=wrist_width,
+            height=wrist_height,
             fps=int(wrist.get("fps", 30)),
         ),
     )
@@ -205,6 +220,8 @@ def validate_teleop_config(config: TeleopConfig) -> None:
     for label, camera in (("front", config.front_camera), ("wrist", config.wrist_camera)):
         if camera.width <= 0 or camera.height <= 0 or camera.fps <= 0:
             raise ValueError(f"cameras.{label} width/height/fps must be positive")
+        if camera.depth and (camera.depth_width <= 0 or camera.depth_height <= 0):
+            raise ValueError(f"cameras.{label} depth_width/depth_height must be positive")
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
@@ -303,6 +320,12 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         str(config.front_camera.height),
         "--cam0-fps",
         str(config.front_camera.fps),
+        _bool_flag("cam0-depth-enabled", config.front_camera.depth),
+        "--cam0-depth-width",
+        str(config.front_camera.depth_width or config.front_camera.width),
+        "--cam0-depth-height",
+        str(config.front_camera.depth_height or config.front_camera.height),
+        _bool_flag("cam0-align-depth-to-color", config.front_camera.align_depth_to_color),
         "--cam1-device",
         config.wrist_camera.device,
         "--cam1-width",

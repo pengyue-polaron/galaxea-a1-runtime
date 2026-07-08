@@ -68,8 +68,9 @@ arm is disconnected.
   ```
 
 - Do not change teleop behavior with ad hoc per-run collector flags. If camera
-  devices, leader port, state mode, FPS, gripper stroke range, topics, joint
-  mapping, or joint limits change, edit and commit the TOML config instead.
+  devices, RealSense depth capture, leader port, state mode, FPS, gripper
+  stroke range, topics, joint mapping, or joint limits change, edit and commit
+  the TOML config instead.
 - For an alternate tracked hardware setup, add another TOML file under
   `configs/teleop/` and run it explicitly:
 
@@ -127,6 +128,10 @@ arm is disconnected.
   `/arm_joint_command_host`, but it may also try to start GUI/RViz pieces. For
   headless debugging, prefer the direct remap above unless the user explicitly
   wants the full official launch.
+- The vendored SDK also has `eeTrajTrackerdemo.launch` for
+  `/arm_target_trajectory` and `jointTrackerdemo.launch` for
+  `/arm_joint_target_position`. This repo does not currently provide a standard
+  MoveIt `move_group` path.
 
 ## Hardware Safety
 
@@ -214,7 +219,8 @@ tmux attach -t lingbot-a1
 
 Teleop hardware/data semantics are configured in
 `configs/teleop/a1_so100.toml`. Edit and commit that file when camera devices,
-leader port, state mode, FPS, gripper stroke range, or joint mapping changes.
+RealSense depth capture, leader port, state mode, FPS, gripper stroke range, or
+joint mapping changes.
 
 Useful direct-debug checks inside the ROS/Docker environment:
 
@@ -254,7 +260,8 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   is needed, make it explicit in a tracked config or named safety module.
 - Normal data collection should write enough metadata to reproduce the run:
   config path, state/action topics, control path, state/action names, FPS, and
-  camera settings.
+  camera settings. Teleop RealSense depth is recorded as a raw 16-bit PNG
+  sidecar (`cam0_depth/`) when enabled.
 - `third_party/lerobot` is vendored for the LeRobot v0.6 runtime baseline. Do
   not patch it for A1-specific app behavior; put A1 integration code under
   `galaxea_a1_runtime/` or `scripts/apps/`.
