@@ -43,11 +43,12 @@ class SOLeader(Teleoperator):
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
-                "shoulder_pan": Motor(1, "sts3215", norm_mode_body),
-                "shoulder_lift": Motor(2, "sts3215", norm_mode_body),
-                "elbow_flex": Motor(3, "sts3215", norm_mode_body),
-                "wrist_flex": Motor(4, "sts3215", norm_mode_body),
-                "wrist_roll": Motor(5, "sts3215", norm_mode_body),
+                "joint0": Motor(0, "sts3215", norm_mode_body),
+                "joint1": Motor(1, "sts3215", norm_mode_body),
+                "joint2": Motor(2, "sts3215", norm_mode_body),
+                "joint3": Motor(3, "sts3215", norm_mode_body),
+                "joint4": Motor(4, "sts3215", norm_mode_body),
+                "joint5": Motor(5, "sts3215", norm_mode_body),
                 "gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100),
             },
             calibration=self.calibration,
@@ -100,15 +101,26 @@ class SOLeader(Teleoperator):
         input(f"Move {self} to the middle of its range of motion and press ENTER....")
         homing_offsets = self.bus.set_half_turn_homings()
 
-        full_turn_motor = "wrist_roll"
-        unknown_range_motors = [motor for motor in self.bus.motors if motor != full_turn_motor]
-        print(
-            f"Move all joints except '{full_turn_motor}' sequentially through their "
-            "entire ranges of motion.\nRecording positions. Press ENTER to stop..."
-        )
+        # Some official SO builds expose a full-turn wrist_roll motor. The A1
+        # teleop leader uses generic joint0..joint5 names, so do not assume that
+        # special motor exists.
+        full_turn_motors = [motor for motor in ("wrist_roll",) if motor in self.bus.motors]
+        unknown_range_motors = [motor for motor in self.bus.motors if motor not in full_turn_motors]
+        if full_turn_motors:
+            skipped = ", ".join(f"'{motor}'" for motor in full_turn_motors)
+            print(
+                f"Move all joints except {skipped} sequentially through their "
+                "entire ranges of motion.\nRecording positions. Press ENTER to stop..."
+            )
+        else:
+            print(
+                "Move all joints sequentially through their entire ranges of motion.\n"
+                "Recording positions. Press ENTER to stop..."
+            )
         range_mins, range_maxes = self.bus.record_ranges_of_motion(unknown_range_motors)
-        range_mins[full_turn_motor] = 0
-        range_maxes[full_turn_motor] = 4095
+        for motor in full_turn_motors:
+            range_mins[motor] = 0
+            range_maxes[motor] = 4095
 
         self.calibration = {}
         for motor, m in self.bus.motors.items():

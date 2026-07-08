@@ -14,8 +14,18 @@ def test_default_teleop_config_locks_old_working_behavior():
     assert config.leader.port == "/dev/ttyACM0"
     assert config.leader.id == "my_leader"
     assert config.collection.state_mode == StateMode.JOINT
+    assert config.bridge.dof == 6
+    assert config.bridge.target_joint_names == (
+        "arm_joint1",
+        "arm_joint2",
+        "arm_joint3",
+        "arm_joint4",
+        "arm_joint5",
+        "arm_joint6",
+    )
     assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
+    assert config.gripper.source_key == "gripper.pos"
     assert config.gripper.max_stroke_mm == 200.0
 
 

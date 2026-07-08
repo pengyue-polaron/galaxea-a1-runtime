@@ -30,3 +30,14 @@ def test_teleop_bridge_accepts_old_gripper_topic_flag():
 
     assert '"--gripper-position-topic"' in bridge
     assert '"--gripper-max-stroke-mm", type=float, default=200.0' in bridge
+
+
+def test_vendored_lerobot_so_leader_keeps_a1_custom_six_axis_shape():
+    leader = (
+        REPO / "third_party/lerobot/src/lerobot/teleoperators/so_leader/so_leader.py"
+    ).read_text()
+
+    for index in range(6):
+        assert f'"joint{index}": Motor({index}, "sts3215", norm_mode_body)' in leader
+    assert '"gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100)' in leader
+    assert '"shoulder_pan": Motor(' not in leader

@@ -24,7 +24,14 @@ def test_detect_leader_joint_keys_supports_legacy_names():
         "gripper.pos": 0.0,
     }
 
-    assert detect_leader_joint_keys(action, 6)[0] == "shoulder_pan.pos"
+    assert detect_leader_joint_keys(action, 6) == (
+        "shoulder_pan.pos",
+        "shoulder_lift.pos",
+        "elbow_flex.pos",
+        "wrist_flex.pos",
+        "wrist_roll.pos",
+        "gripper.pos",
+    )
 
 
 def test_relative_mapping_starts_at_current_a1_pose_and_applies_signs():

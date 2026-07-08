@@ -80,6 +80,10 @@ arm is disconnected.
 
 - The old working teleop behavior is the compatibility baseline:
   - SO leader port `/dev/ttyACM0`, id `my_leader`.
+  - Vendored LeRobot `SOLeader` is intentionally shaped as six arm axes
+    `joint0..joint5` plus an independent `gripper`; do not replace it with the
+    upstream five-axis `shoulder_*`/`wrist_*` naming unless the hardware is
+    deliberately changed.
   - Relative leader-to-A1 joint mapping from startup pose.
   - Sign mapping `[-1, 1, 1, -1, 1, -1]`.
   - Default collected state mode `joint`.

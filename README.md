@@ -132,6 +132,11 @@ Edit that tracked file when the SO leader port, cameras, topics, state mode,
 FPS, joint mapping, or gripper stroke range changes. The normal collection
 entrypoint does not take per-run collector flags.
 
+The vendored LeRobot `SOLeader` is patched for the A1 setup: leader actions use
+six arm axes `joint0.pos..joint5.pos` plus an independent `gripper.pos`. The
+bridge also recognizes the older upstream SO names, but `joint0..joint5` is the
+intended hardware contract for this repo.
+
 The raw teleop schema records configurable state modes:
 
 - `eef`: EEF pose plus gripper
