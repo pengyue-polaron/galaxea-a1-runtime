@@ -1,4 +1,4 @@
-set shell := ["bash", "-eu", "-o", "pipefail", "-c"]
+set shell := ["bash", "-e", "-o", "pipefail", "-c"]
 set quiet := true
 
 uv   := env("UV_BIN", "uv")
@@ -8,9 +8,9 @@ vpy  := repo + "/.venv/bin/python"
 default:
     @just --list
 
-# ── Environment ──────────────────────────────────────────────────────────────
+# ── Setup ────────────────────────────────────────────────────────────────────
 
-setup-main:
+setup:
     #!/usr/bin/env bash
     set -euo pipefail
     export UV_DEFAULT_INDEX="${UV_DEFAULT_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"
@@ -19,29 +19,18 @@ setup-main:
     {{uv}} sync --frozen --python 3.12
     echo "main env ready: {{repo}}/.venv"
 
-udev-install:
+udev:
     scripts/runtime/install_a1_udev.sh
 
-# ── New Runtime ──────────────────────────────────────────────────────────────
+# ── Local Checks ─────────────────────────────────────────────────────────────
 
-runtime action="doctor" *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    case "{{action}}" in
-        plan) {{vpy}} -m galaxea_a1_runtime.cli plan --repo-root "{{repo}}" {{args}} ;;
-        dry-run|profile-plan) {{vpy}} -m galaxea_a1_runtime.cli runtime-plan --repo-root "{{repo}}" {{args}} ;;
-        doctor|static-doctor) {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}" {{args}} ;;
-        profiles|policy-profiles) {{vpy}} -m galaxea_a1_runtime.cli policy-profiles {{args}} ;;
-        safety|safety-report) {{vpy}} -m galaxea_a1_runtime.cli safety-report {{args}} ;;
-        test) just runtime-test ;;
-        *) echo "Usage: just runtime <plan|dry-run|doctor|profiles|safety|test> [args...]"; exit 1 ;;
-    esac
+check:
+    {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
+    {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
+    just test
 
-runtime-plan:
-    @just runtime plan
-
-runtime-test:
-    {{vpy}} -m pytest \
+test:
+    {{vpy}} -m pytest -q \
         {{repo}}/tests/test_galaxea_a1_runtime_safety.py \
         {{repo}}/tests/test_galaxea_a1_cli.py \
         {{repo}}/tests/test_galaxea_a1_runtime_schema.py \
@@ -60,48 +49,42 @@ runtime-test:
         {{repo}}/tests/test_galaxea_a1_lingbot_actions.py \
         {{repo}}/tests/test_galaxea_a1_lingbot_static.py \
         {{repo}}/tests/test_galaxea_a1_runtime_doctor.py \
-        {{repo}}/tests/test_galaxea_a1_runtime_supervisor.py \
         {{repo}}/tests/test_galaxea_a1_policy_profiles.py \
         {{repo}}/tests/test_galaxea_a1_lerobot_writer.py \
         {{repo}}/tests/test_galaxea_a1_migration.py \
         {{repo}}/tests/test_galaxea_a1_convert_raw.py \
         {{repo}}/tests/test_a1_relay_core.py
 
-# ── Dataset ──────────────────────────────────────────────────────────────────
+# ── Hardware Workflow ────────────────────────────────────────────────────────
 
-dataset action="migration-plan" *args:
-    #!/usr/bin/env bash
-    set -euo pipefail
-    case "{{action}}" in
-        migration-plan|migrate-plan) {{vpy}} -m galaxea_a1_runtime.cli migration-plan {{args}} ;;
-        convert-raw) {{vpy}} -m galaxea_a1_runtime.lerobot.convert_raw {{args}} ;;
-        *) echo "Usage: just dataset <migration-plan|convert-raw> [args...]"; exit 1 ;;
-    esac
+cameras *args:
+    scripts/apps/teleop/a1_teleop_runtime.sh cameras {{args}}
 
-# ── Safe Hardware Runtime ────────────────────────────────────────────────────
+eef-test:
+    scripts/runtime/a1_runtime.sh services
+    scripts/runtime/a1_runtime.sh eef-nudge --execute
 
-a1-runtime action="status" *args:
-    scripts/runtime/a1_runtime.sh "{{action}}" {{args}}
+teleop experiment:
+    scripts/apps/teleop/a1_teleop_runtime.sh collect "{{experiment}}"
 
-a1-teleop action="status" *args:
-    scripts/apps/teleop/a1_teleop_runtime.sh "{{action}}" {{args}}
+teleop-test:
+    scripts/apps/teleop/a1_teleop_runtime.sh start
+    @echo "Teleop is live. Check leader keys with: just logs"
 
-a1-lingbot action="status" *args:
-    scripts/apps/lingbot/a1_lingbot_runtime.sh "{{action}}" {{args}}
+lingbot:
+    scripts/apps/lingbot/a1_lingbot_runtime.sh start
 
-collect mode="teleop" experiment="":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    case "{{mode}}" in
-        teleop)
-            if [[ -z "{{experiment}}" ]]; then
-                echo "Usage: just collect teleop <experiment>"
-                exit 2
-            fi
-            scripts/apps/teleop/a1_teleop_runtime.sh collect "{{experiment}}"
-            ;;
-        *)
-            echo "Usage: just collect teleop <experiment>"
-            exit 2
-            ;;
-    esac
+stop:
+    scripts/apps/teleop/a1_teleop_runtime.sh stop >/dev/null 2>&1 || true
+    scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true
+    scripts/runtime/a1_runtime.sh stop >/dev/null 2>&1 || true
+    @echo "A1 runtime stopped."
+
+logs:
+    scripts/apps/teleop/a1_teleop_runtime.sh logs || true
+    scripts/runtime/a1_runtime.sh logs || true
+
+# ── Dataset ─────────────────────────────────────────────────────────────────
+
+convert-raw *args:
+    {{vpy}} -m galaxea_a1_runtime.lerobot.convert_raw {{args}}

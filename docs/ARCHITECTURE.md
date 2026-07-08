@@ -106,11 +106,13 @@ per-run collection flags.
 
 ## Current Capabilities
 
-- Static checks: `just runtime doctor`, `just runtime safety`, `just runtime test`.
-- Safe hardware runtime: `just a1-runtime services|doctor|status|logs|stop`.
-- Manual EEF acceptance: `just a1-runtime eef-nudge --execute`.
-- Teleop collection: `just collect teleop <experiment>`.
-- Teleop camera check: `just a1-teleop cameras`.
+- Static checks: `just check`, or `just test` for tests only.
+- Camera check: `just cameras`.
+- Manual EEF acceptance: `just eef-test`.
+- Teleop collection: `just teleop <experiment>`.
+- Manual teleop acceptance: `just teleop-test`, `just logs`, `just stop`.
+- LingBot app: `just lingbot`, then `tmux attach -t lingbot-a1`.
+- Dataset conversion: `just convert-raw ...`.
 - Generic LeRobot robot adapter: safe EEF translation/delta actions through
   `/a1_ee_target`; rejects `joint_absolute`.
 - LingBot app: step-gated inference and publishing, relay guard, EEF state

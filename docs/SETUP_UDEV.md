@@ -75,7 +75,8 @@ Expected:
 Use the stable `/dev/a1` alias:
 
 ```bash
-just a1-runtime services
+just eef-test
 ```
 
-The alias is stable across reboot/replug — no matter which `ttyACM*` number the kernel assigns, `/dev/a1` always points to the arm controller.
+The alias is stable across reboot/replug — no matter which `ttyACM*` number the
+kernel assigns, `/dev/a1` always points to the arm controller.

@@ -40,8 +40,8 @@ host commands directly:
   error bits still fault.
 - Teleop starts from the current A1 joint pose and maps relative SO leader
   motion onto A1 joint targets before arming the relay.
-- Teleop target joint limits are explicit bridge arguments and are disclosed by
-  `just runtime safety`.
+- Teleop target joint limits are explicit bridge arguments and are checked by
+  `just check`.
 
 ## Action Behavior
 
@@ -62,7 +62,7 @@ host commands directly:
 Direct debug is explicit and isolated. Stop safe runtime first:
 
 ```bash
-just a1-runtime stop
+just stop
 ```
 
 Then use only documented direct-debug commands. Do not leave safe and direct
@@ -73,6 +73,6 @@ trackers running at the same time.
 Print current safety settings without touching hardware:
 
 ```bash
-just runtime safety
-just runtime safety --json
+python -m galaxea_a1_runtime.cli safety-report
+python -m galaxea_a1_runtime.cli safety-report --json
 ```

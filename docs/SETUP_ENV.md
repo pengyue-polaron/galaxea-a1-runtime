@@ -6,7 +6,7 @@ The refactored Galaxea A1 Runtime uses one Python 3.12 environment managed by
 ## Main Environment
 
 ```bash
-just setup-main
+just setup
 ```
 
 This installs the locked project environment from `pyproject.toml` and
@@ -15,8 +15,7 @@ This installs the locked project environment from `pyproject.toml` and
 Check it with:
 
 ```bash
-just runtime doctor
-just runtime test
+just check
 ```
 
 ## Dependency Baseline
@@ -34,23 +33,18 @@ from the main runtime.
 Install udev rules:
 
 ```bash
-just udev-install
+just udev
 ```
 
 Static runtime checks:
 
 ```bash
-just runtime doctor
+just check
 ```
 
-Safe hardware runtime checks:
+Camera and EEF hardware acceptance after power-on:
 
 ```bash
-just a1-runtime doctor
-```
-
-Only use execution checks after the arm is powered and placed safely:
-
-```bash
-just a1-runtime doctor --require-execution
+just cameras
+just eef-test
 ```

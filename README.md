@@ -41,49 +41,50 @@ Teleop collection uses the same relay with staged jointTracker output:
 
 ## Current Main Commands
 
-Static, hardware-free commands:
+Daily local checks, no hardware motion:
 
 ```bash
-just runtime plan
-just runtime doctor
-just runtime dry-run --profile static
-just runtime dry-run --profile safe
-just runtime profiles
-just runtime safety
-just runtime test
+just check
 ```
 
-Dataset migration planning:
+Camera check, no arm motion:
 
 ```bash
-just dataset migration-plan --kind lerobot-v2.1 --repo-id galaxea/a1_task
-just dataset convert-raw --dry-run \
+just cameras
+```
+
+EEF hardware acceptance:
+
+```bash
+just eef-test
+```
+
+SO leader teleop:
+
+```bash
+just teleop-test        # manual leader-to-A1 check
+just teleop pick_cube   # record episodes
+just stop
+```
+
+LingBot:
+
+```bash
+just lingbot
+tmux attach -t lingbot-a1
+just stop
+```
+
+Dataset conversion:
+
+```bash
+just convert-raw --dry-run \
   --source-root data/raw/a1_task \
   --target-root data/processed/a1_task \
   --repo-id galaxea/a1_task
 ```
 
-Safe hardware runtime:
-
-```bash
-just a1-runtime doctor
-just a1-runtime services
-just a1-runtime eef-nudge --execute
-just a1-runtime status
-just a1-runtime stop
-```
-
-Teleoperation collection:
-
-```bash
-just a1-teleop doctor
-just a1-teleop cameras
-just collect teleop pick_cube
-just a1-teleop stop
-```
-
-Use `--require-execution` only after the arm is powered on and positioned
-safely.
+Use motion commands only after the arm is powered on and positioned safely.
 
 ## New Package Layout
 
@@ -103,10 +104,6 @@ galaxea_a1_runtime/
 
 ## Policy Targets
 
-```bash
-just runtime profiles
-```
-
 Profiles currently cover:
 
 - LingBot-VA: `policy.type=lingbot_va`
@@ -125,7 +122,7 @@ Joint-space arm execution is not implemented in the generic adapter.
 
 ## Teleoperation Collection
 
-`just collect teleop <experiment>` starts the staged joint teleop runtime,
+`just teleop <experiment>` starts the staged joint teleop runtime,
 records camera frames plus A1 state/action data, and keeps the old episode loop:
 Enter starts recording, Enter saves, `d` discards, and `q` exits.
 
@@ -151,7 +148,7 @@ Teleop actions are recorded as `joint_absolute` targets from
 `metadata.json`, `cam0/`, and `cam1/`; the metadata records the state topics,
 action topics, and staged relay control path used for that episode.
 
-`just a1-teleop cameras` captures `cam0_front.jpg`, `cam1_wrist.jpg`, and a
+`just cameras` captures `cam0_front.jpg`, `cam1_wrist.jpg`, and a
 contact sheet from the same tracked camera config without moving the arm.
 
 ## Dependency Baseline
@@ -175,5 +172,5 @@ same commit.
 
 ## Legacy Systems
 
-The previous ZMQ/OpenPI/LeRobot v2.1 mainline stack has been removed. Old data
-migration remains one-way under `just dataset ...`.
+The previous ZMQ/OpenPI/LeRobot v2.1 mainline stack has been removed. Raw
+episode conversion remains one-way under `just convert-raw ...`.

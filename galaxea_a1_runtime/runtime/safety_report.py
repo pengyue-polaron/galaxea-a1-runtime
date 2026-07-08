@@ -113,7 +113,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="teleop_staged_joint_path",
             path="/arm_joint_target_position -> jointTracker -> relay",
-            default="enabled for just collect teleop",
+            default="enabled for just teleop <experiment>",
             behavior=(
                 "The SO leader bridge publishes joint targets to the joint tracker; "
                 "the tracker output is staged and forwarded by the same relay."

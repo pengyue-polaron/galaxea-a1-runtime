@@ -58,7 +58,7 @@ arm is disconnected.
 - The normal teleop collection entrypoint is:
 
   ```bash
-  just collect teleop <experiment>
+  just teleop <experiment>
   ```
 
 - Teleop hardware and data semantics are controlled by the tracked config file:
@@ -67,15 +67,14 @@ arm is disconnected.
   configs/teleop/a1_so100.toml
   ```
 
-- Do not change teleop behavior with ad hoc per-run collector flags from
-  `just collect teleop`. If camera devices, leader port, state mode, FPS,
-  gripper stroke range, topics, joint mapping, or joint limits change, edit and
-  commit the TOML config instead.
+- Do not change teleop behavior with ad hoc per-run collector flags. If camera
+  devices, leader port, state mode, FPS, gripper stroke range, topics, joint
+  mapping, or joint limits change, edit and commit the TOML config instead.
 - For an alternate tracked hardware setup, add another TOML file under
   `configs/teleop/` and run it explicitly:
 
   ```bash
-  A1_TELEOP_CONFIG=configs/teleop/my_setup.toml just collect teleop pick_cube
+  A1_TELEOP_CONFIG=configs/teleop/my_setup.toml just teleop pick_cube
   ```
 
 - The old working teleop behavior is the compatibility baseline:
@@ -109,7 +108,7 @@ arm is disconnected.
 - Before starting the direct path, stop the safe runtime:
 
   ```bash
-  just a1-runtime stop
+  just stop
   ```
 
 - In this repo, the most reliable direct debug launch is the isolated tracker
@@ -134,8 +133,7 @@ arm is disconnected.
 - When the arm is powered off, do only static checks or non-execution doctors.
   Use `--require-execution` only after the user confirms the arm is powered on
   and positioned safely.
-- If startup fails midway, stop the runtime with `just a1-runtime stop` before
-  retrying.
+- If startup fails midway, stop the runtime with `just stop` before retrying.
 - If switching between safe runtime and direct debug mode, stop the previous
   containers first. Do not leave two trackers or drivers fighting over the same
   topics/serial device.
@@ -204,19 +202,13 @@ arm is disconnected.
 ## Common Commands
 
 ```bash
-just a1-runtime doctor
-just a1-runtime services
-just a1-runtime eef-nudge --execute
-just a1-runtime status
-just a1-runtime stop
-
-just a1-teleop doctor
-just a1-teleop cameras
-just collect teleop pick_cube
-just a1-teleop stop
-
-just a1-lingbot doctor
-just a1-lingbot start
+just check
+just cameras
+just eef-test
+just teleop-test
+just teleop pick_cube
+just lingbot
+just stop
 tmux attach -t lingbot-a1
 ```
 
