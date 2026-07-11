@@ -57,6 +57,9 @@ test:
 
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
+hardware *args:
+    {{vpy}} {{repo}}/scripts/runtime/a1_hardware_check.py {{args}}
+
 cameras *args:
     scripts/apps/teleop/a1_teleop_runtime.sh cameras {{args}}
 
@@ -71,8 +74,8 @@ teleop-test:
     scripts/apps/teleop/a1_teleop_runtime.sh start
     @echo "Teleop is live. Check leader keys with: just logs"
 
-home:
-    scripts/apps/teleop/a1_teleop_runtime.sh home
+reset:
+    scripts/apps/teleop/a1_teleop_runtime.sh reset
 
 lingbot:
     scripts/apps/lingbot/a1_lingbot_runtime.sh start

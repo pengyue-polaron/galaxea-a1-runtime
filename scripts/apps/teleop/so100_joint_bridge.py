@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import signal
 import sys
 import threading
 import time
@@ -150,6 +151,13 @@ def main() -> int:
     mapping.validate(dof)
 
     rospy.init_node("a1_so100_joint_bridge", anonymous=False, disable_signals=True)
+    stop_requested = threading.Event()
+
+    def request_stop(_signum: int, _frame: Any) -> None:
+        stop_requested.set()
+
+    signal.signal(signal.SIGINT, request_stop)
+    signal.signal(signal.SIGTERM, request_stop)
     a1_state = A1JointStateCache(target_names)
     relay = RelayMonitor(args.max_relay_status_age)
     staged = StagedCommandMonitor()
@@ -208,8 +216,10 @@ def main() -> int:
 
         last_loop_log = time.monotonic()
         loop_count = 0
-        while not rospy.is_shutdown():
+        while not rospy.is_shutdown() and not stop_requested.is_set():
             if not relay.is_active():
+                if stop_requested.is_set():
+                    break
                 motion_enable_pub.publish(Bool(data=False))
                 raise RuntimeError(
                     "A1 relay is not confirmed ACTIVE; stopping teleop. "
@@ -235,6 +245,7 @@ def main() -> int:
             rate.sleep()
     finally:
         motion_enable_pub.publish(Bool(data=False))
+        time.sleep(0.1)
         leader.disconnect()
         log("[teleop bridge] stopped; relay disabled")
     return 0

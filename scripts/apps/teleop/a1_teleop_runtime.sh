@@ -4,11 +4,11 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
 CONFIG_PATH="${ROOT}/configs/teleop/a1_so100.toml"
-HOME_CONFIG_PATH="${ROOT}/configs/poses/a1_initial.toml"
+RESET_CONFIG_PATH="${ROOT}/configs/poses/a1_initial.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
-    echo "Usage: $0 --config <path> <start|services|bridge|collect|stop|doctor|status|logs>" >&2
+    echo "Usage: $0 --config <path> <start|services|bridge|collect|reset|stop|doctor|status|logs>" >&2
     exit 2
   fi
   CONFIG_PATH="$2"
@@ -36,6 +36,22 @@ BRIDGE_PID_FILE="${RUN_DIR}/bridge.pid"
 
 ros_prefix='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash"'
 
+if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
+  COLOR_CYAN=$'\033[1;36m'
+  COLOR_GREEN=$'\033[1;32m'
+  COLOR_RED=$'\033[1;31m'
+  COLOR_RESET=$'\033[0m'
+else
+  COLOR_CYAN=""
+  COLOR_GREEN=""
+  COLOR_RED=""
+  COLOR_RESET=""
+fi
+
+step() { echo "${COLOR_CYAN}$*${COLOR_RESET}"; }
+success() { echo "${COLOR_GREEN}$*${COLOR_RESET}"; }
+failure() { echo "${COLOR_RED}$*${COLOR_RESET}" >&2; }
+
 container_run() {
   local name="$1"
   shift
@@ -49,17 +65,39 @@ container_run() {
     -v /dev:/dev:rw \
     -e A1_SDK_ROOT=/workspace/third_party/A1_SDK \
     "${IMAGE}" \
-    bash -lc "$*"
+    bash -lc "$*" \
+    >/dev/null
+}
+
+bridge_group_has_live_process() {
+  local pgid="$1"
+  ps -eo pgid=,stat=,comm=,args= | awk -v pgid="${pgid}" '
+    $1 == pgid && $2 !~ /^Z/ && $3 ~ /^python/ && \
+      $0 ~ /python[^ ]*[[:space:]]+[^ ]*so100_joint_bridge\.py([[:space:]]|$)/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  '
 }
 
 stop_bridge() {
   if [[ -f "${BRIDGE_PID_FILE}" ]]; then
     local pid
     pid="$(cat "${BRIDGE_PID_FILE}")"
-    if kill -0 "-${pid}" >/dev/null 2>&1; then
-      kill "-${pid}" >/dev/null 2>&1 || true
-    else
-      kill "${pid}" >/dev/null 2>&1 || true
+    if [[ ! "${pid}" =~ ^[1-9][0-9]*$ ]]; then
+      echo "[FAIL] Invalid teleop bridge pid file: ${BRIDGE_PID_FILE}" >&2
+      return 1
+    fi
+    if ! bridge_group_has_live_process "${pid}"; then
+      rm -f "${BRIDGE_PID_FILE}"
+      return 0
+    fi
+    kill -- "-${pid}" >/dev/null 2>&1 || true
+    local deadline=$((SECONDS + 5))
+    while bridge_group_has_live_process "${pid}" && (( SECONDS < deadline )); do
+      sleep 0.1
+    done
+    if bridge_group_has_live_process "${pid}"; then
+      echo "[FAIL] Teleop bridge process group ${pid} did not stop within 5 seconds." >&2
+      return 1
     fi
     rm -f "${BRIDGE_PID_FILE}"
   fi
@@ -119,14 +157,14 @@ check_host_inputs() {
 }
 
 start_services() {
-  echo "Using teleop config: ${CONFIG_PATH}"
+  step "[Setup] ${CONFIG_PATH}"
   check_host_inputs
   "${BASE_RUNTIME}" stop >/dev/null 2>&1 || true
   stop_runtime >/dev/null 2>&1 || true
   mkdir -p "${LOG_DIR}"
 
   if ! timeout 1 bash -c '</dev/tcp/127.0.0.1/11311' >/dev/null 2>&1; then
-    echo "[0/4] Starting ROS master..."
+    step "[1/4] ROS master"
     container_run "${ROSCORE_CONTAINER}" \
       "${ros_prefix} && exec roscore"
     local deadline=$((SECONDS + 10))
@@ -139,26 +177,29 @@ start_services() {
     done
   fi
 
-  echo "[1/4] Starting A1 driver..."
+  step "[2/4] A1 driver"
   container_run "${DRIVER_CONTAINER}" \
     "${ros_prefix} && exec roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=${SERIAL}"
   wait_valid_joint_feedback
 
-  echo "[2/4] Starting staged joint tracker..."
+  step "[3/4] Joint tracker"
   container_run "${TRACKER_CONTAINER}" \
     "${ros_prefix} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} target_topic:=${TARGET_TOPIC}"
   wait_topic "${TRACKER_CONTAINER}" /end_effector_pose
 
-  echo "[3/4] Starting fail-closed relay (LOCKED)..."
+  step "[4/4] Command relay"
   container_run "${RELAY_CONTAINER}" \
     "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
   wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  echo "[4/4] Teleop services ready. The leader bridge will arm the relay after publishing its first target."
+  success "[Setup] Services ready"
 }
 
 start_bridge() {
-  echo "Using teleop config: ${CONFIG_PATH}"
+  local quiet="${1:-}"
+  if [[ "${quiet}" != "--quiet" ]]; then
+    step "[Setup] Teleop bridge"
+  fi
   check_host_inputs
   mkdir -p "${LOG_DIR}"
   stop_bridge
@@ -167,12 +208,14 @@ start_bridge() {
   setsid env \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/so100_joint_bridge.py" \
+    "${PYTHON_BIN}" "${ROOT}/scripts/apps/teleop/so100_joint_bridge.py" \
       "${BRIDGE_ARGS[@]}" \
       >> "${log_file}" 2>&1 < /dev/null &
   echo "$!" > "${BRIDGE_PID_FILE}"
   wait_bridge_live "${log_file}"
-  echo "Teleop bridge running. Log: ${log_file}"
+  if [[ "${quiet}" != "--quiet" ]]; then
+    success "[Setup] Teleop ready"
+  fi
 }
 
 wait_bridge_live() {
@@ -245,19 +288,33 @@ collect() {
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/teleop_collect.py" \
       --experiment "${experiment}" \
+      --reset-runtime-script "${ROOT}/scripts/apps/teleop/a1_teleop_runtime.sh" \
+      --teleop-config "${CONFIG_PATH}" \
       "${COLLECT_ARGS[@]}"
 }
 
-home() {
-  cleanup_home() {
-    echo "[home] stopping runtime..."
+reset_live() {
+  step "[Reset] Pausing teleop"
+  stop_bridge
+  if ! PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_home.py" \
+      --config "${RESET_CONFIG_PATH}"; then
+    failure "[Reset] Failed; teleop remains stopped"
+    return 1
+  fi
+  start_bridge --quiet
+  success "[Reset] Teleop ready"
+}
+
+reset() {
+  cleanup_reset() {
     stop_runtime >/dev/null 2>&1 || true
   }
-  trap cleanup_home EXIT
+  trap cleanup_reset EXIT
   start_services
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_home.py" \
-      --config "${HOME_CONFIG_PATH}"
+      --config "${RESET_CONFIG_PATH}"
 }
 
 status() {
@@ -265,8 +322,12 @@ status() {
   docker ps -a --format '{{.Names}}\t{{.Status}}' |
     grep -E "^${PREFIX}-" || echo "no ${PREFIX}-* containers"
   echo
-  if [[ -f "${BRIDGE_PID_FILE}" ]] && kill -0 "$(cat "${BRIDGE_PID_FILE}")" >/dev/null 2>&1; then
-    echo "bridge: running pid=$(cat "${BRIDGE_PID_FILE}")"
+  local bridge_pid=""
+  if [[ -f "${BRIDGE_PID_FILE}" ]]; then
+    bridge_pid="$(cat "${BRIDGE_PID_FILE}")"
+  fi
+  if [[ "${bridge_pid}" =~ ^[1-9][0-9]*$ ]] && bridge_group_has_live_process "${bridge_pid}"; then
+    echo "bridge: running pid=${bridge_pid}"
   else
     echo "bridge: not running"
   fi
@@ -303,8 +364,11 @@ case "${1:-help}" in
     shift
     collect "$@"
     ;;
-  home)
-    home
+  reset)
+    reset
+    ;;
+  _reset-live)
+    reset_live
     ;;
   stop)
     stop_runtime
@@ -325,13 +389,13 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect|home|stop|doctor|status|logs|cameras>
+Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect|reset|stop|doctor|status|logs|cameras>
 
   start     Start staged joint teleop services and SO leader bridge
   services  Start ROS master, A1 driver, staged joint tracker, locked relay
   bridge    Start only the SO leader bridge
   collect   Start teleop, then run the interactive recorder
-  home      Move A1 and SO leader to configs/poses/a1_initial.toml, then stop runtime
+  reset     Reset A1 and SO leader to configs/poses/a1_initial.toml
   stop      Stop bridge and teleop containers
   doctor    Static/import checks plus base runtime doctor
   status    Containers and bridge process state

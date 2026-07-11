@@ -79,7 +79,9 @@ arm is disconnected.
   ```
 
 - The old working teleop behavior is the compatibility baseline:
-  - SO leader port `/dev/ttyACM0`, id `my_leader`.
+  - SO leader by-id port
+    `/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00`,
+    id `my_leader`.
   - The first-party `A1SOLeader` adapter is intentionally shaped as six arm
     axes `joint0..joint5` plus an independent `gripper`; do not replace it with
     the upstream five-axis `shoulder_*`/`wrist_*` naming unless the hardware is
@@ -88,7 +90,8 @@ arm is disconnected.
     to sorted `*.pos` keys.
   - Relative leader-to-A1 joint mapping from startup pose.
   - Sign mapping `[-1, 1, 1, -1, 1, -1]`.
-  - Default collected state mode `joint`.
+  - Default collected state mode `eef_joint` so every frame preserves both EEF
+    pose and joint state.
   - Default collection FPS `30`.
   - Gripper stroke range `0..200mm`.
 - If any of those defaults must change, update `configs/teleop/a1_so100.toml`,
@@ -209,7 +212,7 @@ arm is disconnected.
 ```bash
 just check
 just cameras
-just home
+just reset
 just eef-test
 just teleop-test
 just teleop pick_cube
@@ -222,13 +225,20 @@ Teleop hardware/data semantics are configured in
 `configs/teleop/a1_so100.toml`. Edit and commit that file when camera devices,
 RealSense depth capture, leader port, state mode, FPS, gripper stroke range, or
 joint mapping changes.
+The default teleop config is USB2-compatible RGB-only for the front RealSense.
+Depth capture remains supported, but enable it intentionally in the tracked
+config after the RealSense is on USB3 or after lowering FPS/resolution for
+USB2. The wrist camera should use YUYV unless a tracked hardware change proves
+another format is cleaner.
 
-The A1 + SO leader reset/home pose is configured in
-`configs/poses/a1_initial.toml`. `just home` moves A1 to that tracked joint pose
-through the staged jointTracker and relay path, then moves the SO leader to its
-tracked Feetech position, explicitly closes both grippers, disables leader
-torque, and stops the runtime. Update and commit that file when the operator
-intentionally changes the collection start pose.
+The A1 + SO leader reset pose is configured in
+`configs/poses/a1_initial.toml`. `just reset` moves A1 to that tracked joint pose
+through the staged jointTracker and relay path while moving the SO leader to
+its tracked Feetech position, explicitly closes both grippers, disables leader
+torque, and stops the runtime. Successful teleop saves reuse the same concurrent
+reset implementation before the next episode when
+`collection.auto_reset_after_save` is enabled. Update and commit that file when
+the operator intentionally changes the collection start pose or reset speed.
 
 LingBot inference semantics are configured in
 `configs/inference/lingbot_va_a1.toml`. Edit and commit that file when the
@@ -273,9 +283,15 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   is needed, make it explicit in a tracked config or named safety module.
 - Normal data collection should write enough metadata to reproduce the run:
   config path, state/action topics, control path, state/action names, FPS, and
-  camera settings. Teleop RealSense depth is recorded as raw aligned 16-bit PNG
-  in `cam0_depth/` and converts to LeRobot as `observation.images.front_depth`
-  when enabled.
+  camera settings. Optional RealSense depth is recorded as raw aligned 16-bit
+  PNG in `cam0_depth/` and converts to LeRobot as
+  `observation.images.front_depth` when enabled. If cameras stop producing
+  fresh samples during collection, fail the episode and delete the partial
+  folder rather than saving stale frames.
+- Enter=save is a validation boundary. Reject and delete an episode when a
+  joint action step exceeds the tracked
+  `collection.max_joint_action_step_rad`; print the exact frame and joint,
+  reuse the episode index, and reset both devices before retrying.
 - `third_party/lerobot` is vendored for the LeRobot v0.6 runtime baseline. Do
   not patch it for A1-specific app behavior; put A1 integration code under
   `galaxea_a1_runtime/` or `scripts/apps/`. The A1 SO leader motor layout lives

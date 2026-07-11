@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
@@ -56,6 +56,7 @@ class TeleopRawEpisodeMetadata:
     action_topics: dict[str, str]
     control_path: tuple[str, ...]
     cameras: tuple[CameraMetadata, ...]
+    quality_checks: dict[str, float] = field(default_factory=dict)
 
 
 def state_names_for_mode(mode: StateMode | str) -> tuple[str, ...]:

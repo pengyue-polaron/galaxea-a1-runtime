@@ -21,6 +21,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--out-dir", type=Path, help="Directory for captured images.")
     parser.add_argument("--timeout-s", type=float, default=5.0)
     parser.add_argument("--warmup-frames", type=int, default=20)
+    parser.add_argument("--probe-s", type=float, default=2.0)
     parser.add_argument("--jpeg-quality", type=int, default=95)
     return parser.parse_args()
 
@@ -31,7 +32,12 @@ if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
 import cv2
 import numpy as np
 
-from galaxea_a1_runtime.hardware.cameras import OpenCVColorCamera, RealSenseColorCamera, RealSenseFrameSet
+from galaxea_a1_runtime.hardware.cameras import (
+    LatestCameraReader,
+    OpenCVColorCamera,
+    RealSenseColorCamera,
+    RealSenseFrameSet,
+)
 from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
 
 
@@ -61,15 +67,24 @@ def main() -> int:
             depth_height=config.front_camera.depth_height,
             align_depth_to_color=config.front_camera.align_depth_to_color,
             warmup_frames=args.warmup_frames,
+            require_usb3=config.front_camera.require_usb3,
         )
         wrist = OpenCVColorCamera(
             config.wrist_camera.device,
             config.wrist_camera.width,
             config.wrist_camera.height,
             config.wrist_camera.fps,
+            pixel_format=config.wrist_camera.pixel_format,
             warmup_frames=args.warmup_frames,
         )
 
+        rates = probe_camera_rates(
+            front,
+            wrist,
+            duration_s=args.probe_s,
+            front_target_fps=config.front_camera.fps,
+            wrist_target_fps=config.wrist_camera.fps,
+        )
         front_frameset = wait_realsense_frameset(front, timeout_s=args.timeout_s, label="front")
         front_img = front_frameset.color_bgr
         wrist_img = wait_frame(wrist, timeout_s=args.timeout_s, label="wrist")
@@ -105,6 +120,10 @@ def main() -> int:
         if front is not None:
             front.close()
 
+    print(f"cam0_usb={front.usb_type if front is not None else 'unknown'}")
+    if args.probe_s > 0:
+        print(f"cam0_front_fps={rates['front']:.2f}")
+        print(f"cam1_wrist_fps={rates['wrist']:.2f}")
     print(f"cam0_front={front_path}")
     if depth_path is not None:
         print(f"cam0_depth={depth_path}")
@@ -113,6 +132,40 @@ def main() -> int:
     print(f"cam1_wrist={wrist_path}")
     print(f"contact_sheet={sheet_path}")
     return 0
+
+
+def probe_camera_rates(
+    front: RealSenseColorCamera,
+    wrist: OpenCVColorCamera,
+    *,
+    duration_s: float,
+    front_target_fps: float,
+    wrist_target_fps: float,
+) -> dict[str, float]:
+    if duration_s <= 0:
+        return {"front": 0.0, "wrist": 0.0}
+    readers = (
+        LatestCameraReader("front", front.read_frameset),
+        LatestCameraReader("wrist", wrist.read_bgr),
+    )
+    for reader in readers:
+        reader.start()
+    start = time.perf_counter()
+    time.sleep(duration_s)
+    elapsed = max(time.perf_counter() - start, 1e-6)
+    for reader in readers:
+        reader.stop()
+        exc = reader.exception()
+        if exc is not None:
+            raise RuntimeError(f"{reader.name} camera probe failed") from exc
+    rates = {reader.name: reader.frame_count() / elapsed for reader in readers}
+    too_slow = []
+    for name, target_fps in (("front", front_target_fps), ("wrist", wrist_target_fps)):
+        if rates[name] < 0.8 * target_fps:
+            too_slow.append(f"{name}={rates[name]:.1f}fps target={target_fps:g}fps")
+    if too_slow:
+        raise RuntimeError("Camera rate probe failed: " + ", ".join(too_slow))
+    return rates
 
 
 def wait_realsense_frameset(camera: RealSenseColorCamera, *, timeout_s: float, label: str) -> RealSenseFrameSet:
@@ -181,4 +234,8 @@ def _fit_height(image: np.ndarray, height: int) -> np.ndarray:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        raise SystemExit(1)

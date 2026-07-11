@@ -64,6 +64,9 @@ def test_iter_episode_frames_uses_next_state_as_action(tmp_path):
 
     assert frames[0]["observation.state"] == pytest.approx((0.1, 0.3, 0.0))
     assert frames[0]["action"] == pytest.approx((0.2, 0.4, 1.0))
+    assert frames[0]["observation.state"].dtype == np.float32
+    assert frames[0]["action"].dtype == np.float32
+    assert "timestamp" not in frames[0]
     assert frames[1]["action"] == pytest.approx((0.2, 0.4, 1.0))
     assert frames[0]["observation.images.front"].shape == (4, 5, 3)
 
@@ -134,6 +137,9 @@ def test_iter_episode_frames_preserves_new_teleop_state_and_action(tmp_path):
     assert episode.schema_version == "galaxea_a1_teleop_raw_v1"
     assert frames[0]["observation.state"] == pytest.approx(tuple(float(i) for i in range(14)))
     assert frames[0]["action"] == pytest.approx(tuple(float(i + 10) for i in range(7)))
+    assert frames[0]["observation.state"].dtype == np.float32
+    assert frames[0]["action"].dtype == np.float32
+    assert "timestamp" not in frames[0]
     assert [camera.name for camera in episode.camera_specs] == ["front", "wrist", "front_depth"]
     assert episode.camera_specs[2].is_depth_map is True
     assert frames[0]["observation.images.front_depth"].shape == (4, 5, 1)

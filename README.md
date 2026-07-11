@@ -47,6 +47,12 @@ Daily local checks, no hardware motion:
 just check
 ```
 
+Hardware enumeration check, no arm motion:
+
+```bash
+just hardware
+```
+
 Camera check, no arm motion:
 
 ```bash
@@ -62,6 +68,7 @@ just eef-test
 SO leader teleop:
 
 ```bash
+just reset              # restore tracked A1 + SO leader start pose
 just teleop-test        # manual leader-to-A1 check
 just teleop pick_cube   # record episodes
 just stop
@@ -140,14 +147,32 @@ planning stack.
 
 ## Teleoperation Collection
 
-`just teleop <experiment>` starts the staged joint teleop runtime,
-records front RGB/depth, wrist RGB, and A1 state/action data, and keeps the old
-episode loop: Enter starts recording, Enter saves, `d` discards, and `q` exits.
+Daily recording flow:
+
+```bash
+just stop
+just check
+just hardware
+just cameras
+just reset
+just teleop pick_cube
+```
+
+`just reset` moves the A1 and the SO leader to the tracked collection start pose
+in [configs/poses/a1_initial.toml](configs/poses/a1_initial.toml), closes both
+grippers, resets both devices concurrently, disables leader torque, and stops
+the runtime. `just teleop
+<experiment>` then starts the staged joint teleop runtime, records front RGB,
+wrist RGB, and A1 state/action data, and keeps the old episode loop:
+Enter starts recording, Enter saves, `d` discards, and `q` exits.
+After each successful save, it pauses the bridge, automatically restores both
+devices, restarts the bridge, and waits for the next episode. Discarding an
+episode does not trigger a reset.
 
 Runtime parameters live in [configs/teleop/a1_so100.toml](configs/teleop/a1_so100.toml).
 Edit that tracked file when the SO leader port, cameras, topics, state mode,
-FPS, joint mapping, or gripper stroke range changes. The normal collection
-entrypoint does not take per-run collector flags.
+FPS, automatic post-save reset, joint mapping, or gripper stroke range changes.
+The normal collection entrypoint does not take per-run collector flags.
 
 The A1 leader adapter lives in
 [galaxea_a1_runtime/teleop/a1_so_leader.py](galaxea_a1_runtime/teleop/a1_so_leader.py):
@@ -159,19 +184,37 @@ source stays on the official v0.6.0 baseline.
 The raw teleop schema records configurable state modes:
 
 - `eef`: EEF pose plus gripper
-- `joint`: six arm joints plus gripper, the default to match the old working
-  teleop collector
-- `eef_joint`: both
+- `joint`: six arm joints plus gripper
+- `eef_joint`: EEF pose, six arm joints, and gripper; the tracked default
 
 Teleop actions are recorded as `joint_absolute` targets from
 `/arm_joint_target_position`. Each saved episode contains `frames.csv`,
-`metadata.json`, `cam0/`, `cam1/`, and `cam0_depth/` when RealSense depth is
-enabled; the metadata records the state topics, action topics, cameras, and
-staged relay control path used for that episode.
+`metadata.json`, `cam0/`, and `cam1/`; `cam0_depth/` is present only when
+RealSense depth is enabled in the tracked config. The metadata records the
+state topics, action topics, cameras, and staged relay control path used for
+that episode.
+
+The default tracked teleop config is USB2-compatible RGB-only. Depth capture is
+still supported, but it should be enabled intentionally in
+`configs/teleop/a1_so100.toml` after the RealSense is on a stable USB3 link or
+after lowering the camera FPS/resolution for USB2. During recording, stale
+camera samples abort the episode and delete the partial folder instead of
+saving bad data.
+
+Enter requests a save; it does not make the episode durable immediately. The
+collector first checks joint-action continuity using the tracked
+`collection.max_joint_action_step_rad` threshold. A failed check prints the
+frame, joint, values, and limit, deletes the episode, reuses its index, and
+homes both devices before the next attempt.
+
+Raw episodes are written under `data/raw/<experiment>/episode_NNN_timestamp/`.
+Convert them to the LeRobotDataset v3 contract with `just convert-raw ...`
+after inspecting a dry run.
 
 `just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
 `cam0_depth_preview.jpg`, `cam1_wrist.jpg`, and a contact sheet from the same
-tracked camera config without moving the arm.
+tracked camera config without moving the arm. It also runs a short sustained
+FPS probe and prints the RealSense USB link type.
 
 ## Dependency Baseline
 

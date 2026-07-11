@@ -1,5 +1,6 @@
 """Teleoperation collection helpers."""
 
+from .quality import ActionStepViolation, find_joint_action_step_violation
 from .schema import (
     CameraMetadata,
     EpisodeDecision,
@@ -15,11 +16,13 @@ from .schema import (
 )
 
 __all__ = [
+    "ActionStepViolation",
     "EpisodeDecision",
     "CameraMetadata",
     "StateMode",
     "TeleopRawEpisodeMetadata",
     "action_columns",
+    "find_joint_action_step_violation",
     "metadata_to_json_dict",
     "next_episode_index",
     "normalize_episode_decision",

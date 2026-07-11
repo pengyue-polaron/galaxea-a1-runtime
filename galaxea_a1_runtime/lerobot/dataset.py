@@ -29,7 +29,6 @@ def build_dataset_create_kwargs(
         "robot_type": config.robot_type,
         "features": contract.features(),
         "use_videos": config.use_videos,
-        "vcodec": config.vcodec,
     }
 
 

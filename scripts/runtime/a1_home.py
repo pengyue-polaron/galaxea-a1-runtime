@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import argparse
+import concurrent.futures
 import json
 import math
 import os
@@ -12,9 +13,17 @@ import sys
 import threading
 import time
 import tomllib
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+warnings.filterwarnings(
+    "ignore",
+    message="The pynvml package is deprecated.*",
+    category=FutureWarning,
+    module=r"torch\.cuda.*",
+)
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
 _A1_SDK = ROOT_DIR / "third_party" / "A1_SDK" / "install"
@@ -120,9 +129,43 @@ class Latest:
             return self.value, self.updated
 
 
+class ResetProgress:
+    def __init__(self, devices: tuple[str, ...]):
+        self.devices = devices
+        self.values = {device: 0 for device in devices}
+        self.reported = {device: -1 for device in devices}
+        self.lock = threading.Lock()
+        self.interactive = sys.stdout.isatty()
+        self.color = self.interactive and not os.environ.get("NO_COLOR")
+
+    def update(self, device: str, percent: float) -> None:
+        value = max(0, min(100, int(round(percent))))
+        with self.lock:
+            if value == self.reported[device]:
+                return
+            self.values[device] = value
+            self.reported[device] = value
+            if self.interactive:
+                status = " | ".join(f"{name} {self.values[name]:3d}%" for name in self.devices)
+                prefix = "\033[1;36mReset\033[0m" if self.color else "Reset"
+                print(f"\r\033[2K{prefix}  {status}", end="", flush=True)
+            elif value in {0, 25, 50, 75, 100}:
+                print(f"[Reset] {device} {value}%", flush=True)
+
+    def finish(self, *, success: bool) -> None:
+        if self.interactive:
+            print("\r\033[2K", end="")
+        text = "[Reset] Complete" if success else "[Reset] Failed"
+        if self.color:
+            code = "\033[1;32m" if success else "\033[1;31m"
+            text = f"{code}{text}\033[0m"
+        print(text, flush=True)
+
+
 class A1HomeRunner:
-    def __init__(self, pose: HomePose):
+    def __init__(self, pose: HomePose, progress: ResetProgress):
         self.pose = pose
+        self.progress = progress
         self.joints = Latest()
         self.staged = Latest()
         self.relay = Latest()
@@ -149,9 +192,7 @@ class A1HomeRunner:
         rate = rospy.Rate(motion.hz)
         self.enable_pub.publish(Bool(data=False))
         current = self.wait_for_joints()
-        print(f"[home] config={self.pose.path}")
-        print(f"[home] current={format_values(current)}")
-        print(f"[home] target={format_values(self.pose.positions)}")
+        self.progress.update("A1", 0)
         self.close_a1_gripper()
 
         self.wait_for_staged_alignment(
@@ -160,27 +201,23 @@ class A1HomeRunner:
             tolerance_rad=motion.tracker_alignment_tolerance_rad,
             rate=rate,
         )
-        print("[home] tracker staged output aligned with current pose")
-
         self.enable_pub.publish(Bool(data=True))
         self.wait_for_relay_state("ACTIVE", timeout_s=motion.relay_enable_timeout_s)
-        print("[home] relay ACTIVE; moving to home pose")
 
         try:
             self.move_smooth(current, rate)
             final = self.hold_target(rate)
             self.close_a1_gripper()
             err = max_error(final, self.pose.positions)
-            print(f"[home] final={format_values(final)} max_error={err:.4f} rad")
             if err > motion.goal_tolerance_rad:
                 raise RuntimeError(
-                    f"Home pose error {err:.4f} rad exceeds tolerance "
+                    f"Reset pose error {err:.4f} rad exceeds tolerance "
                     f"{motion.goal_tolerance_rad:.4f} rad"
                 )
+            self.progress.update("A1", 100)
         finally:
             self.enable_pub.publish(Bool(data=False))
             time.sleep(0.2)
-            print("[home] relay disabled")
 
     def wait_for_joints(self, timeout_s: float = 10.0) -> tuple[float, ...]:
         deadline = time.monotonic() + timeout_s
@@ -190,7 +227,7 @@ class A1HomeRunner:
             if positions is not None and all(math.isfinite(value) for value in positions):
                 return positions
             time.sleep(0.05)
-        raise RuntimeError(f"No usable joint feedback on {self.pose.topics.joint_states}")
+        raise RuntimeError(f"Reset has no usable joint feedback on {self.pose.topics.joint_states}")
 
     def wait_for_staged_alignment(
         self,
@@ -238,20 +275,12 @@ class A1HomeRunner:
         max_delta = max_error(start, target)
         duration_s = max(motion.min_duration_s, max_delta / motion.max_velocity_rad_s)
         steps = max(1, int(duration_s * motion.hz))
-        last_report = time.monotonic()
         for step in range(steps + 1):
             alpha = step / steps
             smooth = alpha * alpha * (3.0 - 2.0 * alpha)
             command = tuple(start[i] + (target[i] - start[i]) * smooth for i in range(len(target)))
             self.publish_target(command)
-            now = time.monotonic()
-            if now - last_report >= 1.0 or step == steps:
-                feedback = self.wait_for_joints(timeout_s=0.5)
-                print(
-                    f"[home] {alpha * 100:5.1f}% "
-                    f"target={format_values(command)} feedback={format_values(feedback)}"
-                )
-                last_report = now
+            self.progress.update("A1", alpha * 100.0)
             relay, updated = self.relay.get()
             if not (
                 isinstance(relay, dict)
@@ -283,11 +312,9 @@ class A1HomeRunner:
     def close_a1_gripper(self) -> None:
         gripper = self.pose.gripper
         if not gripper.enabled:
-            print("[home] A1 gripper close disabled")
             return
         rate = rospy.Rate(gripper.publish_hz)
         deadline = time.monotonic() + gripper.publish_s
-        print(f"[home] closing A1 gripper stroke_mm={gripper.closed_stroke_mm:.3f}")
         while not rospy.is_shutdown() and time.monotonic() < deadline:
             msg = gripper_position_control()
             msg.header.stamp = rospy.Time.now()
@@ -364,9 +391,9 @@ def validate_home_pose(home: HomePose) -> None:
                 raise ValueError(f"leader_motion.{field} must be positive")
 
 
-def reset_leader_home(home: HomePose) -> None:
+def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
     if home.leader is None or not home.leader.enabled:
-        print("[home] leader reset disabled")
+        progress.update("Leader", 100)
         return
     if home.leader_motion is None:
         raise RuntimeError("leader_motion is required when leader reset is enabled")
@@ -380,7 +407,6 @@ def reset_leader_home(home: HomePose) -> None:
             use_degrees=leader_home.use_degrees,
         )
     )
-    print(f"[home] connecting leader {leader_home.id} on {leader_home.port}")
     leader.connect(calibrate=False)
     try:
         current = {key: float(value) for key, value in leader.get_action().items()}
@@ -390,10 +416,9 @@ def reset_leader_home(home: HomePose) -> None:
             raise RuntimeError(f"leader action missing keys: {missing}")
 
         start = {key: current[key] for key in target}
-        print(f"[home] leader current={format_mapping(start)}")
-        print(f"[home] leader target={format_mapping(target)}")
+        progress.update("Leader", 0)
         leader.enable_torque()
-        move_leader_smooth(leader, start, target, motion)
+        move_leader_smooth(leader, start, target, motion, progress)
         final = {key: float(value) for key, value in leader.get_action().items() if key in target}
         errors = mapping_errors(final, target)
         body_error = max(
@@ -401,26 +426,22 @@ def reset_leader_home(home: HomePose) -> None:
             default=0.0,
         )
         gripper_error = errors.get("gripper.pos", 0.0)
-        print(
-            f"[home] leader final={format_mapping(final)} "
-            f"body_error={body_error:.3f} gripper_error={gripper_error:.3f}"
-        )
         if body_error > motion.goal_tolerance_units:
             raise RuntimeError(
-                f"Leader body home error {body_error:.3f} exceeds tolerance "
+                f"Leader body reset error {body_error:.3f} exceeds tolerance "
                 f"{motion.goal_tolerance_units:.3f}"
             )
         if gripper_error > motion.gripper_goal_tolerance_units:
             raise RuntimeError(
-                f"Leader gripper close error {gripper_error:.3f} exceeds tolerance "
+                f"Leader gripper reset error {gripper_error:.3f} exceeds tolerance "
                 f"{motion.gripper_goal_tolerance_units:.3f}"
             )
+        progress.update("Leader", 100)
     finally:
         try:
             leader.disable_torque()
         finally:
             leader.disconnect()
-        print("[home] leader torque disabled")
 
 
 def move_leader_smooth(
@@ -428,11 +449,11 @@ def move_leader_smooth(
     start: dict[str, float],
     target: dict[str, float],
     motion: LeaderMotion,
+    progress: ResetProgress,
 ) -> None:
     max_delta = max(abs(target[key] - start[key]) for key in target)
     duration_s = max(motion.min_duration_s, max_delta / motion.max_velocity_units_s)
     steps = max(1, int(duration_s * motion.hz))
-    last_report = time.monotonic()
     for step in range(steps + 1):
         alpha = step / steps
         smooth = alpha * alpha * (3.0 - 2.0 * alpha)
@@ -441,10 +462,7 @@ def move_leader_smooth(
             for key in target
         }
         leader.send_feedback(command)
-        now = time.monotonic()
-        if now - last_report >= 1.0 or step == steps:
-            print(f"[home] leader {alpha * 100:5.1f}% target={format_mapping(command)}")
-            last_report = now
+        progress.update("Leader", alpha * 100.0)
         time.sleep(1.0 / motion.hz)
 
     deadline = time.monotonic() + motion.hold_s
@@ -581,15 +599,34 @@ def _topic(data: dict[str, Any], key: str) -> str:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Move A1 to the tracked home pose.")
+    parser = argparse.ArgumentParser(description="Reset A1 and leader to the tracked start pose.")
     parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
     return parser.parse_args()
 
 
 def main() -> int:
     pose = load_home_pose(parse_args().config)
-    A1HomeRunner(pose).run_a1()
-    reset_leader_home(pose)
+    devices = ("A1", "Leader") if pose.leader is not None and pose.leader.enabled else ("A1",)
+    progress = ResetProgress(devices)
+    runner = A1HomeRunner(pose, progress)
+    jobs = {"A1": runner.run_a1}
+    if pose.leader is not None and pose.leader.enabled:
+        jobs["leader"] = lambda: reset_leader_home(pose, progress)
+
+    errors: list[tuple[str, BaseException]] = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
+        futures = {executor.submit(job): name for name, job in jobs.items()}
+        for future in concurrent.futures.as_completed(futures):
+            name = futures[future]
+            try:
+                future.result()
+            except BaseException as exc:
+                errors.append((name, exc))
+    if errors:
+        progress.finish(success=False)
+        details = "; ".join(f"{name}: {exc}" for name, exc in errors)
+        raise RuntimeError(f"Reset failed ({details})") from errors[0][1]
+    progress.finish(success=True)
     return 0
 
 

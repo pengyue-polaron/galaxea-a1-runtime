@@ -70,7 +70,7 @@ Teleop joint control uses the same relay, but with a joint tracker:
 The LingBot bridge used to be too large because it did four jobs in one file:
 
 - model protocol: LingBot WebSocket and KV-cache updates
-- observation IO: RealSense color/depth and wrist color cameras
+- observation IO: RealSense color, optional RealSense depth, and wrist color cameras
 - policy action transforms: LingBot 8D action cleanup
 - A1 execution: EEF target publishing, relay enable, gripper publish, feedback
 
@@ -102,12 +102,19 @@ Teleop is the built-in demonstration collection mode.
   patching vendored LeRobot source.
 - `scripts/apps/teleop/teleop_collect.py`: records synchronized front RGB,
   optional front depth, wrist RGB, A1 state, and target actions. It does not
-  command the robot. Episode metadata records the state topics, action topics,
-  cameras, and staged relay path.
+  command the robot. Camera streams are read by background latest-frame readers
+  so a blocking camera read cannot silently stop state/action recording. Each
+  frame requires fresh front/wrist samples; stale cameras abort and delete the
+  partial episode. Enter=save runs the pure collection quality checks before
+  metadata is committed; discontinuous joint actions reject and delete the
+  episode. Episode metadata records the state topics, action topics, cameras,
+  quality thresholds, and staged relay path.
 - `scripts/apps/teleop/camera_snapshot.py`: captures front/wrist snapshots from
-  the same tracked config without starting ROS or moving the robot.
+  the same tracked config without starting ROS or moving the robot, and probes
+  sustained camera FPS plus the RealSense USB link type.
 - `scripts/apps/teleop/a1_teleop_runtime.sh`: starts/stops ROS, driver, staged
-  joint tracker, relay, bridge, and recorder.
+  joint tracker, relay, bridge, and recorder. It also owns the post-episode
+  sequence that pauses the bridge, homes both devices, and resumes the bridge.
 - `configs/teleop/a1_so100.toml`: tracked runtime contract for leader port,
   cameras, topics, joint mapping, gripper range, state mode, FPS, and
   RealSense depth capture.
@@ -116,13 +123,40 @@ The episode interaction is:
 
 ```text
 first run: enter task prompt
-each episode: Enter=start, Enter=save, d=discard, q=quit
+each episode: Enter=start, Enter=save and auto-reset, d=discard, q=quit
 ```
 
-The default recorded state is joint-space to match the old working collector.
-EEF and combined EEF+joint state are explicit opt-in modes.
-Those options are changed in the tracked config file, not through ad hoc
-per-run collection flags.
+The tracked default records combined EEF pose and joint state. Joint-only and
+EEF-only collection remain explicit alternatives. These options are changed in
+the tracked config file, not through ad hoc per-run collection flags.
+
+The recording data flow is intentionally split by responsibility:
+
+```text
+SO leader
+  -> so100_joint_bridge.py
+  -> /arm_joint_target_position
+  -> staged jointTracker + safe relay
+  -> A1 driver
+
+A1 feedback + cameras
+  -> teleop_collect.py
+  -> data/raw/<experiment>/episode_NNN_timestamp/
+  -> convert_raw.py
+  -> LeRobotDataset v3 output
+```
+
+The bridge is the only module that commands teleop motion during recording. The
+recorder reads ROS state, the latest joint target action, front RealSense RGB,
+optional depth, and wrist RGB, then writes synchronized raw episode files. Once
+a save is durable, it asks the runtime shell to perform the shared reset
+workflow; it does not implement or publish reset commands itself.
+
+The shared reset implementation uses `configs/poses/a1_initial.toml` to restore
+the A1 and SO leader concurrently and close both grippers. `just reset` starts
+the required services, runs that implementation, and stops the runtime. The
+post-save path reuses it while keeping the services and cameras alive, then
+restarts the bridge for the next episode.
 
 ## Original SDK Feature Coverage
 

@@ -93,7 +93,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         )
         add(
             "teleop_config",
-            teleop_config.collection.state_mode.value == "joint"
+            teleop_config.collection.state_mode.value == "eef_joint"
             and teleop_config.gripper.max_stroke_mm == 200.0,
             str(teleop_config.path),
         )

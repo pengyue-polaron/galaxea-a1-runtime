@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import threading
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
@@ -22,6 +24,78 @@ except ImportError:
 class RealSenseFrameSet:
     color_bgr: np.ndarray
     depth_mm: np.ndarray | None = None
+
+
+@dataclass(frozen=True)
+class CameraSample:
+    seq: int
+    monotonic_s: float
+    value: Any
+
+
+class LatestCameraReader:
+    """Continuously read one camera and expose the newest successful sample."""
+
+    def __init__(
+        self,
+        name: str,
+        read_fn: Callable[[], Any | None],
+        *,
+        idle_sleep_s: float = 0.002,
+    ):
+        self.name = name
+        self._read_fn = read_fn
+        self._idle_sleep_s = idle_sleep_s
+        self._lock = threading.Lock()
+        self._latest: CameraSample | None = None
+        self._exception: BaseException | None = None
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._run, name=f"{name}-camera-reader", daemon=True)
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def stop(self) -> None:
+        self._stop.set()
+        self._thread.join(timeout=1.0)
+
+    def latest(self) -> CameraSample | None:
+        with self._lock:
+            return self._latest
+
+    def latest_seq(self) -> int:
+        latest = self.latest()
+        return -1 if latest is None else latest.seq
+
+    def frame_count(self) -> int:
+        return self.latest_seq() + 1
+
+    def exception(self) -> BaseException | None:
+        with self._lock:
+            return self._exception
+
+    def _run(self) -> None:
+        seq = 0
+        while not self._stop.is_set():
+            try:
+                value = self._read_fn()
+            except BaseException as exc:  # noqa: BLE001 - cross-thread surfacing.
+                with self._lock:
+                    self._exception = exc
+                return
+            if value is None:
+                time.sleep(self._idle_sleep_s)
+                continue
+            with self._lock:
+                self._latest = CameraSample(seq=seq, monotonic_s=time.perf_counter(), value=value)
+            seq += 1
+
+
+@dataclass(frozen=True)
+class RealSenseDeviceInfo:
+    name: str
+    serial: str
+    usb_type: str
 
 
 class RealSenseColorCamera:
@@ -44,14 +118,27 @@ class RealSenseColorCamera:
         depth_height: int | None = None,
         align_depth_to_color: bool = True,
         warmup_frames: int = 30,
+        require_usb3: bool = False,
     ):
         if rs is None:
             raise RuntimeError("pyrealsense2 is not installed")
+        info = realsense_device_info(serial)
+        if info is None:
+            raise RuntimeError("No RealSense device found")
+        self.serial = info.serial
+        self.usb_type = info.usb_type
+        if require_usb3 and not realsense_usb_is_superspeed(info.usb_type):
+            raise RuntimeError(
+                "RealSense is enumerated as USB "
+                f"{info.usb_type or 'unknown'}, but this config requires USB3. "
+                "Plug the RealSense into a SuperSpeed USB3 port/cable, or lower "
+                "the tracked front camera config before recording."
+            )
         self._enable_depth = enable_depth
         self.pipeline = rs.pipeline()
         cfg = rs.config()
-        if serial:
-            cfg.enable_device(serial)
+        if info.serial:
+            cfg.enable_device(info.serial)
         cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
         if enable_depth:
             cfg.enable_stream(
@@ -61,21 +148,38 @@ class RealSenseColorCamera:
                 rs.format.z16,
                 fps,
             )
-        profile = self.pipeline.start(cfg)
-        self._align = rs.align(rs.stream.color) if enable_depth and align_depth_to_color else None
-        _configure_realsense_color_sensor(
-            profile,
-            auto_exposure=auto_exposure,
-            exposure=exposure,
-            gain=gain,
-            auto_white_balance=auto_white_balance,
-            white_balance=white_balance,
-        )
-        for _ in range(max(0, warmup_frames)):
-            self.pipeline.wait_for_frames()
+        try:
+            profile = self.pipeline.start(cfg)
+            self._align = rs.align(rs.stream.color) if enable_depth and align_depth_to_color else None
+            _configure_realsense_color_sensor(
+                profile,
+                auto_exposure=auto_exposure,
+                exposure=exposure,
+                gain=gain,
+                auto_white_balance=auto_white_balance,
+                white_balance=white_balance,
+            )
+            warmup_timeout_s = max(5.0, float(warmup_frames) / max(float(fps), 1.0) + 5.0)
+            self._warmup(max(0, warmup_frames), timeout_s=warmup_timeout_s)
+        except BaseException:
+            try:
+                self.pipeline.stop()
+            except Exception:
+                pass
+            raise
 
     def read_frameset(self) -> RealSenseFrameSet | None:
         frames = self.pipeline.poll_for_frames()
+        return self._decode_frames(frames) if frames else None
+
+    def wait_frameset(self, *, timeout_ms: int = 1000) -> RealSenseFrameSet | None:
+        try:
+            frames = self.pipeline.wait_for_frames(timeout_ms)
+        except RuntimeError:
+            return None
+        return self._decode_frames(frames)
+
+    def _decode_frames(self, frames: Any) -> RealSenseFrameSet | None:
         if not frames:
             return None
         if self._align is not None:
@@ -109,6 +213,28 @@ class RealSenseColorCamera:
     def close(self) -> None:
         self.pipeline.stop()
 
+    def _warmup(self, warmup_frames: int, *, timeout_s: float) -> None:
+        if warmup_frames <= 0:
+            return
+        deadline = time.monotonic() + timeout_s
+        frames = 0
+        timeouts = 0
+        while frames < warmup_frames and time.monotonic() < deadline:
+            try:
+                frame = self.pipeline.wait_for_frames(1000)
+            except RuntimeError:
+                timeouts += 1
+                continue
+            if frame:
+                frames += 1
+        if frames < warmup_frames:
+            raise RuntimeError(
+                "RealSense produced "
+                f"{frames}/{warmup_frames} warmup frames in {timeout_s:.1f}s "
+                f"(timeouts={timeouts}, usb={self.usb_type or 'unknown'}). "
+                "Check the USB3 connection and camera bandwidth before recording."
+            )
+
 
 class OpenCVColorCamera:
     """OpenCV/V4L color camera wrapper with explicit auto device resolution."""
@@ -121,6 +247,7 @@ class OpenCVColorCamera:
         fps: int,
         *,
         backend_api: str = "v4l2",
+        pixel_format: str = "",
         warmup_frames: int = 10,
     ):
         source, label = resolve_video_source(device)
@@ -129,6 +256,10 @@ class OpenCVColorCamera:
         self.cap = cv2.VideoCapture(source, api)
         if not self.cap.isOpened():
             raise RuntimeError(f"Cannot open camera device={device}")
+        if pixel_format:
+            if len(pixel_format) != 4:
+                raise ValueError(f"pixel_format must be a four-character code, got {pixel_format!r}")
+            self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*pixel_format))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
@@ -179,6 +310,43 @@ def video_device_name(index: int) -> str:
         return path.read_text().strip() if path.is_file() else "unknown"
     except OSError:
         return "unknown"
+
+
+def realsense_device_info(serial: str | None = None) -> RealSenseDeviceInfo | None:
+    if rs is None:
+        return None
+    devices = list(rs.context().query_devices())
+    if serial:
+        for device in devices:
+            if _rs_device_info(device, rs.camera_info.serial_number) == serial:
+                return _realsense_device_info_from_device(device)
+        found = ", ".join(_rs_device_info(device, rs.camera_info.serial_number) for device in devices)
+        raise RuntimeError(f"RealSense serial {serial!r} not found; found [{found}]")
+    if not devices:
+        return None
+    return _realsense_device_info_from_device(devices[0])
+
+
+def realsense_usb_is_superspeed(usb_type: str) -> bool:
+    try:
+        return float(usb_type) >= 3.0
+    except (TypeError, ValueError):
+        return False
+
+
+def _realsense_device_info_from_device(device: Any) -> RealSenseDeviceInfo:
+    return RealSenseDeviceInfo(
+        name=_rs_device_info(device, rs.camera_info.name),
+        serial=_rs_device_info(device, rs.camera_info.serial_number),
+        usb_type=_rs_device_info(device, rs.camera_info.usb_type_descriptor),
+    )
+
+
+def _rs_device_info(device: Any, key: Any) -> str:
+    try:
+        return str(device.get_info(key))
+    except Exception:
+        return ""
 
 
 def _configure_realsense_color_sensor(

@@ -10,7 +10,7 @@ prefix = "a1-teleop"
 run_dir = "/tmp/a1-teleop"
 
 [leader]
-port = "/dev/ttyACM0"
+port = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
 id = "my_leader"
 use_degrees = true
 
@@ -57,18 +57,23 @@ invert = false
 
 [collection]
 data_root = "data/raw"
-state_mode = "joint"
+state_mode = "eef_joint"
 fps = 30.0
 max_duration_s = 0.0
+auto_reset_after_save = true
 jpeg_quality = 95
 ready_timeout_s = 10.0
+max_camera_age_s = 0.5
+# Reject an episode after Enter=save if any joint action jumps farther in one frame.
+max_joint_action_step_rad = 0.35
 
 [cameras.front]
 serial = ""
 width = 640
 height = 480
 fps = 30
-depth = true
+require_usb3 = false
+depth = false
 depth_width = 640
 depth_height = 480
 align_depth_to_color = true
@@ -78,3 +83,5 @@ device = "auto"
 width = 640
 height = 480
 fps = 30
+# Prefer uncompressed YUYV to avoid corrupt MJPG frames.
+pixel_format = "YUYV"

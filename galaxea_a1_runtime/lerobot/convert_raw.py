@@ -276,7 +276,6 @@ def iter_episode_frames(
         action = np.empty_like(state)
         action[:-1] = state[1:]
         action[-1] = state[-1]
-    timestamps = episode_timestamps(df, fps=episode.fps)
     frame_indices = (
         df["frame_index"].to_numpy(dtype=np.int64)
         if "frame_index" in df.columns
@@ -284,10 +283,9 @@ def iter_episode_frames(
     )
     for row_index, frame_index in enumerate(frame_indices):
         frame = {
-            "observation.state": tuple(float(v) for v in state[row_index]),
-            "action": tuple(float(v) for v in action[row_index]),
+            "observation.state": state[row_index].astype(np.float32, copy=False),
+            "action": action[row_index].astype(np.float32, copy=False),
             "task": task,
-            "timestamp": float(timestamps[row_index]),
         }
         for camera in episode.camera_specs:
             frame[camera.feature_key()] = load_camera_frame(

@@ -10,6 +10,7 @@ import json
 import os
 import select
 import shutil
+import subprocess
 import sys
 import threading
 import time
@@ -46,6 +47,7 @@ from galaxea_a1_runtime.collection import (
     EpisodeDecision,
     StateMode,
     TeleopRawEpisodeMetadata,
+    find_joint_action_step_violation,
     metadata_to_json_dict,
     next_episode_index,
     normalize_episode_decision,
@@ -53,8 +55,19 @@ from galaxea_a1_runtime.collection import (
     teleop_frame_header,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
-from galaxea_a1_runtime.hardware.cameras import OpenCVColorCamera, RealSenseColorCamera
+from galaxea_a1_runtime.hardware.cameras import (
+    CameraSample,
+    LatestCameraReader,
+    OpenCVColorCamera,
+    RealSenseColorCamera,
+)
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
+
+
+def styled(text: str, code: str, *, stream: Any = sys.stdout) -> str:
+    if not stream.isatty() or os.environ.get("NO_COLOR"):
+        return text
+    return f"\033[{code}m{text}\033[0m"
 
 
 @dataclass(frozen=True)
@@ -62,6 +75,13 @@ class JointSnapshot:
     ros_stamp_s: float
     names: tuple[str, ...]
     positions: tuple[float, ...]
+
+
+@dataclass(frozen=True)
+class RecordedEpisode:
+    frame_count: int
+    decision: EpisodeDecision
+    actions: tuple[tuple[float, ...], ...]
 
 
 class LatestMessageCache:
@@ -107,6 +127,9 @@ class RosTeleopState:
         deadline = time.time() + timeout_s
         while time.time() < deadline and not rospy.is_shutdown():
             if self.joint_snapshot() is None:
+                time.sleep(0.05)
+                continue
+            if self.action_values() is None:
                 time.sleep(0.05)
                 continue
             if state_mode in (StateMode.EEF, StateMode.EEF_JOINT) and self.eef_vector() is None:
@@ -218,8 +241,8 @@ def load_or_prompt_task(experiment_dir: Path, explicit_task: str | None) -> str:
         task = task_path.read_text().strip()
         if task:
             return task
-    print("  [first run] Enter task prompt for this experiment:")
-    task = input("  > ").strip()
+    print(styled("  First run: enter the task prompt", "1;36"))
+    task = input(styled("  > ", "1;36")).strip()
     if not task:
         raise RuntimeError("task prompt cannot be empty")
     experiment_dir.mkdir(parents=True, exist_ok=True)
@@ -230,15 +253,17 @@ def load_or_prompt_task(experiment_dir: Path, explicit_task: str | None) -> str:
 def record_episode(
     *,
     episode_dir: Path,
-    front: RealSenseColorCamera,
-    wrist: OpenCVColorCamera,
+    front_reader: LatestCameraReader,
+    wrist_reader: LatestCameraReader,
     ros_state: RosTeleopState,
     state_mode: StateMode,
     fps: float,
     max_duration_s: float,
     jpeg_quality: int,
     depth_enabled: bool,
-) -> tuple[int, EpisodeDecision]:
+    camera_ready_timeout_s: float,
+    max_camera_age_s: float,
+) -> RecordedEpisode:
     (episode_dir / "cam0").mkdir(parents=True)
     (episode_dir / "cam1").mkdir(parents=True)
     if depth_enabled:
@@ -253,10 +278,18 @@ def record_episode(
     )
 
     frame_index = 0
+    _wait_for_new_camera_samples(
+        (front_reader, wrist_reader),
+        min_seq={front_reader.name: front_reader.latest_seq(), wrist_reader.name: wrist_reader.latest_seq()},
+        timeout_s=camera_ready_timeout_s,
+    )
     t0 = time.perf_counter()
+    next_frame_t = t0
     period = 1.0 / fps
     jpeg_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
     user_input: str | None = None
+    last_camera_seq = {front_reader.name: -1, wrist_reader.name: -1}
+    actions: list[tuple[float, ...]] = []
 
     with (episode_dir / "frames.csv").open("w", newline="") as handle:
         writer = csv.writer(handle)
@@ -269,8 +302,18 @@ def record_episode(
             if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
                 break
 
-            frameset0 = front.read_frameset()
-            img1 = wrist.read_bgr()
+            _raise_camera_reader_errors((front_reader, wrist_reader))
+            _wait_for_new_camera_samples(
+                (front_reader, wrist_reader),
+                min_seq=last_camera_seq,
+                timeout_s=max_camera_age_s,
+            )
+            sample_t = time.perf_counter()
+            front_sample = _fresh_camera_sample(front_reader, now_s=sample_t, max_age_s=max_camera_age_s)
+            wrist_sample = _fresh_camera_sample(wrist_reader, now_s=sample_t, max_age_s=max_camera_age_s)
+
+            frameset0 = front_sample.value
+            img1 = wrist_sample.value
             state = ros_state.state_values(state_mode)
             action = ros_state.action_values()
             if frameset0 is None or img1 is None or state is None or action is None:
@@ -279,6 +322,10 @@ def record_episode(
             if depth_enabled and frameset0.depth_mm is None:
                 time.sleep(0.005)
                 continue
+            last_camera_seq = {
+                front_reader.name: front_sample.seq,
+                wrist_reader.name: wrist_sample.seq,
+            }
 
             color_filename = f"{frame_index:06d}.jpg"
             ok0 = cv2.imwrite(str(episode_dir / "cam0" / color_filename), frameset0.color_bgr, jpeg_params)
@@ -299,15 +346,21 @@ def record_episode(
                     raise RuntimeError(f"failed to write depth frame {depth_filename}")
                 row.append(f"cam0_depth/{depth_filename}")
             writer.writerow([*row, *state, *action])
+            actions.append(tuple(action))
             if frame_index % 30 == 0:
                 handle.flush()
             frame_index += 1
 
-            sleep_s = period - (time.perf_counter() - loop_t)
+            next_frame_t += period
+            sleep_s = next_frame_t - time.perf_counter()
             if sleep_s > 0:
                 time.sleep(sleep_s)
 
-    return frame_index, normalize_episode_decision(user_input)
+    return RecordedEpisode(
+        frame_count=frame_index,
+        decision=normalize_episode_decision(user_input),
+        actions=tuple(actions),
+    )
 
 
 def write_metadata(
@@ -377,6 +430,7 @@ def write_metadata(
             args.host_command_topic,
         ),
         cameras=tuple(cameras),
+        quality_checks={"max_joint_action_step_rad": args.max_joint_action_step_rad},
     )
     (episode_dir / "metadata.json").write_text(json.dumps(metadata_to_json_dict(metadata), indent=2))
 
@@ -386,11 +440,20 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--experiment", required=True)
     parser.add_argument("--data-root", type=Path, default=Path("data/raw"))
     parser.add_argument("--task")
-    parser.add_argument("--state-mode", choices=[item.value for item in StateMode], default=StateMode.JOINT.value)
+    parser.add_argument(
+        "--state-mode",
+        choices=[item.value for item in StateMode],
+        default=StateMode.EEF_JOINT.value,
+    )
     parser.add_argument("--fps", type=float, default=30.0)
     parser.add_argument("--max-duration-s", type=float, default=0.0)
+    parser.add_argument("--auto-reset-after-save", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--reset-runtime-script", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--teleop-config", type=Path, help=argparse.SUPPRESS)
     parser.add_argument("--jpeg-quality", type=int, default=95)
     parser.add_argument("--ready-timeout-s", type=float, default=10.0)
+    parser.add_argument("--max-camera-age-s", type=float, default=0.5)
+    parser.add_argument("--max-joint-action-step-rad", type=float, default=0.35)
     parser.add_argument("--joint-topic", default="/joint_states_host")
     parser.add_argument("--eef-topic", default="/end_effector_pose")
     parser.add_argument("--action-topic", default="/arm_joint_target_position")
@@ -403,6 +466,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam0-width", type=int, default=640)
     parser.add_argument("--cam0-height", type=int, default=480)
     parser.add_argument("--cam0-fps", type=int, default=30)
+    parser.add_argument("--cam0-require-usb3", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--cam0-depth-enabled", action=argparse.BooleanOptionalAction, default=False)
     parser.add_argument("--cam0-depth-width", type=int, default=640)
     parser.add_argument("--cam0-depth-height", type=int, default=480)
@@ -411,6 +475,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam1-width", type=int, default=640)
     parser.add_argument("--cam1-height", type=int, default=480)
     parser.add_argument("--cam1-fps", type=int, default=30)
+    parser.add_argument("--cam1-pixel-format", default="YUYV")
     return parser.parse_args()
 
 
@@ -418,6 +483,12 @@ def main() -> int:
     args = parse_args()
     if args.fps <= 0:
         raise ValueError("--fps must be positive")
+    if args.max_camera_age_s <= 0:
+        raise ValueError("--max-camera-age-s must be positive")
+    if args.max_joint_action_step_rad <= 0:
+        raise ValueError("--max-joint-action-step-rad must be positive")
+    if args.auto_reset_after_save and (args.reset_runtime_script is None or args.teleop_config is None):
+        raise ValueError("automatic reset requires --reset-runtime-script and --teleop-config")
     if args.cam0_depth_enabled and (args.cam0_depth_width <= 0 or args.cam0_depth_height <= 0):
         raise ValueError("--cam0-depth-width and --cam0-depth-height must be positive when depth is enabled")
     state_mode = StateMode(args.state_mode)
@@ -426,15 +497,17 @@ def main() -> int:
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(args)
-    print("[collect] waiting for ROS state ...", end=" ", flush=True)
+    print(styled("[Setup] ROS state", "1;36"), end=" ... ", flush=True)
     ros_state.wait_ready(state_mode=state_mode, timeout_s=args.ready_timeout_s)
-    print("ok")
+    print(styled("ready", "1;32"))
 
     episode_index = next_episode_index(experiment_dir)
     front: RealSenseColorCamera | None = None
     wrist: OpenCVColorCamera | None = None
+    front_reader: LatestCameraReader | None = None
+    wrist_reader: LatestCameraReader | None = None
     try:
-        print("[collect] opening cameras ...", end=" ", flush=True)
+        print(styled("[Setup] Cameras", "1;36"), end=" ... ", flush=True)
         front = RealSenseColorCamera(
             args.cam0_serial,
             args.cam0_width,
@@ -445,16 +518,33 @@ def main() -> int:
             depth_height=args.cam0_depth_height,
             align_depth_to_color=args.cam0_align_depth_to_color,
             warmup_frames=20,
+            require_usb3=args.cam0_require_usb3,
         )
         wrist = OpenCVColorCamera(
             args.cam1_device,
             args.cam1_width,
             args.cam1_height,
             args.cam1_fps,
+            pixel_format=args.cam1_pixel_format,
             warmup_frames=10,
         )
+        front_reader = LatestCameraReader(
+            "front",
+            front.read_frameset,
+        )
+        wrist_reader = LatestCameraReader("wrist", wrist.read_bgr)
+        front_reader.start()
+        wrist_reader.start()
+        _wait_for_new_camera_samples(
+            (front_reader, wrist_reader),
+            min_seq={"front": -1, "wrist": -1},
+            timeout_s=args.ready_timeout_s,
+        )
         depth_label = "on" if args.cam0_depth_enabled else "off"
-        print(f"ok (wrist={wrist.label}, realsense_depth={depth_label})")
+        print(
+            styled("ready", "1;32")
+            + f" (wrist={wrist.label}, realsense_usb={front.usb_type}, depth={depth_label})"
+        )
 
         print(f"\n  experiment  : {args.experiment}")
         print(f"  task        : {task}")
@@ -465,31 +555,81 @@ def main() -> int:
         print("  Ctrl+C to quit\n")
 
         while not rospy.is_shutdown():
-            command = input(f"  [{episode_index}] Enter=start recording, q=quit ...").strip().lower()
+            command = input(
+                styled(f"  [{episode_index}] Enter=start recording, q=quit > ", "1;36")
+            ).strip().lower()
             if normalize_episode_decision(command) == EpisodeDecision.QUIT:
                 break
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             episode_name = f"episode_{episode_index:03d}_{timestamp}"
             episode_dir = experiment_dir / episode_name
-            print(f"  [{episode_index}] recording ... Enter=save, d+Enter=discard, q+Enter=quit")
-            frame_count, decision = record_episode(
-                episode_dir=episode_dir,
-                front=front,
-                wrist=wrist,
-                ros_state=ros_state,
-                state_mode=state_mode,
-                fps=args.fps,
-                max_duration_s=args.max_duration_s,
-                jpeg_quality=args.jpeg_quality,
-                depth_enabled=args.cam0_depth_enabled,
+            print(
+                styled(
+                    f"  [{episode_index}] RECORDING",
+                    "1;33",
+                )
+                + "  Enter=save, d+Enter=discard, q+Enter=quit"
             )
-
-            if decision != EpisodeDecision.SAVE or frame_count == 0:
+            try:
+                recording = record_episode(
+                    episode_dir=episode_dir,
+                    front_reader=front_reader,
+                    wrist_reader=wrist_reader,
+                    ros_state=ros_state,
+                    state_mode=state_mode,
+                    fps=args.fps,
+                    max_duration_s=args.max_duration_s,
+                    jpeg_quality=args.jpeg_quality,
+                    depth_enabled=args.cam0_depth_enabled,
+                    camera_ready_timeout_s=args.ready_timeout_s,
+                    max_camera_age_s=args.max_camera_age_s,
+                )
+            except BaseException:
                 shutil.rmtree(episode_dir, ignore_errors=True)
-                reason = "0 frames" if frame_count == 0 else f"user selected {decision.value}"
+                print(
+                    styled(
+                        f"  [{episode_index}] ERROR: recording failed; episode deleted -> {episode_name}",
+                        "1;31",
+                        stream=sys.stderr,
+                    ),
+                    file=sys.stderr,
+                )
+                raise
+
+            if recording.decision != EpisodeDecision.SAVE or recording.frame_count == 0:
+                shutil.rmtree(episode_dir, ignore_errors=True)
+                reason = (
+                    "0 frames"
+                    if recording.frame_count == 0
+                    else f"user selected {recording.decision.value}"
+                )
                 print(f"  [{episode_index}] {reason}; episode deleted.\n")
-                if decision == EpisodeDecision.QUIT:
+                if recording.decision == EpisodeDecision.QUIT:
                     break
+                continue
+
+            violation = find_joint_action_step_violation(
+                recording.actions,
+                action_names=JOINT_ACTION_NAMES,
+                max_step_rad=args.max_joint_action_step_rad,
+            )
+            if violation is not None:
+                shutil.rmtree(episode_dir, ignore_errors=True)
+                print(
+                    styled(
+                        f"  [{episode_index}] REJECTED: joint action discontinuity: "
+                        f"{violation.describe()}",
+                        "1;31",
+                        stream=sys.stderr,
+                    ),
+                    file=sys.stderr,
+                )
+                print(f"  [{episode_index}] episode deleted; index will be reused.\n", file=sys.stderr)
+                if args.auto_reset_after_save:
+                    reset_for_next_episode(
+                        runtime_script=args.reset_runtime_script,
+                        teleop_config=args.teleop_config,
+                    )
                 continue
 
             write_metadata(
@@ -497,7 +637,7 @@ def main() -> int:
                 task=task,
                 experiment=args.experiment,
                 episode_index=episode_index,
-                frame_count=frame_count,
+                frame_count=recording.frame_count,
                 fps=args.fps,
                 state_mode=state_mode,
                 cam0_serial=args.cam0_serial,
@@ -512,16 +652,51 @@ def main() -> int:
                 cam1_height=args.cam1_height,
                 args=args,
             )
-            print(f"  [{episode_index}] saved {frame_count} frames -> {episode_name}\n")
+            nominal_s = recording.frame_count / args.fps if args.fps > 0 else 0.0
+            print(
+                styled(
+                    f"  [{episode_index}] SAVED {recording.frame_count} frames "
+                    f"(~{nominal_s:.1f}s @ {args.fps:g}fps) -> {episode_name}",
+                    "1;32",
+                )
+                + "\n"
+            )
             episode_index += 1
+            if args.auto_reset_after_save:
+                reset_for_next_episode(
+                    runtime_script=args.reset_runtime_script,
+                    teleop_config=args.teleop_config,
+                )
     except (KeyboardInterrupt, EOFError):
         print(f"\n[collect] done. Next episode index would be {episode_index}.")
     finally:
+        if wrist_reader is not None:
+            wrist_reader.stop()
+        if front_reader is not None:
+            front_reader.stop()
         if wrist is not None:
             wrist.close()
         if front is not None:
             front.close()
     return 0
+
+
+def reset_for_next_episode(*, runtime_script: Path, teleop_config: Path) -> None:
+    try:
+        subprocess.run(
+            [
+                str(runtime_script.resolve()),
+                "--config",
+                str(teleop_config.resolve()),
+                "_reset-live",
+            ],
+            check=True,
+        )
+    except subprocess.CalledProcessError as exc:
+        raise RuntimeError(
+            "automatic reset failed; collection stopped before the next episode"
+        ) from exc
+    print()
 
 
 def _stamp_to_seconds(stamp: Any) -> float:
@@ -534,6 +709,48 @@ def _stamp_to_seconds(stamp: Any) -> float:
         except Exception:
             return 0.0
     return float(getattr(stamp, "secs", 0)) + float(getattr(stamp, "nsecs", 0)) * 1e-9
+
+
+def _wait_for_new_camera_samples(
+    readers: tuple[LatestCameraReader, ...],
+    *,
+    min_seq: dict[str, int],
+    timeout_s: float,
+) -> None:
+    deadline = time.perf_counter() + timeout_s
+    while time.perf_counter() < deadline:
+        _raise_camera_reader_errors(readers)
+        ready = True
+        for reader in readers:
+            latest = reader.latest()
+            if latest is None or latest.seq <= min_seq.get(reader.name, -1):
+                ready = False
+                break
+        if ready:
+            return
+        time.sleep(0.005)
+    details = ", ".join(f"{reader.name}:seq={reader.latest_seq()}" for reader in readers)
+    raise RuntimeError(f"camera readers did not produce fresh frames within {timeout_s:.1f}s ({details})")
+
+
+def _fresh_camera_sample(reader: LatestCameraReader, *, now_s: float, max_age_s: float) -> CameraSample:
+    sample = reader.latest()
+    if sample is None:
+        raise RuntimeError(f"{reader.name} camera has no sample")
+    age_s = now_s - sample.monotonic_s
+    if age_s > max_age_s:
+        raise RuntimeError(
+            f"{reader.name} camera sample is stale: age={age_s:.3f}s, "
+            f"max={max_age_s:.3f}s, seq={sample.seq}"
+        )
+    return sample
+
+
+def _raise_camera_reader_errors(readers: tuple[LatestCameraReader, ...]) -> None:
+    for reader in readers:
+        exc = reader.exception()
+        if exc is not None:
+            raise RuntimeError(f"{reader.name} camera reader failed") from exc
 
 
 def _first_n(values: tuple[float, ...], count: int, *, label: str) -> tuple[float, ...]:
@@ -562,4 +779,8 @@ def _poll_stdin_line() -> str | None:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    try:
+        raise SystemExit(main())
+    except RuntimeError as exc:
+        print(styled(f"error: {exc}", "1;31", stream=sys.stderr), file=sys.stderr)
+        raise SystemExit(1)

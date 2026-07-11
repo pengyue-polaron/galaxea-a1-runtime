@@ -6,6 +6,7 @@ from galaxea_a1_runtime.collection import (
     StateMode,
     TeleopRawEpisodeMetadata,
     action_columns,
+    find_joint_action_step_violation,
     metadata_to_json_dict,
     next_episode_index,
     normalize_episode_decision,
@@ -69,6 +70,30 @@ def test_episode_decision_matches_old_teleop_interaction():
     assert normalize_episode_decision("q") == EpisodeDecision.QUIT
 
 
+def test_joint_action_quality_check_rejects_discontinuity():
+    violation = find_joint_action_step_violation(
+        [(0.0, 0.0), (0.1, 0.2), (0.15, 1.0)],
+        action_names=("joint_1", "joint_2"),
+        max_step_rad=0.35,
+    )
+
+    assert violation is not None
+    assert violation.frame_index == 2
+    assert violation.joint_name == "joint_2"
+    assert violation.step_rad == 0.8
+
+
+def test_joint_action_quality_check_accepts_continuous_actions():
+    assert (
+        find_joint_action_step_violation(
+            [(0.0, 0.0, 0.0), (0.1, -0.1, 1.0), (0.2, -0.2, 0.0)],
+            action_names=("joint_1", "joint_2", "gripper"),
+            max_step_rad=0.35,
+        )
+        is None
+    )
+
+
 def test_next_episode_index_uses_existing_episode_prefix(tmp_path):
     (tmp_path / "episode_000_20260708_120000").mkdir()
     (tmp_path / "episode_002_20260708_120100").mkdir()
@@ -100,6 +125,7 @@ def test_metadata_json_explains_topics_and_control_path():
             "/arm_joint_command_host",
         ),
         cameras=(CameraMetadata("front", "cam0", 640, 480),),
+        quality_checks={"max_joint_action_step_rad": 0.35},
     )
 
     payload = metadata_to_json_dict(metadata)
@@ -109,3 +135,4 @@ def test_metadata_json_explains_topics_and_control_path():
     assert payload["action_topics"]["joint_target"] == "/arm_joint_target_position"
     assert payload["control_path"][-1] == "/arm_joint_command_host"
     assert payload["cameras"][0]["modality"] == "rgb"
+    assert payload["quality_checks"]["max_joint_action_step_rad"] == 0.35

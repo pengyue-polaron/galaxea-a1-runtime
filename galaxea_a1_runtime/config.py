@@ -61,7 +61,6 @@ class DatasetConfig:
     fps: int
     robot_type: str = "galaxea_a1"
     use_videos: bool = True
-    vcodec: str = "libsvtav1"
 
     def validate(self) -> None:
         if "/" not in self.repo_id:

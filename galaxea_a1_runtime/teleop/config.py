@@ -71,8 +71,11 @@ class TeleopCollectionConfig:
     state_mode: StateMode
     fps: float
     max_duration_s: float
+    auto_reset_after_save: bool
     jpeg_quality: int
     ready_timeout_s: float
+    max_camera_age_s: float
+    max_joint_action_step_rad: float
 
 
 @dataclass(frozen=True)
@@ -82,6 +85,8 @@ class TeleopCameraConfig:
     fps: int
     serial: str = ""
     device: str = ""
+    pixel_format: str = ""
+    require_usb3: bool = False
     depth: bool = False
     depth_width: int = 0
     depth_height: int = 0
@@ -190,14 +195,18 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             state_mode=StateMode(_string(collection, "state_mode")),
             fps=float(collection.get("fps", 30.0)),
             max_duration_s=float(collection.get("max_duration_s", 0.0)),
+            auto_reset_after_save=bool(collection.get("auto_reset_after_save", True)),
             jpeg_quality=int(collection.get("jpeg_quality", 95)),
             ready_timeout_s=float(collection.get("ready_timeout_s", 10.0)),
+            max_camera_age_s=float(collection.get("max_camera_age_s", 0.5)),
+            max_joint_action_step_rad=float(collection.get("max_joint_action_step_rad", 0.35)),
         ),
         front_camera=TeleopCameraConfig(
             serial=str(front.get("serial", "")),
             width=front_width,
             height=front_height,
             fps=int(front.get("fps", 30)),
+            require_usb3=bool(front.get("require_usb3", True)),
             depth=bool(front.get("depth", False)),
             depth_width=front_depth_width,
             depth_height=front_depth_height,
@@ -205,6 +214,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         ),
         wrist_camera=TeleopCameraConfig(
             device=_string(wrist, "device"),
+            pixel_format=str(wrist.get("pixel_format", "YUYV")),
             width=wrist_width,
             height=wrist_height,
             fps=int(wrist.get("fps", 30)),
@@ -219,6 +229,10 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("bridge.hz must be positive")
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
+    if config.collection.max_camera_age_s <= 0:
+        raise ValueError("collection.max_camera_age_s must be positive")
+    if config.collection.max_joint_action_step_rad <= 0:
+        raise ValueError("collection.max_joint_action_step_rad must be positive")
     if config.bridge.initial_alignment_tolerance_rad < 0:
         raise ValueError("bridge.initial_alignment_tolerance_rad must be non-negative")
     if config.gripper.max_stroke_mm <= config.gripper.min_stroke_mm:
@@ -299,10 +313,15 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         _num(config.collection.fps),
         "--max-duration-s",
         _num(config.collection.max_duration_s),
+        _bool_flag("auto-reset-after-save", config.collection.auto_reset_after_save),
         "--jpeg-quality",
         str(config.collection.jpeg_quality),
         "--ready-timeout-s",
         _num(config.collection.ready_timeout_s),
+        "--max-camera-age-s",
+        _num(config.collection.max_camera_age_s),
+        "--max-joint-action-step-rad",
+        _num(config.collection.max_joint_action_step_rad),
         "--joint-topic",
         config.topics.joint_states,
         "--eef-topic",
@@ -325,6 +344,7 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         str(config.front_camera.height),
         "--cam0-fps",
         str(config.front_camera.fps),
+        _bool_flag("cam0-require-usb3", config.front_camera.require_usb3),
         _bool_flag("cam0-depth-enabled", config.front_camera.depth),
         "--cam0-depth-width",
         str(config.front_camera.depth_width or config.front_camera.width),
@@ -339,6 +359,8 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         str(config.wrist_camera.height),
         "--cam1-fps",
         str(config.wrist_camera.fps),
+        "--cam1-pixel-format",
+        config.wrist_camera.pixel_format,
     ]
     if config.front_camera.serial:
         args.extend(["--cam0-serial", config.front_camera.serial])
