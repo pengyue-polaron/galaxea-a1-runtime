@@ -5,7 +5,7 @@ requires-python = ">=3.12,<3.13"
 
 dependencies = [
     "huggingface-hub>=1.0.0,<2.0.0",
-    "lerobot",
+    "lerobot[feetech]",
     "numpy>=2.2.0",
     "pandas>=2.3.3",
     "pillow>=11.0.0",

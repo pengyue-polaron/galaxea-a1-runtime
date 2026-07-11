@@ -154,15 +154,33 @@ def infer_camera_specs(
     disable_wrist: bool,
 ) -> tuple[CameraSpec, ...]:
     frame_index = int(df["frame_index"].iloc[0]) if "frame_index" in df.columns else 0
-    cameras = [("front", episode_dir / "cam0" / f"{frame_index:06d}.jpg")]
+    row0 = df.iloc[0]
+    cameras = [("front", episode_dir / "cam0" / f"{frame_index:06d}.jpg", False)]
     if not disable_wrist:
-        cameras.append(("wrist", episode_dir / "cam1" / f"{frame_index:06d}.jpg"))
+        cameras.append(("wrist", episode_dir / "cam1" / f"{frame_index:06d}.jpg", False))
+    depth_relpath = row0.get("cam0_depth_relpath")
+    if isinstance(depth_relpath, str) and depth_relpath:
+        cameras.append(("front_depth", episode_dir / depth_relpath, True))
     specs: list[CameraSpec] = []
-    for name, path in cameras:
+    for name, path, is_depth in cameras:
         if not path.is_file():
             raise FileNotFoundError(f"missing camera frame: {path}")
-        height, width, channels = infer_image_shape(path)
-        specs.append(CameraSpec(name=name, height=height, width=width, channels=channels))
+        if is_depth:
+            with Image.open(path) as image:
+                width, height = image.size
+            specs.append(
+                CameraSpec(
+                    name=name,
+                    height=height,
+                    width=width,
+                    channels=1,
+                    is_depth_map=True,
+                    depth_unit="mm",
+                )
+            )
+        else:
+            height, width, channels = infer_image_shape(path)
+            specs.append(CameraSpec(name=name, height=height, width=width, channels=channels))
     return tuple(specs)
 
 
@@ -272,10 +290,30 @@ def iter_episode_frames(
             "timestamp": float(timestamps[row_index]),
         }
         for camera in episode.camera_specs:
-            src_dir = "cam0" if camera.name == "front" else "cam1"
-            frame[camera.feature_key()] = load_rgb_image(episode.path / src_dir / f"{int(frame_index):06d}.jpg")
+            frame[camera.feature_key()] = load_camera_frame(
+                episode=episode,
+                df_row=df.iloc[row_index],
+                camera=camera,
+                frame_index=int(frame_index),
+            )
         validate_frame_keys(frame, contract=contract)
         yield frame
+
+
+def load_camera_frame(
+    *,
+    episode: RawEpisode,
+    df_row: pd.Series,
+    camera: CameraSpec,
+    frame_index: int,
+) -> np.ndarray:
+    if camera.is_depth_map:
+        relpath = df_row.get("cam0_depth_relpath")
+        if not isinstance(relpath, str) or not relpath:
+            raise ValueError(f"missing cam0_depth_relpath for {episode.path} frame {frame_index}")
+        return load_depth_image(episode.path / relpath)
+    src_dir = "cam0" if camera.name == "front" else "cam1"
+    return load_rgb_image(episode.path / src_dir / f"{frame_index:06d}.jpg")
 
 
 def _metadata_names(metadata: dict, key: str) -> tuple[str, ...]:
@@ -304,6 +342,14 @@ def episode_timestamps(df: pd.DataFrame, *, fps: int) -> np.ndarray:
 def load_rgb_image(path: Path) -> np.ndarray:
     with Image.open(path) as image:
         return np.asarray(image.convert("RGB"))
+
+
+def load_depth_image(path: Path) -> np.ndarray:
+    with Image.open(path) as image:
+        depth = np.asarray(image)
+    if depth.ndim != 2:
+        raise ValueError(f"depth image must be single-channel: {path}")
+    return depth.astype(np.uint16, copy=False)[..., None]
 
 
 def main(argv: list[str] | None = None) -> int:

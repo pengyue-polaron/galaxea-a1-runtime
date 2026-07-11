@@ -71,6 +71,9 @@ teleop-test:
     scripts/apps/teleop/a1_teleop_runtime.sh start
     @echo "Teleop is live. Check leader keys with: just logs"
 
+home:
+    scripts/apps/teleop/a1_teleop_runtime.sh home
+
 lingbot:
     scripts/apps/lingbot/a1_lingbot_runtime.sh start
 

@@ -4,6 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
 CONFIG_PATH="${ROOT}/configs/teleop/a1_so100.toml"
+HOME_CONFIG_PATH="${ROOT}/configs/poses/a1_initial.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -55,7 +56,11 @@ stop_bridge() {
   if [[ -f "${BRIDGE_PID_FILE}" ]]; then
     local pid
     pid="$(cat "${BRIDGE_PID_FILE}")"
-    kill "${pid}" >/dev/null 2>&1 || true
+    if kill -0 "-${pid}" >/dev/null 2>&1; then
+      kill "-${pid}" >/dev/null 2>&1 || true
+    else
+      kill "${pid}" >/dev/null 2>&1 || true
+    fi
     rm -f "${BRIDGE_PID_FILE}"
   fi
 }
@@ -159,23 +164,41 @@ start_bridge() {
   stop_bridge
   local log_file="${LOG_DIR}/bridge.log"
   : > "${log_file}"
-  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  setsid env \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/so100_joint_bridge.py" \
       "${BRIDGE_ARGS[@]}" \
-      >> "${log_file}" 2>&1 &
+      >> "${log_file}" 2>&1 < /dev/null &
   echo "$!" > "${BRIDGE_PID_FILE}"
-  sleep 2
-  if ! kill -0 "$(cat "${BRIDGE_PID_FILE}")" >/dev/null 2>&1; then
-    echo "[FAIL] Teleop bridge exited during startup. Log: ${log_file}" >&2
-    tail -80 "${log_file}" >&2 || true
-    exit 2
-  fi
+  wait_bridge_live "${log_file}"
   echo "Teleop bridge running. Log: ${log_file}"
+}
+
+wait_bridge_live() {
+  local log_file="$1"
+  local pid
+  pid="$(cat "${BRIDGE_PID_FILE}")"
+  local deadline=$((SECONDS + 15))
+  while (( SECONDS < deadline )); do
+    if ! kill -0 "${pid}" >/dev/null 2>&1; then
+      echo "[FAIL] Teleop bridge exited during startup. Log: ${log_file}" >&2
+      tail -120 "${log_file}" >&2 || true
+      exit 2
+    fi
+    if grep -q "relay ACTIVE; teleop is live" "${log_file}" 2>/dev/null; then
+      return 0
+    fi
+    sleep 0.5
+  done
+  echo "[FAIL] Teleop bridge did not become live within 15 seconds. Log: ${log_file}" >&2
+  tail -120 "${log_file}" >&2 || true
+  exit 2
 }
 
 doctor() {
   local args=("$@")
-  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python - "${LEADER_PORT}" <<'PY'
 import importlib.util
 import sys
@@ -197,6 +220,7 @@ PY
     A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
     A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
     A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
+    A1_TRACKER_NODE="/jointTracker_demo_node" \
     "${BASE_RUNTIME}" doctor "${args[@]}"
 }
 
@@ -218,10 +242,22 @@ collect() {
   trap cleanup_collect EXIT
   start_services
   start_bridge
-  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/teleop_collect.py" \
       --experiment "${experiment}" \
       "${COLLECT_ARGS[@]}"
+}
+
+home() {
+  cleanup_home() {
+    echo "[home] stopping runtime..."
+    stop_runtime >/dev/null 2>&1 || true
+  }
+  trap cleanup_home EXIT
+  start_services
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_home.py" \
+      --config "${HOME_CONFIG_PATH}"
 }
 
 status() {
@@ -267,6 +303,9 @@ case "${1:-help}" in
     shift
     collect "$@"
     ;;
+  home)
+    home
+    ;;
   stop)
     stop_runtime
     ;;
@@ -286,12 +325,13 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect|stop|doctor|status|logs|cameras>
+Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect|home|stop|doctor|status|logs|cameras>
 
   start     Start staged joint teleop services and SO leader bridge
   services  Start ROS master, A1 driver, staged joint tracker, locked relay
   bridge    Start only the SO leader bridge
   collect   Start teleop, then run the interactive recorder
+  home      Move A1 and SO leader to configs/poses/a1_initial.toml, then stop runtime
   stop      Stop bridge and teleop containers
   doctor    Static/import checks plus base runtime doctor
   status    Containers and bridge process state

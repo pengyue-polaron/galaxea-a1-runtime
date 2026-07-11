@@ -72,7 +72,7 @@ start_tmux() {
   local bridge_command_q
   printf -v bridge_command_q "%q " "${bridge_command[@]}"
   tmux new-session -d -s "${SESSION}" -c "${ROOT}" \
-    "bash -lc 'export PYTHONPATH=\"${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo BRIDGE_EXIT=\$rc; exec bash'"
+    "bash -lc 'export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo BRIDGE_EXIT=\$rc; exec bash'"
   sleep 4
   if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
     echo "[FAIL] tmux session exited during startup." >&2
@@ -87,7 +87,7 @@ doctor() {
     A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
     A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
     "${BASE_RUNTIME}" doctor "${args[@]}"
-  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/lingbot/a1_lingbot_doctor.py" \
       --lingbot-host "${LINGBOT_HOST}" \
       --lingbot-port "${LINGBOT_PORT}" \

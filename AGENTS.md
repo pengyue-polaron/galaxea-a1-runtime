@@ -209,6 +209,7 @@ arm is disconnected.
 ```bash
 just check
 just cameras
+just home
 just eef-test
 just teleop-test
 just teleop pick_cube
@@ -221,6 +222,13 @@ Teleop hardware/data semantics are configured in
 `configs/teleop/a1_so100.toml`. Edit and commit that file when camera devices,
 RealSense depth capture, leader port, state mode, FPS, gripper stroke range, or
 joint mapping changes.
+
+The A1 + SO leader reset/home pose is configured in
+`configs/poses/a1_initial.toml`. `just home` moves A1 to that tracked joint pose
+through the staged jointTracker and relay path, then moves the SO leader to its
+tracked Feetech position, explicitly closes both grippers, disables leader
+torque, and stops the runtime. Update and commit that file when the operator
+intentionally changes the collection start pose.
 
 LingBot inference semantics are configured in
 `configs/inference/lingbot_va_a1.toml`. Edit and commit that file when the
@@ -265,8 +273,9 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   is needed, make it explicit in a tracked config or named safety module.
 - Normal data collection should write enough metadata to reproduce the run:
   config path, state/action topics, control path, state/action names, FPS, and
-  camera settings. Teleop RealSense depth is recorded as a raw 16-bit PNG
-  sidecar (`cam0_depth/`) when enabled.
+  camera settings. Teleop RealSense depth is recorded as raw aligned 16-bit PNG
+  in `cam0_depth/` and converts to LeRobot as `observation.images.front_depth`
+  when enabled.
 - `third_party/lerobot` is vendored for the LeRobot v0.6 runtime baseline. Do
   not patch it for A1-specific app behavior; put A1 integration code under
   `galaxea_a1_runtime/` or `scripts/apps/`. The A1 SO leader motor layout lives

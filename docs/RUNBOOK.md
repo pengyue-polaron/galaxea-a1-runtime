@@ -45,7 +45,17 @@ Confirm the bridge log prints `leader_keys=['joint0.pos', ..., 'joint5.pos']`.
 Move one leader joint at a time and verify the A1 direction matches the old
 working behavior. Test gripper open/close.
 
-4. Stop:
+4. Return to the tracked initial pose:
+
+```bash
+just home
+```
+
+The target pose is tracked in `configs/poses/a1_initial.toml`.
+It includes both the A1 joint pose and the SO leader/LeRobot start pose.
+Both grippers are closed as part of this command.
+
+5. Stop:
 
 ```bash
 just stop
@@ -81,7 +91,8 @@ Recorded state modes:
 Actions are recorded as `joint_absolute` targets from
 `/arm_joint_target_position`.
 Saved episodes contain `frames.csv`, `metadata.json`, `cam0/`, `cam1/`, and
-`cam0_depth/` when depth is enabled.
+`cam0_depth/` when depth is enabled. Raw depth is stored as aligned 16-bit PNG
+in millimetres and converts to LeRobot as `observation.images.front_depth`.
 
 ## LingBot-VA
 

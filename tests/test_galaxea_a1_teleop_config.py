@@ -25,6 +25,7 @@ def test_default_teleop_config_locks_old_working_behavior():
     )
     assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
+    assert config.bridge.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
     assert config.gripper.max_stroke_mm == 200.0
     assert config.front_camera.depth is True
@@ -37,8 +38,11 @@ def test_config_builds_bridge_args_without_per_run_env_overrides():
 
     assert args[args.index("--leader-port") + 1] == "/dev/ttyACM0"
     assert args[args.index("--target-topic") + 1] == "/arm_joint_target_position"
+    assert args[args.index("--staged-command-topic") + 1] == "/arm_joint_command_a1_staged"
+    assert args[args.index("--initial-alignment-tolerance") + 1] == "0.05"
     assert args[args.index("--gripper-max-stroke-mm") + 1] == "200"
-    assert args[args.index("--sign") + 1] == "-1,1,1,-1,1,-1"
+    assert "--sign=-1,1,1,-1,1,-1" in args
+    assert "--lower-limits=-2.8798,0,-3.3161,-2.8798,-1.6581,-2.8798" in args
 
 
 def test_config_builds_collector_args_from_tracked_file():

@@ -73,6 +73,7 @@ def make_teleop_raw_episode(root: Path) -> None:
     episode = source / "episode_000_20260708_120000"
     (episode / "cam0").mkdir(parents=True)
     (episode / "cam1").mkdir(parents=True)
+    (episode / "cam0_depth").mkdir(parents=True)
     (source / "task.txt").write_text("pick cube\n")
     state_names = [
         "eef_x",
@@ -106,6 +107,7 @@ def make_teleop_raw_episode(root: Path) -> None:
         "ros_stamp_s": 10.0,
         "cam0_relpath": "cam0/000000.jpg",
         "cam1_relpath": "cam1/000000.jpg",
+        "cam0_depth_relpath": "cam0_depth/000000.png",
     }
     row.update({f"state.{name}": float(index) for index, name in enumerate(state_names)})
     row.update({f"action.{name}": float(index + 10) for index, name in enumerate(action_names)})
@@ -113,6 +115,8 @@ def make_teleop_raw_episode(root: Path) -> None:
     for camera in ("cam0", "cam1"):
         image = Image.fromarray(np.full((4, 5, 3), 7, dtype=np.uint8))
         image.save(episode / camera / "000000.jpg")
+    depth = Image.fromarray(np.full((4, 5), 1234, dtype=np.uint16))
+    depth.save(episode / "cam0_depth" / "000000.png")
 
 
 def test_iter_episode_frames_preserves_new_teleop_state_and_action(tmp_path):
@@ -130,3 +134,7 @@ def test_iter_episode_frames_preserves_new_teleop_state_and_action(tmp_path):
     assert episode.schema_version == "galaxea_a1_teleop_raw_v1"
     assert frames[0]["observation.state"] == pytest.approx(tuple(float(i) for i in range(14)))
     assert frames[0]["action"] == pytest.approx(tuple(float(i + 10) for i in range(7)))
+    assert [camera.name for camera in episode.camera_specs] == ["front", "wrist", "front_depth"]
+    assert episode.camera_specs[2].is_depth_map is True
+    assert frames[0]["observation.images.front_depth"].shape == (4, 5, 1)
+    assert frames[0]["observation.images.front_depth"].dtype == np.uint16

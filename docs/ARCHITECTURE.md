@@ -155,8 +155,8 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 - LingBot app: step-gated inference and publishing, relay guard, EEF state
   conditioning, workspace validation, linear gripper mapping.
 - Dataset: LeRobotDataset v3 contract, writer helpers, passive episode recorder,
-  teleop raw migration, v2.1 migration plan, and raw RealSense depth sidecar
-  capture for teleop episodes.
+  teleop raw migration, v2.1 migration plan, raw RealSense depth capture, and
+  `observation.images.front_depth` conversion for depth-enabled teleop episodes.
 
 ## Intentionally Not Done Yet
 

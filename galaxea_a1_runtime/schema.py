@@ -65,6 +65,8 @@ class CameraSpec:
     height: int
     width: int
     channels: int = 3
+    is_depth_map: bool = False
+    depth_unit: str | None = None
 
     def feature_key(self) -> str:
         return f"observation.images.{self.name}"
@@ -75,11 +77,17 @@ class CameraSpec:
             raise ValueError(f"invalid camera shape for {self.name}: {self.height}x{self.width}")
         if self.channels not in (1, 3, 4):
             raise ValueError(f"invalid channel count for {self.name}: {self.channels}")
-        return {
+        feature = {
             "dtype": "video",
             "shape": (self.height, self.width, self.channels),
             "names": ["height", "width", "channel"],
         }
+        if self.is_depth_map:
+            info: dict[str, Any] = {"is_depth_map": True}
+            if self.depth_unit is not None:
+                info["depth_unit"] = self.depth_unit
+            feature["info"] = info
+        return feature
 
 
 @dataclass(frozen=True)

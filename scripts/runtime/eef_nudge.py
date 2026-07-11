@@ -22,8 +22,8 @@ if str(ROOT_DIR) not in sys.path:
 for candidate in (
     "/opt/ros/noetic/lib/python3/dist-packages",
     "/usr/lib/python3/dist-packages",
-    str(_ROS1_OVERLAY),
     str(_A1_SDK / "lib" / "python3" / "dist-packages"),
+    str(_ROS1_OVERLAY),
 ):
     if os.path.isdir(candidate) and candidate not in sys.path:
         sys.path.append(candidate)

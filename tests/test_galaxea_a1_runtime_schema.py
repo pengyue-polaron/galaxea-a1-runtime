@@ -32,6 +32,15 @@ def test_default_contract_exposes_expected_feature_keys():
     assert features["action"]["shape"] == (7,)
 
 
+def test_depth_camera_spec_marks_lerobot_depth_feature():
+    spec = CameraSpec("front_depth", height=480, width=640, channels=1, is_depth_map=True, depth_unit="mm")
+    feature = spec.feature()
+
+    assert feature["dtype"] == "video"
+    assert feature["shape"] == (480, 640, 1)
+    assert feature["info"] == {"is_depth_map": True, "depth_unit": "mm"}
+
+
 def test_translation_action_contract_uses_four_actions():
     contract = default_dataset_contract(action_mode=ActionMode.EEF_TRANSLATION)
 

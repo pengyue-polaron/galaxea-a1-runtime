@@ -12,6 +12,7 @@ RELAY_CONTAINER="${PREFIX}-command-relay"
 STAGED_TOPIC="${A1_STAGED_COMMAND_TOPIC:-/arm_joint_command_a1_staged}"
 RELAY_ENABLE_TOPIC="${A1_RELAY_ENABLE_TOPIC:-/a1_arm_motion_enable}"
 RELAY_STATUS_TOPIC="${A1_RELAY_STATUS_TOPIC:-/a1_arm_relay_status}"
+TRACKER_NODE="${A1_TRACKER_NODE:-/eeTracker_demo_node}"
 
 ros_prefix='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash"'
 
@@ -137,11 +138,12 @@ start_services() {
 
 doctor() {
   local args=("$@")
-  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_runtime_doctor.py" \
       --serial "${SERIAL}" \
       --staged-command-topic "${STAGED_TOPIC}" \
       --relay-status-topic "${RELAY_STATUS_TOPIC}" \
+      --tracker-node "${TRACKER_NODE}" \
       "${args[@]}"
 }
 
@@ -165,7 +167,7 @@ logs() {
 }
 
 eef_nudge() {
-  PYTHONPATH="${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" "$@"
 }
 
@@ -207,6 +209,7 @@ Environment:
   A1_STAGED_COMMAND_TOPIC=${STAGED_TOPIC}
   A1_RELAY_ENABLE_TOPIC=${RELAY_ENABLE_TOPIC}
   A1_RELAY_STATUS_TOPIC=${RELAY_STATUS_TOPIC}
+  A1_TRACKER_NODE=${TRACKER_NODE}
 EOF
     ;;
 esac

@@ -53,6 +53,7 @@ class TeleopBridgeConfig:
     relay_enable_timeout_s: float
     max_relay_status_age_s: float
     a1_state_timeout_s: float
+    initial_alignment_tolerance_rad: float
 
 
 @dataclass(frozen=True)
@@ -173,6 +174,9 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             relay_enable_timeout_s=float(bridge.get("relay_enable_timeout_s", 2.0)),
             max_relay_status_age_s=float(bridge.get("max_relay_status_age_s", 1.0)),
             a1_state_timeout_s=float(bridge.get("a1_state_timeout_s", 10.0)),
+            initial_alignment_tolerance_rad=float(
+                bridge.get("initial_alignment_tolerance_rad", 0.05)
+            ),
         ),
         gripper=TeleopGripperConfig(
             enabled=bool(gripper.get("enabled", True)),
@@ -215,6 +219,8 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("bridge.hz must be positive")
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
+    if config.bridge.initial_alignment_tolerance_rad < 0:
+        raise ValueError("bridge.initial_alignment_tolerance_rad must be non-negative")
     if config.gripper.max_stroke_mm <= config.gripper.min_stroke_mm:
         raise ValueError("gripper.max_stroke_mm must be greater than min_stroke_mm")
     for label, camera in (("front", config.front_camera), ("wrist", config.wrist_camera)):
@@ -245,20 +251,17 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         config.topics.joint_states,
         "--target-topic",
         config.topics.target,
+        "--staged-command-topic",
+        config.topics.staged_command,
         "--target-joint-names",
         _csv(config.bridge.target_joint_names),
         _bool_flag("relative", mapping.relative),
         _bool_flag("input-degrees", mapping.input_degrees),
-        "--scale",
-        _csv(mapping.scale),
-        "--sign",
-        _csv(mapping.sign),
-        "--bias-rad",
-        _csv(mapping.bias_rad),
-        "--lower-limits",
-        _csv(mapping.lower_limits),
-        "--upper-limits",
-        _csv(mapping.upper_limits),
+        f"--scale={_csv(mapping.scale)}",
+        f"--sign={_csv(mapping.sign)}",
+        f"--bias-rad={_csv(mapping.bias_rad)}",
+        f"--lower-limits={_csv(mapping.lower_limits)}",
+        f"--upper-limits={_csv(mapping.upper_limits)}",
         "--motion-enable-topic",
         config.topics.relay_enable,
         "--relay-status-topic",
@@ -269,6 +272,8 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         _num(config.bridge.max_relay_status_age_s),
         "--a1-state-timeout",
         _num(config.bridge.a1_state_timeout_s),
+        "--initial-alignment-tolerance",
+        _num(config.bridge.initial_alignment_tolerance_rad),
         _bool_flag("gripper-enabled", config.gripper.enabled),
         "--gripper-source-key",
         config.gripper.source_key,

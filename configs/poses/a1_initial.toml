@@ -1,0 +1,98 @@
+# Git-tracked A1 + SO leader collection start pose.
+# Recorded from the live hardware on 2026-07-11T16:30:10+08:00.
+
+name = "a1_initial"
+description = "User-selected A1 and LeRobot/SO leader start pose for teleop data collection."
+
+[topics]
+joint_states = "/joint_states_host"
+target = "/arm_joint_target_position"
+staged_command = "/arm_joint_command_a1_staged"
+relay_enable = "/a1_arm_motion_enable"
+relay_status = "/a1_arm_relay_status"
+gripper_command = "/gripper_position_control_host"
+
+[joints]
+names = [
+  "arm_joint1",
+  "arm_joint2",
+  "arm_joint3",
+  "arm_joint4",
+  "arm_joint5",
+  "arm_joint6",
+]
+position_rad = [
+  -0.012000083923339844,
+  0.0019998550415039062,
+  -0.07299995422363281,
+  -1.5989999771118164,
+  0.07800006866455078,
+  -0.09300041198730469,
+]
+
+[gripper]
+# A1 gripper is explicitly closed by `just home`.
+enabled = true
+closed_stroke_mm = 0.0
+publish_hz = 10.0
+publish_s = 1.0
+reference_position_rad = -0.13399982452392578
+
+[eef]
+frame = "base_link"
+position_m = [
+  0.07512403079220545,
+  -0.0014919375118257043,
+  0.2595407129266684,
+]
+orientation_xyzw = [
+  -0.037921627887957686,
+  0.7085549603707892,
+  -0.04763789119480147,
+  0.7030237902054166,
+]
+
+[leader]
+enabled = true
+port = "/dev/ttyACM0"
+id = "my_leader"
+use_degrees = true
+action_keys = [
+  "joint0.pos",
+  "joint1.pos",
+  "joint2.pos",
+  "joint3.pos",
+  "joint4.pos",
+  "joint5.pos",
+  "gripper.pos",
+]
+action_values = [
+  11.648351648351648,
+  -0.3076923076923077,
+  0.6593406593406593,
+  177.75824175824175,
+  0.26373626373626374,
+  -80.83516483516483,
+  0.0,
+]
+
+[leader_motion]
+hz = 30.0
+min_duration_s = 3.0
+max_velocity_units_s = 45.0
+hold_s = 2.0
+goal_tolerance_units = 2.0
+# The leader gripper is commanded fully closed at 0.0. Its normalized feedback
+# can stop a few units above zero at the mechanical closed stop.
+gripper_goal_tolerance_units = 5.0
+
+[motion]
+hz = 30.0
+min_duration_s = 12.0
+max_velocity_rad_s = 0.15
+tracker_alignment_timeout_s = 10.0
+tracker_alignment_tolerance_rad = 0.05
+relay_enable_timeout_s = 3.0
+max_relay_status_age_s = 1.0
+hold_s = 3.0
+goal_tolerance_rad = 0.08

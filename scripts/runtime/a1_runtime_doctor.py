@@ -82,6 +82,7 @@ def main():
     parser.add_argument("--serial", default="/dev/a1")
     parser.add_argument("--staged-command-topic", default="/arm_joint_command_a1_staged")
     parser.add_argument("--relay-status-topic", default="/a1_arm_relay_status")
+    parser.add_argument("--tracker-node", default="/eeTracker_demo_node")
     args = parser.parse_args()
 
     checks = []
@@ -193,12 +194,12 @@ def main():
         except Exception:
             return False
 
-    tracker_alive = node_alive("/eeTracker_demo_node")
+    tracker_alive = node_alive(args.tracker_node)
     add(
         checks,
         "tracker",
         tracker_alive,
-        "isolated tracker responds to XML-RPC" if tracker_alive else "missing or stale registration",
+        f"{args.tracker_node} responds to XML-RPC" if tracker_alive else f"{args.tracker_node} missing or stale",
         required=args.require_execution,
     )
     relay_alive = node_alive("/safe_arm_command_relay")
