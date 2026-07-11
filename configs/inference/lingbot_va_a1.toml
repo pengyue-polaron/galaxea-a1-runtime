@@ -1,0 +1,79 @@
+# Git-tracked runtime contract for LingBot-VA EEF inference on Galaxea A1.
+# Edit this file when policy server, cameras, EEF workspace, or gripper mapping
+# changes. The normal `just lingbot` path reads this file and does not use
+# ad hoc per-run bridge flags.
+
+[session]
+tmux = "lingbot-a1"
+
+[server]
+host = "127.0.0.1"
+port = 1106
+prompt = "pick up that bowl"
+
+[execution]
+execute = true
+step_mode = true
+step_actions = true
+no_kv_update = false
+max_model_calls = 0
+execute_frames = 1
+condition_on_ee_state = true
+lingbot_frame_chunk_size = 4
+lingbot_action_per_frame = 20
+exec_rate = 30.0
+print_actions = true
+review_deadband_m = 0.001
+
+[topics]
+state_pose = "/end_effector_pose"
+state_gripper = "/gripper_stroke_host"
+cmd_pose = "/a1_ee_target"
+cmd_gripper = "/gripper_position_control_host"
+motion_enable = "/a1_arm_motion_enable"
+relay_status = "/a1_arm_relay_status"
+staged_command = "/arm_joint_command_a1_staged"
+
+[relay]
+enable_timeout_s = 2.0
+max_status_age_s = 1.0
+
+[eef]
+command_frame = "world"
+orientation_mode = "hold-current"
+xyz_min = [0.06, -0.27, 0.06]
+xyz_max = [0.44, 0.14, 0.50]
+min_quat_norm = 0.25
+max_feedback_age_s = 0.5
+feedback_wait_timeout_s = 5.0
+
+[servo]
+gain = 1.0
+max_extra_m = 0.04
+settle_s = 0.0
+tolerance_m = 0.01
+corrections = 0
+cache_actual_feedback = true
+
+[gripper]
+stroke_scale_mm = 60.0
+stroke_offset_mm = 0.0
+stroke_min_mm = 0.0
+stroke_max_mm = 60.0
+
+[cameras]
+width = 640
+height = 480
+fps = 30
+
+[cameras.front]
+serial = "341522300456"
+auto_exposure = true
+exposure = 140
+gain = 32
+auto_white_balance = true
+white_balance = 4600
+
+[cameras.wrist]
+device = "/dev/v4l/by-id/usb-Global_Shutter_Camera_Global_Shutter_Camera_01.00.00-video-index0"
+backend_api = "v4l2"

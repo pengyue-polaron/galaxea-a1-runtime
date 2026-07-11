@@ -1,39 +1,39 @@
 [project]
 name = "a1-research"
 version = "0.1.0"
-requires-python = ">=3.11,<3.13"
+requires-python = ">=3.12,<3.13"
 
 dependencies = [
-    "tyro>=1.0.8",
-    "hydra-core>=1.3.2",
-    "omegaconf>=2.3.0",
-    "huggingface-hub>=0.34.2,<0.36.0",
-    "lerobot",
+    "huggingface-hub>=1.0.0,<2.0.0",
+    "lerobot[feetech]",
+    "numpy>=2.2.0",
     "pandas>=2.3.3",
+    "pillow>=11.0.0",
     "pyrealsense2>=2.56.5.9235",
     "rospkg>=1.6.0",
     "catkin-pkg>=1.0.0",
     "torch==2.7.1",
     "torchvision",
     "torchaudio",
-    "chex>=0.1.90",
+    "websockets>=15.0.1",
 ]
 
-[project.optional-dependencies]
-train = ["openpi"]
+[project.scripts]
+galaxea-a1-runtime = "galaxea_a1_runtime.cli:main"
 
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools]
-packages = ["a1"]
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["galaxea_a1_runtime*"]
 
 [tool.uv]
 environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64')"]
 
 [tool.uv.sources]
-lerobot = { git = "https://github.com/huggingface/lerobot", rev = "0cf864870cf29f4738d3ade893e6fd13fbd7cdb5" }
+lerobot = { git = "https://github.com/huggingface/lerobot", rev = "30da8e687a6dfc617fcd94afc367ac7071c376ce" }
 
 [dependency-groups]
 dev = [

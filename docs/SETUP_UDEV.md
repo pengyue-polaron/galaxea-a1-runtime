@@ -19,7 +19,7 @@ In this project machine:
 ## 2) Install udev rules
 
 The rules file is tracked in this repo at
-`configs/udev/99-datacoach-a1.rules`.
+`configs/udev/99-galaxea-a1.rules`.
 
 The USB CDC ACM module autoload file is tracked at
 `configs/modules-load/cdc_acm.conf`.
@@ -27,13 +27,13 @@ The USB CDC ACM module autoload file is tracked at
 Install it with:
 
 ```bash
-scripts/collect_data/install_a1_udev.sh
+scripts/runtime/install_a1_udev.sh
 ```
 
 The installed rule content is:
 
 ```udev
-# DataCoach: A1 arm controller (STM32 Virtual ComPort) -> /dev/a1
+# Galaxea A1 arm controller (STM32 Virtual ComPort) -> /dev/a1
 SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="336635623233", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="a1"
 
 # Secondary USB serial dongle seen on this machine
@@ -75,7 +75,8 @@ Expected:
 Use the stable `/dev/a1` alias:
 
 ```bash
-just launch driver /dev/a1
+just eef-test
 ```
 
-The alias is stable across reboot/replug — no matter which `ttyACM*` number the kernel assigns, `/dev/a1` always points to the arm controller.
+The alias is stable across reboot/replug — no matter which `ttyACM*` number the
+kernel assigns, `/dev/a1` always points to the arm controller.
