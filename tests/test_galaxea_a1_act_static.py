@@ -32,6 +32,7 @@ def test_act_runtime_wrapper_uses_tracked_config_and_joint_runtime():
     assert 'A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}"' in runtime
     assert 'A1_TRACKER_NODE="/jointTracker_demo_node"' in runtime
     assert "leader" not in runtime.lower()
+    assert "bash -lc 'export PYTHONPATH" not in runtime
     assert "A1_ACT_BRIDGE_EXTRA_ARGS" not in runtime
 
 

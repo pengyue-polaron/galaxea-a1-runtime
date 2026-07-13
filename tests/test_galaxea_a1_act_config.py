@@ -61,6 +61,7 @@ def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
     assert "--no-execute" in args
     assert "--step-mode" in args
     assert "--disable-backbone-download" in args
+    assert "--cam0-serial" not in args
 
 
 def test_act_bash_config_exports_joint_runtime_environment(tmp_path):

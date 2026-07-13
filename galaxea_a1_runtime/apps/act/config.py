@@ -252,7 +252,7 @@ def validate_act_config(config: ActConfig) -> None:
 
 
 def bridge_argv(config: ActConfig) -> list[str]:
-    return [
+    args = [
         "--checkpoint",
         str(config.policy.checkpoint),
         "--device",
@@ -321,8 +321,6 @@ def bridge_argv(config: ActConfig) -> list[str]:
         str(config.cameras.fps),
         "--camera-warmup-frames",
         str(config.cameras.warmup_frames),
-        "--cam0-serial",
-        config.cameras.front_serial,
         _bool_flag("cam0-auto-exposure", config.cameras.front_auto_exposure),
         "--cam0-exposure",
         str(config.cameras.front_exposure),
@@ -338,6 +336,9 @@ def bridge_argv(config: ActConfig) -> list[str]:
         "--cam1-pixel-format",
         config.cameras.wrist_pixel_format,
     ]
+    if config.cameras.front_serial:
+        args.extend(["--cam0-serial", config.cameras.front_serial])
+    return args
 
 
 def bash_config(config: ActConfig) -> str:
