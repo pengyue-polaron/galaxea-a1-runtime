@@ -17,8 +17,8 @@ Normal apps must publish EEF targets only:
 
 Do not publish directly to `/arm_joint_command_host` from app or inference code.
 
-Teleop collection is the one normal joint-space app. It still does not publish
-host commands directly:
+Teleop collection and ACT joint-state inference are the normal joint-space
+apps. They still do not publish host commands directly:
 
 ```text
 /arm_joint_target_position
@@ -42,6 +42,9 @@ host commands directly:
   motion onto A1 joint targets before arming the relay.
 - Teleop target joint limits are explicit bridge arguments and are checked by
   `just check`.
+- ACT starts dry-run by default. When execution is enabled, it first commands
+  the current joint feedback target through jointTracker and waits for staged
+  alignment before arming the relay.
 
 ## Action Behavior
 
@@ -55,6 +58,8 @@ host commands directly:
 - LingBot orientation defaults to `hold-current`.
 - LingBot execution settings live in `configs/inference/lingbot_va_a1.toml`;
   avoid per-run hidden flags.
+- ACT execution settings live in `configs/inference/act_joint_a1.toml`; the
+  tracked default is `execution.execute = false`.
 - Every policy and dataset stores only `0` or `1`: `0` is fully closed and `1`
   is fully open. Hardware adapters send only `0mm` or `200mm`.
 - LingBot waits for relay `ACTIVE` before gripper publish because the gripper

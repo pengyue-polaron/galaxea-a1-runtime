@@ -49,6 +49,8 @@ test:
         {{repo}}/tests/test_galaxea_a1_lingbot_actions.py \
         {{repo}}/tests/test_galaxea_a1_lingbot_pack.py \
         {{repo}}/tests/test_galaxea_a1_lingbot_static.py \
+        {{repo}}/tests/test_galaxea_a1_act_config.py \
+        {{repo}}/tests/test_galaxea_a1_act_static.py \
         {{repo}}/tests/test_galaxea_a1_runtime_doctor.py \
         {{repo}}/tests/test_galaxea_a1_policy_profiles.py \
         {{repo}}/tests/test_galaxea_a1_lerobot_writer.py \
@@ -81,13 +83,19 @@ reset:
 lingbot:
     scripts/apps/lingbot/a1_lingbot_runtime.sh start
 
+act:
+    scripts/apps/act/a1_act_joint_runtime.sh start
+
 stop:
+    scripts/apps/act/a1_act_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/teleop/a1_teleop_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true
+    scripts/runtime/a1_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_runtime.sh stop >/dev/null 2>&1 || true
     @echo "A1 runtime stopped."
 
 logs:
+    scripts/apps/act/a1_act_joint_runtime.sh logs || true
     scripts/apps/teleop/a1_teleop_runtime.sh logs || true
     scripts/runtime/a1_runtime.sh logs || true
 

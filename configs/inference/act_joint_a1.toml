@@ -1,0 +1,84 @@
+# Git-tracked runtime contract for ACT joint-state inference on Galaxea A1.
+# Edit this file when checkpoint, cameras, joint limits, relay topics, or
+# execution cadence changes. The app starts dry-run by default.
+
+[session]
+tmux = "act-a1"
+
+[host]
+image = "a1-research/a1-noetic-arm64:local"
+a1_serial = "/dev/a1"
+prefix = "a1-act"
+run_dir = "/tmp/a1-act"
+
+[policy]
+checkpoint = "outputs/train/act_banana_joint_state_30k/checkpoints/030000/pretrained_model"
+device = "cuda"
+# The checkpoint contains trained ResNet weights; avoid torchvision network
+# downloads during deployment.
+disable_backbone_download = true
+
+[execution]
+execute = false
+step_mode = true
+execute_steps_per_inference = 8
+control_hz = 30.0
+max_model_calls = 0
+print_actions = true
+preview_steps = 5
+
+[topics]
+joint_states = "/joint_states_host"
+target = "/arm_joint_target_position"
+staged_command = "/arm_joint_command_a1_staged"
+motion_enable = "/a1_arm_motion_enable"
+relay_status = "/a1_arm_relay_status"
+gripper_command = "/gripper_position_control_host"
+gripper_feedback = "/gripper_stroke_host"
+
+[relay]
+enable_timeout_s = 2.0
+max_status_age_s = 1.0
+
+[safety]
+target_joint_names = [
+  "arm_joint1",
+  "arm_joint2",
+  "arm_joint3",
+  "arm_joint4",
+  "arm_joint5",
+  "arm_joint6",
+]
+lower_limits = [-2.8798, 0, -3.3161, -2.8798, -1.6581, -2.8798]
+upper_limits = [2.8798, 3.2289, 0, 2.8798, 1.6581, 2.8798]
+max_joint_action_step_rad = 0.25
+max_first_target_delta_rad = 0.25
+initial_alignment_tolerance_rad = 0.05
+state_timeout_s = 10.0
+max_feedback_age_s = 0.5
+max_camera_age_s = 0.5
+
+[gripper]
+stroke_min_mm = 0.0
+stroke_max_mm = 200.0
+command_open_threshold = 0.5
+feedback_open_threshold_mm = 30.0
+
+[cameras]
+width = 640
+height = 480
+fps = 30
+warmup_frames = 20
+
+[cameras.front]
+serial = ""
+auto_exposure = true
+exposure = 140
+gain = 32
+auto_white_balance = true
+white_balance = 4600
+
+[cameras.wrist]
+device = "auto"
+backend_api = "v4l2"
+pixel_format = "YUYV"

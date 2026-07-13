@@ -17,7 +17,7 @@ LeRobotDataset v3.0.
    - `runtime/`: doctor and safety report.
 
 2. Base runtime: `scripts/runtime`
-   - Owns ROS master, A1 driver, isolated EE tracker, and safe relay.
+   - Owns ROS master, A1 driver, isolated EE/joint trackers, and safe relay.
    - Must stay app-agnostic and LingBot-free.
 
 3. App runtime: `scripts/apps/<app>`
@@ -55,7 +55,8 @@ Normal apps must use:
 Direct `/arm_joint_command_host` publishing is only for explicit direct-debug
 hardware work after stopping the safe runtime.
 
-Teleop joint control uses the same relay, but with a joint tracker:
+Teleop joint control and ACT joint-policy inference use the same relay, but
+with a joint tracker:
 
 ```text
 /arm_joint_target_position
@@ -84,12 +85,21 @@ The reusable parts now live in package modules:
   optional tracker compensation.
 - `galaxea_a1_runtime.apps.lingbot.config`: tracked LingBot runtime config
   loading and conversion into the bridge arguments used by `just lingbot`.
+- `galaxea_a1_runtime.apps.act.config`: tracked ACT joint runtime config
+  loading and conversion into the bridge arguments used by `just act`.
 - `galaxea_a1_runtime.hardware.cameras`: shared RealSense color/depth and
   OpenCV color camera wrappers used by teleop collection, camera snapshots, and
   LingBot.
 
 Future FastWAM/GR00T app scripts should reuse `apps.eef_bridge` and only provide
 their own model IO plus action conversion into the normalized A1 EEF contract.
+
+ACT is the built-in joint-state policy deployment path. It loads a local
+LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and binary
+gripper state, predicts absolute joint targets, and publishes only
+`/arm_joint_target_position`. The isolated jointTracker stages motor commands,
+then the relay guards the final host command topic. The bridge starts dry-run
+and step-gated from `configs/inference/act_joint_a1.toml`.
 
 ## Teleop Collection Design
 
@@ -183,6 +193,7 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 - Teleop collection: `just teleop <experiment>`.
 - Manual teleop acceptance: `just teleop-test`, `just logs`, `just stop`.
 - LingBot app: `just lingbot`, then `tmux attach -t lingbot-a1`.
+- ACT joint policy: `just act`, then `tmux attach -t act-a1`.
 - Dataset conversion: `just convert <experiment>` using
   `configs/datasets/<experiment>.toml`; each run emits independent LeRobot
   EEF v3.0, EEF v2.1, and joint-action v3.0 packages.
@@ -190,6 +201,9 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
   `/a1_ee_target`; rejects `joint_absolute`.
 - LingBot app: step-gated inference and publishing, relay guard, EEF state
   conditioning, workspace validation, and binary gripper execution.
+- ACT app: dry-run default, local checkpoint loading, action preview, staged
+  jointTracker alignment, relay guard, joint limit/step checks, and binary
+  gripper execution.
 - Dataset: LeRobotDataset v3 contract, writer helpers, passive episode recorder,
   teleop raw migration, v2.1 migration plan, raw RealSense depth capture, and
   `observation.images.front_depth` conversion for depth-enabled teleop episodes.

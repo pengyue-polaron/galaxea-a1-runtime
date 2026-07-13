@@ -11,6 +11,8 @@ arm is disconnected.
 
 - Keep `scripts/runtime/a1_runtime.sh` LingBot-free. It owns only ROS,
   the A1 driver, the isolated EE tracker, and the safe relay.
+- Keep `scripts/runtime/a1_joint_runtime.sh` app-agnostic. It owns only ROS,
+  the A1 driver, the isolated joint tracker, and the safe relay.
 - Keep app-specific logic in app scripts. LingBot belongs under
   `scripts/apps/lingbot/a1_lingbot_runtime.sh` and
   `scripts/apps/lingbot/lingbot_va_ee_bridge.py`.
@@ -43,7 +45,9 @@ arm is disconnected.
 
 - Teleop apps publish joint targets to `/arm_joint_target_position`, not host
   motor commands.
-- Route teleop commands through:
+- ACT joint-policy inference also publishes joint targets to
+  `/arm_joint_target_position`, not host motor commands.
+- Route joint-space commands through:
 
   ```text
   /arm_joint_target_position
@@ -218,9 +222,11 @@ just eef-test
 just teleop-test
 just teleop pick_cube
 just lingbot
+just act
 just convert banana_in_the_plate
 just stop
 tmux attach -t lingbot-a1
+tmux attach -t act-a1
 ```
 
 Teleop hardware/data semantics are configured in
@@ -246,6 +252,11 @@ LingBot inference semantics are configured in
 `configs/inference/lingbot_va_a1.toml`. Edit and commit that file when the
 server, prompt, cameras, EEF workspace, orientation mode, relay topics,
 execution cadence, or gripper mapping changes.
+
+ACT joint inference semantics are configured in
+`configs/inference/act_joint_a1.toml`. It starts dry-run and step-gated by
+default. Edit and commit that file when the checkpoint, cameras, joint limits,
+relay topics, execution cadence, or gripper mapping changes.
 
 Useful direct-debug checks inside the ROS/Docker environment:
 

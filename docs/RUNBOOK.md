@@ -218,3 +218,32 @@ Stop with:
 ```bash
 just stop
 ```
+
+## ACT Joint Policy
+
+The ACT deployment path is configured by
+`configs/inference/act_joint_a1.toml`. The tracked checkpoint is
+`outputs/train/act_banana_joint_state_30k/checkpoints/030000/pretrained_model`.
+
+Start in the default dry-run mode:
+
+```bash
+just stop
+just check
+just cameras
+just act
+tmux attach -t act-a1
+```
+
+In dry-run, Enter runs one model inference and prints the first predicted joint
+targets without enabling the relay. To move the arm, edit the tracked config and
+set `execution.execute = true` after the robot is powered, reset, and clear.
+Execution still remains step-gated: the bridge aligns jointTracker output to
+current feedback, waits for relay `ACTIVE`, then publishes only
+`/arm_joint_target_position` plus binary gripper commands.
+
+Stop with:
+
+```bash
+just stop
+```

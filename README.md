@@ -8,6 +8,7 @@ This repository is being rebuilt around:
 - LeRobot v0.6.0,
 - LeRobotDataset v3.0,
 - SO leader teleoperation collection,
+- ACT joint-state policy deployment,
 - LingBot-VA, FastWAM, and GR00T N1.7 policy profiles,
 - clean module boundaries for safety, hardware IO, datasets, and policies.
 
@@ -29,7 +30,8 @@ Normal EEF apps and inference code must use:
 The relay starts locked. Direct `/arm_joint_command_host` publishing is only for
 explicit hardware debug after stopping the safe runtime.
 
-Teleop collection uses the same relay with staged jointTracker output:
+Teleop collection and ACT joint-state inference use the same relay with staged
+jointTracker output:
 
 ```text
 /arm_joint_target_position
@@ -87,6 +89,20 @@ LingBot runtime parameters live in
 Edit that tracked file when the server, prompt, cameras, EEF workspace,
 execution cadence, or gripper mapping changes.
 
+ACT joint policy:
+
+```bash
+just act
+tmux attach -t act-a1
+just stop
+```
+
+ACT runtime parameters live in
+[configs/inference/act_joint_a1.toml](configs/inference/act_joint_a1.toml).
+It starts dry-run and step-gated by default. Set `execution.execute = true` in
+that tracked file only after static checks, camera checks, and a clear robot
+workspace.
+
 Dataset conversion:
 
 ```bash
@@ -119,6 +135,7 @@ galaxea_a1_runtime/
 
 Profiles currently cover:
 
+- ACT joint-state: `policy.type=act`
 - LingBot-VA: `policy.type=lingbot_va`
 - FastWAM: `policy.type=fastwam`
 - GR00T N1.7: `policy.type=groot`
