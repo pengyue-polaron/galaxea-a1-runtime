@@ -14,6 +14,8 @@ def test_act_bridge_uses_joint_target_path_and_relay_guard():
     assert "rospy.Publisher(args.motion_enable_topic, Bool" in bridge
     assert "_wait_for_staged_alignment(current_joints)" in bridge
     assert "_require_relay_active()" in bridge
+    assert "_skip_execution(str(exc))" in bridge
+    assert "violates joint limits" in bridge
     assert "predict_action_chunk" in bridge
     assert "/usr/lib/python3/dist-packages" not in bridge
     assert 'default="/arm_joint_command_host"' not in bridge

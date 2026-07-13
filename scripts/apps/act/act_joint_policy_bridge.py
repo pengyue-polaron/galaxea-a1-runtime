@@ -313,7 +313,11 @@ class ActJointBridge:
                     time.sleep(1.0)
                 continue
 
-            steps = self._validated_execution_steps(chunk, current_joints)
+            try:
+                steps = self._validated_execution_steps(chunk, current_joints)
+            except RuntimeError as exc:
+                self._skip_execution(str(exc))
+                continue
             if not self.motion_enabled:
                 self._wait_for_staged_alignment(current_joints)
                 self._enable_motion()
@@ -403,17 +407,33 @@ class ActJointBridge:
         previous = current
         for index, row in enumerate(steps):
             joints = row[:6]
-            if np.any(joints < self.lower_limits) or np.any(joints > self.upper_limits):
-                raise RuntimeError(
-                    f"ACT target {index} violates joint limits: "
-                    f"target={np.round(joints, 4).tolist()}"
-                )
+            violations = self._joint_limit_violations(joints)
+            if violations:
+                detail = "; ".join(violations)
+                raise RuntimeError(f"ACT target {index} violates joint limits: {detail}")
             step = float(np.max(np.abs(joints - previous)))
             limit = self.args.max_first_target_delta_rad if index == 0 else self.args.max_joint_action_step_rad
             if step > limit:
                 raise RuntimeError(f"ACT target {index} step={step:.4f} rad exceeds limit={limit:.4f}")
             previous = joints
         return steps
+
+    def _joint_limit_violations(self, joints: np.ndarray) -> list[str]:
+        out: list[str] = []
+        for name, value, lo, hi in zip(self.target_names, joints, self.lower_limits, self.upper_limits, strict=True):
+            value = float(value)
+            if value < float(lo) or value > float(hi):
+                out.append(
+                    f"{name}={value:.4f} outside [{float(lo):.4f}, {float(hi):.4f}] "
+                    f"(target={np.round(joints, 4).tolist()})"
+                )
+        return out
+
+    def _skip_execution(self, reason: str) -> None:
+        self.motion_enable_pub.publish(Bool(data=False))
+        self.motion_enabled = False
+        log(f"[ACT safety] {reason}")
+        log("[ACT safety] Skipping this action; relay is locked/disabled. Press Enter to infer again, q=quit.")
 
     def _print_preview(self, call_index: int, chunk: np.ndarray, current_joints: tuple[float, ...]) -> None:
         if not self.args.print_actions:
@@ -481,11 +501,12 @@ class ActJointBridge:
         for index, row in enumerate(steps):
             self._require_relay_active()
             stamp = self._publish_joint_target(tuple(float(v) for v in row[:6]))
-            self._publish_gripper(float(row[6]), stamp)
+            gripper_mm = self._publish_gripper(float(row[6]), stamp)
             if self.args.print_actions:
                 log(
                     f"[ACT execute] step={index + 1}/{len(steps)} "
-                    f"target={np.round(row[:6], 4).tolist()} gripper={row[6]:.3f}"
+                    f"target={np.round(row[:6], 4).tolist()} "
+                    f"gripper={row[6]:.3f} gripper_mm={gripper_mm:.1f}"
                 )
             rate.sleep()
 
@@ -497,15 +518,23 @@ class ActJointBridge:
         self.target_pub.publish(msg)
         return msg.header.stamp
 
-    def _publish_gripper(self, value: float, stamp: Any) -> None:
+    def _publish_gripper(self, value: float, stamp: Any) -> float:
         msg = gripper_position_control()
         msg.header.stamp = stamp
-        msg.gripper_stroke = (
-            float(self.args.gripper_stroke_max)
-            if value >= self.args.gripper_command_open_threshold
-            else float(self.args.gripper_stroke_min)
-        )
+        if self.args.gripper_command_mode == "continuous":
+            normalized = float(np.clip(value, 0.0, 1.0))
+            stroke = float(self.args.gripper_stroke_min) + normalized * (
+                float(self.args.gripper_stroke_max) - float(self.args.gripper_stroke_min)
+            )
+        else:
+            stroke = (
+                float(self.args.gripper_stroke_max)
+                if value >= self.args.gripper_command_open_threshold
+                else float(self.args.gripper_stroke_min)
+            )
+        msg.gripper_stroke = stroke
         self.gripper_pub.publish(msg)
+        return stroke
 
 
 def _bgr_to_chw_tensor(image: np.ndarray, *, width: int, height: int) -> torch.Tensor:
@@ -547,6 +576,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-camera-age", type=float, default=0.5)
     parser.add_argument("--gripper-stroke-min", type=float, default=0.0)
     parser.add_argument("--gripper-stroke-max", type=float, default=200.0)
+    parser.add_argument("--gripper-command-mode", choices=("binary", "continuous"), default="binary")
     parser.add_argument("--gripper-command-open-threshold", type=float, default=0.5)
     parser.add_argument("--gripper-feedback-open-threshold-mm", type=float, default=30.0)
     parser.add_argument("--cam-width", type=int, default=640)
