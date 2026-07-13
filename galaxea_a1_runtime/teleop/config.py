@@ -63,6 +63,7 @@ class TeleopGripperConfig:
     min_stroke_mm: float
     max_stroke_mm: float
     invert: bool
+    binary_open_threshold: float
 
 
 @dataclass(frozen=True)
@@ -189,6 +190,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             min_stroke_mm=float(gripper.get("min_stroke_mm", 0.0)),
             max_stroke_mm=float(gripper.get("max_stroke_mm", 200.0)),
             invert=bool(gripper.get("invert", False)),
+            binary_open_threshold=float(gripper.get("binary_open_threshold", 0.15)),
         ),
         collection=TeleopCollectionConfig(
             data_root=_resolve_path(_string(collection, "data_root"), repo_root),
@@ -237,6 +239,8 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("bridge.initial_alignment_tolerance_rad must be non-negative")
     if config.gripper.max_stroke_mm <= config.gripper.min_stroke_mm:
         raise ValueError("gripper.max_stroke_mm must be greater than min_stroke_mm")
+    if not 0.0 < config.gripper.binary_open_threshold < 1.0:
+        raise ValueError("gripper.binary_open_threshold must be between 0 and 1")
     for label, camera in (("front", config.front_camera), ("wrist", config.wrist_camera)):
         if camera.width <= 0 or camera.height <= 0 or camera.fps <= 0:
             raise ValueError(f"cameras.{label} width/height/fps must be positive")
@@ -297,6 +301,8 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         _num(config.gripper.min_stroke_mm),
         "--gripper-max-stroke-mm",
         _num(config.gripper.max_stroke_mm),
+        "--gripper-binary-open-threshold",
+        _num(config.gripper.binary_open_threshold),
     ]
     if config.gripper.invert:
         args.append("--gripper-invert")
@@ -334,6 +340,8 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         config.topics.gripper_command,
         "--gripper-stroke-scale",
         _num(config.gripper.max_stroke_mm),
+        "--gripper-binary-open-threshold",
+        _num(config.gripper.binary_open_threshold),
         "--staged-command-topic",
         config.topics.staged_command,
         "--host-command-topic",

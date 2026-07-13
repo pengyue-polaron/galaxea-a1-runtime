@@ -49,13 +49,14 @@ host commands directly:
   Optional `RuntimeConfig.safety` delta limits must be set explicitly.
 - Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
 - Generic ROS1 adapter rejects `joint_absolute`.
-- Generic gripper input must be normalized `0..1`; direct adapter misuse raises
-  instead of silently clipping.
+- Policy gripper is binary: values below `0.5` become closed `0`, values at or
+  above `0.5` become open `1` before execution.
 - LingBot workspace bounds apply to outgoing targets, not feedback state.
 - LingBot orientation defaults to `hold-current`.
 - LingBot execution settings live in `configs/inference/lingbot_va_a1.toml`;
   avoid per-run hidden flags.
-- LingBot gripper mapping is linear: normalized `0..1 -> 0..60mm`.
+- Every policy and dataset stores only `0` or `1`: `0` is fully closed and `1`
+  is fully open. Hardware adapters send only `0mm` or `200mm`.
 - LingBot waits for relay `ACTIVE` before gripper publish because the gripper
   topic is independent of the arm relay.
 

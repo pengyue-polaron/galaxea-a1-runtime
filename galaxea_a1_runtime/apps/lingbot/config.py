@@ -88,6 +88,8 @@ class LingBotGripperConfig:
     stroke_offset_mm: float
     stroke_min_mm: float
     stroke_max_mm: float
+    command_open_threshold: float
+    feedback_open_threshold_mm: float
 
 
 @dataclass(frozen=True)
@@ -198,10 +200,12 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             cache_actual_feedback=bool(servo.get("cache_actual_feedback", True)),
         ),
         gripper=LingBotGripperConfig(
-            stroke_scale_mm=float(gripper.get("stroke_scale_mm", 60.0)),
+            stroke_scale_mm=float(gripper.get("stroke_scale_mm", 200.0)),
             stroke_offset_mm=float(gripper.get("stroke_offset_mm", 0.0)),
             stroke_min_mm=float(gripper.get("stroke_min_mm", 0.0)),
-            stroke_max_mm=float(gripper.get("stroke_max_mm", 60.0)),
+            stroke_max_mm=float(gripper.get("stroke_max_mm", 200.0)),
+            command_open_threshold=float(gripper.get("command_open_threshold", 0.5)),
+            feedback_open_threshold_mm=float(gripper.get("feedback_open_threshold_mm", 30.0)),
         ),
         cameras=LingBotCameraConfig(
             width=int(cameras.get("width", 640)),
@@ -250,6 +254,10 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("gripper.stroke_scale_mm must be non-zero")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke_max_mm must be greater than stroke_min_mm")
+    if not 0.0 < config.gripper.command_open_threshold < 1.0:
+        raise ValueError("gripper.command_open_threshold must be between 0 and 1")
+    if not config.gripper.stroke_min_mm < config.gripper.feedback_open_threshold_mm < config.gripper.stroke_max_mm:
+        raise ValueError("gripper.feedback_open_threshold_mm must be inside the physical stroke range")
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
@@ -347,6 +355,10 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         _num(config.gripper.stroke_min_mm),
         "--gripper-stroke-max",
         _num(config.gripper.stroke_max_mm),
+        "--gripper-command-open-threshold",
+        _num(config.gripper.command_open_threshold),
+        "--gripper-feedback-open-threshold-mm",
+        _num(config.gripper.feedback_open_threshold_mm),
     ]
     if config.execution.execute:
         args.append("--execute")

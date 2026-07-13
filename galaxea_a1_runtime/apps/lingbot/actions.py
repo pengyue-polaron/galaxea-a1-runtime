@@ -18,10 +18,12 @@ class LingBotActionConfig:
     orientation_mode: OrientationMode = "hold-current"
     eef_servo_gain: float = 1.0
     eef_servo_max_extra: float = 0.04
-    gripper_stroke_scale: float = 60.0
+    gripper_stroke_scale: float = 200.0
     gripper_stroke_offset: float = 0.0
     gripper_stroke_min: float = 0.0
-    gripper_stroke_max: float = 60.0
+    gripper_stroke_max: float = 200.0
+    gripper_command_open_threshold: float = 0.5
+    gripper_feedback_open_threshold_mm: float = 30.0
 
 
 def normalize_condition_action(action8: Sequence[float], config: LingBotActionConfig) -> np.ndarray:
@@ -29,7 +31,7 @@ def normalize_condition_action(action8: Sequence[float], config: LingBotActionCo
 
     action = _as_action8(action8, label="EE state condition")
     action[3:7] = normalize_quat(action[3:7], min_norm=config.min_quat_norm, label="EE state condition")
-    action[7] = float(np.clip(action[7], 0.0, 1.0))
+    action[7] = _binary_gripper(action[7], config.gripper_command_open_threshold)
     return action
 
 
@@ -45,7 +47,7 @@ def sanitize_policy_action(
     del current_xyz
     action[:3] = _clamp_xyz(action[:3], config)
     action[3:7] = normalize_quat(action[3:7], min_norm=config.min_quat_norm, label="LingBot action")
-    action[7] = float(np.clip(action[7], 0.0, 1.0))
+    action[7] = _binary_gripper(action[7], config.gripper_command_open_threshold)
     return action
 
 
@@ -112,15 +114,19 @@ def tracker_command_action(
 
 
 def gripper_norm_from_stroke(stroke_mm: float, config: LingBotActionConfig) -> float:
-    if config.gripper_stroke_scale == 0:
-        return 0.0
-    value = (float(stroke_mm) - config.gripper_stroke_offset) / config.gripper_stroke_scale
-    return float(np.clip(value, 0.0, 1.0))
+    return 1.0 if float(stroke_mm) >= config.gripper_feedback_open_threshold_mm else 0.0
 
 
 def gripper_stroke_from_norm(norm: float, config: LingBotActionConfig) -> float:
-    stroke = float(np.clip(norm, 0.0, 1.0)) * config.gripper_stroke_scale + config.gripper_stroke_offset
-    return float(np.clip(stroke, config.gripper_stroke_min, config.gripper_stroke_max))
+    return (
+        config.gripper_stroke_max
+        if float(norm) >= config.gripper_command_open_threshold
+        else config.gripper_stroke_min
+    )
+
+
+def _binary_gripper(value: float, threshold: float) -> float:
+    return 1.0 if float(value) >= threshold else 0.0
 
 
 def clamp_notes(

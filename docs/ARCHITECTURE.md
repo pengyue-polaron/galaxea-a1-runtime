@@ -183,11 +183,13 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 - Teleop collection: `just teleop <experiment>`.
 - Manual teleop acceptance: `just teleop-test`, `just logs`, `just stop`.
 - LingBot app: `just lingbot`, then `tmux attach -t lingbot-a1`.
-- Dataset conversion: `just convert-raw ...`.
+- Dataset conversion: `just convert <experiment>` using
+  `configs/datasets/<experiment>.toml`; each run emits independent LeRobot
+  EEF v3.0, EEF v2.1, and joint-action v3.0 packages.
 - Generic LeRobot robot adapter: safe EEF translation/delta actions through
   `/a1_ee_target`; rejects `joint_absolute`.
 - LingBot app: step-gated inference and publishing, relay guard, EEF state
-  conditioning, workspace validation, linear gripper mapping.
+  conditioning, workspace validation, and binary gripper execution.
 - Dataset: LeRobotDataset v3 contract, writer helpers, passive episode recorder,
   teleop raw migration, v2.1 migration plan, raw RealSense depth capture, and
   `observation.images.front_depth` conversion for depth-enabled teleop episodes.

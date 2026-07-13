@@ -172,6 +172,8 @@ class A1LingBotEEBridge:
             gripper_stroke_offset=float(args.gripper_stroke_offset),
             gripper_stroke_min=float(args.gripper_stroke_min),
             gripper_stroke_max=float(args.gripper_stroke_max),
+            gripper_command_open_threshold=float(args.gripper_command_open_threshold),
+            gripper_feedback_open_threshold_mm=float(args.gripper_feedback_open_threshold_mm),
         )
 
     def _pose_cb(self, msg: PoseStamped):
@@ -673,10 +675,12 @@ def parse_args():
     p.add_argument("--min-quat-norm", type=float, default=0.25)
     p.add_argument("--max-feedback-age", type=float, default=0.5)
     p.add_argument("--feedback-wait-timeout", type=float, default=5.0)
-    p.add_argument("--gripper-stroke-scale", type=float, default=60.0)
+    p.add_argument("--gripper-stroke-scale", type=float, default=200.0)
     p.add_argument("--gripper-stroke-offset", type=float, default=0.0)
     p.add_argument("--gripper-stroke-min", type=float, default=0.0)
-    p.add_argument("--gripper-stroke-max", type=float, default=60.0)
+    p.add_argument("--gripper-stroke-max", type=float, default=200.0)
+    p.add_argument("--gripper-command-open-threshold", type=float, default=0.5)
+    p.add_argument("--gripper-feedback-open-threshold-mm", type=float, default=30.0)
     return p.parse_args()
 
 

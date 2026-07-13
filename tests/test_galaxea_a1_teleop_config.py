@@ -29,6 +29,7 @@ def test_default_teleop_config_locks_old_working_behavior():
     assert config.bridge.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
     assert config.gripper.max_stroke_mm == 200.0
+    assert config.gripper.binary_open_threshold == 0.15
     assert config.front_camera.depth is False
     assert config.front_camera.align_depth_to_color is True
     assert config.front_camera.require_usb3 is False
@@ -58,6 +59,7 @@ def test_config_builds_collector_args_from_tracked_file():
     assert args[args.index("--data-root") + 1] == str(REPO / "data/raw")
     assert args[args.index("--state-mode") + 1] == "eef_joint"
     assert args[args.index("--gripper-stroke-scale") + 1] == "200"
+    assert args[args.index("--gripper-binary-open-threshold") + 1] == "0.15"
     assert args[args.index("--cam1-device") + 1] == "auto"
     assert args[args.index("--max-camera-age-s") + 1] == "0.5"
     assert "--auto-reset-after-save" in args

@@ -90,11 +90,12 @@ execution cadence, or gripper mapping changes.
 Dataset conversion:
 
 ```bash
-just convert-raw --dry-run \
-  --source-root data/raw/a1_task \
-  --target-root data/processed/a1_task \
-  --repo-id galaxea/a1_task
+just convert banana_in_the_plate
 ```
+
+Each experiment has a tracked conversion contract at
+`configs/datasets/<experiment>.toml`. One command emits separate EEF LeRobot
+v3.0 and v2.1 packages plus a joint-action v3.0 package.
 
 Use motion commands only after the arm is powered on and positioned safely.
 
@@ -208,8 +209,8 @@ frame, joint, values, and limit, deletes the episode, reuses its index, and
 homes both devices before the next attempt.
 
 Raw episodes are written under `data/raw/<experiment>/episode_NNN_timestamp/`.
-Convert them to the LeRobotDataset v3 contract with `just convert-raw ...`
-after inspecting a dry run.
+Convert a selected source dataset to its tracked training package with
+`just convert <experiment>`.
 
 `just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
 `cam0_depth_preview.jpg`, `cam1_wrist.jpg`, and a contact sheet from the same
@@ -237,5 +238,5 @@ same commit.
 
 ## Legacy Systems
 
-The previous ZMQ/OpenPI/LeRobot v2.1 mainline stack has been removed. Raw
-episode conversion remains one-way under `just convert-raw ...`.
+The previous ZMQ/OpenPI/LeRobot v2.1 mainline stack has been removed. Dataset
+conversion remains one-way under `just convert <experiment>`.

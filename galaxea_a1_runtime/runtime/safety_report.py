@@ -106,8 +106,8 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="generic_ros1_gripper_range_check",
             path="galaxea_a1_runtime.hardware.ros1",
-            default="normalized 0..1 -> 0..60mm",
-            behavior="The generic ROS1 adapter raises on gripper values outside [0, 1] instead of clipping them.",
+            default="binary 0/1 -> 0/200mm",
+            behavior="The generic ROS1 adapter thresholds policy gripper at 0.5 and sends only 0mm or 200mm.",
             visibility="ValueError at send_action time.",
             operator_note="Normal GalaxeaA1Robot actions are clamped upstream, so this check catches direct adapter misuse.",
         ),
@@ -189,10 +189,10 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="gripper_scale_mapping",
             path="configs/inference/lingbot_va_a1.toml [gripper]",
-            default="normalized 0..1 -> 0..60mm",
-            behavior="The LingBot bridge clips normalized gripper to 0..1, then maps it linearly to the physical stroke range.",
+            default="binary 0/1 -> 0/200mm",
+            behavior="The LingBot bridge thresholds policy gripper at 0.5 and sends only 0mm or 200mm.",
             visibility="Bridge preview and publish log print gripper_norm and gripper_mm.",
-            operator_note="This used to default to scale=100 with max=60, which saturated values above 0.6; it is now linear by default.",
+            operator_note="Collection, datasets, generic ROS1 execution, and LingBot execution use the same mapping.",
         ),
     )
 

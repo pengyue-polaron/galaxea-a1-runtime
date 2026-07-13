@@ -210,11 +210,17 @@ class RosTeleopState:
     def gripper_feedback_norm(self, fallback_joint: JointSnapshot | None = None) -> float | None:
         msg = self.gripper_feedback.get()
         if msg is not None and getattr(msg, "position", None):
-            return _stroke_to_norm(float(msg.position[0]), self.args.gripper_stroke_scale)
+            return _binary_gripper(
+                _stroke_to_norm(float(msg.position[0]), self.args.gripper_stroke_scale),
+                self.args.gripper_binary_open_threshold,
+            )
         if fallback_joint is None:
             fallback_joint = self.joint_snapshot()
         if fallback_joint is not None and len(fallback_joint.positions) >= 7:
-            return _stroke_to_norm(float(fallback_joint.positions[6]), self.args.gripper_stroke_scale)
+            return _binary_gripper(
+                _stroke_to_norm(float(fallback_joint.positions[6]), self.args.gripper_stroke_scale),
+                self.args.gripper_binary_open_threshold,
+            )
         return None
 
     def gripper_action_norm(self) -> float | None:
@@ -224,7 +230,10 @@ class RosTeleopState:
         stroke = getattr(msg, "gripper_stroke", None)
         if stroke is None:
             return None
-        return _stroke_to_norm(float(stroke), self.args.gripper_stroke_scale)
+        return _binary_gripper(
+            _stroke_to_norm(float(stroke), self.args.gripper_stroke_scale),
+            self.args.gripper_binary_open_threshold,
+        )
 
     def ros_stamp(self) -> float:
         joint = self.joint_snapshot()
@@ -430,7 +439,10 @@ def write_metadata(
             args.host_command_topic,
         ),
         cameras=tuple(cameras),
-        quality_checks={"max_joint_action_step_rad": args.max_joint_action_step_rad},
+        quality_checks={
+            "max_joint_action_step_rad": args.max_joint_action_step_rad,
+            "gripper_binary_open_threshold": args.gripper_binary_open_threshold,
+        },
     )
     (episode_dir / "metadata.json").write_text(json.dumps(metadata_to_json_dict(metadata), indent=2))
 
@@ -460,6 +472,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-feedback-topic", default="/gripper_stroke_host")
     parser.add_argument("--gripper-action-topic", default="/gripper_position_control_host")
     parser.add_argument("--gripper-stroke-scale", type=float, default=200.0)
+    parser.add_argument("--gripper-binary-open-threshold", type=float, default=0.15)
     parser.add_argument("--staged-command-topic", default="/arm_joint_command_a1_staged")
     parser.add_argument("--host-command-topic", default="/arm_joint_command_host")
     parser.add_argument("--cam0-serial")
@@ -487,6 +500,8 @@ def main() -> int:
         raise ValueError("--max-camera-age-s must be positive")
     if args.max_joint_action_step_rad <= 0:
         raise ValueError("--max-joint-action-step-rad must be positive")
+    if not 0.0 < args.gripper_binary_open_threshold < 1.0:
+        raise ValueError("--gripper-binary-open-threshold must be between 0 and 1")
     if args.auto_reset_after_save and (args.reset_runtime_script is None or args.teleop_config is None):
         raise ValueError("automatic reset requires --reset-runtime-script and --teleop-config")
     if args.cam0_depth_enabled and (args.cam0_depth_width <= 0 or args.cam0_depth_height <= 0):
@@ -763,6 +778,10 @@ def _stroke_to_norm(stroke_mm: float, scale: float) -> float:
     if scale == 0:
         return 0.0
     return float(np.clip(float(stroke_mm) / float(scale), 0.0, 1.0))
+
+
+def _binary_gripper(value: float, open_threshold: float) -> float:
+    return 1.0 if value >= open_threshold else 0.0
 
 
 def _poll_stdin_line() -> str | None:

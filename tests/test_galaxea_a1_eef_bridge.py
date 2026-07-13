@@ -112,7 +112,7 @@ def test_eef_command_publisher_publishes_pose_enable_and_gripper():
         bool_msg_type=FakeBool,
         gripper_msg_type=FakeGripper,
         command_frame="world",
-        gripper_to_stroke=lambda value: value * 60.0,
+        gripper_to_stroke=lambda value: value * 200.0,
     )
 
     publisher.publish_motion_enable(True)
@@ -121,7 +121,7 @@ def test_eef_command_publisher_publishes_pose_enable_and_gripper():
     assert enable_pub.published[-1].data is True
     assert pose_pub.published[-1].header.frame_id == "world"
     assert pose_pub.published[-1].pose.position.x == pytest.approx(0.1)
-    assert gripper_pub.published[-1].gripper_stroke == pytest.approx(30.0)
+    assert gripper_pub.published[-1].gripper_stroke == pytest.approx(100.0)
 
 
 def test_eef_command_publisher_dry_run_keeps_active_target_without_publishing():
@@ -135,7 +135,7 @@ def test_eef_command_publisher_dry_run_keeps_active_target_without_publishing():
         bool_msg_type=FakeBool,
         gripper_msg_type=FakeGripper,
         command_frame="world",
-        gripper_to_stroke=lambda value: value * 60.0,
+        gripper_to_stroke=lambda value: value * 200.0,
         execute=False,
     )
 

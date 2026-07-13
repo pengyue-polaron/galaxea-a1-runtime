@@ -211,7 +211,7 @@ def _normalized_gripper_to_stroke_mm(value: float) -> float:
     normalized = float(value)
     if not isfinite(normalized) or normalized < 0.0 or normalized > 1.0:
         raise ValueError(f"gripper action must be normalized to [0, 1], got {value!r}")
-    return normalized * 60.0
+    return 200.0 if normalized >= 0.5 else 0.0
 
 
 def _stamp_to_seconds(stamp: Any) -> float | None:

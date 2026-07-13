@@ -18,7 +18,7 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "lingbot_eef_servo_compensation" in settings
     assert "lingbot_cache_actual_feedback" in settings
     assert "lingbot_relay_status_guard" in settings
-    assert settings["gripper_scale_mapping"].default == "normalized 0..1 -> 0..60mm"
+    assert settings["gripper_scale_mapping"].default == "binary 0/1 -> 0/200mm"
     assert settings["generic_ros1_adapter_arm_motion"].default == "feedback-driven EEF target synthesis"
     assert "does not modify commands" in settings["initial_command_alignment"].operator_note
 

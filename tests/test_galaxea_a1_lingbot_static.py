@@ -7,13 +7,12 @@ REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "configs" / "inference" / "lingbot_va_a1.toml"
 
 
-def test_lingbot_gripper_scale_default_is_linear_with_physical_stroke():
+def test_lingbot_gripper_default_uses_binary_full_stroke():
     bridge = REPO / "scripts" / "apps" / "lingbot" / "lingbot_va_ee_bridge.py"
-    stats = REPO / "scripts" / "process_data" / "compute_eef_norm_stats_from_bags.py"
 
-    assert '"--gripper-stroke-scale", type=float, default=60.0' in bridge.read_text()
-    assert '"--gripper-stroke-max", type=float, default=60.0' in bridge.read_text()
-    assert 'default=60.0,' in stats.read_text()
+    assert '"--gripper-stroke-scale", type=float, default=200.0' in bridge.read_text()
+    assert '"--gripper-stroke-max", type=float, default=200.0' in bridge.read_text()
+    assert '"--gripper-command-open-threshold", type=float, default=0.5' in bridge.read_text()
 
 
 def test_lingbot_bridge_resolves_repo_root_from_nested_app_path():
@@ -57,7 +56,7 @@ def test_lingbot_config_locks_runtime_defaults():
     assert config.execution.step_actions is True
     assert config.eef.orientation_mode == "hold-current"
     assert config.eef.xyz_min == (0.06, -0.27, 0.06)
-    assert config.gripper.stroke_scale_mm == 60.0
+    assert config.gripper.stroke_scale_mm == 200.0
     assert args[args.index("--cmd-pose-topic") + 1] == "/a1_ee_target"
     assert args[args.index("--cam1-device") + 1].startswith("/dev/v4l/by-id/")
     assert "--execute" in args

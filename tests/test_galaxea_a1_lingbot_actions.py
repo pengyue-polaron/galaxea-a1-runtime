@@ -66,8 +66,10 @@ def test_servo_compensation_is_off_by_default_and_explicit_when_enabled():
     assert on[:3] == pytest.approx((0.25, 0.10, 0.10))
 
 
-def test_gripper_mapping_is_linear_to_sixty_mm():
+def test_gripper_mapping_is_binary():
     cfg = LingBotActionConfig()
 
-    assert gripper_stroke_from_norm(0.75, cfg) == pytest.approx(45.0)
-    assert gripper_norm_from_stroke(45.0, cfg) == pytest.approx(0.75)
+    assert gripper_stroke_from_norm(0.49, cfg) == pytest.approx(0.0)
+    assert gripper_stroke_from_norm(0.50, cfg) == pytest.approx(200.0)
+    assert gripper_norm_from_stroke(29.9, cfg) == pytest.approx(0.0)
+    assert gripper_norm_from_stroke(30.0, cfg) == pytest.approx(1.0)

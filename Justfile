@@ -47,6 +47,7 @@ test:
         {{repo}}/tests/test_galaxea_a1_eef_bridge.py \
         {{repo}}/tests/test_galaxea_a1_ros1_adapter.py \
         {{repo}}/tests/test_galaxea_a1_lingbot_actions.py \
+        {{repo}}/tests/test_galaxea_a1_lingbot_pack.py \
         {{repo}}/tests/test_galaxea_a1_lingbot_static.py \
         {{repo}}/tests/test_galaxea_a1_runtime_doctor.py \
         {{repo}}/tests/test_galaxea_a1_policy_profiles.py \
@@ -92,5 +93,6 @@ logs:
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
-convert-raw *args:
-    {{vpy}} -m galaxea_a1_runtime.lerobot.convert_raw {{args}}
+convert experiment:
+    {{vpy}} -m galaxea_a1_runtime.lerobot.lingbot_pack \
+        --config "{{repo}}/configs/datasets/{{experiment}}.toml" --overwrite

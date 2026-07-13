@@ -93,7 +93,8 @@ arm is disconnected.
   - Default collected state mode `eef_joint` so every frame preserves both EEF
     pose and joint state.
   - Default collection FPS `30`.
-  - Gripper stroke range `0..200mm`.
+  - Gripper data and policy actions are binary: `0=closed`, `1=open`; hardware
+    adapters send only `0mm` or `200mm`.
 - If any of those defaults must change, update `configs/teleop/a1_so100.toml`,
   docs, and the pure/static tests in the same change.
 
@@ -217,6 +218,7 @@ just eef-test
 just teleop-test
 just teleop pick_cube
 just lingbot
+just convert banana_in_the_plate
 just stop
 tmux attach -t lingbot-a1
 ```
@@ -259,7 +261,7 @@ Open/close gripper:
 
 ```bash
 rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
-  "{header: {stamp: now}, gripper_stroke: 60.0}"
+  "{header: {stamp: now}, gripper_stroke: 200.0}"
 rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
   "{header: {stamp: now}, gripper_stroke: 0.0}"
 ```

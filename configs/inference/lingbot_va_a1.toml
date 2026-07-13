@@ -56,10 +56,12 @@ corrections = 0
 cache_actual_feedback = true
 
 [gripper]
-stroke_scale_mm = 60.0
+stroke_scale_mm = 200.0
 stroke_offset_mm = 0.0
 stroke_min_mm = 0.0
-stroke_max_mm = 60.0
+stroke_max_mm = 200.0
+command_open_threshold = 0.5
+feedback_open_threshold_mm = 30.0
 
 [cameras]
 width = 640

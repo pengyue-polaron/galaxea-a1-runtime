@@ -183,16 +183,17 @@ relative image paths, configured state columns, and configured action columns.
 Episode metadata stores task text, experiment name, state/action names, topics,
 camera settings, FPS target, and the staged relay control path.
 
-## Convert Raw Episodes
+## Convert Training Data
 
 ```bash
-just convert-raw --dry-run \
-  --source-root data/raw/pick_cube \
-  --target-root data/processed/pick_cube \
-  --repo-id galaxea/pick_cube
+just convert banana_in_the_plate
 ```
 
-Remove `--dry-run` after inspecting the planned conversion.
+Conversion semantics and paths come only from
+`configs/datasets/<experiment>.toml`. LingBot packages use binary gripper
+actions: `0=closed`, `1=open`. Each conversion emits EEF v3.0, EEF v2.1, and
+joint-action v3.0 packages; never mix their files in one directory. Joint
+positions remain absolute targets in radians.
 
 ## LingBot-VA
 
