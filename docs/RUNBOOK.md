@@ -110,6 +110,9 @@ reset speed changes intentionally, update and commit that config file.
 During Reset, the terminal shows one compact `A1 xx% | Leader xx%` progress
 line. Interactive collection uses color for setup, recording, saved, rejected,
 and reset states; set `NO_COLOR=1` when plain output is required.
+On a cold start, jointTracker may spend about 10 seconds compiling its CppAD
+libraries. The tracked reset and teleop configs allow 30 seconds for the first
+staged command; the relay remains locked throughout this alignment wait.
 
 4. Start recording:
 

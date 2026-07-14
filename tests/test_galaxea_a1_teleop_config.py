@@ -26,6 +26,7 @@ def test_default_teleop_config_locks_old_working_behavior():
     )
     assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
+    assert config.bridge.a1_state_timeout_s == 30.0
     assert config.bridge.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
     assert config.gripper.max_stroke_mm == 200.0

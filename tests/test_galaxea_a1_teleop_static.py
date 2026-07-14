@@ -45,6 +45,7 @@ def test_reset_pose_command_is_tracked_and_uses_relay_path():
     assert "[leader]" in config_text
     assert "joint0.pos" in config_text
     assert "gripper.pos" in config_text
+    assert "tracker_alignment_timeout_s = 30.0" in config_text
     assert "rospy.Publisher(pose.topics.target, JointState" in reset
     assert "rospy.Publisher(pose.topics.relay_enable, Bool" in reset
     assert "gripper_position_control" in reset
@@ -106,6 +107,15 @@ def test_a1_so_leader_keeps_custom_six_axis_shape_outside_third_party():
     assert '"gripper": Motor(6, "sts3215", MotorNormMode.RANGE_0_100)' in leader
     assert '"shoulder_pan": Motor(' in vendored
     assert '"joint0": Motor(' not in vendored
+
+
+def test_a1_so_leader_retries_status_packet_writes():
+    leader = (REPO / "galaxea_a1_runtime/teleop/a1_so_leader.py").read_text()
+
+    assert "MOTOR_WRITE_NUM_RETRY = 5" in leader
+    assert "self.bus.enable_torque(num_retry=MOTOR_WRITE_NUM_RETRY)" in leader
+    assert "self.bus.disable_torque(num_retry=MOTOR_WRITE_NUM_RETRY)" in leader
+    assert "num_retry=MOTOR_WRITE_NUM_RETRY" in leader
 
 
 def test_teleop_bridge_uses_first_party_a1_leader_adapter():

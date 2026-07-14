@@ -13,6 +13,11 @@ from lerobot.utils.decorators import check_if_already_connected, check_if_not_co
 
 logger = logging.getLogger(__name__)
 
+# Feetech writes expect a status packet from each motor. A single missed packet
+# should not abort a reset, but the operation must still fail closed if the
+# motor remains unreachable.
+MOTOR_WRITE_NUM_RETRY = 5
+
 
 class A1SOLeader(Teleoperator):
     """SO leader wiring used by the A1 teleop rig.
@@ -108,16 +113,21 @@ class A1SOLeader(Teleoperator):
         print(f"Calibration saved to {self.calibration_fpath}")
 
     def configure(self) -> None:
-        self.bus.disable_torque()
+        self.bus.disable_torque(num_retry=MOTOR_WRITE_NUM_RETRY)
         self.bus.configure_motors()
         for motor in self.bus.motors:
-            self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
+            self.bus.write(
+                "Operating_Mode",
+                motor,
+                OperatingMode.POSITION.value,
+                num_retry=MOTOR_WRITE_NUM_RETRY,
+            )
 
     def enable_torque(self) -> None:
-        self.bus.enable_torque()
+        self.bus.enable_torque(num_retry=MOTOR_WRITE_NUM_RETRY)
 
     def disable_torque(self) -> None:
-        self.bus.disable_torque()
+        self.bus.disable_torque(num_retry=MOTOR_WRITE_NUM_RETRY)
 
     def setup_motors(self) -> None:
         for motor in reversed(self.bus.motors):

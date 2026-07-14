@@ -45,7 +45,8 @@ lower_limits = [-2.8798, 0, -3.3161, -2.8798, -1.6581, -2.8798]
 upper_limits = [2.8798, 3.2289, 0, 2.8798, 1.6581, 2.8798]
 relay_enable_timeout_s = 2.0
 max_relay_status_age_s = 1.0
-a1_state_timeout_s = 10.0
+# Also covers cold jointTracker initialization before its first staged output.
+a1_state_timeout_s = 30.0
 initial_alignment_tolerance_rad = 0.05
 
 [gripper]
