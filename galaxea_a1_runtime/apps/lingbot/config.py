@@ -10,12 +10,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
+from galaxea_a1_runtime.hardware.image_geometry import (
+    ImageRoi,
+    parse_optional_image_roi,
+)
+from galaxea_a1_runtime.hardware.web_preview import (
+    WebPreviewConfig,
+    parse_web_preview_config,
+    web_preview_argv,
+)
+
 OrientationMode = Literal["hold-current", "model-quat"]
 PoseMode = Literal["absolute", "episode-relative"]
 GripperCommandMode = Literal["binary", "continuous"]
 TextEncoderDevice = Literal["cpu", "cuda"]
 
-DEFAULT_LINGBOT_CONFIG = Path("configs/inference/lingbot_va_a1.toml")
+DEFAULT_LINGBOT_CONFIG = Path("configs/inference/a1_lingbot_va.toml")
 
 
 @dataclass(frozen=True)
@@ -58,6 +68,7 @@ class LingBotPolicyServerConfig:
     used_action_channel_ids: tuple[int, ...]
     q01_source: tuple[float, ...]
     q99_source: tuple[float, ...]
+    deployment_ready: bool
 
 
 @dataclass(frozen=True)
@@ -132,6 +143,7 @@ class LingBotCameraConfig:
     width: int
     height: int
     fps: int
+    max_camera_age_s: float
     front_serial: str
     front_auto_exposure: bool
     front_exposure: int
@@ -139,6 +151,9 @@ class LingBotCameraConfig:
     front_auto_white_balance: bool
     front_white_balance: int
     front_observation_key: str
+    front_crop: ImageRoi | None
+    wrist_backend: str
+    wrist_serial: str
     wrist_device: str
     wrist_backend_api: str
     wrist_observation_key: str
@@ -157,6 +172,7 @@ class LingBotConfig:
     servo: LingBotServoConfig
     gripper: LingBotGripperConfig
     cameras: LingBotCameraConfig
+    web_preview: WebPreviewConfig
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -183,6 +199,8 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     cameras = _required_table(data, "cameras")
     front = _required_table(cameras, "front")
     wrist = _required_table(cameras, "wrist")
+    camera_width = int(cameras.get("width", 640))
+    camera_height = int(cameras.get("height", 480))
 
     config = LingBotConfig(
         path=path,
@@ -219,6 +237,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             used_action_channel_ids=_int_tuple(policy_server, "used_action_channel_ids"),
             q01_source=_float_tuple_any(policy_server, "q01_source"),
             q99_source=_float_tuple_any(policy_server, "q99_source"),
+            deployment_ready=bool(policy_server.get("deployment_ready", False)),
         ),
         execution=LingBotExecutionConfig(
             execute=bool(execution.get("execute", True)),
@@ -276,9 +295,10 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             feedback_open_threshold_mm=float(gripper.get("feedback_open_threshold_mm", 30.0)),
         ),
         cameras=LingBotCameraConfig(
-            width=int(cameras.get("width", 640)),
-            height=int(cameras.get("height", 480)),
+            width=camera_width,
+            height=camera_height,
             fps=int(cameras.get("fps", 30)),
+            max_camera_age_s=float(cameras.get("max_camera_age_s", 0.5)),
             front_serial=str(front.get("serial", "")),
             front_auto_exposure=bool(front.get("auto_exposure", True)),
             front_exposure=int(front.get("exposure", 140)),
@@ -286,9 +306,22 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             front_auto_white_balance=bool(front.get("auto_white_balance", True)),
             front_white_balance=int(front.get("white_balance", 4600)),
             front_observation_key=_string(front, "observation_key"),
-            wrist_device=_string(wrist, "device"),
-            wrist_backend_api=_string(wrist, "backend_api"),
+            front_crop=parse_optional_image_roi(
+                front,
+                image_width=camera_width,
+                image_height=camera_height,
+                label="cameras.front crop",
+                require_square=True,
+            ),
+            wrist_backend=str(wrist.get("backend", "v4l2")),
+            wrist_serial=str(wrist.get("serial", "")),
+            wrist_device=str(wrist.get("device", "")),
+            wrist_backend_api=str(wrist.get("backend_api", "v4l2")),
             wrist_observation_key=_string(wrist, "observation_key"),
+        ),
+        web_preview=parse_web_preview_config(
+            data.get("web_preview", {}) if isinstance(data.get("web_preview", {}), dict) else {},
+            repo_root=repo_root,
         ),
     )
     validate_lingbot_config(config)
@@ -335,6 +368,18 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("relay timeouts must be positive")
     if config.cameras.width <= 0 or config.cameras.height <= 0 or config.cameras.fps <= 0:
         raise ValueError("cameras width/height/fps must be positive")
+    if config.cameras.max_camera_age_s <= 0:
+        raise ValueError("cameras.max_camera_age_s must be positive")
+    if not config.cameras.front_serial:
+        raise ValueError("cameras.front.serial is required")
+    if config.cameras.front_crop is None:
+        raise ValueError("cameras.front crop must be enabled for the inference input contract")
+    if config.cameras.wrist_backend not in {"realsense", "v4l2"}:
+        raise ValueError("cameras.wrist.backend must be 'realsense' or 'v4l2'")
+    if config.cameras.wrist_backend == "realsense" and not config.cameras.wrist_serial:
+        raise ValueError("cameras.wrist.serial is required for the RealSense backend")
+    if config.cameras.wrist_backend == "v4l2" and not config.cameras.wrist_device:
+        raise ValueError("cameras.wrist.device is required for the V4L2 backend")
     if any(lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)):
         raise ValueError("eef.xyz_min values must be lower than eef.xyz_max")
     if config.eef.min_quat_norm <= 0:
@@ -385,6 +430,8 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         str(config.cameras.height),
         "--cam-fps",
         str(config.cameras.fps),
+        "--max-camera-age",
+        _num(config.cameras.max_camera_age_s),
         "--cam0-serial",
         config.cameras.front_serial,
         _bool_flag("cam0-auto-exposure", config.cameras.front_auto_exposure),
@@ -397,12 +444,18 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         str(config.cameras.front_white_balance),
         "--cam0-observation-key",
         config.cameras.front_observation_key,
+        _bool_flag("cam0-crop-enabled", config.cameras.front_crop is not None),
         "--cam1-device",
         config.cameras.wrist_device,
+        "--cam1-backend",
+        config.cameras.wrist_backend,
+        "--cam1-serial",
+        config.cameras.wrist_serial,
         "--cam1-backend-api",
         config.cameras.wrist_backend_api,
         "--cam1-observation-key",
         config.cameras.wrist_observation_key,
+        *web_preview_argv(config.web_preview),
         "--state-pose-topic",
         config.topics.state_pose,
         "--state-gripper-topic",
@@ -469,6 +522,19 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         args.append("--no-kv-update")
     if config.execution.initial_ee_pose is not None:
         args.extend(["--initial-ee-pose", *(_num(value) for value in config.execution.initial_ee_pose)])
+    if config.cameras.front_crop is not None:
+        args.extend(
+            [
+                "--cam0-crop-x",
+                str(config.cameras.front_crop.x),
+                "--cam0-crop-y",
+                str(config.cameras.front_crop.y),
+                "--cam0-crop-width",
+                str(config.cameras.front_crop.width),
+                "--cam0-crop-height",
+                str(config.cameras.front_crop.height),
+            ]
+        )
     return args
 
 
@@ -489,6 +555,12 @@ def bash_config(config: LingBotConfig) -> str:
         _assign("MODEL_MASTER_PORT", str(config.policy_server.master_port)),
         _assign("MODEL_STARTUP_TIMEOUT", _num(config.policy_server.startup_timeout_s)),
         _assign("MODEL_EXPECTED_WEIGHT_SIZE", str(config.policy_server.expected_weight_size_bytes)),
+        _assign(
+            "DEPLOYMENT_READY",
+            "1" if config.policy_server.deployment_ready else "0",
+        ),
+        _assign("WRIST_BACKEND", config.cameras.wrist_backend),
+        _assign("WRIST_SERIAL", config.cameras.wrist_serial),
         _assign("WRIST_CAMERA", config.cameras.wrist_device),
         _assign("STAGED_TOPIC", config.topics.staged_command),
         _assign("RELAY_ENABLE_TOPIC", config.topics.motion_enable),

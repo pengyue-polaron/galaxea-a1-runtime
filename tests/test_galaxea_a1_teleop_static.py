@@ -13,8 +13,8 @@ def test_teleop_runtime_reads_tracked_config_and_disables_extra_args():
     assert '"${COLLECT_ARGS[@]}"' in runtime
     assert 'reset_live()' in runtime
     assert '--reset-runtime-script "${ROOT}/scripts/apps/teleop/a1_teleop_runtime.sh"' in runtime
-    assert "configs/poses/a1_initial.toml" in runtime
-    assert "a1_home.py" in runtime
+    assert "configs/poses/a1_so100_collection_start.toml" in runtime
+    assert "a1_so100_reset.py" in runtime
     assert 'step "[Setup] ${CONFIG_PATH}"' in runtime
     assert "_reset-live)" in runtime
     assert "A1_TELEOP_CONFIG" not in runtime
@@ -31,8 +31,8 @@ def test_teleop_runtime_reads_tracked_config_and_disables_extra_args():
 
 def test_reset_pose_command_is_tracked_and_uses_relay_path():
     justfile = (REPO / "Justfile").read_text()
-    config = REPO / "configs/poses/a1_initial.toml"
-    reset = (REPO / "scripts/runtime/a1_home.py").read_text()
+    config = REPO / "configs/poses/a1_so100_collection_start.toml"
+    reset = (REPO / "scripts/apps/teleop/a1_so100_reset.py").read_text()
 
     assert "reset:" in justfile
     assert "a1_teleop_runtime.sh reset" in justfile
@@ -70,12 +70,15 @@ def test_teleop_collector_uses_canonical_config_args_only():
     assert "find_joint_action_step_violation(" in collector
     assert "REJECTED: joint action discontinuity" in collector
     assert '"--cam0-require-usb3", action=argparse.BooleanOptionalAction' in collector
-    assert '"--cam1-device", default="auto"' in collector
-    assert '"--cam1-pixel-format", default="YUYV"' in collector
+    assert '"--cam1-backend", choices=("realsense", "v4l2")' in collector
+    assert '"--cam1-serial", default=""' in collector
     assert '"--joint-wait-timeout-s"' not in collector
     assert '"--cam1-index"' not in collector
     assert "default=200.0" in collector
     assert "LatestCameraReader" in collector
+    assert "CameraWebPreview" in collector
+    assert "crop_image(" in collector
+    assert 'overlay_label=(' in collector
     assert "front.read_frameset" in collector
     assert "_wait_for_new_camera_samples(" in collector
     assert "_fresh_camera_sample(" in collector
@@ -128,14 +131,14 @@ def test_teleop_bridge_uses_first_party_a1_leader_adapter():
 def test_teleop_camera_io_is_shared_and_snapshot_command_exists():
     collector = (REPO / "scripts/apps/teleop/teleop_collect.py").read_text()
     runtime = (REPO / "scripts/apps/teleop/a1_teleop_runtime.sh").read_text()
-    snapshot = REPO / "scripts/apps/teleop/camera_snapshot.py"
+    snapshot = REPO / "scripts/apps/cameras/a1_camera_diagnostics.py"
 
     assert "from galaxea_a1_runtime.hardware.cameras import" in collector
     assert "class LatestCameraReader" in (REPO / "galaxea_a1_runtime/hardware/cameras.py").read_text()
     assert "class RealSenseCamera" not in collector
     assert "class OpenCVCamera" not in collector
     assert snapshot.is_file()
-    assert "camera_snapshot.py" in runtime
+    assert "a1_camera_diagnostics.py" in runtime
     assert "cameras)" in runtime
     assert "cam0_depth" in snapshot.read_text()
 

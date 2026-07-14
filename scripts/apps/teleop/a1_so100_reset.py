@@ -25,7 +25,7 @@ warnings.filterwarnings(
     module=r"torch\.cuda.*",
 )
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
+ROOT_DIR = Path(__file__).resolve().parents[3]
 _A1_SDK = ROOT_DIR / "third_party" / "A1_SDK" / "install"
 _ROS1_OVERLAY = ROOT_DIR / ".cache" / "ros1_python_overlay"
 if str(ROOT_DIR) not in sys.path:
@@ -48,7 +48,7 @@ from std_msgs.msg import Bool, String
 from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
 
 
-DEFAULT_CONFIG = ROOT_DIR / "configs" / "poses" / "a1_initial.toml"
+DEFAULT_CONFIG = ROOT_DIR / "configs" / "poses" / "a1_so100_collection_start.toml"
 
 
 @dataclass(frozen=True)

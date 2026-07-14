@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: E402
-"""Launch the external LingBot-VA server with the tracked A1 step-500 contract."""
+"""Launch the external LingBot-VA server with the tracked A1 deployment contract."""
 
 from __future__ import annotations
 
@@ -37,7 +37,7 @@ def main() -> int:
         raise RuntimeError("External LingBot checkout does not provide the galaxea_a1 base config")
 
     job = copy.deepcopy(server_module.VA_CONFIGS["galaxea_a1"])
-    job.__name__ = "Config: Galaxea A1 step-500 policy server"
+    job.__name__ = "Config: Galaxea A1 deployment policy server"
     job.wan22_pretrained_model_name_or_path = str(policy.model_root)
     job.infer_mode = "server"
     job.host = config.server.host
@@ -83,7 +83,7 @@ def main() -> int:
     torch.manual_seed(policy.seed)
     torch.cuda.manual_seed_all(policy.seed)
     np.random.seed(policy.seed)
-    server_module.VA_CONFIGS["a1_step500"] = job
+    server_module.VA_CONFIGS["a1_deployment"] = job
 
     print(f"[LingBot server] checkout={policy.checkout}", flush=True)
     print(f"[LingBot server] model_root={policy.model_root}", flush=True)
@@ -97,7 +97,7 @@ def main() -> int:
     server_module.init_logger()
     server_module.run(
         argparse.Namespace(
-            config_name="a1_step500",
+            config_name="a1_deployment",
             port=config.server.port,
             save_root=str(policy.save_root),
         )

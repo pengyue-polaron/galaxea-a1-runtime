@@ -24,7 +24,7 @@ from galaxea_a1_runtime.hardware.cameras import (  # noqa: E402
 from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config  # noqa: E402
 
 
-DEFAULT_POSE_CONFIG = Path("configs/poses/a1_initial.toml")
+DEFAULT_POSE_CONFIG = Path("configs/poses/a1_so100_collection_start.toml")
 
 
 @dataclass(frozen=True)
@@ -67,8 +67,21 @@ def main() -> int:
     _check_busy(checks, "a1_serial_busy", config.host.a1_serial)
     _check_busy(checks, "leader_serial_busy", config.leader.port)
 
-    _check_realsense(checks, serial=config.front_camera.serial, require_usb3=config.front_camera.require_usb3)
-    _check_wrist_camera(checks, config.wrist_camera.device)
+    _check_realsense(
+        checks,
+        name="realsense",
+        serial=config.front_camera.serial,
+        require_usb3=config.front_camera.require_usb3,
+    )
+    if config.wrist_camera.backend == "realsense":
+        _check_realsense(
+            checks,
+            name="wrist_camera",
+            serial=config.wrist_camera.serial,
+            require_usb3=config.wrist_camera.require_usb3,
+        )
+    else:
+        _check_wrist_camera(checks, config.wrist_camera.device)
 
     detail = f"teleop={config.path}; pose={pose_path}"
     _add(checks, "tracked_configs", True, detail, required=True)
@@ -124,20 +137,20 @@ def _check_busy(checks: list[Check], name: str, device: str) -> None:
         _add(checks, name, True, "not in use", required=False)
 
 
-def _check_realsense(checks: list[Check], *, serial: str, require_usb3: bool) -> None:
+def _check_realsense(checks: list[Check], *, name: str, serial: str, require_usb3: bool) -> None:
     try:
         info = realsense_device_info(serial or None)
     except Exception as exc:
-        _add(checks, "realsense", False, str(exc), required=True)
+        _add(checks, name, False, str(exc), required=True)
         return
     if info is None:
-        _add(checks, "realsense", False, "no RealSense device enumerated", required=True)
+        _add(checks, name, False, "no RealSense device enumerated", required=True)
         return
     serial_detail = f"{info.name} serial={info.serial or '<unknown>'} usb={info.usb_type or '<unknown>'}"
-    _add(checks, "realsense", True, serial_detail, required=True)
+    _add(checks, name, True, serial_detail, required=True)
     usb_ok = (not require_usb3) or realsense_usb_is_superspeed(info.usb_type)
     detail = f"usb={info.usb_type or '<unknown>'}; require_usb3={require_usb3}"
-    _add(checks, "realsense_usb", usb_ok, detail, required=True)
+    _add(checks, f"{name}_usb", usb_ok, detail, required=True)
 
 
 def _check_wrist_camera(checks: list[Check], device: str) -> None:

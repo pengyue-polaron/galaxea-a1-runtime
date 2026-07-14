@@ -53,13 +53,23 @@ from galaxea_a1_runtime.collection import (
     normalize_episode_decision,
     state_names_for_mode,
     teleop_frame_header,
+    validate_existing_camera_shape,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.hardware.cameras import (
     CameraSample,
+    ColorCamera,
     LatestCameraReader,
-    OpenCVColorCamera,
     RealSenseColorCamera,
+    open_color_camera,
+)
+from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image
+from galaxea_a1_runtime.hardware.web_preview import (
+    CameraWebPreview,
+    add_web_preview_arguments,
+    color_from_bgr,
+    color_from_frameset,
+    web_preview_config_from_args,
 )
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
 
@@ -270,6 +280,7 @@ def record_episode(
     max_duration_s: float,
     jpeg_quality: int,
     depth_enabled: bool,
+    front_crop: ImageRoi | None,
     camera_ready_timeout_s: float,
     max_camera_age_s: float,
 ) -> RecordedEpisode:
@@ -337,7 +348,12 @@ def record_episode(
             }
 
             color_filename = f"{frame_index:06d}.jpg"
-            ok0 = cv2.imwrite(str(episode_dir / "cam0" / color_filename), frameset0.color_bgr, jpeg_params)
+            front_color = (
+                frameset0.color_bgr
+                if front_crop is None
+                else crop_image(frameset0.color_bgr, front_crop, label="AgentView color")
+            )
+            ok0 = cv2.imwrite(str(episode_dir / "cam0" / color_filename), front_color, jpeg_params)
             ok1 = cv2.imwrite(str(episode_dir / "cam1" / color_filename), img1, jpeg_params)
             if not ok0 or not ok1:
                 raise RuntimeError(f"failed to write camera frame {color_filename}")
@@ -350,7 +366,12 @@ def record_episode(
             ]
             if depth_enabled:
                 depth_filename = f"{frame_index:06d}.png"
-                ok_depth = cv2.imwrite(str(episode_dir / "cam0_depth" / depth_filename), frameset0.depth_mm)
+                front_depth = (
+                    frameset0.depth_mm
+                    if front_crop is None
+                    else crop_image(frameset0.depth_mm, front_crop, label="AgentView aligned depth")
+                )
+                ok_depth = cv2.imwrite(str(episode_dir / "cam0_depth" / depth_filename), front_depth)
                 if not ok_depth:
                     raise RuntimeError(f"failed to write depth frame {depth_filename}")
                 row.append(f"cam0_depth/{depth_filename}")
@@ -388,13 +409,25 @@ def write_metadata(
     cam0_depth_width: int,
     cam0_depth_height: int,
     cam0_depth_aligned: bool,
+    cam0_source_width: int,
+    cam0_source_height: int,
+    cam0_crop: ImageRoi | None,
     cam1_label: str,
     cam1_width: int,
     cam1_height: int,
     args: argparse.Namespace,
 ) -> None:
     cameras = [
-        CameraMetadata("front", "cam0", cam0_width, cam0_height, cam0_serial),
+        CameraMetadata(
+            "front",
+            "cam0",
+            cam0_width,
+            cam0_height,
+            cam0_serial,
+            source_width=cam0_source_width,
+            source_height=cam0_source_height,
+            crop_xywh=None if cam0_crop is None else cam0_crop.xywh,
+        ),
         CameraMetadata("wrist", "cam1", cam1_width, cam1_height, cam1_label),
     ]
     if cam0_depth_enabled:
@@ -408,6 +441,9 @@ def write_metadata(
                 modality="depth",
                 dtype="uint16",
                 encoding="z16_mm_aligned_to_color" if cam0_depth_aligned else "z16_mm",
+                source_width=cam0_source_width,
+                source_height=cam0_source_height,
+                crop_xywh=None if cam0_crop is None else cam0_crop.xywh,
             )
         )
     metadata = TeleopRawEpisodeMetadata(
@@ -484,11 +520,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam0-depth-width", type=int, default=640)
     parser.add_argument("--cam0-depth-height", type=int, default=480)
     parser.add_argument("--cam0-align-depth-to-color", action=argparse.BooleanOptionalAction, default=True)
+    parser.add_argument("--cam0-crop-enabled", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--cam0-crop-x", type=int, default=0)
+    parser.add_argument("--cam0-crop-y", type=int, default=0)
+    parser.add_argument("--cam0-crop-width", type=int, default=640)
+    parser.add_argument("--cam0-crop-height", type=int, default=480)
     parser.add_argument("--cam1-device", default="auto")
+    parser.add_argument("--cam1-backend", choices=("realsense", "v4l2"), default="v4l2")
+    parser.add_argument("--cam1-serial", default="")
     parser.add_argument("--cam1-width", type=int, default=640)
     parser.add_argument("--cam1-height", type=int, default=480)
     parser.add_argument("--cam1-fps", type=int, default=30)
     parser.add_argument("--cam1-pixel-format", default="YUYV")
+    add_web_preview_arguments(parser)
     return parser.parse_args()
 
 
@@ -506,9 +550,32 @@ def main() -> int:
         raise ValueError("automatic reset requires --reset-runtime-script and --teleop-config")
     if args.cam0_depth_enabled and (args.cam0_depth_width <= 0 or args.cam0_depth_height <= 0):
         raise ValueError("--cam0-depth-width and --cam0-depth-height must be positive when depth is enabled")
+    front_crop = None
+    if args.cam0_crop_enabled:
+        front_crop = ImageRoi(
+            x=args.cam0_crop_x,
+            y=args.cam0_crop_y,
+            width=args.cam0_crop_width,
+            height=args.cam0_crop_height,
+        )
+        front_crop.validate(
+            image_width=args.cam0_width,
+            image_height=args.cam0_height,
+            label="AgentView collection ROI",
+        )
+        if front_crop.width != front_crop.height:
+            raise ValueError("AgentView collection ROI must be square")
+        if args.cam0_depth_enabled and not args.cam0_align_depth_to_color:
+            raise ValueError("AgentView depth must be aligned when collection crop is enabled")
     state_mode = StateMode(args.state_mode)
     experiment_dir = args.data_root.expanduser().resolve() / args.experiment
     task = load_or_prompt_task(experiment_dir, args.task)
+    validate_existing_camera_shape(
+        experiment_dir,
+        camera_name="front",
+        width=args.cam0_width if front_crop is None else front_crop.width,
+        height=args.cam0_height if front_crop is None else front_crop.height,
+    )
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(args)
@@ -518,9 +585,10 @@ def main() -> int:
 
     episode_index = next_episode_index(experiment_dir)
     front: RealSenseColorCamera | None = None
-    wrist: OpenCVColorCamera | None = None
+    wrist: ColorCamera | None = None
     front_reader: LatestCameraReader | None = None
     wrist_reader: LatestCameraReader | None = None
+    web_preview: CameraWebPreview | None = None
     try:
         print(styled("[Setup] Cameras", "1;36"), end=" ... ", flush=True)
         front = RealSenseColorCamera(
@@ -535,11 +603,13 @@ def main() -> int:
             warmup_frames=20,
             require_usb3=args.cam0_require_usb3,
         )
-        wrist = OpenCVColorCamera(
-            args.cam1_device,
-            args.cam1_width,
-            args.cam1_height,
-            args.cam1_fps,
+        wrist = open_color_camera(
+            args.cam1_backend,
+            serial=args.cam1_serial,
+            device=args.cam1_device,
+            width=args.cam1_width,
+            height=args.cam1_height,
+            fps=args.cam1_fps,
             pixel_format=args.cam1_pixel_format,
             warmup_frames=10,
         )
@@ -550,6 +620,23 @@ def main() -> int:
         wrist_reader = LatestCameraReader("wrist", wrist.read_bgr)
         front_reader.start()
         wrist_reader.start()
+        preview_config = web_preview_config_from_args(args)
+        if preview_config.enabled:
+            web_preview = CameraWebPreview(preview_config)
+            web_preview.register_reader(
+                "agent",
+                front_reader,
+                extract=color_from_frameset,
+                source=front.label,
+                overlay_roi=front_crop,
+                overlay_label=(
+                    f"RECORDED {front_crop.width}x{front_crop.height}"
+                    if front_crop is not None
+                    else ""
+                ),
+            )
+            web_preview.register_reader("wrist", wrist_reader, extract=color_from_bgr, source=wrist.label)
+            web_preview.start()
         _wait_for_new_camera_samples(
             (front_reader, wrist_reader),
             min_seq={"front": -1, "wrist": -1},
@@ -566,6 +653,7 @@ def main() -> int:
         print(f"  state_mode  : {state_mode.value}")
         print(f"  action_mode : {ActionMode.JOINT_ABSOLUTE.value}")
         print(f"  output      : {experiment_dir}")
+        print(f"  AgentView ROI: {'full frame' if front_crop is None else front_crop.xywh}")
         print(f"  next episode: {episode_index}")
         print("  Ctrl+C to quit\n")
 
@@ -596,6 +684,7 @@ def main() -> int:
                     max_duration_s=args.max_duration_s,
                     jpeg_quality=args.jpeg_quality,
                     depth_enabled=args.cam0_depth_enabled,
+                    front_crop=front_crop,
                     camera_ready_timeout_s=args.ready_timeout_s,
                     max_camera_age_s=args.max_camera_age_s,
                 )
@@ -656,12 +745,23 @@ def main() -> int:
                 fps=args.fps,
                 state_mode=state_mode,
                 cam0_serial=args.cam0_serial,
-                cam0_width=args.cam0_width,
-                cam0_height=args.cam0_height,
+                cam0_width=args.cam0_width if front_crop is None else front_crop.width,
+                cam0_height=args.cam0_height if front_crop is None else front_crop.height,
                 cam0_depth_enabled=args.cam0_depth_enabled,
-                cam0_depth_width=args.cam0_width if args.cam0_align_depth_to_color else args.cam0_depth_width,
-                cam0_depth_height=args.cam0_height if args.cam0_align_depth_to_color else args.cam0_depth_height,
+                cam0_depth_width=(
+                    front_crop.width
+                    if front_crop is not None
+                    else (args.cam0_width if args.cam0_align_depth_to_color else args.cam0_depth_width)
+                ),
+                cam0_depth_height=(
+                    front_crop.height
+                    if front_crop is not None
+                    else (args.cam0_height if args.cam0_align_depth_to_color else args.cam0_depth_height)
+                ),
                 cam0_depth_aligned=args.cam0_align_depth_to_color,
+                cam0_source_width=args.cam0_width,
+                cam0_source_height=args.cam0_height,
+                cam0_crop=front_crop,
                 cam1_label=wrist.label,
                 cam1_width=args.cam1_width,
                 cam1_height=args.cam1_height,
@@ -685,6 +785,8 @@ def main() -> int:
     except (KeyboardInterrupt, EOFError):
         print(f"\n[collect] done. Next episode index would be {episode_index}.")
     finally:
+        if web_preview is not None:
+            web_preview.close()
         if wrist_reader is not None:
             wrist_reader.stop()
         if front_reader is not None:

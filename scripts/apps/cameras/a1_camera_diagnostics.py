@@ -33,10 +33,11 @@ import cv2
 import numpy as np
 
 from galaxea_a1_runtime.hardware.cameras import (
+    ColorCamera,
     LatestCameraReader,
-    OpenCVColorCamera,
     RealSenseColorCamera,
     RealSenseFrameSet,
+    open_color_camera,
 )
 from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
 
@@ -55,7 +56,7 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
 
     front: RealSenseColorCamera | None = None
-    wrist: OpenCVColorCamera | None = None
+    wrist: ColorCamera | None = None
     try:
         front = RealSenseColorCamera(
             config.front_camera.serial,
@@ -69,11 +70,13 @@ def main() -> int:
             warmup_frames=args.warmup_frames,
             require_usb3=config.front_camera.require_usb3,
         )
-        wrist = OpenCVColorCamera(
-            config.wrist_camera.device,
-            config.wrist_camera.width,
-            config.wrist_camera.height,
-            config.wrist_camera.fps,
+        wrist = open_color_camera(
+            config.wrist_camera.backend,
+            serial=config.wrist_camera.serial,
+            device=config.wrist_camera.device,
+            width=config.wrist_camera.width,
+            height=config.wrist_camera.height,
+            fps=config.wrist_camera.fps,
             pixel_format=config.wrist_camera.pixel_format,
             warmup_frames=args.warmup_frames,
         )
@@ -136,7 +139,7 @@ def main() -> int:
 
 def probe_camera_rates(
     front: RealSenseColorCamera,
-    wrist: OpenCVColorCamera,
+    wrist: ColorCamera,
     *,
     duration_s: float,
     front_target_fps: float,

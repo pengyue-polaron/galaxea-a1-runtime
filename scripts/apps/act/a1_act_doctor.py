@@ -26,6 +26,8 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--checkpoint", required=True)
+    parser.add_argument("--wrist-backend", choices=("realsense", "v4l2"), required=True)
+    parser.add_argument("--wrist-serial", default="")
     parser.add_argument("--wrist-camera", required=True)
     parser.add_argument("--require-execution", action="store_true")
     args = parser.parse_args()
@@ -39,7 +41,16 @@ def main() -> int:
     add(checks, "lerobot_import", importlib.util.find_spec("lerobot") is not None, "lerobot")
     add(checks, "cv2_import", importlib.util.find_spec("cv2") is not None, "cv2")
     add(checks, "rospy_import", importlib.util.find_spec("rospy") is not None, "rospy", required=args.require_execution)
-    if args.wrist_camera == "auto":
+    if args.wrist_backend == "realsense":
+        from galaxea_a1_runtime.hardware.cameras import realsense_device_info
+
+        try:
+            info = realsense_device_info(args.wrist_serial)
+        except Exception as exc:
+            add(checks, "wrist_camera", False, str(exc), required=True)
+        else:
+            add(checks, "wrist_camera", info is not None, str(info), required=True)
+    elif args.wrist_camera == "auto":
         add(checks, "wrist_camera", True, "auto")
     else:
         wrist = Path(args.wrist_camera)

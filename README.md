@@ -12,6 +12,10 @@ This repository is being rebuilt around:
 - LingBot-VA, FastWAM, and GR00T N1.7 policy profiles,
 - clean module boundaries for safety, hardware IO, datasets, and policies.
 
+SO-100 leader printable parts are kept under
+[`assets/cad/so100_leader/`](assets/cad/so100_leader/) instead of the repository
+root.
+
 The arm may be powered and reachable while this repo is open. Treat every ROS
 publish path as live hardware.
 
@@ -61,6 +65,17 @@ Camera check, no arm motion:
 just cameras
 ```
 
+LAN dual-camera web preview, no arm motion:
+
+```bash
+just camera-web
+```
+
+Open `http://<robot-lan-ip>:8088` directly. Stop the standalone camera owner
+with `just camera-web-stop`; the same preview endpoint is embedded in Teleop,
+ACT, and LingBot, so the LAN URL remains useful while one of those apps owns
+the cameras.
+
 EEF hardware acceptance:
 
 ```bash
@@ -86,9 +101,10 @@ just stop
 ```
 
 LingBot runtime parameters live in
-[configs/inference/lingbot_va_a1.toml](configs/inference/lingbot_va_a1.toml).
-The tracked command starts the managed step-500 policy server before the A1
-runtime and runs a finite continuous rollout. Edit that file when the
+[configs/inference/a1_lingbot_va.toml](configs/inference/a1_lingbot_va.toml).
+The tracked command starts the managed deployment policy server before the A1
+runtime. The checked-in profile is currently fail-closed until a new checkpoint,
+prompt, and dataset quantiles are registered. Edit that file when the
 checkpoint, server, prompt, cameras, EEF workspace, execution cadence, or
 gripper mapping changes.
 
@@ -105,10 +121,15 @@ just stop
 ```
 
 ACT runtime parameters live in
-[configs/inference/act_joint_a1.toml](configs/inference/act_joint_a1.toml).
+[configs/inference/a1_act_joint.toml](configs/inference/a1_act_joint.toml).
 It starts dry-run and step-gated by default. Set `execution.execute = true` in
 that tracked file only after static checks, camera checks, and a clear robot
 workspace.
+
+Collection, ACT, and LingBot share the same AgentView contract: the D455 is
+captured at 640x480 and only `(x=103, y=0, width=480, height=480)` is recorded
+or passed to a policy. Camera Web keeps the full view visible and outlines that
+actual policy region in red.
 
 Dataset conversion:
 
@@ -136,6 +157,9 @@ galaxea_a1_runtime/
   policies/           # action normalization and policy profiles
   apps/               # reusable app helpers and app-specific transforms
   runtime/            # static doctor and safety disclosure
+assets/cad/            # versioned robot/leader mechanical assets
+configs/               # tracked runtime, inference, pose, and dataset contracts
+scripts/               # operator entrypoints grouped by runtime/app responsibility
 ```
 
 ## Policy Targets
@@ -184,7 +208,7 @@ just teleop pick_cube
 ```
 
 `just reset` moves the A1 and the SO leader to the tracked collection start pose
-in [configs/poses/a1_initial.toml](configs/poses/a1_initial.toml), closes both
+in [configs/poses/a1_so100_collection_start.toml](configs/poses/a1_so100_collection_start.toml), closes both
 grippers, resets both devices concurrently, disables leader torque, and stops
 the runtime. `just teleop
 <experiment>` then starts the staged joint teleop runtime, records front RGB,
@@ -226,6 +250,14 @@ after lowering the camera FPS/resolution for USB2. During recording, stale
 camera samples abort the episode and delete the partial folder instead of
 saving bad data.
 
+AgentView is captured at 640x480 and cropped to the tracked square ROI
+`x=103, y=0, width=480, height=480` before `cam0` is written. The LAN preview
+keeps the full frame and draws the recorded area in red; the overlay is not
+saved. Wrist frames remain uncropped.
+The collector rejects appending 480x480 AgentView frames to an older raw
+experiment containing 640x480 frames; use a new experiment name or migrate the
+whole existing experiment first.
+
 Enter requests a save; it does not make the episode durable immediately. The
 collector first checks joint-action continuity using the tracked
 `collection.max_joint_action_step_rad` threshold. A failed check prints the
@@ -236,10 +268,17 @@ Raw episodes are written under `data/raw/<experiment>/episode_NNN_timestamp/`.
 Convert a selected source dataset to its tracked training package with
 `just convert <experiment>`.
 
-`just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
+The tracked rig binds the agent D455 and wrist D405 by explicit RealSense
+serial number. `just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
 `cam0_depth_preview.jpg`, `cam1_wrist.jpg`, and a contact sheet from the same
 tracked camera config without moving the arm. It also runs a short sustained
 FPS probe and prints the RealSense USB link type.
+
+The shared web preview listens on the host's LAN interfaces at port `8088` and
+has no ROS or robot-control endpoints. It has no login, so do not port-forward
+this unencrypted HTTP service to the public Internet. Only one process may own the
+RealSense devices: use standalone `just camera-web` when no robot app is
+running; Teleop, ACT, and LingBot reuse their existing readers for preview.
 
 ## Dependency Baseline
 

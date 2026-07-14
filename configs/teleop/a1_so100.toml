@@ -4,7 +4,7 @@
 # and does not require per-run bridge/collector CLI flags.
 
 [host]
-image = "a1-research/a1-noetic-arm64:local"
+image = "galaxea-a1-runtime/a1-noetic-arm64:local"
 a1_serial = "/dev/a1"
 prefix = "a1-teleop"
 run_dir = "/tmp/a1-teleop"
@@ -71,10 +71,19 @@ max_camera_age_s = 0.5
 max_joint_action_step_rad = 0.35
 
 [cameras.front]
-serial = ""
+backend = "realsense"
+serial = "341522300456"
 width = 640
 height = 480
 fps = 30
+# Square collection ROI measured from the operator-approved AgentView frame.
+# Raw live preview remains 640x480 and draws this region in red; recorded RGB
+# (and aligned depth, when enabled) is cropped to 480x480.
+crop_enabled = true
+crop_x = 103
+crop_y = 0
+crop_width = 480
+crop_height = 480
 require_usb3 = false
 depth = false
 depth_width = 640
@@ -82,9 +91,17 @@ depth_height = 480
 align_depth_to_color = true
 
 [cameras.wrist]
-device = "auto"
+backend = "realsense"
+serial = "218622276998"
+device = ""
 width = 640
 height = 480
 fps = 30
-# Prefer uncompressed YUYV to avoid corrupt MJPG frames.
-pixel_format = "YUYV"
+pixel_format = ""
+
+[web_preview]
+enabled = true
+bind = "0.0.0.0"
+port = 8088
+fps = 10.0
+jpeg_quality = 75

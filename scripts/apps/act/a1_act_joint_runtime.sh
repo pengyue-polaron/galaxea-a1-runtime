@@ -3,7 +3,7 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 JOINT_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
-CONFIG_PATH="${ROOT}/configs/inference/act_joint_a1.toml"
+CONFIG_PATH="${ROOT}/configs/inference/a1_act_joint.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -27,11 +27,15 @@ eval "$(
 )"
 
 check_act_app() {
+  if [[ "${DEPLOYMENT_READY}" != "1" ]]; then
+    echo "[FAIL] ACT deployment_ready=false; register and review the new square-AgentView checkpoint first." >&2
+    exit 2
+  fi
   if [[ ! -d "${CHECKPOINT}" ]]; then
     echo "[FAIL] ACT checkpoint not found: ${CHECKPOINT}" >&2
     exit 2
   fi
-  if [[ "${WRIST_CAMERA}" != "auto" && ! -e "${WRIST_CAMERA}" ]]; then
+  if [[ "${WRIST_BACKEND}" == "v4l2" && "${WRIST_CAMERA}" != "auto" && ! -e "${WRIST_CAMERA}" ]]; then
     echo "[FAIL] Wrist camera not found: ${WRIST_CAMERA}" >&2
     exit 2
   fi
@@ -87,6 +91,8 @@ doctor() {
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/act/a1_act_doctor.py" \
       --checkpoint "${CHECKPOINT}" \
+      --wrist-backend "${WRIST_BACKEND}" \
+      --wrist-serial "${WRIST_SERIAL}" \
       --wrist-camera "${WRIST_CAMERA}" \
       "${args[@]}"
 }
@@ -135,7 +141,7 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/inference/act_joint_a1.toml] <start|services|tmux|stop|doctor|status|logs>
+Usage: $0 [--config configs/inference/a1_act_joint.toml] <start|services|tmux|stop|doctor|status|logs>
 
   start     Start A1 joint runtime, then open the interactive ACT bridge tmux
   services  Start only ROS, A1 driver, jointTracker, and locked relay

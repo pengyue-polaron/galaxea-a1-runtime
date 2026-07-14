@@ -9,7 +9,17 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-DEFAULT_ACT_CONFIG = Path("configs/inference/act_joint_a1.toml")
+from galaxea_a1_runtime.hardware.image_geometry import (
+    ImageRoi,
+    parse_optional_image_roi,
+)
+from galaxea_a1_runtime.hardware.web_preview import (
+    WebPreviewConfig,
+    parse_web_preview_config,
+    web_preview_argv,
+)
+
+DEFAULT_ACT_CONFIG = Path("configs/inference/a1_act_joint.toml")
 
 
 @dataclass(frozen=True)
@@ -30,6 +40,7 @@ class ActPolicyConfig:
     checkpoint: Path
     device: str
     disable_backbone_download: bool
+    deployment_ready: bool
 
 
 @dataclass(frozen=True)
@@ -94,6 +105,9 @@ class ActCameraConfig:
     front_gain: int
     front_auto_white_balance: bool
     front_white_balance: int
+    front_crop: ImageRoi | None
+    wrist_backend: str
+    wrist_serial: str
     wrist_device: str
     wrist_backend_api: str
     wrist_pixel_format: str
@@ -111,6 +125,7 @@ class ActConfig:
     safety: ActSafetyConfig
     gripper: ActGripperConfig
     cameras: ActCameraConfig
+    web_preview: WebPreviewConfig
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -136,6 +151,8 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
     cameras = _required_table(data, "cameras")
     front = _required_table(cameras, "front")
     wrist = _required_table(cameras, "wrist")
+    camera_width = int(cameras.get("width", 640))
+    camera_height = int(cameras.get("height", 480))
 
     config = ActConfig(
         path=path,
@@ -150,6 +167,7 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
             checkpoint=_repo_path(repo_root, _string(policy, "checkpoint")),
             device=_string(policy, "device"),
             disable_backbone_download=bool(policy.get("disable_backbone_download", True)),
+            deployment_ready=bool(policy.get("deployment_ready", False)),
         ),
         execution=ActExecutionConfig(
             execute=bool(execution.get("execute", False)),
@@ -192,8 +210,8 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
             feedback_open_threshold_mm=float(gripper.get("feedback_open_threshold_mm", 30.0)),
         ),
         cameras=ActCameraConfig(
-            width=int(cameras.get("width", 640)),
-            height=int(cameras.get("height", 480)),
+            width=camera_width,
+            height=camera_height,
             fps=int(cameras.get("fps", 30)),
             warmup_frames=int(cameras.get("warmup_frames", 20)),
             front_serial=str(front.get("serial", "")),
@@ -202,9 +220,22 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
             front_gain=int(front.get("gain", 32)),
             front_auto_white_balance=bool(front.get("auto_white_balance", True)),
             front_white_balance=int(front.get("white_balance", 4600)),
-            wrist_device=_string(wrist, "device"),
-            wrist_backend_api=_string(wrist, "backend_api"),
+            front_crop=parse_optional_image_roi(
+                front,
+                image_width=camera_width,
+                image_height=camera_height,
+                label="cameras.front crop",
+                require_square=True,
+            ),
+            wrist_backend=str(wrist.get("backend", "v4l2")),
+            wrist_serial=str(wrist.get("serial", "")),
+            wrist_device=str(wrist.get("device", "")),
+            wrist_backend_api=str(wrist.get("backend_api", "v4l2")),
             wrist_pixel_format=str(wrist.get("pixel_format", "")),
+        ),
+        web_preview=parse_web_preview_config(
+            data.get("web_preview", {}) if isinstance(data.get("web_preview", {}), dict) else {},
+            repo_root=repo_root,
         ),
     )
     validate_act_config(config)
@@ -212,8 +243,6 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
 
 
 def validate_act_config(config: ActConfig) -> None:
-    if not config.policy.checkpoint.is_dir():
-        raise ValueError(f"policy.checkpoint does not exist: {config.policy.checkpoint}")
     if config.execution.execute_steps_per_inference <= 0:
         raise ValueError("execution.execute_steps_per_inference must be positive")
     if config.execution.control_hz <= 0:
@@ -228,6 +257,16 @@ def validate_act_config(config: ActConfig) -> None:
         raise ValueError("camera width/height/fps must be positive")
     if config.cameras.warmup_frames < 0:
         raise ValueError("cameras.warmup_frames must be non-negative")
+    if not config.cameras.front_serial:
+        raise ValueError("cameras.front.serial is required")
+    if config.cameras.front_crop is None:
+        raise ValueError("cameras.front crop must be enabled for the inference input contract")
+    if config.cameras.wrist_backend not in {"realsense", "v4l2"}:
+        raise ValueError("cameras.wrist.backend must be 'realsense' or 'v4l2'")
+    if config.cameras.wrist_backend == "realsense" and not config.cameras.wrist_serial:
+        raise ValueError("cameras.wrist.serial is required for the RealSense backend")
+    if config.cameras.wrist_backend == "v4l2" and not config.cameras.wrist_device:
+        raise ValueError("cameras.wrist.device is required for the V4L2 backend")
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
@@ -335,15 +374,34 @@ def bridge_argv(config: ActConfig) -> list[str]:
         _bool_flag("cam0-auto-white-balance", config.cameras.front_auto_white_balance),
         "--cam0-white-balance",
         str(config.cameras.front_white_balance),
+        _bool_flag("cam0-crop-enabled", config.cameras.front_crop is not None),
         "--cam1-device",
         config.cameras.wrist_device,
+        "--cam1-backend",
+        config.cameras.wrist_backend,
+        "--cam1-serial",
+        config.cameras.wrist_serial,
         "--cam1-backend-api",
         config.cameras.wrist_backend_api,
         "--cam1-pixel-format",
         config.cameras.wrist_pixel_format,
+        *web_preview_argv(config.web_preview),
     ]
     if config.cameras.front_serial:
         args.extend(["--cam0-serial", config.cameras.front_serial])
+    if config.cameras.front_crop is not None:
+        args.extend(
+            [
+                "--cam0-crop-x",
+                str(config.cameras.front_crop.x),
+                "--cam0-crop-y",
+                str(config.cameras.front_crop.y),
+                "--cam0-crop-width",
+                str(config.cameras.front_crop.width),
+                "--cam0-crop-height",
+                str(config.cameras.front_crop.height),
+            ]
+        )
     return args
 
 
@@ -356,6 +414,9 @@ def bash_config(config: ActConfig) -> str:
         _assign("PREFIX", config.host.prefix),
         _assign("RUN_DIR", config.host.run_dir),
         _assign("CHECKPOINT", str(config.policy.checkpoint)),
+        _assign("DEPLOYMENT_READY", "1" if config.policy.deployment_ready else "0"),
+        _assign("WRIST_BACKEND", config.cameras.wrist_backend),
+        _assign("WRIST_SERIAL", config.cameras.wrist_serial),
         _assign("WRIST_CAMERA", config.cameras.wrist_device),
         _assign("TARGET_TOPIC", config.topics.target),
         _assign("STAGED_TOPIC", config.topics.staged_command),

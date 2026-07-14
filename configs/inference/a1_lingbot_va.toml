@@ -9,19 +9,23 @@ tmux = "lingbot-a1"
 [server]
 host = "127.0.0.1"
 port = 1106
-prompt = "Put the banana in the blue plate."
+# Replace together with the new checkpoint and its dataset quantiles.
+prompt = "REPLACE_WITH_NEW_TASK_PROMPT"
 
 [policy_server]
 tmux = "lingbot-va-server"
 checkout = "/home/pengyue/lingbot-va"
 python = "/home/pengyue/lingbot-va/.env312/bin/python"
 base_model = "models/base/lingbot-va-base"
-checkpoint = "models/checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500"
-model_root = "models/runtime/lingbot/a1_banana_in_plate/checkpoint_step_500"
+checkpoint = "models/checkpoints/lingbot/a1_agentview_square/latest"
+model_root = "models/runtime/lingbot/a1_agentview_square/latest"
 save_root = "outputs/lingbot_va_server"
 master_port = 29501
 startup_timeout_s = 120.0
 expected_weight_size_bytes = 10177831668
+# Set true only after checkpoint, prompt, and q01/q99 are replaced from the new
+# square-AgentView training run.
+deployment_ready = false
 text_encoder_device = "cpu"
 seed = 42
 height = 256
@@ -58,8 +62,10 @@ q99_source = [
 ]
 
 [execution]
-execute = true
-step_mode = false
+# Kept fail-closed until the new checkpoint, prompt, and q01/q99 statistics
+# have all been installed and reviewed.
+execute = false
+step_mode = true
 step_actions = false
 no_kv_update = false
 max_model_calls = 36
@@ -115,6 +121,7 @@ feedback_open_threshold_mm = 30.0
 width = 640
 height = 480
 fps = 30
+max_camera_age_s = 0.5
 
 [cameras.front]
 serial = "341522300456"
@@ -124,8 +131,24 @@ exposure = 140
 gain = 32
 auto_white_balance = true
 white_balance = 4600
+# Shared AgentView input contract. LingBot receives this crop and then applies
+# its existing model-side 256x256 resize.
+crop_enabled = true
+crop_x = 103
+crop_y = 0
+crop_width = 480
+crop_height = 480
 
 [cameras.wrist]
-device = "/dev/v4l/by-id/usb-Global_Shutter_Camera_Global_Shutter_Camera_01.00.00-video-index0"
+backend = "realsense"
+serial = "218622276998"
+device = ""
 backend_api = "v4l2"
 observation_key = "observation.images.wrist"
+
+[web_preview]
+enabled = true
+bind = "0.0.0.0"
+port = 8088
+fps = 10.0
+jpeg_quality = 75

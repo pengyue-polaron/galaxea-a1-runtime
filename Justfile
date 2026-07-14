@@ -38,6 +38,7 @@ test:
         {{repo}}/tests/test_galaxea_a1_collection_schema.py \
         {{repo}}/tests/test_galaxea_a1_teleop_mapping.py \
         {{repo}}/tests/test_galaxea_a1_teleop_config.py \
+        {{repo}}/tests/test_galaxea_a1_camera_web.py \
         {{repo}}/tests/test_galaxea_a1_teleop_static.py \
         {{repo}}/tests/test_galaxea_a1_runtime_safety_report.py \
         {{repo}}/tests/test_galaxea_a1_runtime_lerobot_dataset.py \
@@ -73,6 +74,15 @@ hardware *args:
 cameras *args:
     scripts/apps/teleop/a1_teleop_runtime.sh cameras {{args}}
 
+camera-web *args:
+    scripts/apps/cameras/a1_camera_web_runtime.sh {{args}}
+
+camera-web-stop:
+    scripts/apps/cameras/a1_camera_web_runtime.sh stop
+
+camera-web-status:
+    scripts/apps/cameras/a1_camera_web_runtime.sh status
+
 eef-test:
     scripts/runtime/a1_runtime.sh services
     scripts/runtime/a1_runtime.sh eef-nudge --execute
@@ -94,6 +104,7 @@ act:
     scripts/apps/act/a1_act_joint_runtime.sh start
 
 stop:
+    scripts/apps/cameras/a1_camera_web_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/act/a1_act_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/teleop/a1_teleop_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true

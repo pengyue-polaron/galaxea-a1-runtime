@@ -83,8 +83,10 @@ def main():
     parser.add_argument("--relay-status-topic", default="/a1_arm_relay_status")
     parser.add_argument(
         "--wrist-camera",
-        default="/dev/v4l/by-id/usb-Global_Shutter_Camera_Global_Shutter_Camera_01.00.00-video-index0",
+        default="",
     )
+    parser.add_argument("--wrist-backend", choices=("realsense", "v4l2"), default="v4l2")
+    parser.add_argument("--wrist-serial", default="")
     args = parser.parse_args()
     checks = []
 
@@ -95,8 +97,18 @@ def main():
         serial_detail = f"{serial} -> {serial.resolve()}"
     add(checks, "serial", serial_ok, serial_detail, required=args.require_execution)
 
-    wrist = Path(args.wrist_camera)
-    add(checks, "wrist_camera", wrist.exists(), str(wrist), required=True)
+    if args.wrist_backend == "realsense":
+        from galaxea_a1_runtime.hardware.cameras import realsense_device_info
+
+        try:
+            wrist_info = realsense_device_info(args.wrist_serial)
+        except Exception as exc:
+            add(checks, "wrist_camera", False, str(exc), required=True)
+        else:
+            add(checks, "wrist_camera", wrist_info is not None, str(wrist_info), required=True)
+    else:
+        wrist = Path(args.wrist_camera)
+        add(checks, "wrist_camera", wrist.exists(), str(wrist), required=True)
     add(
         checks,
         "lingbot_server",

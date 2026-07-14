@@ -13,6 +13,7 @@ from galaxea_a1_runtime.collection import (
     state_columns,
     state_names_for_mode,
     teleop_frame_header,
+    validate_existing_camera_shape,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
@@ -136,3 +137,18 @@ def test_metadata_json_explains_topics_and_control_path():
     assert payload["control_path"][-1] == "/arm_joint_command_host"
     assert payload["cameras"][0]["modality"] == "rgb"
     assert payload["quality_checks"]["max_joint_action_step_rad"] == 0.35
+
+
+def test_existing_experiment_rejects_mixed_camera_shapes(tmp_path: Path):
+    episode = tmp_path / "episode_000_20260714_000000"
+    episode.mkdir()
+    (episode / "metadata.json").write_text(
+        '{"cameras": [{"name": "front", "width": 640, "height": 480}]}'
+    )
+
+    try:
+        validate_existing_camera_shape(tmp_path, camera_name="front", width=480, height=480)
+    except ValueError as exc:
+        assert "cannot append front 480x480" in str(exc)
+    else:
+        raise AssertionError("mixed camera dimensions should be rejected")

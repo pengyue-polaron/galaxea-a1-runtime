@@ -4,7 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
 CONFIG_PATH="${ROOT}/configs/teleop/a1_so100.toml"
-RESET_CONFIG_PATH="${ROOT}/configs/poses/a1_initial.toml"
+RESET_CONFIG_PATH="${ROOT}/configs/poses/a1_so100_collection_start.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -297,7 +297,7 @@ reset_live() {
   step "[Reset] Pausing teleop"
   stop_bridge
   if ! PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_home.py" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/a1_so100_reset.py" \
       --config "${RESET_CONFIG_PATH}"; then
     failure "[Reset] Failed; teleop remains stopped"
     return 1
@@ -313,7 +313,7 @@ reset() {
   trap cleanup_reset EXIT
   start_services
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_home.py" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/a1_so100_reset.py" \
       --config "${RESET_CONFIG_PATH}"
 }
 
@@ -342,9 +342,9 @@ logs() {
   tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/bridge.log" 2>/dev/null || true
 }
 
-camera_snapshot() {
+camera_diagnostics() {
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/camera_snapshot.py" \
+    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/cameras/a1_camera_diagnostics.py" \
       --config "${CONFIG_PATH}" \
       "$@"
 }
@@ -385,7 +385,7 @@ case "${1:-help}" in
     ;;
   cameras)
     shift
-    camera_snapshot "$@"
+    camera_diagnostics "$@"
     ;;
   *)
     cat <<EOF
@@ -395,7 +395,7 @@ Usage: $0 [--config configs/teleop/a1_so100.toml] <start|services|bridge|collect
   services  Start ROS master, A1 driver, staged joint tracker, locked relay
   bridge    Start only the SO leader bridge
   collect   Start teleop, then run the interactive recorder
-  reset     Reset A1 and SO leader to configs/poses/a1_initial.toml
+  reset     Reset A1 and SO leader to configs/poses/a1_so100_collection_start.toml
   stop      Stop bridge and teleop containers
   doctor    Static/import checks plus base runtime doctor
   status    Containers and bridge process state

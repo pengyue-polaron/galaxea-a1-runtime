@@ -28,6 +28,11 @@ LeRobotDataset v3.0.
 4. Data tools: `scripts/process_data`
    - Migration and diagnostic utilities only.
 
+5. Mechanical assets: `assets/cad/<device>`
+   - Versioned printable/source-export geometry, separated from runtime code.
+   - `assets/cad/so100_leader/` contains the leader-arm STL set and an origin
+     filename manifest.
+
 ## Infra Policy
 
 - `Justfile` exposes the small operator surface; scripts can stay detailed, but
@@ -90,6 +95,10 @@ The reusable parts now live in package modules:
 - `galaxea_a1_runtime.hardware.cameras`: shared RealSense color/depth and
   OpenCV color camera wrappers used by teleop collection, camera snapshots, and
   LingBot.
+- `galaxea_a1_runtime.hardware.web_preview`: read-only LAN MJPEG
+  encoding and HTTP service. It consumes existing latest-frame readers and
+  never opens cameras or imports ROS. Teleop, ACT, and LingBot therefore expose
+  preview without creating a second RealSense owner.
 
 Future FastWAM/GR00T app scripts should reuse `apps.eef_bridge` and only provide
 their own model IO plus action conversion into the normalized A1 EEF contract.
@@ -99,7 +108,7 @@ LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and binary
 gripper state, predicts absolute joint targets, and publishes only
 `/arm_joint_target_position`. The isolated jointTracker stages motor commands,
 then the relay guards the final host command topic. The bridge starts dry-run
-and step-gated from `configs/inference/act_joint_a1.toml`.
+and step-gated from `configs/inference/a1_act_joint.toml`.
 
 ## Teleop Collection Design
 
@@ -119,9 +128,14 @@ Teleop is the built-in demonstration collection mode.
   metadata is committed; discontinuous joint actions reject and delete the
   episode. Episode metadata records the state topics, action topics, cameras,
   quality thresholds, and staged relay path.
-- `scripts/apps/teleop/camera_snapshot.py`: captures front/wrist snapshots from
+- `scripts/apps/cameras/a1_camera_diagnostics.py`: captures front/wrist snapshots from
   the same tracked config without starting ROS or moving the robot, and probes
   sustained camera FPS plus the RealSense USB link type.
+- `scripts/apps/cameras/a1_camera_web.py`: standalone owner for the tracked D455
+  agent camera and D405 wrist camera when no Teleop/inference app is running.
+  It serves the same shared preview module used inside all three app chains
+  and draws the configured AgentView collection ROI on the full frame. Teleop
+  uses the same pure ROI helper to crop RGB and aligned depth before writing.
 - `scripts/apps/teleop/a1_teleop_runtime.sh`: starts/stops ROS, driver, staged
   joint tracker, relay, bridge, and recorder. It also owns the post-episode
   sequence that pauses the bridge, homes both devices, and resumes the bridge.
@@ -162,7 +176,7 @@ optional depth, and wrist RGB, then writes synchronized raw episode files. Once
 a save is durable, it asks the runtime shell to perform the shared reset
 workflow; it does not implement or publish reset commands itself.
 
-The shared reset implementation uses `configs/poses/a1_initial.toml` to restore
+The shared reset implementation uses `configs/poses/a1_so100_collection_start.toml` to restore
 the A1 and SO leader concurrently and close both grippers. `just reset` starts
 the required services, runs that implementation, and stops the runtime. The
 post-save path reuses it while keeping the services and cameras alive, then
@@ -192,7 +206,7 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 - Manual EEF acceptance: `just eef-test`.
 - Teleop collection: `just teleop <experiment>`.
 - Manual teleop acceptance: `just teleop-test`, `just logs`, `just stop`.
-- LingBot app: `just lingbot` manages the step-500 policy server and A1 bridge;
+- LingBot app: `just lingbot` manages the registered deployment policy server and A1 bridge;
   inspect them with `tmux attach -t lingbot-va-server` and
   `tmux attach -t lingbot-a1`.
 - ACT joint policy: `just act`, then `tmux attach -t act-a1`.

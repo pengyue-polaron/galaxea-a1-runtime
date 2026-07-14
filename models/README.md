@@ -8,25 +8,33 @@ The local layout is:
 ```text
 models/
   base/lingbot-va-base
-  checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500
-  checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_1000
-  checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000
-  runtime/lingbot/a1_banana_in_plate/checkpoint_step_500
+  checkpoints/lingbot/a1_agentview_square/latest
+  checkpoints/act/a1_agentview_square/latest
+  runtime/lingbot/a1_agentview_square/latest
 ```
 
-The first three paths may be symlinks to downloaded models or native training
-outputs. `runtime/` is disposable and is assembled by the LingBot launcher from
+The base and checkpoint paths may be symlinks to downloaded models or native
+training outputs. `runtime/` is disposable and is assembled by the LingBot launcher from
 the registered base and checkpoint components.
 
 Register the current supported slots without copying their contents:
 
 ```bash
 just model-link lingbot-base /path/to/lingbot-va-base
-just model-link lingbot-a1-banana-step500 /path/to/checkpoint_step_500
-just model-link lingbot-a1-banana-step1000 /path/to/checkpoint_step_1000
-just model-link act-a1-banana-step30000 /path/to/pretrained_model
+just model-link lingbot-a1-agentview-square /path/to/new_lingbot_checkpoint
+just model-link act-a1-agentview-square /path/to/new_act_pretrained_model
 just models
 ```
+
+Both deployment checkpoints must be trained from data whose AgentView input is
+the configured `(x=103, y=0, width=480, height=480)` crop. ACT additionally
+stores that raw front shape in its checkpoint input-feature contract and will
+refuse to load a mismatched checkpoint.
+
+After registering new weights, update the LingBot prompt and q01/q99 statistics
+from the same training run, then set `deployment_ready = true` in each reviewed
+inference config. Both profiles remain dry-run until execution is enabled
+separately.
 
 Storage ownership is intentionally separate:
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
@@ -37,6 +38,9 @@ class CameraMetadata:
     modality: str = "rgb"
     dtype: str = "uint8"
     encoding: str = "bgr8_jpeg"
+    source_width: int | None = None
+    source_height: int | None = None
+    crop_xywh: tuple[int, int, int, int] | None = None
 
 
 @dataclass(frozen=True)
@@ -134,3 +138,40 @@ def metadata_to_json_dict(metadata: TeleopRawEpisodeMetadata) -> dict:
     data["action_names"] = list(metadata.action_names)
     data["control_path"] = list(metadata.control_path)
     return data
+
+
+def validate_existing_camera_shape(
+    experiment_dir: Path,
+    *,
+    camera_name: str,
+    width: int,
+    height: int,
+) -> None:
+    """Reject appending frames with a different shape to an existing raw experiment."""
+
+    mismatches: list[str] = []
+    for metadata_path in sorted(experiment_dir.glob("episode_*/metadata.json")):
+        try:
+            payload = json.loads(metadata_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read existing episode metadata: {metadata_path}: {exc}") from exc
+        cameras = payload.get("cameras")
+        if not isinstance(cameras, list):
+            raise ValueError(f"existing episode metadata has no camera list: {metadata_path}")
+        camera = next(
+            (item for item in cameras if isinstance(item, dict) and item.get("name") == camera_name),
+            None,
+        )
+        if camera is None:
+            raise ValueError(f"existing episode metadata has no {camera_name!r} camera: {metadata_path}")
+        existing = (int(camera.get("width", 0)), int(camera.get("height", 0)))
+        if existing != (width, height):
+            mismatches.append(f"{metadata_path.parent.name}={existing[0]}x{existing[1]}")
+    if mismatches:
+        preview = ", ".join(mismatches[:3])
+        suffix = " ..." if len(mismatches) > 3 else ""
+        raise ValueError(
+            f"cannot append {camera_name} {width}x{height} frames to an existing experiment "
+            f"with a different camera shape ({preview}{suffix}); use a new experiment name "
+            "or migrate all existing episodes to the tracked crop first"
+        )

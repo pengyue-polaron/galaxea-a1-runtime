@@ -48,9 +48,17 @@ from galaxea_a1_runtime.apps.eef_bridge import (
 )
 from galaxea_a1_runtime.hardware.cameras import (
     LatestCameraReader,
-    OpenCVColorCamera,
     RealSenseColorCamera,
     RealSenseFrameSet,
+    open_color_camera,
+)
+from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image
+from galaxea_a1_runtime.hardware.web_preview import (
+    CameraWebPreview,
+    add_web_preview_arguments,
+    color_from_bgr,
+    color_from_frameset,
+    web_preview_config_from_args,
 )
 from lerobot.configs import PreTrainedConfig
 from lerobot.policies import get_policy_class, make_pre_post_processors
@@ -180,6 +188,26 @@ class ActPolicyRunner:
         )
         if args.disable_backbone_download and hasattr(cfg, "pretrained_backbone_weights"):
             cfg.pretrained_backbone_weights = None
+        self.front_width, self.front_height = _policy_image_hw(
+            cfg, "observation.images.front"
+        )
+        self.wrist_width, self.wrist_height = _policy_image_hw(
+            cfg, "observation.images.wrist"
+        )
+        configured_front = (args.cam0_crop_width, args.cam0_crop_height)
+        configured_wrist = (args.cam_width, args.cam_height)
+        if (self.front_width, self.front_height) != configured_front:
+            raise RuntimeError(
+                "ACT checkpoint front image contract is "
+                f"{self.front_width}x{self.front_height}, but configured AgentView crop is "
+                f"{configured_front[0]}x{configured_front[1]}; retrain/register a matching checkpoint"
+            )
+        if (self.wrist_width, self.wrist_height) != configured_wrist:
+            raise RuntimeError(
+                "ACT checkpoint wrist image contract is "
+                f"{self.wrist_width}x{self.wrist_height}, but configured Wrist source is "
+                f"{configured_wrist[0]}x{configured_wrist[1]}; retrain/register a matching checkpoint"
+            )
         policy_cls = get_policy_class(cfg.type)
         self.policy = policy_cls.from_pretrained(checkpoint, config=cfg, local_files_only=True)
         self.preprocessor, self.postprocessor = make_pre_post_processors(
@@ -204,12 +232,14 @@ class ActPolicyRunner:
         front_bgr: np.ndarray,
         wrist_bgr: np.ndarray,
         state7: Sequence[float],
-        width: int,
-        height: int,
     ) -> np.ndarray:
         obs = {
-            "observation.images.front": _bgr_to_chw_tensor(front_bgr, width=width, height=height),
-            "observation.images.wrist": _bgr_to_chw_tensor(wrist_bgr, width=width, height=height),
+            "observation.images.front": _bgr_to_chw_tensor(
+                front_bgr, width=self.front_width, height=self.front_height
+            ),
+            "observation.images.wrist": _bgr_to_chw_tensor(
+                wrist_bgr, width=self.wrist_width, height=self.wrist_height
+            ),
             "observation.state": torch.tensor(tuple(float(v) for v in state7), dtype=torch.float32),
         }
         batch = self.preprocessor(obs)
@@ -233,6 +263,7 @@ class ActJointBridge:
         self.lower_limits = np.asarray(args.lower_limits, dtype=np.float64)
         self.upper_limits = np.asarray(args.upper_limits, dtype=np.float64)
         self.motion_enabled = False
+        self.front_roi = _front_roi_from_args(args)
 
         rospy.init_node("act_joint_policy_bridge", anonymous=False, disable_signals=True)
         self.joints = A1JointStateCache(self.target_names)
@@ -261,11 +292,13 @@ class ActJointBridge:
             white_balance=args.cam0_white_balance,
             warmup_frames=args.camera_warmup_frames,
         )
-        self.cam_wrist = OpenCVColorCamera(
-            args.cam1_device,
-            args.cam_width,
-            args.cam_height,
-            args.cam_fps,
+        self.cam_wrist = open_color_camera(
+            args.cam1_backend,
+            serial=args.cam1_serial,
+            device=args.cam1_device,
+            width=args.cam_width,
+            height=args.cam_height,
+            fps=args.cam_fps,
             backend_api=args.cam1_backend_api,
             pixel_format=args.cam1_pixel_format,
             warmup_frames=args.camera_warmup_frames,
@@ -274,11 +307,31 @@ class ActJointBridge:
         self.wrist_reader = LatestCameraReader("wrist", self.cam_wrist.read_bgr)
         self.front_reader.start()
         self.wrist_reader.start()
+        self.web_preview: CameraWebPreview | None = None
+        preview_config = web_preview_config_from_args(args)
+        if preview_config.enabled:
+            self.web_preview = CameraWebPreview(preview_config)
+            self.web_preview.register_reader(
+                "agent",
+                self.front_reader,
+                extract=color_from_frameset,
+                source=self.cam_front.label,
+                overlay_roi=self.front_roi,
+                overlay_label=(
+                    f"POLICY INPUT {self.front_roi.width}x{self.front_roi.height}"
+                ),
+            )
+            self.web_preview.register_reader(
+                "wrist", self.wrist_reader, extract=color_from_bgr, source=self.cam_wrist.label
+            )
+            self.web_preview.start()
 
     def close(self) -> None:
         if self.motion_enabled:
             self.motion_enable_pub.publish(Bool(data=False))
             self.motion_enabled = False
+        if getattr(self, "web_preview", None) is not None:
+            self.web_preview.close()
         for reader in (getattr(self, "front_reader", None), getattr(self, "wrist_reader", None)):
             if reader is not None:
                 reader.stop()
@@ -302,8 +355,6 @@ class ActJointBridge:
                 front_bgr=front_bgr,
                 wrist_bgr=wrist_bgr,
                 state7=state7,
-                width=self.args.cam_width,
-                height=self.args.cam_height,
             )
             model_calls += 1
             self._print_preview(model_calls, chunk, current_joints)
@@ -386,7 +437,10 @@ class ActJointBridge:
                 frameset = front.value
                 if not isinstance(frameset, RealSenseFrameSet):
                     raise RuntimeError("front camera did not return a RealSenseFrameSet")
-                return frameset.color_bgr, wrist.value
+                return (
+                    crop_image(frameset.color_bgr, self.front_roi, label="AgentView inference frame"),
+                    wrist.value,
+                )
             time.sleep(0.02)
         raise RuntimeError("No fresh camera pair within timeout")
 
@@ -544,6 +598,38 @@ def _bgr_to_chw_tensor(image: np.ndarray, *, width: int, height: int) -> torch.T
     return torch.from_numpy(rgb).permute(2, 0, 1).to(dtype=torch.float32).div_(255.0)
 
 
+def _policy_image_hw(config: Any, key: str) -> tuple[int, int]:
+    features = getattr(config, "input_features", None)
+    feature = features.get(key) if isinstance(features, dict) else None
+    shape = tuple(int(value) for value in getattr(feature, "shape", ()))
+    if len(shape) != 3 or shape[0] != 3 or shape[1] <= 0 or shape[2] <= 0:
+        raise RuntimeError(
+            f"ACT checkpoint is missing a valid CHW input feature for {key!r}: {shape!r}"
+        )
+    return shape[2], shape[1]
+
+
+def _front_roi_from_args(args: argparse.Namespace) -> ImageRoi:
+    if not args.cam0_crop_enabled:
+        raise ValueError("--cam0-crop-enabled is required for the inference input contract")
+    roi = ImageRoi(
+        x=args.cam0_crop_x,
+        y=args.cam0_crop_y,
+        width=args.cam0_crop_width,
+        height=args.cam0_crop_height,
+    )
+    roi.validate(
+        image_width=args.cam_width,
+        image_height=args.cam_height,
+        label="AgentView inference crop",
+    )
+    if roi.width != roi.height:
+        raise ValueError(
+            f"AgentView inference crop must be square, got {roi.width}x{roi.height}"
+        )
+    return roi
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--checkpoint", required=True)
@@ -589,9 +675,17 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--cam0-gain", type=int, default=32)
     parser.add_argument("--cam0-auto-white-balance", action=argparse.BooleanOptionalAction, default=True)
     parser.add_argument("--cam0-white-balance", type=int, default=4600)
+    parser.add_argument("--cam0-crop-enabled", action=argparse.BooleanOptionalAction, default=False)
+    parser.add_argument("--cam0-crop-x", type=int, default=0)
+    parser.add_argument("--cam0-crop-y", type=int, default=0)
+    parser.add_argument("--cam0-crop-width", type=int, default=640)
+    parser.add_argument("--cam0-crop-height", type=int, default=480)
     parser.add_argument("--cam1-device", default="auto")
+    parser.add_argument("--cam1-backend", choices=("realsense", "v4l2"), default="v4l2")
+    parser.add_argument("--cam1-serial", default="")
     parser.add_argument("--cam1-backend-api", default="v4l2")
     parser.add_argument("--cam1-pixel-format", default="YUYV")
+    add_web_preview_arguments(parser)
     return parser.parse_args()
 
 
@@ -630,6 +724,7 @@ def validate_args(args: argparse.Namespace) -> None:
     upper = np.asarray(args.upper_limits, dtype=np.float64)
     if np.any(lower >= upper):
         raise ValueError("--lower-limits must be below --upper-limits")
+    _front_roi_from_args(args)
 
 
 def main() -> int:

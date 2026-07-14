@@ -5,7 +5,7 @@ import subprocess
 from galaxea_a1_runtime.apps.lingbot.config import bridge_argv, load_lingbot_config
 
 REPO = Path(__file__).resolve().parents[1]
-CONFIG = REPO / "configs" / "inference" / "lingbot_va_a1.toml"
+CONFIG = REPO / "configs" / "inference" / "a1_lingbot_va.toml"
 
 
 def test_lingbot_gripper_default_uses_binary_full_stroke():
@@ -37,7 +37,7 @@ def test_lingbot_runtime_wrapper_reads_tracked_config_without_extra_args():
     text = runtime.read_text()
 
     assert 'dirname "${BASH_SOURCE[0]}")/../../..' in text
-    assert "configs/inference/lingbot_va_a1.toml" in text
+    assert "configs/inference/a1_lingbot_va.toml" in text
     assert "galaxea_a1_runtime.apps.lingbot.config" in text
     assert '"${BRIDGE_ARGS[@]}"' in text
     assert "A1_LINGBOT_CONFIG" not in text
@@ -54,14 +54,15 @@ def test_lingbot_config_locks_runtime_defaults():
 
     assert config.session.tmux == "lingbot-a1"
     assert config.server.host == "127.0.0.1"
-    assert config.server.prompt == "Put the banana in the blue plate."
-    assert config.execution.execute is True
-    assert config.execution.step_mode is False
+    assert config.server.prompt == "REPLACE_WITH_NEW_TASK_PROMPT"
+    assert config.execution.execute is False
+    assert config.execution.step_mode is True
     assert config.execution.step_actions is False
     assert config.execution.max_model_calls == 36
     assert config.execution.execute_frames == 4
     assert config.execution.lingbot_action_per_frame == 4
-    assert config.policy_server.checkpoint.name == "checkpoint_step_500"
+    assert config.policy_server.checkpoint.name == "latest"
+    assert config.policy_server.deployment_ready is False
     assert config.policy_server.expected_weight_size_bytes == 10_177_831_668
     assert config.policy_server.height == 256
     assert config.policy_server.width == 256
@@ -74,10 +75,14 @@ def test_lingbot_config_locks_runtime_defaults():
     assert config.gripper.stroke_max_mm == 80.0
     assert config.cameras.front_observation_key == "observation.images.front"
     assert config.cameras.wrist_observation_key == "observation.images.wrist"
+    assert config.cameras.front_crop is not None
+    assert config.cameras.front_crop.xywh == (103, 0, 480, 480)
     assert args[args.index("--cmd-pose-topic") + 1] == "/a1_ee_target"
-    assert args[args.index("--cam1-device") + 1].startswith("/dev/v4l/by-id/")
-    assert "--execute" in args
-    assert "--no-step-mode" in args
+    assert args[args.index("--cam1-backend") + 1] == "realsense"
+    assert args[args.index("--cam1-serial") + 1] == "218622276998"
+    assert "--web-preview" in args
+    assert "--execute" not in args
+    assert "--step-mode" in args
     assert "--step-actions" not in args
     assert "--no-cache-actual-feedback" in args
 
@@ -87,26 +92,27 @@ def test_lingbot_config_uses_canonical_model_store():
 
     assert 'base_model = "models/base/lingbot-va-base"' in text
     assert (
-        'checkpoint = "models/checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500"'
+        'checkpoint = "models/checkpoints/lingbot/a1_agentview_square/latest"'
         in text
     )
     assert (
-        'model_root = "models/runtime/lingbot/a1_banana_in_plate/checkpoint_step_500"'
+        'model_root = "models/runtime/lingbot/a1_agentview_square/latest"'
         in text
     )
 
     model_store = (REPO / "scripts" / "models" / "model_store.py").read_text()
-    assert '"lingbot-a1-banana-step1000"' in model_store
+    assert '"lingbot-a1-agentview-square"' in model_store
 
 
-def test_lingbot_runtime_manages_the_tracked_step500_server():
+def test_lingbot_runtime_manages_the_tracked_deployment_server():
     runtime = (REPO / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh").read_text()
     server = (REPO / "scripts" / "apps" / "lingbot" / "lingbot_va_policy_server.py").read_text()
 
     assert "start_model_server" in runtime
     assert "MODEL_EXPECTED_WEIGHT_SIZE" in runtime
     assert "lingbot_va_policy_server.py" in runtime
-    assert 'VA_CONFIGS["a1_step500"]' in server
+    assert '"${DEPLOYMENT_READY}" != "1"' in runtime
+    assert 'VA_CONFIGS["a1_deployment"]' in server
     assert "job.inverse_used_action_channel_ids" in server
 
 

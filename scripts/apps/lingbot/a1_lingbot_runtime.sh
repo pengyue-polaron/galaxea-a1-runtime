@@ -3,7 +3,7 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
-CONFIG_PATH="${ROOT}/configs/inference/lingbot_va_a1.toml"
+CONFIG_PATH="${ROOT}/configs/inference/a1_lingbot_va.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -53,7 +53,7 @@ PY
 }
 
 check_lingbot_app() {
-  if [[ "${WRIST_CAMERA}" != "auto" && ! -e "${WRIST_CAMERA}" ]]; then
+  if [[ "${WRIST_BACKEND}" == "v4l2" && "${WRIST_CAMERA}" != "auto" && ! -e "${WRIST_CAMERA}" ]]; then
     echo "[FAIL] Wrist camera not found: ${WRIST_CAMERA}" >&2
     exit 2
   fi
@@ -93,6 +93,10 @@ link_model_component() {
 }
 
 prepare_model_root() {
+  if [[ "${DEPLOYMENT_READY}" != "1" ]]; then
+    echo "[FAIL] LingBot deployment_ready=false; update the new checkpoint, prompt, and q01/q99 first." >&2
+    exit 2
+  fi
   local weight="${MODEL_CHECKPOINT}/transformer/diffusion_pytorch_model.safetensors"
   for required in \
     "${MODEL_PYTHON}" \
@@ -109,7 +113,7 @@ prepare_model_root() {
   local actual_size
   actual_size="$(stat -c '%s' "${weight}")"
   if [[ "${actual_size}" != "${MODEL_EXPECTED_WEIGHT_SIZE}" ]]; then
-    echo "[FAIL] Step-500 weight size mismatch: expected ${MODEL_EXPECTED_WEIGHT_SIZE}, got ${actual_size}" >&2
+    echo "[FAIL] LingBot weight size mismatch: expected ${MODEL_EXPECTED_WEIGHT_SIZE}, got ${actual_size}" >&2
     exit 2
   fi
   mkdir -p "${MODEL_ROOT}" "${MODEL_SAVE_ROOT}"
@@ -152,7 +156,7 @@ start_model_server() {
   while (( SECONDS < deadline )); do
     if curl -fsS --max-time 1 "http://${LINGBOT_HOST}:${LINGBOT_PORT}/healthz" >/dev/null 2>&1; then
       check_lingbot_server
-      echo "LingBot step-500 policy server is listening on ${LINGBOT_HOST}:${LINGBOT_PORT}."
+      echo "LingBot policy server is listening on ${LINGBOT_HOST}:${LINGBOT_PORT}."
       return
     fi
     if ! tmux has-session -t "${MODEL_SESSION}" 2>/dev/null; then
@@ -238,6 +242,8 @@ doctor() {
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/lingbot/a1_lingbot_doctor.py" \
       --lingbot-host "${LINGBOT_HOST}" \
       --lingbot-port "${LINGBOT_PORT}" \
+      --wrist-backend "${WRIST_BACKEND}" \
+      --wrist-serial "${WRIST_SERIAL}" \
       --wrist-camera "${WRIST_CAMERA}" \
       --staged-command-topic "${STAGED_TOPIC}" \
       --relay-status-topic "${RELAY_STATUS_TOPIC}" \
@@ -298,10 +304,10 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/inference/lingbot_va_a1.toml] <start|server|server-stop|server-logs|services|tmux|stop|doctor|status|logs>
+Usage: $0 [--config configs/inference/a1_lingbot_va.toml] <start|server|server-stop|server-logs|services|tmux|stop|doctor|status|logs>
 
-  start     Start the step-500 server, A1 base runtime, and continuous bridge
-  server    Start only the managed step-500 policy server
+  start     Start the deployment server, A1 base runtime, and bridge
+  server    Start only the managed deployment policy server
   server-stop  Stop only the managed policy server
   server-logs  Show recent policy server output
   services  Start only the decoupled A1 base runtime

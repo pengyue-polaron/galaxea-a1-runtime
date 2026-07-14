@@ -11,6 +11,12 @@ from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.collection import StateMode
+from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, parse_optional_image_roi
+from galaxea_a1_runtime.hardware.web_preview import (
+    WebPreviewConfig,
+    parse_web_preview_config,
+    web_preview_argv,
+)
 from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
 
 DEFAULT_TELEOP_CONFIG = Path("configs/teleop/a1_so100.toml")
@@ -84,6 +90,7 @@ class TeleopCameraConfig:
     width: int
     height: int
     fps: int
+    backend: str = "realsense"
     serial: str = ""
     device: str = ""
     pixel_format: str = ""
@@ -92,6 +99,7 @@ class TeleopCameraConfig:
     depth_width: int = 0
     depth_height: int = 0
     align_depth_to_color: bool = True
+    crop: ImageRoi | None = None
 
 
 @dataclass(frozen=True)
@@ -105,6 +113,7 @@ class TeleopConfig:
     collection: TeleopCollectionConfig
     front_camera: TeleopCameraConfig
     wrist_camera: TeleopCameraConfig
+    web_preview: WebPreviewConfig
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -204,6 +213,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             max_joint_action_step_rad=float(collection.get("max_joint_action_step_rad", 0.35)),
         ),
         front_camera=TeleopCameraConfig(
+            backend=str(front.get("backend", "realsense")),
             serial=str(front.get("serial", "")),
             width=front_width,
             height=front_height,
@@ -213,13 +223,26 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             depth_width=front_depth_width,
             depth_height=front_depth_height,
             align_depth_to_color=bool(front.get("align_depth_to_color", True)),
+            crop=parse_optional_image_roi(
+                front,
+                image_width=front_width,
+                image_height=front_height,
+                label="cameras.front crop",
+                require_square=True,
+            ),
         ),
         wrist_camera=TeleopCameraConfig(
-            device=_string(wrist, "device"),
+            backend=str(wrist.get("backend", "v4l2")),
+            serial=str(wrist.get("serial", "")),
+            device=str(wrist.get("device", "")),
             pixel_format=str(wrist.get("pixel_format", "YUYV")),
             width=wrist_width,
             height=wrist_height,
             fps=int(wrist.get("fps", 30)),
+        ),
+        web_preview=parse_web_preview_config(
+            data.get("web_preview", {}) if isinstance(data.get("web_preview", {}), dict) else {},
+            repo_root=repo_root,
         ),
     )
     validate_teleop_config(config)
@@ -246,6 +269,22 @@ def validate_teleop_config(config: TeleopConfig) -> None:
             raise ValueError(f"cameras.{label} width/height/fps must be positive")
         if camera.depth and (camera.depth_width <= 0 or camera.depth_height <= 0):
             raise ValueError(f"cameras.{label} depth_width/depth_height must be positive")
+        if camera.crop is not None:
+            camera.crop.validate(
+                image_width=camera.width,
+                image_height=camera.height,
+                label=f"cameras.{label} crop",
+            )
+        if camera.backend not in {"realsense", "v4l2"}:
+            raise ValueError(f"cameras.{label}.backend must be 'realsense' or 'v4l2'")
+        if camera.backend == "realsense" and not camera.serial:
+            raise ValueError(f"cameras.{label}.serial is required for the RealSense backend")
+        if camera.backend == "v4l2" and not camera.device:
+            raise ValueError(f"cameras.{label}.device is required for the V4L2 backend")
+    if config.front_camera.backend != "realsense":
+        raise ValueError("cameras.front.backend must be 'realsense' because teleop records optional depth framesets")
+    if config.front_camera.depth and config.front_camera.crop is not None and not config.front_camera.align_depth_to_color:
+        raise ValueError("front depth must be aligned to color when cameras.front crop is enabled")
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
@@ -359,8 +398,13 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         "--cam0-depth-height",
         str(config.front_camera.depth_height or config.front_camera.height),
         _bool_flag("cam0-align-depth-to-color", config.front_camera.align_depth_to_color),
+        _bool_flag("cam0-crop-enabled", config.front_camera.crop is not None),
         "--cam1-device",
         config.wrist_camera.device,
+        "--cam1-backend",
+        config.wrist_camera.backend,
+        "--cam1-serial",
+        config.wrist_camera.serial,
         "--cam1-width",
         str(config.wrist_camera.width),
         "--cam1-height",
@@ -369,9 +413,22 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         str(config.wrist_camera.fps),
         "--cam1-pixel-format",
         config.wrist_camera.pixel_format,
+        *web_preview_argv(config.web_preview),
     ]
-    if config.front_camera.serial:
-        args.extend(["--cam0-serial", config.front_camera.serial])
+    if config.front_camera.crop is not None:
+        args.extend(
+            [
+                "--cam0-crop-x",
+                str(config.front_camera.crop.x),
+                "--cam0-crop-y",
+                str(config.front_camera.crop.y),
+                "--cam0-crop-width",
+                str(config.front_camera.crop.width),
+                "--cam0-crop-height",
+                str(config.front_camera.crop.height),
+            ]
+        )
+    args.extend(["--cam0-serial", config.front_camera.serial])
     return args
 
 
@@ -390,6 +447,7 @@ def bash_config(config: TeleopConfig) -> str:
         _assign("TARGET_TOPIC", config.topics.target),
         _assign("GRIPPER_MIN_STROKE_MM", _num(config.gripper.min_stroke_mm)),
         _assign("GRIPPER_MAX_STROKE_MM", _num(config.gripper.max_stroke_mm)),
+        _assign("WEB_PREVIEW_PORT", str(config.web_preview.port)),
         _array("BRIDGE_ARGS", bridge_argv(config)),
         _array("COLLECT_ARGS", collect_argv(config)),
     ]

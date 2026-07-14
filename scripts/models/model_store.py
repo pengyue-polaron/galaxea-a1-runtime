@@ -11,14 +11,11 @@ import tomllib
 
 SLOTS = {
     "lingbot-base": Path("base/lingbot-va-base"),
-    "lingbot-a1-banana-step500": Path(
-        "checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500"
+    "lingbot-a1-agentview-square": Path(
+        "checkpoints/lingbot/a1_agentview_square/latest"
     ),
-    "lingbot-a1-banana-step1000": Path(
-        "checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_1000"
-    ),
-    "act-a1-banana-step30000": Path(
-        "checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000"
+    "act-a1-agentview-square": Path(
+        "checkpoints/act/a1_agentview_square/latest"
     ),
 }
 MAX_TRACKED_BYTES = 100 * 1024 * 1024
@@ -151,8 +148,8 @@ def _check_extra_lingbot_checkpoints(
 
 def doctor(repo: Path) -> int:
     reporter = Reporter()
-    lingbot = _toml(repo / "configs/inference/lingbot_va_a1.toml")["policy_server"]
-    act = _toml(repo / "configs/inference/act_joint_a1.toml")["policy"]
+    lingbot = _toml(repo / "configs/inference/a1_lingbot_va.toml")["policy_server"]
+    act = _toml(repo / "configs/inference/a1_act_joint.toml")["policy"]
 
     base = _require_registry_path(reporter, repo, "lingbot_base", lingbot["base_model"])
     checkpoint = _require_registry_path(

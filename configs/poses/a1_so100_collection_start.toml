@@ -1,7 +1,7 @@
 # Git-tracked A1 + SO leader collection start pose.
 # Recorded from the live hardware on 2026-07-11T18:15:40+08:00.
 
-name = "a1_initial"
+name = "a1_so100_collection_start"
 description = "User-selected A1 and LeRobot/SO leader start pose for teleop data collection."
 
 [topics]

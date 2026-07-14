@@ -7,7 +7,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
@@ -127,6 +127,7 @@ class RealSenseColorCamera:
             raise RuntimeError("No RealSense device found")
         self.serial = info.serial
         self.usb_type = info.usb_type
+        self.label = f"realsense:{info.name}:{info.serial}"
         if require_usb3 and not realsense_usb_is_superspeed(info.usb_type):
             raise RuntimeError(
                 "RealSense is enumerated as USB "
@@ -276,6 +277,60 @@ class OpenCVColorCamera:
 
     def close(self) -> None:
         self.cap.release()
+
+
+CameraBackend = Literal["realsense", "v4l2"]
+ColorCamera = RealSenseColorCamera | OpenCVColorCamera
+
+
+def open_color_camera(
+    backend: str,
+    *,
+    serial: str = "",
+    device: str = "",
+    width: int,
+    height: int,
+    fps: int,
+    backend_api: str = "v4l2",
+    pixel_format: str = "",
+    auto_exposure: bool = True,
+    exposure: int = 140,
+    gain: int = 32,
+    auto_white_balance: bool = True,
+    white_balance: int = 4600,
+    warmup_frames: int = 10,
+) -> ColorCamera:
+    """Open a color camera from an explicit tracked backend contract."""
+
+    normalized = backend.strip().lower()
+    if normalized == "realsense":
+        if not serial:
+            raise ValueError("RealSense camera backend requires an explicit serial")
+        return RealSenseColorCamera(
+            serial,
+            width,
+            height,
+            fps,
+            auto_exposure=auto_exposure,
+            exposure=exposure,
+            gain=gain,
+            auto_white_balance=auto_white_balance,
+            white_balance=white_balance,
+            warmup_frames=warmup_frames,
+        )
+    if normalized == "v4l2":
+        if not device:
+            raise ValueError("V4L2 camera backend requires a device or 'auto'")
+        return OpenCVColorCamera(
+            device,
+            width,
+            height,
+            fps,
+            backend_api=backend_api,
+            pixel_format=pixel_format,
+            warmup_frames=warmup_frames,
+        )
+    raise ValueError(f"unsupported camera backend {backend!r}; expected 'realsense' or 'v4l2'")
 
 
 def resolve_video_source(device: str) -> tuple[int | str, str]:

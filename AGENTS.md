@@ -1,4 +1,4 @@
-# A1-Research Agent Notes
+# Galaxea A1 Runtime Agent Notes
 
 This repo controls a real Galaxea A1 arm. Prefer boring, explicit, fail-closed
 changes over clever shortcuts.
@@ -248,14 +248,16 @@ Teleop hardware/data semantics are configured in
 `configs/teleop/a1_so100.toml`. Edit and commit that file when camera devices,
 RealSense depth capture, leader port, state mode, FPS, gripper stroke range, or
 joint mapping changes.
-The default teleop config is USB2-compatible RGB-only for the front RealSense.
+The default teleop config is RGB-only and binds both RealSense cameras by
+serial: D455 agent view `341522300456` and D405 wrist `218622276998`.
 Depth capture remains supported, but enable it intentionally in the tracked
-config after the RealSense is on USB3 or after lowering FPS/resolution for
-USB2. The wrist camera should use YUYV unless a tracked hardware change proves
-another format is cleaner.
+config after the agent RealSense is on USB3 or after lowering FPS/resolution
+for USB2. The shared read-only LAN web preview is configured under
+`[web_preview]` and must reuse the owning app's camera readers rather than
+opening the same RealSense from a second process.
 
 The A1 + SO leader reset pose is configured in
-`configs/poses/a1_initial.toml`. `just reset` moves A1 to that tracked joint pose
+`configs/poses/a1_so100_collection_start.toml`. `just reset` moves A1 to that tracked joint pose
 through the staged jointTracker and relay path while moving the SO leader to
 its tracked Feetech position, explicitly closes both grippers, disables leader
 torque, and stops the runtime. Successful teleop saves reuse the same concurrent
@@ -264,12 +266,12 @@ reset implementation before the next episode when
 the operator intentionally changes the collection start pose or reset speed.
 
 LingBot inference semantics are configured in
-`configs/inference/lingbot_va_a1.toml`. Edit and commit that file when the
+`configs/inference/a1_lingbot_va.toml`. Edit and commit that file when the
 server, prompt, cameras, EEF workspace, orientation mode, relay topics,
 execution cadence, or gripper mapping changes.
 
 ACT joint inference semantics are configured in
-`configs/inference/act_joint_a1.toml`. It starts dry-run and step-gated by
+`configs/inference/a1_act_joint.toml`. It starts dry-run and step-gated by
 default. Edit and commit that file when the checkpoint, cameras, joint limits,
 relay topics, execution cadence, or gripper mapping changes.
 

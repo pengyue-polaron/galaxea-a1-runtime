@@ -26,7 +26,7 @@ def test_act_bridge_uses_joint_target_path_and_relay_guard():
 def test_act_runtime_wrapper_uses_tracked_config_and_joint_runtime():
     runtime = (REPO / "scripts" / "apps" / "act" / "a1_act_joint_runtime.sh").read_text()
 
-    assert "configs/inference/act_joint_a1.toml" in runtime
+    assert "configs/inference/a1_act_joint.toml" in runtime
     assert "galaxea_a1_runtime.apps.act.config" in runtime
     assert 'JOINT_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"' in runtime
     assert '"${BRIDGE_ARGS[@]}"' in runtime

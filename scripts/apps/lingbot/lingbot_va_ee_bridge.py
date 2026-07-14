@@ -59,7 +59,20 @@ from galaxea_a1_runtime.apps.lingbot.actions import (
     sanitize_policy_action,
     tracker_command_action,
 )
-from galaxea_a1_runtime.hardware.cameras import OpenCVColorCamera, RealSenseColorCamera
+from galaxea_a1_runtime.hardware.cameras import (
+    LatestCameraReader,
+    RealSenseColorCamera,
+    RealSenseFrameSet,
+    open_color_camera,
+)
+from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image
+from galaxea_a1_runtime.hardware.web_preview import (
+    CameraWebPreview,
+    add_web_preview_arguments,
+    color_from_bgr,
+    color_from_frameset,
+    web_preview_config_from_args,
+)
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
@@ -120,6 +133,7 @@ class A1LingBotEEBridge:
         self.reported_condition_state = False
         self.episode_origin = None
         self.action_config = self._action_config_from_args(args)
+        self.front_roi = _front_roi_from_args(args)
         rospy.init_node("lingbot_va_ee_bridge", anonymous=False)
         pose_pub = rospy.Publisher(args.cmd_pose_topic, PoseStamped, queue_size=10)
         gripper_pub = rospy.Publisher(args.cmd_gripper_topic, gripper_position_control, queue_size=10)
@@ -152,13 +166,37 @@ class A1LingBotEEBridge:
             auto_white_balance=args.cam0_auto_white_balance,
             white_balance=args.cam0_white_balance,
         )
-        self.cam_wrist = OpenCVColorCamera(
-            args.cam1_device,
-            args.cam_width,
-            args.cam_height,
-            args.cam_fps,
+        self.cam_wrist = open_color_camera(
+            args.cam1_backend,
+            serial=args.cam1_serial,
+            device=args.cam1_device,
+            width=args.cam_width,
+            height=args.cam_height,
+            fps=args.cam_fps,
             backend_api=args.cam1_backend_api,
         )
+        self.front_reader = LatestCameraReader("front", self.cam_high.read_frameset)
+        self.wrist_reader = LatestCameraReader("wrist", self.cam_wrist.read_bgr)
+        self.front_reader.start()
+        self.wrist_reader.start()
+        self.web_preview: CameraWebPreview | None = None
+        preview_config = web_preview_config_from_args(args)
+        if preview_config.enabled:
+            self.web_preview = CameraWebPreview(preview_config)
+            self.web_preview.register_reader(
+                "agent",
+                self.front_reader,
+                extract=color_from_frameset,
+                source=self.cam_high.label,
+                overlay_roi=self.front_roi,
+                overlay_label=(
+                    f"POLICY INPUT {self.front_roi.width}x{self.front_roi.height}"
+                ),
+            )
+            self.web_preview.register_reader(
+                "wrist", self.wrist_reader, extract=color_from_bgr, source=self.cam_wrist.label
+            )
+            self.web_preview.start()
         self.client = LingBotClient(args.host, args.port)
         self.client.reset(args.prompt)
 
@@ -245,10 +283,30 @@ class A1LingBotEEBridge:
         raise RuntimeError(f"A1 relay did not become ACTIVE: {last_state}")
 
     def _read_lingbot_obs(self) -> dict | None:
-        high = self.cam_high.read_rgb()
-        wrist = self.cam_wrist.read_rgb()
-        if high is None or wrist is None:
+        for reader in (self.front_reader, self.wrist_reader):
+            exc = reader.exception()
+            if exc is not None:
+                raise RuntimeError(f"{reader.name} camera reader failed") from exc
+        high_sample = self.front_reader.latest()
+        wrist_sample = self.wrist_reader.latest()
+        now = time.perf_counter()
+        if (
+            high_sample is None
+            or wrist_sample is None
+            or now - high_sample.monotonic_s > self.args.max_camera_age
+            or now - wrist_sample.monotonic_s > self.args.max_camera_age
+        ):
             return None
+        frameset = high_sample.value
+        if not isinstance(frameset, RealSenseFrameSet):
+            raise RuntimeError("agent camera did not return a RealSenseFrameSet")
+        high_bgr = crop_image(
+            frameset.color_bgr,
+            self.front_roi,
+            label="AgentView inference frame",
+        )
+        high = high_bgr[..., ::-1].copy()
+        wrist = wrist_sample.value[..., ::-1].copy()
         obs = {
             self.args.cam0_observation_key: high,
             self.args.cam1_observation_key: wrist,
@@ -660,6 +718,11 @@ class A1LingBotEEBridge:
     def close(self):
         self.commander.publish_motion_enable(False)
         self.pose_keepalive_timer.shutdown()
+        if getattr(self, "web_preview", None) is not None:
+            self.web_preview.close()
+        for reader in (getattr(self, "wrist_reader", None), getattr(self, "front_reader", None)):
+            if reader is not None:
+                reader.stop()
         self.cam_high.close()
         self.cam_wrist.close()
         self.client.ws.close()
@@ -696,14 +759,22 @@ def parse_args():
     p.add_argument("--cam-width", type=int, default=640)
     p.add_argument("--cam-height", type=int, default=480)
     p.add_argument("--cam-fps", type=int, default=30)
+    p.add_argument("--max-camera-age", type=float, default=0.5)
     p.add_argument("--cam0-serial", default="341522300456")
     p.add_argument("--cam0-auto-exposure", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--cam0-exposure", type=int, default=140)
     p.add_argument("--cam0-gain", type=int, default=32)
     p.add_argument("--cam0-auto-white-balance", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--cam0-white-balance", type=int, default=4600)
+    p.add_argument("--cam0-crop-enabled", action=argparse.BooleanOptionalAction, default=False)
+    p.add_argument("--cam0-crop-x", type=int, default=0)
+    p.add_argument("--cam0-crop-y", type=int, default=0)
+    p.add_argument("--cam0-crop-width", type=int, default=640)
+    p.add_argument("--cam0-crop-height", type=int, default=480)
     p.add_argument("--cam0-observation-key", default="observation.images.front")
     p.add_argument("--cam1-device", default="/dev/video0")
+    p.add_argument("--cam1-backend", choices=("realsense", "v4l2"), default="v4l2")
+    p.add_argument("--cam1-serial", default="")
     p.add_argument("--cam1-backend-api", default="v4l2")
     p.add_argument("--cam1-observation-key", default="observation.images.wrist")
     p.add_argument("--state-pose-topic", default="/end_effector_pose")
@@ -744,7 +815,29 @@ def parse_args():
     p.add_argument("--gripper-command-mode", choices=["binary", "continuous"], default="binary")
     p.add_argument("--gripper-command-open-threshold", type=float, default=0.5)
     p.add_argument("--gripper-feedback-open-threshold-mm", type=float, default=30.0)
+    add_web_preview_arguments(p)
     return p.parse_args()
+
+
+def _front_roi_from_args(args) -> ImageRoi:
+    if not args.cam0_crop_enabled:
+        raise ValueError("--cam0-crop-enabled is required for the inference input contract")
+    roi = ImageRoi(
+        x=args.cam0_crop_x,
+        y=args.cam0_crop_y,
+        width=args.cam0_crop_width,
+        height=args.cam0_crop_height,
+    )
+    roi.validate(
+        image_width=args.cam_width,
+        image_height=args.cam_height,
+        label="AgentView inference crop",
+    )
+    if roi.width != roi.height:
+        raise ValueError(
+            f"AgentView inference crop must be square, got {roi.width}x{roi.height}"
+        )
+    return roi
 
 
 def main():

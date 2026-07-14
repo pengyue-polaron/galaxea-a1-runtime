@@ -3,6 +3,12 @@
 The arm may be powered and reachable while this repo is open. Treat ROS publish
 paths as live hardware.
 
+The camera web preview is deliberately outside every ROS control path. It
+exposes only read-only HTML, JPEG/MJPEG, and health endpoints on the LAN. It has
+no login and uses unencrypted HTTP, so do not port-forward
+it to the public Internet; never add motion-enable or command endpoints to the
+camera service.
+
 ## Required Path
 
 Normal apps must publish EEF targets only:
@@ -53,19 +59,19 @@ apps. They still do not publish host commands directly:
 - Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
 - Generic ROS1 adapter rejects `joint_absolute`.
 - Collected policy gripper data is binary. Deployment mapping is explicit in
-  each tracked inference config; the A1 step-500 LingBot and ACT profiles use
+  each tracked inference config; the current LingBot and ACT profiles use
   continuous policy output mapped into a task-sized 0-80 mm stroke.
 - LingBot workspace bounds apply to outgoing targets, not feedback state.
 - LingBot orientation defaults to `hold-current`.
-- LingBot execution settings live in `configs/inference/lingbot_va_a1.toml`;
+- LingBot execution settings live in `configs/inference/a1_lingbot_va.toml`;
   avoid per-run hidden flags.
-- The step-500 LingBot KV cache records tracker commands because its training
+- The LingBot KV cache records tracker commands because its training
   action is a commanded episode-relative EEF target. Measured EEF feedback is
   still used for freshness checks, workspace-relative diagnostics, and camera
   context.
 - LingBot bridge exit is guarded: normal completion, errors, and `Ctrl-C` stop
   the A1 runtime and policy server.
-- ACT execution settings live in `configs/inference/act_joint_a1.toml`; the
+- ACT execution settings live in `configs/inference/a1_act_joint.toml`; the
   tracked default is `execution.execute = false`.
 - Teleop datasets store only `0` or `1`: `0` is closed and `1` is open.
   Hardware command stroke is controlled separately by the tracked app config.

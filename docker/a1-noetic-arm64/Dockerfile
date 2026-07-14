@@ -65,7 +65,7 @@ ENV PATH="/root/.local/bin:${PATH}"
 RUN sed -i 's/while hasattr(f, "f_code"):/max_depth = 20\n        while hasattr(f, "f_code") and max_depth > 0:\n            max_depth -= 1/' \
     /opt/ros/noetic/lib/python3/dist-packages/rosgraph/roslogging.py
 
-COPY docker/a1_noetic_arm64/entrypoint.sh /usr/local/bin/a1-noetic-entrypoint.sh
+COPY docker/a1-noetic-arm64/entrypoint.sh /usr/local/bin/a1-noetic-entrypoint.sh
 RUN chmod +x /usr/local/bin/a1-noetic-entrypoint.sh
 
 ENTRYPOINT ["/usr/local/bin/a1-noetic-entrypoint.sh"]

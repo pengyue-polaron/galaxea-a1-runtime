@@ -2,7 +2,7 @@
 set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IMAGE="${A1_NOETIC_IMAGE:-a1-research/a1-noetic-arm64:local}"
+IMAGE="${A1_NOETIC_IMAGE:-galaxea-a1-runtime/a1-noetic-arm64:local}"
 SERIAL="${A1_SERIAL:-/dev/a1}"
 PREFIX="${A1_RUNTIME_PREFIX:-a1-runtime}"
 ROSCORE_CONTAINER="${PREFIX}-roscore"
@@ -41,7 +41,7 @@ stop_runtime() {
     >/dev/null 2>&1 || true
 
   local ros_container
-  ros_container="$(docker ps --format '{{.Names}}' | grep -E '^a1-research-a1-noetic-run-' | head -n 1 || true)"
+  ros_container="$(docker ps --format '{{.Names}}' | grep -E '^(galaxea-a1-runtime|a1-research)-a1-noetic-run-' | head -n 1 || true)"
   if [[ -n "${ros_container}" ]]; then
     docker exec "${ros_container}" bash -lc \
       'source /opt/ros/noetic/setup.bash; rosnode cleanup <<< y >/dev/null 2>&1 || true' \
@@ -154,7 +154,7 @@ status() {
   echo
   echo "Shared ROS containers:"
   docker ps --format '{{.Names}}\t{{.Status}}' |
-    grep -E '^a1-research-a1-noetic-run-' || echo "no running shared a1-noetic container"
+    grep -E '^(galaxea-a1-runtime|a1-research)-a1-noetic-run-' || echo "no running shared a1-noetic container"
   echo
   doctor || true
 }

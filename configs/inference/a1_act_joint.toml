@@ -6,21 +6,24 @@
 tmux = "act-a1"
 
 [host]
-image = "a1-research/a1-noetic-arm64:local"
+image = "galaxea-a1-runtime/a1-noetic-arm64:local"
 a1_serial = "/dev/a1"
 prefix = "a1-act"
 run_dir = "/tmp/a1-act"
 
 [policy]
-checkpoint = "models/checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000"
+checkpoint = "models/checkpoints/act/a1_agentview_square/latest"
 device = "cuda"
+deployment_ready = false
 # The checkpoint contains trained ResNet weights; avoid torchvision network
 # downloads during deployment.
 disable_backbone_download = true
 
 [execution]
-execute = true
-step_mode = false
+# Kept fail-closed until a newly trained 480x480 AgentView checkpoint is
+# registered at policy.checkpoint and deliberately reviewed.
+execute = false
+step_mode = true
 execute_steps_per_inference = 100
 control_hz = 30.0
 max_model_calls = 0
@@ -74,14 +77,30 @@ fps = 30
 warmup_frames = 20
 
 [cameras.front]
-serial = ""
+serial = "341522300456"
 auto_exposure = true
 exposure = 140
 gain = 32
 auto_white_balance = true
 white_balance = 4600
+# Shared AgentView input contract. Collection and both inference paths must
+# remain pixel-identical: x=103, y=0, 480x480 from the 640x480 source frame.
+crop_enabled = true
+crop_x = 103
+crop_y = 0
+crop_width = 480
+crop_height = 480
 
 [cameras.wrist]
-device = "auto"
+backend = "realsense"
+serial = "218622276998"
+device = ""
 backend_api = "v4l2"
-pixel_format = "YUYV"
+pixel_format = ""
+
+[web_preview]
+enabled = true
+bind = "0.0.0.0"
+port = 8088
+fps = 10.0
+jpeg_quality = 75

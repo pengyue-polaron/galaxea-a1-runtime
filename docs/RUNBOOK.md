@@ -36,6 +36,26 @@ just cameras
 Check the printed `cam0_front`, `cam1_wrist`, `contact_sheet`, and, when
 enabled, `cam0_depth`/`cam0_depth_preview` image paths.
 
+To inspect both cameras remotely without starting ROS:
+
+```bash
+just camera-web
+```
+
+Use `http://<robot-lan-ip>:8088` directly. The LAN URL exposes only the
+dashboard, MJPEG/snapshot
+endpoints, and health JSON. Run `just camera-web-stop` before starting Teleop,
+ACT, or LingBot because RealSense devices have one owning process; those apps
+serve the same preview themselves on port 8088. Do not configure router port
+forwarding for this HTTP service.
+
+The AgentView panel keeps the full 640x480 sensor view. Its red rectangle is
+the tracked 480x480 region saved by teleop collection; the overlay itself is
+never written into training images. Change the ROI only in
+`configs/teleop/a1_so100.toml`, then restart the camera service.
+Do not mix this crop with older 640x480 episodes under one experiment name;
+the collector checks existing metadata and fails before opening ROS/cameras.
+
 3. Test EEF control:
 
 ```bash
@@ -62,7 +82,7 @@ working behavior. Test gripper open/close.
 just reset
 ```
 
-The target pose is tracked in `configs/poses/a1_initial.toml`.
+The target pose is tracked in `configs/poses/a1_so100_collection_start.toml`.
 It includes both the A1 joint pose and the SO leader/LeRobot start pose.
 Both grippers are closed as part of this command.
 
@@ -102,7 +122,7 @@ is USB2-compatible RGB-only.
 just reset
 ```
 
-This reads `configs/poses/a1_initial.toml`, moves the A1 arm to the tracked
+This reads `configs/poses/a1_so100_collection_start.toml`, moves the A1 arm to the tracked
 joint pose, closes the A1 gripper, moves the SO leader to its tracked pose,
 commands the SO leader gripper closed, disables leader torque, and stops the
 runtime. The A1 and leader move concurrently. If the hardware start pose or
@@ -164,10 +184,10 @@ just stop
 
 Teleop behavior is locked by `configs/teleop/a1_so100.toml`: leader port,
 cameras, state mode, FPS, topics, joint mapping, limits, and gripper range.
-The default front RealSense config records RGB only and accepts USB2.1. Depth
+The default agent D455 RealSense config records RGB only and accepts USB2.1. Depth
 capture remains supported, but enable it intentionally in the tracked config
 after the RealSense is on USB3 or after lowering FPS/resolution for USB2. The
-wrist camera uses uncompressed YUYV to avoid corrupt MJPG frames.
+wrist D405 is also selected by explicit RealSense serial and records RGB.
 
 Recorded state modes:
 
@@ -200,7 +220,7 @@ positions remain absolute targets in radians.
 
 ## LingBot-VA
 
-The tracked LingBot command assembles the step-500 model root from the frozen
+The tracked LingBot command assembles the deployment model root from the frozen
 base components and fine-tuned transformer, then starts the policy server, A1
 runtime, and bridge:
 
@@ -210,21 +230,22 @@ just lingbot
 tmux attach -t lingbot-a1
 ```
 
-All inference configs use the ignored local registry under `models/`. On this
-machine the registry links to the existing LingBot base, step-500 training
-output, and ACT export, so no weight is copied. Native training outputs stay in
+All inference configs use the ignored local registry under `models/`. The
+LingBot base remains registered, while new AgentView-square LingBot and ACT
+checkpoints must be registered after retraining; no weight is copied. Native training outputs stay in
 `train_out/` or `outputs/train/`; runtime observations stay in `outputs/` and
 are not model weights. Use `just model-link <slot> <source>` to register a new
 local source and `just models` before inference. The exact layout and supported
 slot names are documented in `models/README.md`.
 
-Runtime behavior is locked by `configs/inference/lingbot_va_a1.toml`: server,
+Runtime behavior is locked by `configs/inference/a1_lingbot_va.toml`: server,
 checkpoint, prompt, cameras, EEF workspace, orientation mode, relay topics,
 execution cadence, and gripper mapping.
 
-The A1 step-500 profile is a finite continuous rollout: 36 model calls, four
-latent frames per call, four actions per frame, at 30 Hz. The first model frame
-is the episode condition, so execution is approximately 19 seconds. Model EEF
+The checked-in profile is dry-run and step-gated until the new checkpoint,
+prompt, and q01/q99 statistics are installed and reviewed. Its configured
+rollout remains 36 model calls, four latent frames per call, four actions per
+frame, at 30 Hz. Model EEF
 poses are episode-relative and are composed onto the measured startup pose
 before the absolute A1 workspace clamp. The gripper uses the ACT deployment
 mapping: continuous policy values map to 0-80 mm. KV-cache action history uses
@@ -252,8 +273,18 @@ just stop
 ## ACT Joint Policy
 
 The ACT deployment path is configured by
-`configs/inference/act_joint_a1.toml`. The tracked deployment path is
-`models/checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000`.
+`configs/inference/a1_act_joint.toml`. The tracked deployment slot is
+`models/checkpoints/act/a1_agentview_square/latest` and remains missing until a
+new checkpoint is registered.
+
+For both inference systems, AgentView is cropped to
+`(x=103, y=0, width=480, height=480)` before policy preprocessing. Wrist remains
+the full 640x480 stream. ACT also checks the image shapes stored in the
+checkpoint and refuses to start if they do not match this contract.
+
+After retraining, register the two new slots, replace the LingBot prompt and
+q01/q99 values from that same run, and only then set `deployment_ready = true`.
+Enabling real robot motion remains a separate `execution.execute = true` review.
 
 Start in the default dry-run mode:
 

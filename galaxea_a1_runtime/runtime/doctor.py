@@ -68,7 +68,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         teleop_mapping = JointMappingConfig()
         teleop_config = load_teleop_config(repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root)
         lingbot_config = load_lingbot_config(
-            repo_root / "configs" / "inference" / "lingbot_va_a1.toml",
+            repo_root / "configs" / "inference" / "a1_lingbot_va.toml",
             repo_root=repo_root,
         )
         decision = validate_relay_inputs(
