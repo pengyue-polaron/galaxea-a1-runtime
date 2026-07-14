@@ -13,6 +13,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from galaxea_a1_runtime.lerobot.atomic_output import (
+    atomic_output_directory,
+    atomic_output_file,
+    atomic_write_text,
+)
+
 JOINT_ACTION_NAMES = (
     "joint_1_rad",
     "joint_2_rad",
@@ -32,15 +38,28 @@ def pack_joint_v3_dataset(
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
+    final_target_root = target_root.expanduser().resolve()
+    with atomic_output_directory(final_target_root, overwrite=overwrite) as staging_root:
+        return _build_joint_v3_dataset(
+            source_root=source_root,
+            target_root=staging_root,
+            final_target_root=final_target_root,
+            repo_id=repo_id,
+            archive_path=archive_path,
+        )
+
+
+def _build_joint_v3_dataset(
+    *,
+    source_root: Path,
+    target_root: Path,
+    final_target_root: Path,
+    repo_id: str,
+    archive_path: Path | None,
+) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
-    target_root = target_root.expanduser().resolve()
     info = _read_json(source_root / "meta/info.json")
     _validate_source(info)
-    if target_root.exists():
-        if not overwrite:
-            raise FileExistsError(f"target root exists: {target_root}")
-        shutil.rmtree(target_root)
-    target_root.mkdir(parents=True)
     _copy_tree_with_video_hardlinks(source_root, target_root)
 
     episode_actions: dict[int, np.ndarray] = {}
@@ -112,12 +131,13 @@ def pack_joint_v3_dataset(
 
     if archive_path is not None:
         archive_path = archive_path.expanduser().resolve()
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(archive_path, "w:gz") as archive:
-            archive.add(target_root, arcname=target_root.name)
+        with atomic_output_file(archive_path) as staging_archive:
+            with tarfile.open(staging_archive, "w:gz") as archive:
+                archive.add(target_root, arcname=final_target_root.name)
         manifest["archive"] = str(archive_path)
         manifest["archive_sha256"] = _file_sha256(archive_path)
-        archive_path.with_suffix(archive_path.suffix + ".sha256").write_text(
+        atomic_write_text(
+            archive_path.with_suffix(archive_path.suffix + ".sha256"),
             f"{manifest['archive_sha256']}  {archive_path.name}\n", encoding="ascii"
         )
     return manifest

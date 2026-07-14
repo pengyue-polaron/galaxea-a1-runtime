@@ -323,9 +323,13 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   config path, state/action topics, control path, state/action names, FPS, and
   camera settings. Optional RealSense depth is recorded as raw aligned 16-bit
   PNG in `cam0_depth/` and converts to LeRobot as
-  `observation.images.front_depth` when enabled. If cameras stop producing
-  fresh samples during collection, fail the episode and delete the partial
-  folder rather than saving stale frames.
+  `observation.images.front_depth` when enabled. If a required camera, joint,
+  EEF, action, or gripper stream stops producing fresh samples during
+  collection, fail the episode and delete the partial folder rather than
+  saving cached old values.
+- Dataset converters must build into sibling staging paths. An overwrite may
+  replace an existing dataset or archive only after the new output is complete;
+  failures must preserve the previous complete output.
 - Enter=save is a validation boundary. Reject and delete an episode when a
   joint action step exceeds the tracked
   `collection.max_joint_action_step_rad`; print the exact frame and joint,

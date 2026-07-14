@@ -173,8 +173,10 @@ After saving, compare the printed frame count against the real action length:
 at the default 30 FPS, 10 seconds should be about 300 frames. If the printed
 nominal duration is much shorter than the action you performed, discard or
 delete that episode and investigate camera readiness before continuing.
-If either camera stops producing fresh samples while recording, the collector
-aborts that episode and deletes the partial folder.
+If a required camera, joint feedback, EEF feedback, joint-target action, or
+gripper stream stops producing fresh samples while recording, the collector
+aborts that episode and deletes the partial folder. It never waits indefinitely
+and resumes writing from a cached old ROS message.
 
 6. Stop manually if needed:
 
@@ -225,6 +227,9 @@ normalized gripper state/actions: `0=minimum stroke`, `1=maximum stroke`.
 Each conversion emits EEF v3.0, EEF v2.1, and
 joint-action v3.0 packages; never mix their files in one directory. Joint
 positions remain absolute targets in radians.
+Every target dataset and archive is first generated beside its final path. A
+failed overwrite leaves the previous complete output intact; the final path is
+replaced only after the staged conversion and validation finish successfully.
 
 ## LingBot-VA
 

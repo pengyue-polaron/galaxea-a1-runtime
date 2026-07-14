@@ -19,6 +19,11 @@ import pandas as pd
 from galaxea_a1_runtime.configuration.base import load_toml, referenced_config
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.kinematics import SerialChainFK, compose_relative_pose, relative_pose
+from galaxea_a1_runtime.lerobot.atomic_output import (
+    atomic_output_directory,
+    atomic_output_file,
+    atomic_write_text,
+)
 from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 
@@ -112,24 +117,46 @@ def pack_lingbot_dataset(
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
+    final_target_root = target_root.expanduser().resolve()
+    with atomic_output_directory(final_target_root, overwrite=overwrite) as staging_root:
+        return _build_lingbot_dataset(
+            source_root=source_root,
+            target_root=staging_root,
+            final_target_root=final_target_root,
+            urdf_path=urdf_path,
+            repo_id=repo_id,
+            gripper_stroke_min_mm=gripper_stroke_min_mm,
+            gripper_stroke_max_mm=gripper_stroke_max_mm,
+            base_link=base_link,
+            tip_link=tip_link,
+            archive_path=archive_path,
+        )
+
+
+def _build_lingbot_dataset(
+    *,
+    source_root: Path,
+    target_root: Path,
+    final_target_root: Path,
+    urdf_path: Path,
+    repo_id: str,
+    gripper_stroke_min_mm: float,
+    gripper_stroke_max_mm: float,
+    base_link: str,
+    tip_link: str,
+    archive_path: Path | None,
+) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
-    target_root = target_root.expanduser().resolve()
     urdf_path = urdf_path.expanduser().resolve()
     info = _load_json(source_root / "meta/info.json")
     _validate_source(info)
     if gripper_stroke_max_mm <= gripper_stroke_min_mm:
         raise ValueError("gripper stroke maximum must be greater than minimum")
-    if target_root.exists():
-        if not overwrite:
-            raise FileExistsError(f"target root exists: {target_root}")
-        shutil.rmtree(target_root)
-
     chain = SerialChainFK.from_urdf(urdf_path, base_link=base_link, tip_link=tip_link)
     expected_joints = tuple(f"arm_joint{index}" for index in range(1, 7))
     if chain.joint_names != expected_joints:
         raise ValueError(f"unexpected A1 URDF chain: {chain.joint_names}")
 
-    target_root.mkdir(parents=True)
     _copy_tree_with_hardlinks(source_root, target_root)
     data_files = sorted(target_root.glob("data/**/*.parquet"))
     if not data_files:
@@ -281,12 +308,13 @@ def pack_lingbot_dataset(
 
     if archive_path is not None:
         archive_path = archive_path.expanduser().resolve()
-        archive_path.parent.mkdir(parents=True, exist_ok=True)
-        with tarfile.open(archive_path, "w:gz") as archive:
-            archive.add(target_root, arcname=target_root.name)
+        with atomic_output_file(archive_path) as staging_archive:
+            with tarfile.open(staging_archive, "w:gz") as archive:
+                archive.add(target_root, arcname=final_target_root.name)
         manifest["archive"] = str(archive_path)
         manifest["archive_sha256"] = _file_sha256(archive_path)
-        archive_path.with_suffix(archive_path.suffix + ".sha256").write_text(
+        atomic_write_text(
+            archive_path.with_suffix(archive_path.suffix + ".sha256"),
             f"{manifest['archive_sha256']}  {archive_path.name}\n", encoding="ascii"
         )
     return manifest

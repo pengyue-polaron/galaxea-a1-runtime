@@ -13,6 +13,12 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from galaxea_a1_runtime.lerobot.atomic_output import (
+    atomic_output_directory,
+    atomic_output_file,
+    atomic_write_text,
+)
+
 V21_DATA_PATH = "data/chunk-{episode_chunk:03d}/episode_{episode_index:06d}.parquet"
 V21_VIDEO_PATH = (
     "videos/chunk-{episode_chunk:03d}/{video_key}/episode_{episode_index:06d}.mp4"
@@ -28,15 +34,29 @@ def export_v21_dataset(
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
+    final_target_root = target_root.expanduser().resolve()
+    with atomic_output_directory(final_target_root, overwrite=overwrite) as staging_root:
+        return _build_v21_dataset(
+            source_root=source_root,
+            target_root=staging_root,
+            final_target_root=final_target_root,
+            repo_id=repo_id,
+            archive_path=archive_path,
+        )
+
+
+def _build_v21_dataset(
+    *,
+    source_root: Path,
+    target_root: Path,
+    final_target_root: Path,
+    repo_id: str,
+    archive_path: Path | None,
+) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
-    target_root = target_root.expanduser().resolve()
     info = _read_json(source_root / "meta/info.json")
     if info.get("codebase_version") != "v3.0":
         raise ValueError("v2.1 export source must be a LeRobot v3.0 dataset")
-    if target_root.exists():
-        if not overwrite:
-            raise FileExistsError(f"target root exists: {target_root}")
-        shutil.rmtree(target_root)
     (target_root / "meta").mkdir(parents=True)
 
     frames = pd.concat(
@@ -152,7 +172,7 @@ def export_v21_dataset(
     result = {
         "format": "v2.1",
         "repo_id": repo_id,
-        "root": str(target_root),
+        "root": str(final_target_root),
         "episodes": len(episode_records),
         "frames": len(frames),
         "videos": sum(len(values) for values in video_frame_counts.values()),
@@ -161,10 +181,11 @@ def export_v21_dataset(
     }
     if archive_path is not None:
         archive_path = archive_path.expanduser().resolve()
-        _write_archive(target_root, archive_path)
+        _write_archive(target_root, archive_path, arcname=final_target_root.name)
         result["archive"] = str(archive_path)
         result["archive_sha256"] = _file_sha256(archive_path)
-        archive_path.with_suffix(archive_path.suffix + ".sha256").write_text(
+        atomic_write_text(
+            archive_path.with_suffix(archive_path.suffix + ".sha256"),
             f"{result['archive_sha256']}  {archive_path.name}\n", encoding="ascii"
         )
     return result
@@ -284,10 +305,10 @@ def _probe_video_frames(path: Path) -> int:
     return int(result.stdout.strip())
 
 
-def _write_archive(root: Path, archive_path: Path) -> None:
-    archive_path.parent.mkdir(parents=True, exist_ok=True)
-    with tarfile.open(archive_path, "w:gz") as archive:
-        archive.add(root, arcname=root.name)
+def _write_archive(root: Path, archive_path: Path, *, arcname: str) -> None:
+    with atomic_output_file(archive_path) as staging_archive:
+        with tarfile.open(staging_archive, "w:gz") as archive:
+            archive.add(root, arcname=arcname)
 
 
 def _write_json(path: Path, value: dict[str, Any]) -> None:

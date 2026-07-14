@@ -9,7 +9,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -20,6 +19,7 @@ import pandas as pd
 from PIL import Image
 
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
+from galaxea_a1_runtime.lerobot.atomic_output import atomic_output_directory
 from galaxea_a1_runtime.lerobot.dataset import DatasetConfig, create_lerobot_dataset
 from galaxea_a1_runtime.schema import ActionMode, CameraSpec, DatasetContract, validate_frame_keys
 
@@ -234,29 +234,29 @@ def convert_raw_dataset(
         camera_specs=first.camera_specs,
     )
     target_root = target_root.expanduser().resolve()
-    if target_root.exists():
-        if not overwrite:
-            raise FileExistsError(f"target root exists: {target_root}")
-        shutil.rmtree(target_root)
-
-    dataset = create_lerobot_dataset(
-        config=DatasetConfig(repo_id=repo_id, root=target_root, fps=first.fps),
-        contract=contract,
-    )
-    try:
-        for episode in summary.episodes:
-            if episode.state_names != first.state_names:
-                raise ValueError(f"state names changed in {episode.path}")
-            if episode.action_names != first.action_names:
-                raise ValueError(f"action names changed in {episode.path}")
-            for frame in iter_episode_frames(episode=episode, task=summary.task, contract=contract):
-                dataset.add_frame(frame)
-            dataset.save_episode()
-        dataset.finalize()
-    finally:
-        stop = getattr(dataset, "stop_image_writer", None)
-        if callable(stop):
-            stop()
+    with atomic_output_directory(target_root, overwrite=overwrite) as staging_root:
+        dataset = create_lerobot_dataset(
+            config=DatasetConfig(repo_id=repo_id, root=staging_root, fps=first.fps),
+            contract=contract,
+        )
+        try:
+            for episode in summary.episodes:
+                if episode.state_names != first.state_names:
+                    raise ValueError(f"state names changed in {episode.path}")
+                if episode.action_names != first.action_names:
+                    raise ValueError(f"action names changed in {episode.path}")
+                for frame in iter_episode_frames(
+                    episode=episode,
+                    task=summary.task,
+                    contract=contract,
+                ):
+                    dataset.add_frame(frame)
+                dataset.save_episode()
+            dataset.finalize()
+        finally:
+            stop = getattr(dataset, "stop_image_writer", None)
+            if callable(stop):
+                stop()
     return summary
 
 

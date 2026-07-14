@@ -90,6 +90,9 @@ class TeleopCollectionConfig:
     jpeg_quality: int
     ready_timeout_s: float
     max_camera_age_s: float
+    max_joint_feedback_age_s: float
+    max_eef_feedback_age_s: float
+    max_action_age_s: float
     max_gripper_age_s: float
     max_joint_action_step_rad: float
 
@@ -204,6 +207,9 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             jpeg_quality=int(collection.get("jpeg_quality", 95)),
             ready_timeout_s=float(collection.get("ready_timeout_s", 10.0)),
             max_camera_age_s=system.cameras.max_age_s,
+            max_joint_feedback_age_s=system.joint_safety.max_feedback_age_s,
+            max_eef_feedback_age_s=system.eef.max_feedback_age_s,
+            max_action_age_s=system.joint_safety.max_feedback_age_s,
             max_gripper_age_s=system.joint_safety.max_feedback_age_s,
             max_joint_action_step_rad=float(collection.get("max_joint_action_step_rad", 0.35)),
         ),
@@ -244,6 +250,12 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("collection.fps must be positive")
     if config.collection.max_camera_age_s <= 0:
         raise ValueError("collection.max_camera_age_s must be positive")
+    if config.collection.max_joint_feedback_age_s <= 0:
+        raise ValueError("collection.max_joint_feedback_age_s must be positive")
+    if config.collection.max_eef_feedback_age_s <= 0:
+        raise ValueError("collection.max_eef_feedback_age_s must be positive")
+    if config.collection.max_action_age_s <= 0:
+        raise ValueError("collection.max_action_age_s must be positive")
     if config.collection.max_gripper_age_s <= 0:
         raise ValueError("collection.max_gripper_age_s must be positive")
     if config.collection.max_joint_action_step_rad <= 0:
@@ -351,6 +363,12 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         _num(config.collection.ready_timeout_s),
         "--max-camera-age-s",
         _num(config.collection.max_camera_age_s),
+        "--max-joint-feedback-age-s",
+        _num(config.collection.max_joint_feedback_age_s),
+        "--max-eef-feedback-age-s",
+        _num(config.collection.max_eef_feedback_age_s),
+        "--max-action-age-s",
+        _num(config.collection.max_action_age_s),
         "--max-gripper-age-s",
         _num(config.collection.max_gripper_age_s),
         "--max-joint-action-step-rad",

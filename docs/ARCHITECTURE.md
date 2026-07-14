@@ -137,11 +137,12 @@ Teleop is the built-in demonstration collection mode.
   optional front depth, wrist RGB, A1 state, and target actions. It does not
   command the robot. Camera streams are read by background latest-frame readers
   so a blocking camera read cannot silently stop state/action recording. Each
-  frame requires fresh front/wrist samples; stale cameras abort and delete the
-  partial episode. Enter=save runs the pure collection quality checks before
-  metadata is committed; discontinuous joint actions reject and delete the
-  episode. Episode metadata records the state topics, action topics, cameras,
-  quality thresholds, and staged relay path.
+  frame requires fresh front/wrist, joint, EEF, joint-target action, and
+  gripper samples; any stale required stream aborts and deletes the partial
+  episode. Enter=save runs the pure collection quality checks before metadata
+  is committed; discontinuous joint actions reject and delete the episode.
+  Episode metadata records the state topics, action topics, cameras, freshness
+  limits, quality thresholds, and staged relay path.
 - `scripts/apps/cameras/a1_camera_diagnostics.py`: captures front/wrist snapshots from
   the same tracked config without starting ROS or moving the robot, and probes
   sustained camera FPS plus the RealSense USB link type.

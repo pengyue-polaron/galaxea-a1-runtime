@@ -267,9 +267,11 @@ that episode.
 The default tracked teleop config is USB2-compatible RGB-only. Depth capture is
 still supported, but it should be enabled intentionally in
 `configs/system/a1.toml` after the RealSense is on a stable USB3 link or
-after lowering the camera FPS/resolution for USB2. During recording, stale
-camera samples abort the episode and delete the partial folder instead of
-saving bad data.
+after lowering the camera FPS/resolution for USB2. During recording, every
+frame requires fresh camera, joint, EEF, joint-target action, and gripper
+samples. Any required stream becoming stale aborts the episode and deletes the
+partial folder instead of saving repeated old data. The exact freshness limits
+are copied into `metadata.json`.
 
 AgentView is captured at 640x480 and cropped to the tracked square ROI
 `x=103, y=0, width=480, height=480` before `cam0` is written. The LAN preview
@@ -289,7 +291,9 @@ homes both devices before the next attempt.
 
 Raw episodes are written under `data/raw/<experiment>/episode_NNN_timestamp/`.
 Convert a selected source dataset to its tracked training package with
-`just convert <experiment>`.
+`just convert <experiment>`. Each converter builds in a sibling staging
+directory and only replaces an existing output after generation and validation
+succeed; failed `--overwrite` runs preserve the previous complete dataset.
 
 The tracked rig binds the agent D455 and wrist D405 by explicit RealSense
 serial number. `just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus

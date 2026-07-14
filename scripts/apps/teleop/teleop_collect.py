@@ -12,7 +12,6 @@ import select
 import shutil
 import subprocess
 import sys
-import threading
 import time
 from dataclasses import dataclass
 from datetime import datetime
@@ -65,6 +64,7 @@ from galaxea_a1_runtime.hardware.cameras import (
     open_color_camera,
 )
 from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image
+from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 from galaxea_a1_runtime.hardware.web_preview import (
     CameraWebPreview,
     add_web_preview_arguments,
@@ -94,30 +94,6 @@ class RecordedEpisode:
     frame_count: int
     decision: EpisodeDecision
     actions: tuple[tuple[float, ...], ...]
-
-
-class LatestMessageCache:
-    def __init__(self):
-        self._lock = threading.Lock()
-        self._msg: Any | None = None
-        self._updated_monotonic: float | None = None
-
-    def callback(self, msg: Any) -> None:
-        with self._lock:
-            self._msg = msg
-            self._updated_monotonic = time.monotonic()
-
-    def get(self, *, max_age_s: float | None = None) -> Any | None:
-        with self._lock:
-            if (
-                max_age_s is not None
-                and (
-                    self._updated_monotonic is None
-                    or time.monotonic() - self._updated_monotonic > max_age_s
-                )
-            ):
-                return None
-            return self._msg
 
 
 class RosTeleopState:
@@ -161,7 +137,7 @@ class RosTeleopState:
         raise RuntimeError(f"ROS state did not become ready within {timeout_s:.1f}s")
 
     def joint_snapshot(self) -> JointSnapshot | None:
-        msg = self.joints.get()
+        msg = self.joints.get(max_age_s=self.args.max_joint_feedback_age_s)
         if msg is None:
             return None
         names = tuple(str(name) for name in getattr(msg, "name", ()))
@@ -176,7 +152,7 @@ class RosTeleopState:
         )
 
     def eef_vector(self) -> tuple[float, ...] | None:
-        msg = self.eef.get()
+        msg = self.eef.get(max_age_s=self.args.max_eef_feedback_age_s)
         if msg is None:
             return None
         pose = msg.pose
@@ -217,14 +193,12 @@ class RosTeleopState:
         return (*eef, *joint_values, gripper)
 
     def action_values(self) -> tuple[float, ...] | None:
-        msg = self.action.get()
+        msg = self.action.get(max_age_s=self.args.max_action_age_s)
         if msg is None:
             return None
         positions = tuple(float(value) for value in getattr(msg, "position", ()))
         target = _first_n(positions, 6, label="teleop action")
         gripper = self.gripper_action_norm()
-        if gripper is None:
-            gripper = self.gripper_feedback_norm()
         if gripper is None:
             return None
         return (*target, gripper)
@@ -254,7 +228,9 @@ class RosTeleopState:
 
     def ros_stamp(self) -> float:
         joint = self.joint_snapshot()
-        return 0.0 if joint is None else joint.ros_stamp_s
+        if joint is None:
+            raise RuntimeError("joint feedback became stale while recording the frame")
+        return joint.ros_stamp_s
 
 
 def load_or_prompt_task(experiment_dir: Path, explicit_task: str | None) -> str:
@@ -343,9 +319,12 @@ def record_episode(
             img1 = wrist_sample.value
             state = ros_state.state_values(state_mode)
             action = ros_state.action_values()
-            if frameset0 is None or img1 is None or state is None or action is None:
-                time.sleep(0.005)
-                continue
+            if frameset0 is None or img1 is None:
+                raise RuntimeError("camera reader returned an empty frame")
+            if state is None or action is None:
+                raise RuntimeError(
+                    "ROS joint/EEF/action/gripper data became stale or invalid while recording"
+                )
             if depth_enabled and frameset0.depth_mm is None:
                 time.sleep(0.005)
                 continue
@@ -484,6 +463,11 @@ def write_metadata(
         cameras=tuple(cameras),
         quality_checks={
             "max_joint_action_step_rad": args.max_joint_action_step_rad,
+            "max_camera_age_s": args.max_camera_age_s,
+            "max_joint_feedback_age_s": args.max_joint_feedback_age_s,
+            "max_eef_feedback_age_s": args.max_eef_feedback_age_s,
+            "max_action_age_s": args.max_action_age_s,
+            "max_gripper_age_s": args.max_gripper_age_s,
             "gripper_continuous_stroke_min_mm": args.gripper_stroke_min,
             "gripper_continuous_stroke_max_mm": args.gripper_stroke_max,
         },
@@ -509,6 +493,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--jpeg-quality", type=int, default=95)
     parser.add_argument("--ready-timeout-s", type=float, default=10.0)
     parser.add_argument("--max-camera-age-s", type=float, default=0.5)
+    parser.add_argument("--max-joint-feedback-age-s", type=float, required=True)
+    parser.add_argument("--max-eef-feedback-age-s", type=float, required=True)
+    parser.add_argument("--max-action-age-s", type=float, required=True)
     parser.add_argument("--max-gripper-age-s", type=float, default=0.5)
     parser.add_argument("--max-joint-action-step-rad", type=float, default=0.35)
     parser.add_argument("--joint-topic", default="/joint_states_host")
@@ -551,6 +538,12 @@ def main() -> int:
         raise ValueError("--fps must be positive")
     if args.max_camera_age_s <= 0:
         raise ValueError("--max-camera-age-s must be positive")
+    if args.max_joint_feedback_age_s <= 0:
+        raise ValueError("--max-joint-feedback-age-s must be positive")
+    if args.max_eef_feedback_age_s <= 0:
+        raise ValueError("--max-eef-feedback-age-s must be positive")
+    if args.max_action_age_s <= 0:
+        raise ValueError("--max-action-age-s must be positive")
     if args.max_gripper_age_s <= 0:
         raise ValueError("--max-gripper-age-s must be positive")
     if args.max_joint_action_step_rad <= 0:

@@ -40,6 +40,9 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.front_camera.crop is not None
     assert config.front_camera.crop.xywh == (103, 0, 480, 480)
     assert config.collection.max_camera_age_s == 0.5
+    assert config.collection.max_joint_feedback_age_s == 0.5
+    assert config.collection.max_eef_feedback_age_s == 0.5
+    assert config.collection.max_action_age_s == 0.5
     assert config.collection.max_gripper_age_s == 0.5
     assert config.collection.auto_reset_after_save is True
     assert config.collection.max_joint_action_step_rad == 0.35
@@ -75,6 +78,9 @@ def test_config_builds_collector_args_from_tracked_file():
     assert args[args.index("--cam1-backend") + 1] == "realsense"
     assert args[args.index("--cam1-serial") + 1] == "218622276998"
     assert args[args.index("--max-camera-age-s") + 1] == "0.5"
+    assert args[args.index("--max-joint-feedback-age-s") + 1] == "0.5"
+    assert args[args.index("--max-eef-feedback-age-s") + 1] == "0.5"
+    assert args[args.index("--max-action-age-s") + 1] == "0.5"
     assert args[args.index("--max-gripper-age-s") + 1] == "0.5"
     assert "--auto-reset-after-save" in args
     assert args[args.index("--max-joint-action-step-rad") + 1] == "0.35"

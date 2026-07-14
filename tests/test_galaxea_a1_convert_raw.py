@@ -6,7 +6,9 @@ import pandas as pd
 import pytest
 from PIL import Image
 
+import galaxea_a1_runtime.lerobot.convert_raw as convert_raw_module
 from galaxea_a1_runtime.lerobot.convert_raw import (
+    convert_raw_dataset,
     discover_raw_dataset,
     iter_episode_frames,
     legacy_joint_contract,
@@ -49,6 +51,38 @@ def test_discover_raw_dataset(tmp_path):
     assert summary.total_frames == 2
     assert summary.episodes[0].joint_names == ("joint_1", "joint_2", "gripper")
     assert [camera.name for camera in summary.episodes[0].camera_specs] == ["front", "wrist"]
+
+
+def test_failed_overwrite_preserves_previous_converted_dataset(tmp_path, monkeypatch):
+    make_raw_episode(tmp_path)
+    target = tmp_path / "converted"
+    target.mkdir()
+    (target / "complete.txt").write_text("previous")
+
+    class FailingDataset:
+        def add_frame(self, frame):
+            del frame
+            raise RuntimeError("conversion failed")
+
+        def stop_image_writer(self):
+            return None
+
+    monkeypatch.setattr(
+        convert_raw_module,
+        "create_lerobot_dataset",
+        lambda **_kwargs: FailingDataset(),
+    )
+
+    with pytest.raises(RuntimeError, match="conversion failed"):
+        convert_raw_dataset(
+            source_root=tmp_path / "raw_task",
+            target_root=target,
+            repo_id="galaxea/test",
+            overwrite=True,
+        )
+
+    assert (target / "complete.txt").read_text() == "previous"
+    assert not any(".converted.staging-" in path.name for path in tmp_path.iterdir())
 
 
 def test_iter_episode_frames_uses_next_state_as_action(tmp_path):
