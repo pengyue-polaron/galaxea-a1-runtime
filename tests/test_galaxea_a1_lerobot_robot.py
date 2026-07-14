@@ -5,7 +5,7 @@ from galaxea_a1_runtime.lerobot.robot import GalaxeaA1Robot, GalaxeaA1RobotConfi
 from galaxea_a1_runtime.schema import ActionMode, CameraSpec
 
 
-def test_galaxea_a1_robot_uses_null_io_without_hardware():
+def test_galaxea_a1_robot_composes_an_explicit_io_adapter():
     io = NullA1HardwareIO(
         A1Observation(
             state=(0.0,) * 14,
@@ -40,7 +40,7 @@ def test_galaxea_a1_robot_uses_null_io_without_hardware():
 
 def test_galaxea_a1_robot_features_match_contract():
     config = GalaxeaA1RobotConfig()
-    robot = GalaxeaA1Robot(config)
+    robot = GalaxeaA1Robot(config, io=NullA1HardwareIO())
 
     assert config.camera_specs[0] == CameraSpec("front", height=480, width=480)
     assert robot.observation_features["observation.state"] == (14,)

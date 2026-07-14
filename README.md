@@ -163,7 +163,7 @@ galaxea_a1_runtime/
   safety.py           # pure fail-closed validation and limiters
   schema.py           # LeRobot v3 state/action/camera contracts
   configuration/      # the single typed physical system configuration
-  hardware/           # IO protocol, EEF helpers, ROS1 safe adapter
+  hardware/           # IO protocol, EEF helpers, camera and preview modules
   collection/         # teleop state/action schema and episode helpers
   teleop/             # SO leader to A1 joint mapping helpers
   lerobot/            # Robot adapter, dataset writer, recorder, migration
@@ -174,6 +174,12 @@ assets/cad/            # versioned robot/leader mechanical assets
 configs/               # tracked runtime, inference, pose, and dataset contracts
 scripts/               # operator entrypoints grouped by runtime/app responsibility
 ```
+
+The runtime entrypoints share only the app-agnostic service primitives in
+`scripts/runtime/a1_services.sh`. Tracker selection and app lifecycle stay
+in their owning scripts. ACT, LingBot, and teleop configurations reference the
+same typed `SystemConfig` directly instead of copying physical fields into
+parallel app-specific config objects.
 
 ## Policy Targets
 
@@ -189,10 +195,11 @@ before execution.
 
 ## LeRobot Robot Adapter
 
-`GalaxeaA1Robot` exposes a LeRobot-style robot interface. Its generic ROS1
-hardware adapter supports EEF translation/delta actions by reading
-`/end_effector_pose`, publishing `/a1_ee_target`, and enabling the safe relay.
-Joint-space arm execution is not implemented in the generic adapter.
+`GalaxeaA1Robot` exposes a LeRobot-style schema and IO composition interface.
+It requires an explicit `A1HardwareIO`; it has no default ROS publisher or
+fallback `NullA1HardwareIO`. Live Teleop, ACT, and LingBot execution remains in
+the managed app runtimes so there is only one implementation of each ROS
+control path.
 
 ## Original SDK Coverage
 

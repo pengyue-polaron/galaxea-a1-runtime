@@ -30,10 +30,10 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
     assert config.execution.step_mode is True
     assert config.execution.execute_steps_per_inference == 100
     assert config.execution.max_model_calls == 0
-    assert config.topics.target == "/arm_joint_target_position"
-    assert config.topics.staged_command == "/arm_joint_command_a1_staged"
-    assert config.topics.motion_enable == "/a1_arm_motion_enable"
-    assert config.safety.target_joint_names == (
+    assert config.system.topics.joint_target == "/arm_joint_target_position"
+    assert config.system.topics.staged_command == "/arm_joint_command_a1_staged"
+    assert config.system.topics.motion_enable == "/a1_arm_motion_enable"
+    assert config.system.joint_safety.names == (
         "arm_joint1",
         "arm_joint2",
         "arm_joint3",
@@ -41,13 +41,13 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
         "arm_joint5",
         "arm_joint6",
     )
-    assert config.safety.action_step_guard_enabled is False
-    assert config.safety.initial_alignment_tolerance_rad == 0.05
-    assert config.gripper.stroke_min_mm == 0.0
-    assert config.gripper.stroke_max_mm == 100.0
-    assert config.topics.gripper_target == "/a1_gripper_target"
-    assert config.cameras.front_crop is not None
-    assert config.cameras.front_crop.xywh == (103, 0, 480, 480)
+    assert config.system.joint_safety.action_step_guard_enabled is False
+    assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
+    assert config.system.gripper.stroke_min_mm == 0.0
+    assert config.system.gripper.stroke_max_mm == 100.0
+    assert config.system.topics.gripper_target == "/a1_gripper_target"
+    assert config.system.cameras.front.crop is not None
+    assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
 
 
 def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):

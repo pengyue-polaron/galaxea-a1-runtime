@@ -18,14 +18,14 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.server.prompt == "REPLACE_WITH_NEW_TASK_PROMPT"
     assert config.execution.execute is False
     assert config.policy_server.deployment_ready is False
-    assert config.eef.orientation_mode == "hold-current"
-    assert config.eef.action_pose_mode == "episode-relative"
-    assert config.gripper.stroke_min_mm == 0.0
-    assert config.gripper.stroke_max_mm == 100.0
+    assert config.system.eef.orientation_mode == "hold-current"
+    assert config.action.pose_mode == "episode-relative"
+    assert config.system.gripper.stroke_min_mm == 0.0
+    assert config.system.gripper.stroke_max_mm == 100.0
     assert config.policy_server.q01_source == ()
     assert config.policy_server.q99_source == ()
-    assert config.cameras.front_crop is not None
-    assert config.cameras.front_crop.xywh == (103, 0, 480, 480)
+    assert config.system.cameras.front.crop is not None
+    assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
     assert args[args.index("--cmd-pose-topic") + 1] == "/a1_ee_target"
     assert args[args.index("--cam1-backend") + 1] == "realsense"
     assert args[args.index("--gripper-stroke-max") + 1] == "100"

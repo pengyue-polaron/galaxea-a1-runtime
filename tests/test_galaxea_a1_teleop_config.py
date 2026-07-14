@@ -16,7 +16,7 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.leader.id == "my_leader"
     assert config.collection.state_mode == StateMode.EEF_JOINT
     assert config.bridge.dof == 6
-    assert config.bridge.target_joint_names == (
+    assert config.system.joint_safety.names == (
         "arm_joint1",
         "arm_joint2",
         "arm_joint3",
@@ -27,29 +27,27 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
     assert config.bridge.a1_state_timeout_s == 30.0
-    assert config.bridge.initial_alignment_tolerance_rad == 0.05
+    assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
-    assert config.gripper.min_stroke_mm == 0.0
-    assert config.gripper.max_stroke_mm == 100.0
-    assert config.topics.gripper_target == "/a1_gripper_target"
-    assert config.front_camera.depth is False
-    assert config.front_camera.backend == "realsense"
-    assert config.front_camera.serial == "341522300456"
-    assert config.front_camera.align_depth_to_color is True
-    assert config.front_camera.require_usb3 is False
-    assert config.front_camera.crop is not None
-    assert config.front_camera.crop.xywh == (103, 0, 480, 480)
-    assert config.collection.max_camera_age_s == 0.5
-    assert config.collection.max_joint_feedback_age_s == 0.5
-    assert config.collection.max_eef_feedback_age_s == 0.5
-    assert config.collection.max_action_age_s == 0.5
-    assert config.collection.max_gripper_age_s == 0.5
+    assert config.system.gripper.stroke_min_mm == 0.0
+    assert config.system.gripper.stroke_max_mm == 100.0
+    assert config.system.topics.gripper_target == "/a1_gripper_target"
+    assert config.system.cameras.front.depth is False
+    assert config.system.cameras.front.backend == "realsense"
+    assert config.system.cameras.front.serial == "341522300456"
+    assert config.system.cameras.front.align_depth_to_color is True
+    assert config.system.cameras.front.require_usb3 is False
+    assert config.system.cameras.front.crop is not None
+    assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
+    assert config.system.cameras.max_age_s == 0.5
+    assert config.system.joint_safety.max_feedback_age_s == 0.5
+    assert config.system.eef.max_feedback_age_s == 0.5
     assert config.collection.auto_reset_after_save is True
     assert config.collection.max_joint_action_step_rad == 0.35
-    assert config.wrist_camera.backend == "realsense"
-    assert config.wrist_camera.serial == "218622276998"
-    assert config.web_preview.enabled is True
-    assert config.web_preview.bind == "0.0.0.0"
+    assert config.system.cameras.wrist.backend == "realsense"
+    assert config.system.cameras.wrist.serial == "218622276998"
+    assert config.system.web_preview.enabled is True
+    assert config.system.web_preview.bind == "0.0.0.0"
 
 
 def test_config_builds_bridge_args_without_per_run_env_overrides():

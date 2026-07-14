@@ -11,8 +11,8 @@ def test_safety_report_discloses_non_obvious_motion_controls():
 
     assert "joint_tracking_limiter" not in settings
     assert "initial_command_alignment" in settings
-    assert "generic_ros1_adapter_arm_motion" in settings
-    assert "generic_ros1_gripper_range_check" in settings
+    assert "generic_ros1_adapter_arm_motion" not in settings
+    assert "generic_ros1_gripper_range_check" not in settings
     assert "lingbot_xyz_delta_clamp" not in settings
     assert "lingbot_orientation_mode" in settings
     assert "lingbot_eef_servo_compensation" in settings
@@ -20,7 +20,6 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert settings["lingbot_cache_actual_feedback"].default == "off; cache tracker command"
     assert "lingbot_relay_status_guard" in settings
     assert settings["gripper_scale_mapping"].default == "continuous 0..1 -> system stroke range"
-    assert settings["generic_ros1_adapter_arm_motion"].default == "feedback-driven EEF target synthesis"
     assert "does not modify commands" in settings["initial_command_alignment"].operator_note
 
 

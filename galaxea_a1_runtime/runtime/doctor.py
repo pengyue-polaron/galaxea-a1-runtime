@@ -95,15 +95,14 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         add(
             "teleop_config",
             teleop_config.collection.state_mode.value == "eef_joint"
-            and teleop_config.gripper.max_stroke_mm
-            == teleop_config.system.gripper.stroke_max_mm,
+            and teleop_config.system.gripper.stroke_max_mm == 100.0,
             str(teleop_config.path),
         )
         add(
             "lingbot_config",
             lingbot_config.server.port == 1106
-            and lingbot_config.eef.orientation_mode == "hold-current"
-            and lingbot_config.topics.cmd_pose == "/a1_ee_target",
+            and lingbot_config.system.eef.orientation_mode == "hold-current"
+            and lingbot_config.system.topics.eef_target == "/a1_ee_target",
             str(lingbot_config.path),
         )
     except Exception as exc:
@@ -206,6 +205,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
 
     relay_script = repo_root / "scripts" / "runtime" / "safe_arm_command_relay.py"
     add("safe_relay_script", relay_script.is_file(), str(relay_script))
+    runtime_services = repo_root / "scripts" / "runtime" / "a1_services.sh"
+    add("runtime_services_lib", runtime_services.is_file(), str(runtime_services))
     joint_tracker_launch = repo_root / "scripts" / "runtime" / "joint_tracker_staged.launch"
     add("joint_tracker_staged_launch", joint_tracker_launch.is_file(), str(joint_tracker_launch))
     teleop_runtime = repo_root / "scripts" / "apps" / "teleop" / "a1_teleop_runtime.sh"

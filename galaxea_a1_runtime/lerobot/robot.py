@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from galaxea_a1_runtime.hardware.io import A1HardwareIO, NullA1HardwareIO
+from galaxea_a1_runtime.hardware.io import A1HardwareIO
 from galaxea_a1_runtime.policies.actions import normalize_action
 from galaxea_a1_runtime.schema import (
     ActionMode,
@@ -62,10 +62,10 @@ class GalaxeaA1Robot(_LeRobotRobot):
     config_class = GalaxeaA1RobotConfig
     name = "galaxea_a1"
 
-    def __init__(self, config: GalaxeaA1RobotConfig, io: A1HardwareIO | None = None):
+    def __init__(self, config: GalaxeaA1RobotConfig, *, io: A1HardwareIO):
         super().__init__(config)
         self.config = config
-        self.io = io or NullA1HardwareIO()
+        self.io = io
         self.contract = default_dataset_contract(
             action_mode=config.action_mode,
             cameras=config.camera_specs,

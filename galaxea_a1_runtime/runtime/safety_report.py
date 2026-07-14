@@ -78,39 +78,6 @@ def build_safety_settings(system_path: Path | None = None) -> tuple[SafetySettin
             operator_note="This matches the observed A1 idle behavior and keeps 68-style faults blocking.",
         ),
         SafetySetting(
-            name="generic_policy_delta_limits",
-            path="GalaxeaA1Robot.send_action",
-            default="off",
-            behavior=(
-                "LeRobot EEF delta actions are forwarded unchanged by the generic adapter. "
-                "Managed deployments use the explicit tracked system and deployment contracts."
-            ),
-            visibility="Returned action dict shows the post-limit action when limits are configured.",
-            operator_note="No model-output delta clamp is active in the default generic robot config.",
-        ),
-        SafetySetting(
-            name="generic_ros1_adapter_arm_motion",
-            path="galaxea_a1_runtime.hardware.ros1",
-            default="feedback-driven EEF target synthesis",
-            behavior=(
-                "EEF translation/delta actions are added to live /end_effector_pose feedback, "
-                "published to /a1_ee_target, and paired with relay enable; joint_absolute is rejected."
-            ),
-            visibility="RuntimeError before arm motion if /end_effector_pose has not been received.",
-            operator_note="This path never publishes directly to /arm_joint_command_host.",
-        ),
-        SafetySetting(
-            name="generic_ros1_gripper_range_check",
-            path="galaxea_a1_runtime.hardware.ros1",
-            default=(
-                f"continuous 0..1 -> {system.gripper.stroke_min_mm:g}.."
-                f"{system.gripper.stroke_max_mm:g}mm"
-            ),
-            behavior="The generic ROS1 adapter clips finite normalized policy gripper values and maps them linearly to millimeters.",
-            visibility="Published gripper stroke follows the normalized value continuously.",
-            operator_note="The managed ACT and LingBot paths read the same range from configs/system/a1.toml.",
-        ),
-        SafetySetting(
             name="teleop_staged_joint_path",
             path="/arm_joint_target_position -> jointTracker -> relay",
             default="enabled for just teleop <experiment>",
@@ -198,7 +165,7 @@ def build_safety_settings(system_path: Path | None = None) -> tuple[SafetySettin
 
 def build_architecture_findings() -> tuple[str, ...]:
     return (
-        "The generic LeRobot ROS1 adapter now executes EEF translation/delta actions through the safe target path, but still rejects joint-space arm execution.",
+        "GalaxeaA1Robot is a schema/IO composition wrapper and has no implicit hardware adapter; managed apps own every live ROS path.",
         "Teleop joint-space control is implemented as an app runtime that stages jointTracker output through the relay.",
         "The relay no longer applies joint tracking-error or velocity clamps; staged tracker output is forwarded unchanged once validation passes.",
         "LingBot episode-relative targets are composed onto the startup pose before using the staged EEF target route.",

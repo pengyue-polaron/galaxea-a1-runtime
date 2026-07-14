@@ -58,10 +58,9 @@ apps. They still do not publish host commands directly:
 
 ## Action Behavior
 
-- Generic `GalaxeaA1Robot` forwards LeRobot EEF deltas unchanged by default.
-  Managed app limits live in their tracked deployment/system contracts.
-- Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
-- Generic ROS1 adapter rejects `joint_absolute`.
+- `GalaxeaA1Robot` has no implicit ROS implementation. A caller must inject an
+  explicit `A1HardwareIO`; all supported live control is owned by the managed
+  Teleop, ACT, LingBot, reset, and EEF app paths below.
 - Collected gripper state and action are continuous normalized values. Teleop,
   dataset conversion, ACT, and LingBot use the same linear mapping from `0..1`
   into the physical range in `configs/system/a1.toml`.
@@ -84,8 +83,8 @@ apps. They still do not publish host commands directly:
   values and absolute joint limits are still enforced before execution.
 - Teleop gripper state/action is continuous normalized `0..1`, mapped to the
   unique `0..100 mm` range in `configs/system/a1.toml`.
-- Teleop, ACT, LingBot, reset, EEF tools, and the generic ROS1 adapter publish
-  only the staged gripper target. The relay owns the hardware command topic.
+- Teleop, ACT, LingBot, reset, and EEF tools publish only the staged gripper
+  target. The relay owns the hardware command topic.
 
 ## Direct Debug
 

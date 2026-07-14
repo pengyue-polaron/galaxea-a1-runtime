@@ -21,11 +21,7 @@ from galaxea_a1_runtime.configuration.base import (
     string as _string,
 )
 from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi
-from galaxea_a1_runtime.hardware.web_preview import (
-    WebPreviewConfig,
-    web_preview_argv,
-)
+from galaxea_a1_runtime.hardware.web_preview import web_preview_argv
 
 OrientationMode = Literal["hold-current", "model-quat"]
 PoseMode = Literal["absolute", "episode-relative"]
@@ -95,32 +91,14 @@ class LingBotExecutionConfig:
 
 
 @dataclass(frozen=True)
-class LingBotTopicsConfig:
-    state_pose: str
-    state_gripper: str
-    cmd_pose: str
-    target_gripper: str
-    motion_enable: str
-    relay_status: str
-    staged_command: str
+class LingBotObservationConfig:
+    front_key: str
+    wrist_key: str
 
 
 @dataclass(frozen=True)
-class LingBotRelayConfig:
-    enable_timeout_s: float
-    max_status_age_s: float
-
-
-@dataclass(frozen=True)
-class LingBotEefConfig:
-    command_frame: str
-    action_pose_mode: PoseMode
-    orientation_mode: OrientationMode
-    xyz_min: tuple[float, float, float]
-    xyz_max: tuple[float, float, float]
-    min_quat_norm: float
-    max_feedback_age_s: float
-    feedback_wait_timeout_s: float
+class LingBotActionConfig:
+    pose_mode: PoseMode
 
 
 @dataclass(frozen=True)
@@ -134,33 +112,6 @@ class LingBotServoConfig:
 
 
 @dataclass(frozen=True)
-class LingBotGripperConfig:
-    stroke_min_mm: float
-    stroke_max_mm: float
-
-
-@dataclass(frozen=True)
-class LingBotCameraConfig:
-    width: int
-    height: int
-    fps: int
-    max_camera_age_s: float
-    front_serial: str
-    front_auto_exposure: bool
-    front_exposure: int
-    front_gain: int
-    front_auto_white_balance: bool
-    front_white_balance: int
-    front_observation_key: str
-    front_crop: ImageRoi | None
-    wrist_backend: str
-    wrist_serial: str
-    wrist_device: str
-    wrist_backend_api: str
-    wrist_observation_key: str
-
-
-@dataclass(frozen=True)
 class LingBotConfig:
     path: Path
     system: SystemConfig
@@ -168,13 +119,9 @@ class LingBotConfig:
     server: LingBotServerConfig
     policy_server: LingBotPolicyServerConfig
     execution: LingBotExecutionConfig
-    topics: LingBotTopicsConfig
-    relay: LingBotRelayConfig
-    eef: LingBotEefConfig
+    observations: LingBotObservationConfig
+    action: LingBotActionConfig
     servo: LingBotServoConfig
-    gripper: LingBotGripperConfig
-    cameras: LingBotCameraConfig
-    web_preview: WebPreviewConfig
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -190,8 +137,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     observations = _required_table(data, "observations")
     execution = _required_table(data, "execution")
     action = _required_table(data, "action")
-    front = system.cameras.front
-    wrist = system.cameras.wrist
     deployment_ready = bool(policy_server.get("deployment_ready", False))
 
     config = LingBotConfig(
@@ -247,28 +192,12 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             print_actions=bool(execution.get("print_actions", True)),
             review_deadband_m=float(execution.get("review_deadband_m", 0.001)),
         ),
-        topics=LingBotTopicsConfig(
-            state_pose=system.topics.eef_pose,
-            state_gripper=system.topics.gripper_feedback,
-            cmd_pose=system.topics.eef_target,
-            target_gripper=system.topics.gripper_target,
-            motion_enable=system.topics.motion_enable,
-            relay_status=system.topics.relay_status,
-            staged_command=system.topics.staged_command,
+        observations=LingBotObservationConfig(
+            front_key=_string(observations, "front_key"),
+            wrist_key=_string(observations, "wrist_key"),
         ),
-        relay=LingBotRelayConfig(
-            enable_timeout_s=system.relay.enable_timeout_s,
-            max_status_age_s=system.relay.max_status_age_s,
-        ),
-        eef=LingBotEefConfig(
-            command_frame=system.eef.command_frame,
-            action_pose_mode=_pose_mode(_string(action, "pose_mode")),
-            orientation_mode=_orientation_mode(system.eef.orientation_mode),
-            xyz_min=system.eef.xyz_min,
-            xyz_max=system.eef.xyz_max,
-            min_quat_norm=system.eef.min_quat_norm,
-            max_feedback_age_s=system.eef.max_feedback_age_s,
-            feedback_wait_timeout_s=system.eef.feedback_wait_timeout_s,
+        action=LingBotActionConfig(
+            pose_mode=_pose_mode(_string(action, "pose_mode")),
         ),
         servo=LingBotServoConfig(
             gain=float(action.get("servo_gain", 1.0)),
@@ -278,30 +207,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             corrections=int(action.get("servo_corrections", 0)),
             cache_actual_feedback=bool(action.get("cache_actual_feedback", False)),
         ),
-        gripper=LingBotGripperConfig(
-            stroke_min_mm=system.gripper.stroke_min_mm,
-            stroke_max_mm=system.gripper.stroke_max_mm,
-        ),
-        cameras=LingBotCameraConfig(
-            width=front.width,
-            height=front.height,
-            fps=front.fps,
-            max_camera_age_s=system.cameras.max_age_s,
-            front_serial=front.serial,
-            front_auto_exposure=front.auto_exposure,
-            front_exposure=front.exposure,
-            front_gain=front.gain,
-            front_auto_white_balance=front.auto_white_balance,
-            front_white_balance=front.white_balance,
-            front_observation_key=_string(observations, "front_key"),
-            front_crop=front.crop,
-            wrist_backend=wrist.backend,
-            wrist_serial=wrist.serial,
-            wrist_device=wrist.device,
-            wrist_backend_api=wrist.backend_api,
-            wrist_observation_key=_string(observations, "wrist_key"),
-        ),
-        web_preview=system.web_preview,
     )
     validate_lingbot_config(config)
     return config
@@ -360,38 +265,18 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("execution and policy_server action_per_frame must match")
     if config.execution.exec_rate <= 0:
         raise ValueError("execution.exec_rate must be positive")
-    if config.relay.enable_timeout_s <= 0 or config.relay.max_status_age_s <= 0:
-        raise ValueError("relay timeouts must be positive")
-    if config.cameras.width <= 0 or config.cameras.height <= 0 or config.cameras.fps <= 0:
-        raise ValueError("cameras width/height/fps must be positive")
-    if config.cameras.max_camera_age_s <= 0:
-        raise ValueError("cameras.max_camera_age_s must be positive")
-    if not config.cameras.front_serial:
-        raise ValueError("cameras.front.serial is required")
-    if config.cameras.front_crop is None:
-        raise ValueError("cameras.front crop must be enabled for the inference input contract")
-    if config.cameras.wrist_backend not in {"realsense", "v4l2"}:
-        raise ValueError("cameras.wrist.backend must be 'realsense' or 'v4l2'")
-    if config.cameras.wrist_backend == "realsense" and not config.cameras.wrist_serial:
-        raise ValueError("cameras.wrist.serial is required for the RealSense backend")
-    if config.cameras.wrist_backend == "v4l2" and not config.cameras.wrist_device:
-        raise ValueError("cameras.wrist.device is required for the V4L2 backend")
-    if any(lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)):
-        raise ValueError("eef.xyz_min values must be lower than eef.xyz_max")
-    if config.eef.min_quat_norm <= 0:
-        raise ValueError("eef.min_quat_norm must be positive")
+    if config.system.cameras.front.backend != "realsense":
+        raise ValueError("LingBot front camera must use the RealSense backend")
     if config.servo.gain <= 0:
         raise ValueError("servo.gain must be positive")
     if config.servo.corrections < 0:
         raise ValueError("servo.corrections must be >= 0")
-    if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
-        raise ValueError("gripper stroke_max_mm must be greater than stroke_min_mm")
-    for name, value in config.topics.__dict__.items():
-        if not value.startswith("/"):
-            raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
-
-
 def bridge_argv(config: LingBotConfig) -> list[str]:
+    system = config.system
+    topics = system.topics
+    eef = system.eef
+    front = system.cameras.front
+    wrist = system.cameras.wrist
     args = [
         "--host",
         config.server.host,
@@ -415,59 +300,59 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         "--review-deadband",
         _num(config.execution.review_deadband_m),
         "--cam-width",
-        str(config.cameras.width),
+        str(front.width),
         "--cam-height",
-        str(config.cameras.height),
+        str(front.height),
         "--cam-fps",
-        str(config.cameras.fps),
+        str(front.fps),
         "--max-camera-age",
-        _num(config.cameras.max_camera_age_s),
+        _num(system.cameras.max_age_s),
         "--cam0-serial",
-        config.cameras.front_serial,
-        _bool_flag("cam0-auto-exposure", config.cameras.front_auto_exposure),
+        front.serial,
+        _bool_flag("cam0-auto-exposure", front.auto_exposure),
         "--cam0-exposure",
-        str(config.cameras.front_exposure),
+        str(front.exposure),
         "--cam0-gain",
-        str(config.cameras.front_gain),
-        _bool_flag("cam0-auto-white-balance", config.cameras.front_auto_white_balance),
+        str(front.gain),
+        _bool_flag("cam0-auto-white-balance", front.auto_white_balance),
         "--cam0-white-balance",
-        str(config.cameras.front_white_balance),
+        str(front.white_balance),
         "--cam0-observation-key",
-        config.cameras.front_observation_key,
-        _bool_flag("cam0-crop-enabled", config.cameras.front_crop is not None),
+        config.observations.front_key,
+        _bool_flag("cam0-crop-enabled", front.crop is not None),
         "--cam1-device",
-        config.cameras.wrist_device,
+        wrist.device,
         "--cam1-backend",
-        config.cameras.wrist_backend,
+        wrist.backend,
         "--cam1-serial",
-        config.cameras.wrist_serial,
+        wrist.serial,
         "--cam1-backend-api",
-        config.cameras.wrist_backend_api,
+        wrist.backend_api,
         "--cam1-observation-key",
-        config.cameras.wrist_observation_key,
-        *web_preview_argv(config.web_preview),
+        config.observations.wrist_key,
+        *web_preview_argv(system.web_preview),
         "--state-pose-topic",
-        config.topics.state_pose,
+        topics.eef_pose,
         "--state-gripper-topic",
-        config.topics.state_gripper,
+        topics.gripper_feedback,
         "--cmd-pose-topic",
-        config.topics.cmd_pose,
+        topics.eef_target,
         "--cmd-gripper-topic",
-        config.topics.target_gripper,
+        topics.gripper_target,
         "--motion-enable-topic",
-        config.topics.motion_enable,
+        topics.motion_enable,
         "--relay-status-topic",
-        config.topics.relay_status,
+        topics.relay_status,
         "--relay-enable-timeout",
-        _num(config.relay.enable_timeout_s),
+        _num(system.relay.enable_timeout_s),
         "--max-relay-status-age",
-        _num(config.relay.max_status_age_s),
+        _num(system.relay.max_status_age_s),
         "--command-frame",
-        config.eef.command_frame,
+        eef.command_frame,
         "--action-pose-mode",
-        config.eef.action_pose_mode,
+        config.action.pose_mode,
         "--orientation-mode",
-        config.eef.orientation_mode,
+        _orientation_mode(eef.orientation_mode),
         "--eef-servo-gain",
         _num(config.servo.gain),
         "--eef-servo-max-extra",
@@ -480,19 +365,19 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         str(config.servo.corrections),
         _bool_flag("cache-actual-feedback", config.servo.cache_actual_feedback),
         "--xyz-min",
-        *(_num(value) for value in config.eef.xyz_min),
+        *(_num(value) for value in eef.xyz_min),
         "--xyz-max",
-        *(_num(value) for value in config.eef.xyz_max),
+        *(_num(value) for value in eef.xyz_max),
         "--min-quat-norm",
-        _num(config.eef.min_quat_norm),
+        _num(eef.min_quat_norm),
         "--max-feedback-age",
-        _num(config.eef.max_feedback_age_s),
+        _num(eef.max_feedback_age_s),
         "--feedback-wait-timeout",
-        _num(config.eef.feedback_wait_timeout_s),
+        _num(eef.feedback_wait_timeout_s),
         "--gripper-stroke-min",
-        _num(config.gripper.stroke_min_mm),
+        _num(system.gripper.stroke_min_mm),
         "--gripper-stroke-max",
-        _num(config.gripper.stroke_max_mm),
+        _num(system.gripper.stroke_max_mm),
     ]
     if config.execution.execute:
         args.append("--execute")
@@ -502,23 +387,24 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         args.append("--no-kv-update")
     if config.execution.initial_ee_pose is not None:
         args.extend(["--initial-ee-pose", *(_num(value) for value in config.execution.initial_ee_pose)])
-    if config.cameras.front_crop is not None:
+    if front.crop is not None:
         args.extend(
             [
                 "--cam0-crop-x",
-                str(config.cameras.front_crop.x),
+                str(front.crop.x),
                 "--cam0-crop-y",
-                str(config.cameras.front_crop.y),
+                str(front.crop.y),
                 "--cam0-crop-width",
-                str(config.cameras.front_crop.width),
+                str(front.crop.width),
                 "--cam0-crop-height",
-                str(config.cameras.front_crop.height),
+                str(front.crop.height),
             ]
         )
     return args
 
 
 def bash_config(config: LingBotConfig) -> str:
+    system = config.system
     lines = [
         _assign("CONFIG_PATH", str(config.path)),
         _assign("SYSTEM_CONFIG_PATH", str(config.system.path)),
@@ -540,12 +426,12 @@ def bash_config(config: LingBotConfig) -> str:
             "DEPLOYMENT_READY",
             "1" if config.policy_server.deployment_ready else "0",
         ),
-        _assign("WRIST_BACKEND", config.cameras.wrist_backend),
-        _assign("WRIST_SERIAL", config.cameras.wrist_serial),
-        _assign("WRIST_CAMERA", config.cameras.wrist_device),
-        _assign("STAGED_TOPIC", config.topics.staged_command),
-        _assign("RELAY_ENABLE_TOPIC", config.topics.motion_enable),
-        _assign("RELAY_STATUS_TOPIC", config.topics.relay_status),
+        _assign("WRIST_BACKEND", system.cameras.wrist.backend),
+        _assign("WRIST_SERIAL", system.cameras.wrist.serial),
+        _assign("WRIST_CAMERA", system.cameras.wrist.device),
+        _assign("STAGED_TOPIC", system.topics.staged_command),
+        _assign("RELAY_ENABLE_TOPIC", system.topics.motion_enable),
+        _assign("RELAY_STATUS_TOPIC", system.topics.relay_status),
         _array("BRIDGE_ARGS", bridge_argv(config)),
     ]
     return "\n".join(lines)

@@ -21,20 +21,14 @@ from galaxea_a1_runtime.configuration.base import (
     string as _string,
 )
 from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi
-from galaxea_a1_runtime.hardware.web_preview import (
-    WebPreviewConfig,
-    web_preview_argv,
-)
+from galaxea_a1_runtime.hardware.web_preview import web_preview_argv
 from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
 
 DEFAULT_TELEOP_CONFIG = Path("configs/teleop/a1_so100.toml")
 
 
 @dataclass(frozen=True)
-class TeleopHostConfig:
-    image: str
-    a1_serial: str
+class TeleopRuntimeConfig:
     prefix: str
     run_dir: str
 
@@ -47,36 +41,17 @@ class TeleopLeaderConfig:
 
 
 @dataclass(frozen=True)
-class TeleopTopicsConfig:
-    joint_states: str
-    target: str
-    staged_command: str
-    relay_enable: str
-    relay_status: str
-    gripper_target: str
-    gripper_feedback: str
-    eef: str
-    host_command: str
-
-
-@dataclass(frozen=True)
 class TeleopBridgeConfig:
     hz: float
     dof: int
-    target_joint_names: tuple[str, ...]
     mapping: JointMappingConfig
-    relay_enable_timeout_s: float
-    max_relay_status_age_s: float
     a1_state_timeout_s: float
-    initial_alignment_tolerance_rad: float
 
 
 @dataclass(frozen=True)
 class TeleopGripperConfig:
     enabled: bool
     source_key: str
-    min_stroke_mm: float
-    max_stroke_mm: float
     invert: bool
 
 
@@ -89,44 +64,18 @@ class TeleopCollectionConfig:
     auto_reset_after_save: bool
     jpeg_quality: int
     ready_timeout_s: float
-    max_camera_age_s: float
-    max_joint_feedback_age_s: float
-    max_eef_feedback_age_s: float
-    max_action_age_s: float
-    max_gripper_age_s: float
     max_joint_action_step_rad: float
-
-
-@dataclass(frozen=True)
-class TeleopCameraConfig:
-    width: int
-    height: int
-    fps: int
-    backend: str = "realsense"
-    serial: str = ""
-    device: str = ""
-    pixel_format: str = ""
-    require_usb3: bool = False
-    depth: bool = False
-    depth_width: int = 0
-    depth_height: int = 0
-    align_depth_to_color: bool = True
-    crop: ImageRoi | None = None
 
 
 @dataclass(frozen=True)
 class TeleopConfig:
     path: Path
     system: SystemConfig
-    host: TeleopHostConfig
+    runtime: TeleopRuntimeConfig
     leader: TeleopLeaderConfig
-    topics: TeleopTopicsConfig
     bridge: TeleopBridgeConfig
     gripper: TeleopGripperConfig
     collection: TeleopCollectionConfig
-    front_camera: TeleopCameraConfig
-    wrist_camera: TeleopCameraConfig
-    web_preview: WebPreviewConfig
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -141,9 +90,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     bridge = _required_table(data, "bridge")
     gripper = _required_table(data, "gripper")
     collection = _required_table(data, "collection")
-    front = system.cameras.front
-    wrist = system.cameras.wrist
-
     dof = int(bridge.get("dof", 6))
     mapping = JointMappingConfig(
         relative=bool(bridge.get("relative", True)),
@@ -159,9 +105,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     config = TeleopConfig(
         path=path,
         system=system,
-        host=TeleopHostConfig(
-            image=system.host.image,
-            a1_serial=system.host.a1_serial,
+        runtime=TeleopRuntimeConfig(
             prefix=_string(runtime, "prefix"),
             run_dir=_string(runtime, "run_dir"),
         ),
@@ -170,32 +114,15 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             id=_string(leader, "id"),
             use_degrees=bool(leader.get("use_degrees", True)),
         ),
-        topics=TeleopTopicsConfig(
-            joint_states=system.topics.joint_states,
-            target=system.topics.joint_target,
-            staged_command=system.topics.staged_command,
-            relay_enable=system.topics.motion_enable,
-            relay_status=system.topics.relay_status,
-            gripper_target=system.topics.gripper_target,
-            gripper_feedback=system.topics.gripper_feedback,
-            eef=system.topics.eef_pose,
-            host_command=system.topics.host_command,
-        ),
         bridge=TeleopBridgeConfig(
             hz=float(bridge.get("hz", 60.0)),
             dof=dof,
-            target_joint_names=system.joint_safety.names,
             mapping=mapping,
-            relay_enable_timeout_s=system.relay.enable_timeout_s,
-            max_relay_status_age_s=system.relay.max_status_age_s,
             a1_state_timeout_s=float(bridge.get("a1_state_timeout_s", system.joint_safety.state_timeout_s)),
-            initial_alignment_tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
         ),
         gripper=TeleopGripperConfig(
             enabled=bool(gripper.get("enabled", True)),
             source_key=_string(gripper, "source_key"),
-            min_stroke_mm=system.gripper.stroke_min_mm,
-            max_stroke_mm=system.gripper.stroke_max_mm,
             invert=bool(gripper.get("invert", False)),
         ),
         collection=TeleopCollectionConfig(
@@ -206,38 +133,8 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             auto_reset_after_save=bool(collection.get("auto_reset_after_save", True)),
             jpeg_quality=int(collection.get("jpeg_quality", 95)),
             ready_timeout_s=float(collection.get("ready_timeout_s", 10.0)),
-            max_camera_age_s=system.cameras.max_age_s,
-            max_joint_feedback_age_s=system.joint_safety.max_feedback_age_s,
-            max_eef_feedback_age_s=system.eef.max_feedback_age_s,
-            max_action_age_s=system.joint_safety.max_feedback_age_s,
-            max_gripper_age_s=system.joint_safety.max_feedback_age_s,
             max_joint_action_step_rad=float(collection.get("max_joint_action_step_rad", 0.35)),
         ),
-        front_camera=TeleopCameraConfig(
-            backend=front.backend,
-            serial=front.serial,
-            device=front.device,
-            pixel_format=front.pixel_format,
-            width=front.width,
-            height=front.height,
-            fps=front.fps,
-            require_usb3=front.require_usb3,
-            depth=front.depth,
-            depth_width=front.depth_width,
-            depth_height=front.depth_height,
-            align_depth_to_color=front.align_depth_to_color,
-            crop=front.crop,
-        ),
-        wrist_camera=TeleopCameraConfig(
-            backend=wrist.backend,
-            serial=wrist.serial,
-            device=wrist.device,
-            pixel_format=wrist.pixel_format,
-            width=wrist.width,
-            height=wrist.height,
-            fps=wrist.fps,
-        ),
-        web_preview=system.web_preview,
     )
     validate_teleop_config(config)
     return config
@@ -248,52 +145,21 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("bridge.hz must be positive")
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
-    if config.collection.max_camera_age_s <= 0:
-        raise ValueError("collection.max_camera_age_s must be positive")
-    if config.collection.max_joint_feedback_age_s <= 0:
-        raise ValueError("collection.max_joint_feedback_age_s must be positive")
-    if config.collection.max_eef_feedback_age_s <= 0:
-        raise ValueError("collection.max_eef_feedback_age_s must be positive")
-    if config.collection.max_action_age_s <= 0:
-        raise ValueError("collection.max_action_age_s must be positive")
-    if config.collection.max_gripper_age_s <= 0:
-        raise ValueError("collection.max_gripper_age_s must be positive")
     if config.collection.max_joint_action_step_rad <= 0:
         raise ValueError("collection.max_joint_action_step_rad must be positive")
-    if config.bridge.initial_alignment_tolerance_rad < 0:
-        raise ValueError("bridge.initial_alignment_tolerance_rad must be non-negative")
-    if config.gripper.max_stroke_mm <= config.gripper.min_stroke_mm:
-        raise ValueError("gripper.max_stroke_mm must be greater than min_stroke_mm")
-    for label, camera in (("front", config.front_camera), ("wrist", config.wrist_camera)):
-        if camera.width <= 0 or camera.height <= 0 or camera.fps <= 0:
-            raise ValueError(f"cameras.{label} width/height/fps must be positive")
-        if camera.depth and (camera.depth_width <= 0 or camera.depth_height <= 0):
-            raise ValueError(f"cameras.{label} depth_width/depth_height must be positive")
-        if camera.crop is not None:
-            camera.crop.validate(
-                image_width=camera.width,
-                image_height=camera.height,
-                label=f"cameras.{label} crop",
-            )
-        if camera.backend not in {"realsense", "v4l2"}:
-            raise ValueError(f"cameras.{label}.backend must be 'realsense' or 'v4l2'")
-        if camera.backend == "realsense" and not camera.serial:
-            raise ValueError(f"cameras.{label}.serial is required for the RealSense backend")
-        if camera.backend == "v4l2" and not camera.device:
-            raise ValueError(f"cameras.{label}.device is required for the V4L2 backend")
-    if config.front_camera.backend != "realsense":
+    front = config.system.cameras.front
+    if front.backend != "realsense":
         raise ValueError("cameras.front.backend must be 'realsense' because teleop records optional depth framesets")
-    if config.front_camera.depth and config.front_camera.crop is not None and not config.front_camera.align_depth_to_color:
+    if front.depth and front.crop is not None and not front.align_depth_to_color:
         raise ValueError("front depth must be aligned to color when cameras.front crop is enabled")
-    for name, value in config.topics.__dict__.items():
-        if not value.startswith("/"):
-            raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
-    if len(config.bridge.target_joint_names) != config.bridge.dof:
+    if len(config.system.joint_safety.names) != config.bridge.dof:
         raise ValueError("bridge.target_joint_names length must match bridge.dof")
 
 
 def bridge_argv(config: TeleopConfig) -> list[str]:
     mapping = config.bridge.mapping
+    system = config.system
+    topics = system.topics
     args = [
         "--leader-port",
         config.leader.port,
@@ -305,13 +171,13 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         "--dof",
         str(config.bridge.dof),
         "--joint-states-topic",
-        config.topics.joint_states,
+        topics.joint_states,
         "--target-topic",
-        config.topics.target,
+        topics.joint_target,
         "--staged-command-topic",
-        config.topics.staged_command,
+        topics.staged_command,
         "--target-joint-names",
-        _csv(config.bridge.target_joint_names),
+        _csv(system.joint_safety.names),
         _bool_flag("relative", mapping.relative),
         _bool_flag("input-degrees", mapping.input_degrees),
         f"--scale={_csv(mapping.scale)}",
@@ -320,26 +186,26 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         f"--lower-limits={_csv(mapping.lower_limits)}",
         f"--upper-limits={_csv(mapping.upper_limits)}",
         "--motion-enable-topic",
-        config.topics.relay_enable,
+        topics.motion_enable,
         "--relay-status-topic",
-        config.topics.relay_status,
+        topics.relay_status,
         "--relay-enable-timeout",
-        _num(config.bridge.relay_enable_timeout_s),
+        _num(system.relay.enable_timeout_s),
         "--max-relay-status-age",
-        _num(config.bridge.max_relay_status_age_s),
+        _num(system.relay.max_status_age_s),
         "--a1-state-timeout",
         _num(config.bridge.a1_state_timeout_s),
         "--initial-alignment-tolerance",
-        _num(config.bridge.initial_alignment_tolerance_rad),
+        _num(system.joint_safety.initial_alignment_tolerance_rad),
         _bool_flag("gripper-enabled", config.gripper.enabled),
         "--gripper-source-key",
         config.gripper.source_key,
         "--gripper-topic",
-        config.topics.gripper_target,
+        topics.gripper_target,
         "--gripper-min-stroke-mm",
-        _num(config.gripper.min_stroke_mm),
+        _num(system.gripper.stroke_min_mm),
         "--gripper-max-stroke-mm",
-        _num(config.gripper.max_stroke_mm),
+        _num(system.gripper.stroke_max_mm),
     ]
     if config.gripper.invert:
         args.append("--gripper-invert")
@@ -347,6 +213,10 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
 
 
 def collect_argv(config: TeleopConfig) -> list[str]:
+    system = config.system
+    topics = system.topics
+    front = system.cameras.front
+    wrist = system.cameras.wrist
     args = [
         "--data-root",
         str(config.collection.data_root),
@@ -362,79 +232,79 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         "--ready-timeout-s",
         _num(config.collection.ready_timeout_s),
         "--max-camera-age-s",
-        _num(config.collection.max_camera_age_s),
+        _num(system.cameras.max_age_s),
         "--max-joint-feedback-age-s",
-        _num(config.collection.max_joint_feedback_age_s),
+        _num(system.joint_safety.max_feedback_age_s),
         "--max-eef-feedback-age-s",
-        _num(config.collection.max_eef_feedback_age_s),
+        _num(system.eef.max_feedback_age_s),
         "--max-action-age-s",
-        _num(config.collection.max_action_age_s),
+        _num(system.joint_safety.max_feedback_age_s),
         "--max-gripper-age-s",
-        _num(config.collection.max_gripper_age_s),
+        _num(system.joint_safety.max_feedback_age_s),
         "--max-joint-action-step-rad",
         _num(config.collection.max_joint_action_step_rad),
         "--joint-topic",
-        config.topics.joint_states,
+        topics.joint_states,
         "--eef-topic",
-        config.topics.eef,
+        topics.eef_pose,
         "--action-topic",
-        config.topics.target,
+        topics.joint_target,
         "--gripper-feedback-topic",
-        config.topics.gripper_feedback,
+        topics.gripper_feedback,
         "--gripper-action-topic",
-        config.topics.gripper_target,
+        topics.gripper_target,
         "--gripper-stroke-min",
-        _num(config.gripper.min_stroke_mm),
+        _num(system.gripper.stroke_min_mm),
         "--gripper-stroke-max",
-        _num(config.gripper.max_stroke_mm),
+        _num(system.gripper.stroke_max_mm),
         "--staged-command-topic",
-        config.topics.staged_command,
+        topics.staged_command,
         "--host-command-topic",
-        config.topics.host_command,
+        topics.host_command,
         "--cam0-width",
-        str(config.front_camera.width),
+        str(front.width),
         "--cam0-height",
-        str(config.front_camera.height),
+        str(front.height),
         "--cam0-fps",
-        str(config.front_camera.fps),
-        _bool_flag("cam0-require-usb3", config.front_camera.require_usb3),
-        _bool_flag("cam0-depth-enabled", config.front_camera.depth),
+        str(front.fps),
+        _bool_flag("cam0-require-usb3", front.require_usb3),
+        _bool_flag("cam0-depth-enabled", front.depth),
         "--cam0-depth-width",
-        str(config.front_camera.depth_width or config.front_camera.width),
+        str(front.depth_width or front.width),
         "--cam0-depth-height",
-        str(config.front_camera.depth_height or config.front_camera.height),
-        _bool_flag("cam0-align-depth-to-color", config.front_camera.align_depth_to_color),
-        _bool_flag("cam0-crop-enabled", config.front_camera.crop is not None),
+        str(front.depth_height or front.height),
+        _bool_flag("cam0-align-depth-to-color", front.align_depth_to_color),
+        _bool_flag("cam0-crop-enabled", front.crop is not None),
         "--cam1-device",
-        config.wrist_camera.device,
+        wrist.device,
         "--cam1-backend",
-        config.wrist_camera.backend,
+        wrist.backend,
         "--cam1-serial",
-        config.wrist_camera.serial,
+        wrist.serial,
         "--cam1-width",
-        str(config.wrist_camera.width),
+        str(wrist.width),
         "--cam1-height",
-        str(config.wrist_camera.height),
+        str(wrist.height),
         "--cam1-fps",
-        str(config.wrist_camera.fps),
+        str(wrist.fps),
         "--cam1-pixel-format",
-        config.wrist_camera.pixel_format,
-        *web_preview_argv(config.web_preview),
+        wrist.pixel_format,
+        *web_preview_argv(system.web_preview),
     ]
-    if config.front_camera.crop is not None:
+    if front.crop is not None:
         args.extend(
             [
                 "--cam0-crop-x",
-                str(config.front_camera.crop.x),
+                str(front.crop.x),
                 "--cam0-crop-y",
-                str(config.front_camera.crop.y),
+                str(front.crop.y),
                 "--cam0-crop-width",
-                str(config.front_camera.crop.width),
+                str(front.crop.width),
                 "--cam0-crop-height",
-                str(config.front_camera.crop.height),
+                str(front.crop.height),
             ]
         )
-    args.extend(["--cam0-serial", config.front_camera.serial])
+    args.extend(["--cam0-serial", front.serial])
     return args
 
 
@@ -442,15 +312,15 @@ def bash_config(config: TeleopConfig) -> str:
     lines = [
         _assign("CONFIG_PATH", str(config.path)),
         _assign("SYSTEM_CONFIG_PATH", str(config.system.path)),
-        _assign("IMAGE", config.host.image),
-        _assign("SERIAL", config.host.a1_serial),
+        _assign("IMAGE", config.system.host.image),
+        _assign("SERIAL", config.system.host.a1_serial),
         _assign("LEADER_PORT", config.leader.port),
         _assign("LEADER_ID", config.leader.id),
-        _assign("PREFIX", config.host.prefix),
-        _assign("RUN_DIR", config.host.run_dir),
-        _assign("STAGED_TOPIC", config.topics.staged_command),
-        _assign("RELAY_ENABLE_TOPIC", config.topics.relay_enable),
-        _assign("RELAY_STATUS_TOPIC", config.topics.relay_status),
+        _assign("PREFIX", config.runtime.prefix),
+        _assign("RUN_DIR", config.runtime.run_dir),
+        _assign("STAGED_TOPIC", config.system.topics.staged_command),
+        _assign("RELAY_ENABLE_TOPIC", config.system.topics.motion_enable),
+        _assign("RELAY_STATUS_TOPIC", config.system.topics.relay_status),
         _assign("JOINT_STATES_TOPIC", config.system.topics.joint_states),
         _assign("HOST_COMMAND_TOPIC", config.system.topics.host_command),
         _assign("MOTOR_STATUS_TOPIC", config.system.topics.motor_status),
@@ -463,10 +333,10 @@ def bash_config(config: TeleopConfig) -> str:
             "RELAY_MAX_INITIAL_ERROR_RAD",
             _num(config.system.joint_safety.initial_alignment_tolerance_rad),
         ),
-        _assign("TARGET_TOPIC", config.topics.target),
-        _assign("GRIPPER_MIN_STROKE_MM", _num(config.gripper.min_stroke_mm)),
-        _assign("GRIPPER_MAX_STROKE_MM", _num(config.gripper.max_stroke_mm)),
-        _assign("WEB_PREVIEW_PORT", str(config.web_preview.port)),
+        _assign("TARGET_TOPIC", config.system.topics.joint_target),
+        _assign("GRIPPER_MIN_STROKE_MM", _num(config.system.gripper.stroke_min_mm)),
+        _assign("GRIPPER_MAX_STROKE_MM", _num(config.system.gripper.stroke_max_mm)),
+        _assign("WEB_PREVIEW_PORT", str(config.system.web_preview.port)),
         _array("BRIDGE_ARGS", bridge_argv(config)),
         _array("COLLECT_ARGS", collect_argv(config)),
     ]

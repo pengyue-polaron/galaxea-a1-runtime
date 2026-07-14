@@ -30,6 +30,8 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     config = load_teleop_config(args.config, repo_root=ROOT)
+    front_config = config.system.cameras.front
+    wrist_config = config.system.cameras.wrist
     front = None
     wrist = None
     front_reader = None
@@ -44,38 +46,42 @@ def main() -> int:
     signal.signal(signal.SIGTERM, request_stop)
     try:
         front = RealSenseColorCamera(
-            config.front_camera.serial,
-            config.front_camera.width,
-            config.front_camera.height,
-            config.front_camera.fps,
+            front_config.serial,
+            front_config.width,
+            front_config.height,
+            front_config.fps,
             warmup_frames=20,
-            require_usb3=config.front_camera.require_usb3,
+            require_usb3=front_config.require_usb3,
         )
         wrist = open_color_camera(
-            config.wrist_camera.backend,
-            serial=config.wrist_camera.serial,
-            device=config.wrist_camera.device,
-            width=config.wrist_camera.width,
-            height=config.wrist_camera.height,
-            fps=config.wrist_camera.fps,
-            pixel_format=config.wrist_camera.pixel_format,
+            wrist_config.backend,
+            serial=wrist_config.serial,
+            device=wrist_config.device,
+            width=wrist_config.width,
+            height=wrist_config.height,
+            fps=wrist_config.fps,
+            pixel_format=wrist_config.pixel_format,
             warmup_frames=20,
         )
         front_reader = LatestCameraReader("front", front.read_frameset)
         wrist_reader = LatestCameraReader("wrist", wrist.read_bgr)
         front_reader.start()
         wrist_reader.start()
-        preview_config = config.web_preview if config.web_preview.enabled else replace(config.web_preview, enabled=True)
+        preview_config = (
+            config.system.web_preview
+            if config.system.web_preview.enabled
+            else replace(config.system.web_preview, enabled=True)
+        )
         preview = CameraWebPreview(preview_config)
         preview.register_reader(
             "agent",
             front_reader,
             extract=color_from_frameset,
             source=front.label,
-            overlay_roi=config.front_camera.crop,
+            overlay_roi=front_config.crop,
             overlay_label=(
-                f"RECORDED {config.front_camera.crop.width}x{config.front_camera.crop.height}"
-                if config.front_camera.crop is not None
+                f"RECORDED {front_config.crop.width}x{front_config.crop.height}"
+                if front_config.crop is not None
                 else ""
             ),
         )

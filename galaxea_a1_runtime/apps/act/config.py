@@ -18,11 +18,7 @@ from galaxea_a1_runtime.configuration.base import (
     string as _string,
 )
 from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi
-from galaxea_a1_runtime.hardware.web_preview import (
-    WebPreviewConfig,
-    web_preview_argv,
-)
+from galaxea_a1_runtime.hardware.web_preview import web_preview_argv
 
 DEFAULT_ACT_CONFIG = Path("configs/deployments/act_joint.toml")
 
@@ -57,63 +53,6 @@ class ActExecutionConfig:
 
 
 @dataclass(frozen=True)
-class ActTopicsConfig:
-    joint_states: str
-    target: str
-    staged_command: str
-    motion_enable: str
-    relay_status: str
-    gripper_target: str
-    gripper_feedback: str
-
-
-@dataclass(frozen=True)
-class ActRelayConfig:
-    enable_timeout_s: float
-    max_status_age_s: float
-
-
-@dataclass(frozen=True)
-class ActSafetyConfig:
-    target_joint_names: tuple[str, ...]
-    lower_limits: tuple[float, ...]
-    upper_limits: tuple[float, ...]
-    action_step_guard_enabled: bool
-    max_joint_action_step_rad: float
-    max_first_target_delta_rad: float
-    initial_alignment_tolerance_rad: float
-    state_timeout_s: float
-    max_feedback_age_s: float
-    max_camera_age_s: float
-
-
-@dataclass(frozen=True)
-class ActGripperConfig:
-    stroke_min_mm: float
-    stroke_max_mm: float
-
-
-@dataclass(frozen=True)
-class ActCameraConfig:
-    width: int
-    height: int
-    fps: int
-    warmup_frames: int
-    front_serial: str
-    front_auto_exposure: bool
-    front_exposure: int
-    front_gain: int
-    front_auto_white_balance: bool
-    front_white_balance: int
-    front_crop: ImageRoi | None
-    wrist_backend: str
-    wrist_serial: str
-    wrist_device: str
-    wrist_backend_api: str
-    wrist_pixel_format: str
-
-
-@dataclass(frozen=True)
 class ActConfig:
     path: Path
     system: SystemConfig
@@ -121,12 +60,6 @@ class ActConfig:
     runtime: ActRuntimeConfig
     policy: ActPolicyConfig
     execution: ActExecutionConfig
-    topics: ActTopicsConfig
-    relay: ActRelayConfig
-    safety: ActSafetyConfig
-    gripper: ActGripperConfig
-    cameras: ActCameraConfig
-    web_preview: WebPreviewConfig
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -141,9 +74,6 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
     runtime = _required_table(data, "runtime")
     policy = _required_table(data, "policy")
     execution = _required_table(data, "execution")
-    front = system.cameras.front
-    wrist = system.cameras.wrist
-
     config = ActConfig(
         path=path,
         system=system,
@@ -166,54 +96,6 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
             print_actions=bool(execution.get("print_actions", True)),
             preview_steps=int(execution.get("preview_steps", 5)),
         ),
-        topics=ActTopicsConfig(
-            joint_states=system.topics.joint_states,
-            target=system.topics.joint_target,
-            staged_command=system.topics.staged_command,
-            motion_enable=system.topics.motion_enable,
-            relay_status=system.topics.relay_status,
-            gripper_target=system.topics.gripper_target,
-            gripper_feedback=system.topics.gripper_feedback,
-        ),
-        relay=ActRelayConfig(
-            enable_timeout_s=system.relay.enable_timeout_s,
-            max_status_age_s=system.relay.max_status_age_s,
-        ),
-        safety=ActSafetyConfig(
-            target_joint_names=system.joint_safety.names,
-            lower_limits=system.joint_safety.lower_limits,
-            upper_limits=system.joint_safety.upper_limits,
-            action_step_guard_enabled=system.joint_safety.action_step_guard_enabled,
-            max_joint_action_step_rad=system.joint_safety.max_action_step_rad,
-            max_first_target_delta_rad=system.joint_safety.max_first_target_delta_rad,
-            initial_alignment_tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
-            state_timeout_s=system.joint_safety.state_timeout_s,
-            max_feedback_age_s=system.joint_safety.max_feedback_age_s,
-            max_camera_age_s=system.cameras.max_age_s,
-        ),
-        gripper=ActGripperConfig(
-            stroke_min_mm=system.gripper.stroke_min_mm,
-            stroke_max_mm=system.gripper.stroke_max_mm,
-        ),
-        cameras=ActCameraConfig(
-            width=front.width,
-            height=front.height,
-            fps=front.fps,
-            warmup_frames=system.cameras.warmup_frames,
-            front_serial=front.serial,
-            front_auto_exposure=front.auto_exposure,
-            front_exposure=front.exposure,
-            front_gain=front.gain,
-            front_auto_white_balance=front.auto_white_balance,
-            front_white_balance=front.white_balance,
-            front_crop=front.crop,
-            wrist_backend=wrist.backend,
-            wrist_serial=wrist.serial,
-            wrist_device=wrist.device,
-            wrist_backend_api=wrist.backend_api,
-            wrist_pixel_format=wrist.pixel_format,
-        ),
-        web_preview=system.web_preview,
     )
     validate_act_config(config)
     return config
@@ -228,44 +110,14 @@ def validate_act_config(config: ActConfig) -> None:
         raise ValueError("execution.max_model_calls must be >= 0")
     if config.execution.preview_steps <= 0:
         raise ValueError("execution.preview_steps must be positive")
-    if config.relay.enable_timeout_s <= 0 or config.relay.max_status_age_s <= 0:
-        raise ValueError("relay timeouts must be positive")
-    if config.cameras.width <= 0 or config.cameras.height <= 0 or config.cameras.fps <= 0:
-        raise ValueError("camera width/height/fps must be positive")
-    if config.cameras.warmup_frames < 0:
-        raise ValueError("cameras.warmup_frames must be non-negative")
-    if not config.cameras.front_serial:
-        raise ValueError("cameras.front.serial is required")
-    if config.cameras.front_crop is None:
-        raise ValueError("cameras.front crop must be enabled for the inference input contract")
-    if config.cameras.wrist_backend not in {"realsense", "v4l2"}:
-        raise ValueError("cameras.wrist.backend must be 'realsense' or 'v4l2'")
-    if config.cameras.wrist_backend == "realsense" and not config.cameras.wrist_serial:
-        raise ValueError("cameras.wrist.serial is required for the RealSense backend")
-    if config.cameras.wrist_backend == "v4l2" and not config.cameras.wrist_device:
-        raise ValueError("cameras.wrist.device is required for the V4L2 backend")
-    for name, value in config.topics.__dict__.items():
-        if not value.startswith("/"):
-            raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
-    if len(set(config.safety.target_joint_names)) != len(config.safety.target_joint_names):
-        raise ValueError("safety.target_joint_names must not contain duplicates")
-    if any(lo >= hi for lo, hi in zip(config.safety.lower_limits, config.safety.upper_limits, strict=True)):
-        raise ValueError("safety.lower_limits must be below upper_limits")
-    for label, value in (
-        ("safety.max_joint_action_step_rad", config.safety.max_joint_action_step_rad),
-        ("safety.max_first_target_delta_rad", config.safety.max_first_target_delta_rad),
-        ("safety.initial_alignment_tolerance_rad", config.safety.initial_alignment_tolerance_rad),
-        ("safety.state_timeout_s", config.safety.state_timeout_s),
-        ("safety.max_feedback_age_s", config.safety.max_feedback_age_s),
-        ("safety.max_camera_age_s", config.safety.max_camera_age_s),
-    ):
-        if value <= 0:
-            raise ValueError(f"{label} must be positive")
-    if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
-        raise ValueError("gripper.stroke_max_mm must be greater than stroke_min_mm")
 
 
 def bridge_argv(config: ActConfig) -> list[str]:
+    system = config.system
+    topics = system.topics
+    safety = system.joint_safety
+    front = system.cameras.front
+    wrist = system.cameras.wrist
     args = [
         "--checkpoint",
         str(config.policy.checkpoint),
@@ -284,88 +136,88 @@ def bridge_argv(config: ActConfig) -> list[str]:
         "--preview-steps",
         str(config.execution.preview_steps),
         "--joint-states-topic",
-        config.topics.joint_states,
+        topics.joint_states,
         "--target-topic",
-        config.topics.target,
+        topics.joint_target,
         "--staged-command-topic",
-        config.topics.staged_command,
+        topics.staged_command,
         "--motion-enable-topic",
-        config.topics.motion_enable,
+        topics.motion_enable,
         "--relay-status-topic",
-        config.topics.relay_status,
+        topics.relay_status,
         "--gripper-target-topic",
-        config.topics.gripper_target,
+        topics.gripper_target,
         "--gripper-feedback-topic",
-        config.topics.gripper_feedback,
+        topics.gripper_feedback,
         "--relay-enable-timeout",
-        _num(config.relay.enable_timeout_s),
+        _num(system.relay.enable_timeout_s),
         "--max-relay-status-age",
-        _num(config.relay.max_status_age_s),
+        _num(system.relay.max_status_age_s),
         "--target-joint-names",
-        *config.safety.target_joint_names,
+        *safety.names,
         "--lower-limits",
-        *(_num(value) for value in config.safety.lower_limits),
+        *(_num(value) for value in safety.lower_limits),
         "--upper-limits",
-        *(_num(value) for value in config.safety.upper_limits),
-        _bool_flag("action-step-guard-enabled", config.safety.action_step_guard_enabled),
+        *(_num(value) for value in safety.upper_limits),
+        _bool_flag("action-step-guard-enabled", safety.action_step_guard_enabled),
         "--max-joint-action-step-rad",
-        _num(config.safety.max_joint_action_step_rad),
+        _num(safety.max_action_step_rad),
         "--max-first-target-delta-rad",
-        _num(config.safety.max_first_target_delta_rad),
+        _num(safety.max_first_target_delta_rad),
         "--initial-alignment-tolerance",
-        _num(config.safety.initial_alignment_tolerance_rad),
+        _num(safety.initial_alignment_tolerance_rad),
         "--state-timeout",
-        _num(config.safety.state_timeout_s),
+        _num(safety.state_timeout_s),
         "--max-feedback-age",
-        _num(config.safety.max_feedback_age_s),
+        _num(safety.max_feedback_age_s),
         "--max-camera-age",
-        _num(config.safety.max_camera_age_s),
+        _num(system.cameras.max_age_s),
         "--gripper-stroke-min",
-        _num(config.gripper.stroke_min_mm),
+        _num(system.gripper.stroke_min_mm),
         "--gripper-stroke-max",
-        _num(config.gripper.stroke_max_mm),
+        _num(system.gripper.stroke_max_mm),
         "--cam-width",
-        str(config.cameras.width),
+        str(front.width),
         "--cam-height",
-        str(config.cameras.height),
+        str(front.height),
         "--cam-fps",
-        str(config.cameras.fps),
+        str(front.fps),
         "--camera-warmup-frames",
-        str(config.cameras.warmup_frames),
-        _bool_flag("cam0-auto-exposure", config.cameras.front_auto_exposure),
+        str(system.cameras.warmup_frames),
+        _bool_flag("cam0-auto-exposure", front.auto_exposure),
         "--cam0-exposure",
-        str(config.cameras.front_exposure),
+        str(front.exposure),
         "--cam0-gain",
-        str(config.cameras.front_gain),
-        _bool_flag("cam0-auto-white-balance", config.cameras.front_auto_white_balance),
+        str(front.gain),
+        _bool_flag("cam0-auto-white-balance", front.auto_white_balance),
         "--cam0-white-balance",
-        str(config.cameras.front_white_balance),
-        _bool_flag("cam0-crop-enabled", config.cameras.front_crop is not None),
+        str(front.white_balance),
+        _bool_flag("cam0-crop-enabled", front.crop is not None),
         "--cam1-device",
-        config.cameras.wrist_device,
+        wrist.device,
         "--cam1-backend",
-        config.cameras.wrist_backend,
+        wrist.backend,
         "--cam1-serial",
-        config.cameras.wrist_serial,
+        wrist.serial,
         "--cam1-backend-api",
-        config.cameras.wrist_backend_api,
+        wrist.backend_api,
         "--cam1-pixel-format",
-        config.cameras.wrist_pixel_format,
-        *web_preview_argv(config.web_preview),
+        wrist.pixel_format,
+        *web_preview_argv(system.web_preview),
     ]
-    if config.cameras.front_serial:
-        args.extend(["--cam0-serial", config.cameras.front_serial])
-    if config.cameras.front_crop is not None:
+    if front.serial:
+        args.extend(["--cam0-serial", front.serial])
+    if front.crop is not None:
         args.extend(
             [
                 "--cam0-crop-x",
-                str(config.cameras.front_crop.x),
+                str(front.crop.x),
                 "--cam0-crop-y",
-                str(config.cameras.front_crop.y),
+                str(front.crop.y),
                 "--cam0-crop-width",
-                str(config.cameras.front_crop.width),
+                str(front.crop.width),
                 "--cam0-crop-height",
-                str(config.cameras.front_crop.height),
+                str(front.crop.height),
             ]
         )
     return args
@@ -379,9 +231,9 @@ def bash_config(config: ActConfig) -> str:
         _assign("PREFIX", config.runtime.prefix),
         _assign("CHECKPOINT", str(config.policy.checkpoint)),
         _assign("DEPLOYMENT_READY", "1" if config.policy.deployment_ready else "0"),
-        _assign("WRIST_BACKEND", config.cameras.wrist_backend),
-        _assign("WRIST_SERIAL", config.cameras.wrist_serial),
-        _assign("WRIST_CAMERA", config.cameras.wrist_device),
+        _assign("WRIST_BACKEND", config.system.cameras.wrist.backend),
+        _assign("WRIST_SERIAL", config.system.cameras.wrist.serial),
+        _assign("WRIST_CAMERA", config.system.cameras.wrist.device),
         _array("BRIDGE_ARGS", bridge_argv(config)),
     ]
     return "\n".join(lines)

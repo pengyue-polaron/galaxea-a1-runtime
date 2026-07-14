@@ -46,6 +46,8 @@ def main() -> int:
     args = parse_args()
     config_path = args.config or default_config_path(ROOT_DIR)
     config = load_teleop_config(config_path, repo_root=ROOT_DIR)
+    front_config = config.system.cameras.front
+    wrist_config = config.system.cameras.wrist
     out_dir = args.out_dir or (
         ROOT_DIR
         / "data"
@@ -59,25 +61,25 @@ def main() -> int:
     wrist: ColorCamera | None = None
     try:
         front = RealSenseColorCamera(
-            config.front_camera.serial,
-            config.front_camera.width,
-            config.front_camera.height,
-            config.front_camera.fps,
-            enable_depth=config.front_camera.depth,
-            depth_width=config.front_camera.depth_width,
-            depth_height=config.front_camera.depth_height,
-            align_depth_to_color=config.front_camera.align_depth_to_color,
+            front_config.serial,
+            front_config.width,
+            front_config.height,
+            front_config.fps,
+            enable_depth=front_config.depth,
+            depth_width=front_config.depth_width,
+            depth_height=front_config.depth_height,
+            align_depth_to_color=front_config.align_depth_to_color,
             warmup_frames=args.warmup_frames,
-            require_usb3=config.front_camera.require_usb3,
+            require_usb3=front_config.require_usb3,
         )
         wrist = open_color_camera(
-            config.wrist_camera.backend,
-            serial=config.wrist_camera.serial,
-            device=config.wrist_camera.device,
-            width=config.wrist_camera.width,
-            height=config.wrist_camera.height,
-            fps=config.wrist_camera.fps,
-            pixel_format=config.wrist_camera.pixel_format,
+            wrist_config.backend,
+            serial=wrist_config.serial,
+            device=wrist_config.device,
+            width=wrist_config.width,
+            height=wrist_config.height,
+            fps=wrist_config.fps,
+            pixel_format=wrist_config.pixel_format,
             warmup_frames=args.warmup_frames,
         )
 
@@ -85,8 +87,8 @@ def main() -> int:
             front,
             wrist,
             duration_s=args.probe_s,
-            front_target_fps=config.front_camera.fps,
-            wrist_target_fps=config.wrist_camera.fps,
+            front_target_fps=front_config.fps,
+            wrist_target_fps=wrist_config.fps,
         )
         front_frameset = wait_realsense_frameset(front, timeout_s=args.timeout_s, label="front")
         front_img = front_frameset.color_bgr
@@ -103,7 +105,7 @@ def main() -> int:
             ("cam0 front", front_img),
             (f"cam1 wrist {wrist.label}", wrist_img),
         ]
-        if config.front_camera.depth:
+        if front_config.depth:
             if front_frameset.depth_mm is None:
                 raise RuntimeError("RealSense depth is enabled but no depth frame was captured")
             depth_path = out_dir / "cam0_depth.png"

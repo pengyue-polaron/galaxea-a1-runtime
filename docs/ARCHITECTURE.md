@@ -10,13 +10,19 @@ LeRobotDataset v3.0.
    - `safety.py`: pure relay and limit checks.
    - `collection/`: teleop raw state/action schema and episode helpers.
    - `teleop/`: pure SO leader to A1 joint mapping helpers.
-   - `hardware/`: IO protocol, EEF helpers, ROS1 safe adapter, shared camera IO.
+   - `hardware/`: IO protocol, EEF helpers, shared camera IO, and web preview.
    - `policies/`: normalized action contract and policy profile metadata.
    - `apps/`: reusable app helpers plus app-specific transforms.
-   - `lerobot/`: `GalaxeaA1Robot`, writer helpers, passive recorder, migration.
+   - `lerobot/`: explicit-IO `GalaxeaA1Robot`, writer helpers, passive recorder,
+     migration, and atomic dataset output.
    - `runtime/`: doctor and safety report.
 
 2. Base runtime: `scripts/runtime`
+
+   - `a1_services.sh` is the thin, app-agnostic owner of repeated Docker,
+     ROS-master, driver, feedback-wait, and locked-relay startup primitives.
+   - `a1_runtime.sh`, `a1_joint_runtime.sh`, and the teleop runtime retain their
+     own tracker choice, lifecycle, doctors, UI, and failure policy.
    - Owns ROS master, A1 driver, isolated EE/joint trackers, and safe relay.
    - Must stay app-agnostic and LingBot-free.
 
@@ -160,10 +166,14 @@ Teleop is the built-in demonstration collection mode.
   collection contract.
 - `configs/deployments/`: checkpoint-specific model and rollout contracts.
 
-`SystemConfig` is the only typed physical configuration. The former parallel
-`RuntimeConfig/TopicConfig/SafetyConfig` stack has been removed. Dataset writer
-settings remain a data-layer `DatasetConfig`; they contain no hardware topics,
-limits, or gripper range.
+`SystemConfig` is the only typed physical configuration. ACT, LingBot, and
+teleop config objects retain a direct `system: SystemConfig` reference and only
+define model/app semantics; their CLI arguments read topics, relay thresholds,
+cameras, EEF bounds, joint limits, and gripper range directly from that object.
+The former parallel `RuntimeConfig/TopicConfig/SafetyConfig` stack and app-level
+physical mirror dataclasses have been removed. Dataset writer settings remain a
+data-layer `DatasetConfig`; they contain no hardware topics, limits, or gripper
+range.
 
 The episode interaction is:
 

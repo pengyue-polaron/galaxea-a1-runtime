@@ -34,8 +34,7 @@ TRACKER_CONTAINER="${PREFIX}-joint-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
 LOG_DIR="${RUN_DIR}/logs"
 BRIDGE_PID_FILE="${RUN_DIR}/bridge.pid"
-
-ros_prefix='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash"'
+source "${ROOT}/scripts/runtime/a1_services.sh"
 
 if [[ -t 1 && -z "${NO_COLOR:-}" ]]; then
   COLOR_CYAN=$'\033[1;36m'
@@ -52,23 +51,6 @@ fi
 step() { echo "${COLOR_CYAN}$*${COLOR_RESET}"; }
 success() { echo "${COLOR_GREEN}$*${COLOR_RESET}"; }
 failure() { echo "${COLOR_RED}$*${COLOR_RESET}" >&2; }
-
-container_run() {
-  local name="$1"
-  shift
-  docker rm -f "${name}" >/dev/null 2>&1 || true
-  docker run -d \
-    --name "${name}" \
-    --network host \
-    --ipc host \
-    --privileged \
-    -v "${ROOT}:/workspace:rw" \
-    -v /dev:/dev:rw \
-    -e A1_SDK_ROOT=/workspace/third_party/A1_SDK \
-    "${IMAGE}" \
-    bash -lc "$*" \
-    >/dev/null
-}
 
 bridge_group_has_live_process() {
   local pgid="$1"
@@ -106,43 +88,12 @@ stop_bridge() {
 
 stop_runtime() {
   stop_bridge
-  docker rm -f \
+  a1_remove_runtime_containers \
     "${RELAY_CONTAINER}" \
     "${TRACKER_CONTAINER}" \
     "${DRIVER_CONTAINER}" \
-    "${ROSCORE_CONTAINER}" \
-    >/dev/null 2>&1 || true
+    "${ROSCORE_CONTAINER}"
   echo "A1 teleop runtime stopped."
-}
-
-wait_valid_joint_feedback() {
-  local deadline=$((SECONDS + 20))
-  while (( SECONDS < deadline )); do
-    if docker exec "${DRIVER_CONTAINER}" bash -lc \
-      "${ros_prefix}; timeout 2 rostopic echo -n1 '${JOINT_STATES_TOPIC}' | grep -Eq '^position: \\[[^]]+\\]'" \
-      >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  echo "[FAIL] No non-empty ${JOINT_STATES_TOPIC} after 20 seconds." >&2
-  return 1
-}
-
-wait_topic() {
-  local container="$1"
-  local topic="$2"
-  local deadline=$((SECONDS + 15))
-  while (( SECONDS < deadline )); do
-    if docker exec "${container}" bash -lc \
-      "${ros_prefix}; timeout 2 rostopic echo -n1 '${topic}' >/dev/null" \
-      >/dev/null 2>&1; then
-      return 0
-    fi
-    sleep 1
-  done
-  echo "[FAIL] No message on ${topic} after 15 seconds." >&2
-  return 1
 }
 
 check_host_inputs() {
@@ -164,41 +115,21 @@ start_services() {
   stop_runtime >/dev/null 2>&1 || true
   mkdir -p "${LOG_DIR}"
 
-  if ! timeout 1 bash -c '</dev/tcp/127.0.0.1/11311' >/dev/null 2>&1; then
-    step "[1/4] ROS master"
-    container_run "${ROSCORE_CONTAINER}" \
-      "${ros_prefix} && exec roscore"
-    local deadline=$((SECONDS + 10))
-    until timeout 1 bash -c '</dev/tcp/127.0.0.1/11311' >/dev/null 2>&1; do
-      if (( SECONDS >= deadline )); then
-        echo "[FAIL] ROS master did not start." >&2
-        exit 2
-      fi
-      sleep 0.5
-    done
-  fi
+  step "[1/4] ROS master"
+  a1_ensure_roscore "${ROSCORE_CONTAINER}"
 
   step "[2/4] A1 driver"
-  container_run "${DRIVER_CONTAINER}" \
-    "${ros_prefix} && exec roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=${SERIAL}"
-  wait_valid_joint_feedback
+  a1_start_driver "${DRIVER_CONTAINER}"
+  a1_wait_valid_joint_feedback "${DRIVER_CONTAINER}" "${JOINT_STATES_TOPIC}"
 
   step "[3/4] Joint tracker"
-  container_run "${TRACKER_CONTAINER}" \
-    "${ros_prefix} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} target_topic:=${TARGET_TOPIC}"
-  wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
+  a1_container_run "${TRACKER_CONTAINER}" \
+    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} target_topic:=${TARGET_TOPIC}"
+  a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
 
   step "[4/4] Command relay"
-  container_run "${RELAY_CONTAINER}" \
-    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py \
-      --input-topic '${STAGED_TOPIC}' --output-topic '${HOST_COMMAND_TOPIC}' \
-      --joint-topic '${JOINT_STATES_TOPIC}' --motor-status-topic '${MOTOR_STATUS_TOPIC}' \
-      --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}' \
-      --gripper-input-topic '${GRIPPER_TARGET_TOPIC}' --gripper-output-topic '${GRIPPER_COMMAND_TOPIC}' \
-      --gripper-min-stroke-mm '${GRIPPER_MIN_STROKE_MM}' --gripper-max-stroke-mm '${GRIPPER_MAX_STROKE_MM}' \
-      --max-input-age '${RELAY_MAX_INPUT_AGE_S}' --arming-timeout '${RELAY_ARMING_TIMEOUT_S}' \
-      --max-initial-error '${RELAY_MAX_INITIAL_ERROR_RAD}'"
-  wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
+  a1_start_command_relay "${RELAY_CONTAINER}"
+  a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
   success "[Setup] Services ready"
 }

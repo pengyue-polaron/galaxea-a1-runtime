@@ -243,10 +243,27 @@ def validate_system_config(config: SystemConfig) -> None:
         raise ValueError("topics.gripper_target must differ from topics.gripper_command")
     if any(lo >= hi for lo, hi in zip(config.joint_safety.lower_limits, config.joint_safety.upper_limits, strict=True)):
         raise ValueError("joint_safety lower_limits must be below upper_limits")
+    if len(set(config.joint_safety.names)) != len(config.joint_safety.names):
+        raise ValueError("joint_safety.names must not contain duplicates")
+    for name, value in (
+        ("max_action_step_rad", config.joint_safety.max_action_step_rad),
+        ("max_first_target_delta_rad", config.joint_safety.max_first_target_delta_rad),
+        ("initial_alignment_tolerance_rad", config.joint_safety.initial_alignment_tolerance_rad),
+        ("state_timeout_s", config.joint_safety.state_timeout_s),
+        ("max_feedback_age_s", config.joint_safety.max_feedback_age_s),
+    ):
+        if value <= 0:
+            raise ValueError(f"joint_safety.{name} must be positive")
     if config.eef.orientation_mode not in {"hold-current", "model-quat"}:
         raise ValueError("eef.orientation_mode must be hold-current or model-quat")
     if any(lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)):
         raise ValueError("eef.xyz_min must be below xyz_max")
+    if min(
+        config.eef.min_quat_norm,
+        config.eef.max_feedback_age_s,
+        config.eef.feedback_wait_timeout_s,
+    ) <= 0:
+        raise ValueError("eef quaternion and feedback limits must be positive")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke range is invalid")
     if min(
@@ -256,13 +273,23 @@ def validate_system_config(config: SystemConfig) -> None:
         config.relay.arming_timeout_s,
     ) <= 0:
         raise ValueError("relay timeouts must be positive")
+    if config.cameras.warmup_frames < 0:
+        raise ValueError("cameras.warmup_frames must be non-negative")
+    if config.cameras.max_age_s <= 0:
+        raise ValueError("cameras.max_age_s must be positive")
     if config.cameras.front.crop is None:
         raise ValueError("system AgentView crop must be enabled")
     for name, camera in (("front", config.cameras.front), ("wrist", config.cameras.wrist)):
         if min(camera.width, camera.height, camera.fps) <= 0:
             raise ValueError(f"cameras.{name} dimensions/fps must be positive")
+        if camera.depth and min(camera.depth_width, camera.depth_height) <= 0:
+            raise ValueError(f"cameras.{name} depth dimensions must be positive")
+        if camera.backend not in {"realsense", "v4l2"}:
+            raise ValueError(f"cameras.{name}.backend must be realsense or v4l2")
         if camera.backend == "realsense" and not camera.serial:
             raise ValueError(f"cameras.{name}.serial is required")
+        if camera.backend == "v4l2" and not camera.device:
+            raise ValueError(f"cameras.{name}.device is required")
 
 
 def bash_config(config: SystemConfig) -> str:

@@ -50,7 +50,7 @@ def main() -> int:
     job.action_per_frame = policy.action_per_frame
     job.attn_window = policy.attention_window
     job.action_dim = 30
-    job.obs_cam_keys = [config.cameras.front_observation_key, config.cameras.wrist_observation_key]
+    job.obs_cam_keys = [config.observations.front_key, config.observations.wrist_key]
     job.guidance_scale = policy.guidance_scale
     job.action_guidance_scale = policy.action_guidance_scale
     job.num_inference_steps = policy.video_inference_steps

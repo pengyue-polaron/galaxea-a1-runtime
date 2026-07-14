@@ -101,11 +101,11 @@ def test_agentview_roi_is_identical_across_collection_and_inference_configs():
         REPO / "configs/deployments/lingbot_va.toml", repo_root=REPO
     )
 
-    assert teleop.front_camera.crop is not None
-    assert act.cameras.front_crop is not None
-    assert lingbot.cameras.front_crop is not None
+    assert teleop.system.cameras.front.crop is not None
+    assert act.system.cameras.front.crop is not None
+    assert lingbot.system.cameras.front.crop is not None
     assert {
-        teleop.front_camera.crop.xywh,
-        act.cameras.front_crop.xywh,
-        lingbot.cameras.front_crop.xywh,
+        teleop.system.cameras.front.crop.xywh,
+        act.system.cameras.front.crop.xywh,
+        lingbot.system.cameras.front.crop.xywh,
     } == {(103, 0, 480, 480)}
