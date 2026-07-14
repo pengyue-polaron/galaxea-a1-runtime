@@ -4,7 +4,7 @@ from galaxea_a1_runtime.apps.act.config import bash_config, bridge_argv, load_ac
 
 
 REPO = Path(__file__).resolve().parents[1]
-CONFIG = REPO / "configs" / "inference" / "a1_act_joint.toml"
+CONFIG = REPO / "configs" / "deployments" / "act_joint.toml"
 
 
 def _load_config_with_temp_checkpoint(tmp_path: Path):
@@ -41,7 +41,7 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
         "arm_joint5",
         "arm_joint6",
     )
-    assert config.safety.max_first_target_delta_rad == 10.0
+    assert config.safety.action_step_guard_enabled is False
     assert config.safety.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.command_mode == "continuous"
     assert config.gripper.stroke_min_mm == 0.0
@@ -64,6 +64,7 @@ def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
     assert args[args.index("--staged-command-topic") + 1] == "/arm_joint_command_a1_staged"
     assert args[args.index("--motion-enable-topic") + 1] == "/a1_arm_motion_enable"
     assert "--no-execute" in args
+    assert "--no-action-step-guard-enabled" in args
     assert "--step-mode" in args
     assert args[args.index("--execute-steps-per-inference") + 1] == "100"
     assert args[args.index("--max-model-calls") + 1] == "0"

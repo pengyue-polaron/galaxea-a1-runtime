@@ -112,7 +112,7 @@ def default_dataset_contract(
     *,
     action_mode: ActionMode = ActionMode.EEF_DELTA,
     cameras: tuple[CameraSpec, ...] = (
-        CameraSpec("front", height=480, width=640),
+        CameraSpec("front", height=480, width=480),
         CameraSpec("wrist", height=480, width=640),
     ),
 ) -> DatasetContract:

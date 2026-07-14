@@ -95,10 +95,10 @@ def test_agentview_roi_is_identical_across_collection_and_inference_configs():
         REPO / "configs/teleop/a1_so100.toml", repo_root=REPO
     )
     act = load_act_config(
-        REPO / "configs/inference/a1_act_joint.toml", repo_root=REPO
+        REPO / "configs/deployments/act_joint.toml", repo_root=REPO
     )
     lingbot = load_lingbot_config(
-        REPO / "configs/inference/a1_lingbot_va.toml", repo_root=REPO
+        REPO / "configs/deployments/lingbot_va.toml", repo_root=REPO
     )
 
     assert teleop.front_camera.crop is not None

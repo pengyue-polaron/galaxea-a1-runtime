@@ -469,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("configs/datasets/banana_in_the_plate.toml"),
+        required=True,
     )
     parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)

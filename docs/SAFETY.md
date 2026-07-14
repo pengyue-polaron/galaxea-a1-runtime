@@ -63,7 +63,7 @@ apps. They still do not publish host commands directly:
   continuous policy output mapped into a task-sized 0-80 mm stroke.
 - LingBot workspace bounds apply to outgoing targets, not feedback state.
 - LingBot orientation defaults to `hold-current`.
-- LingBot execution settings live in `configs/inference/a1_lingbot_va.toml`;
+- LingBot execution settings live in `configs/deployments/lingbot_va.toml`;
   avoid per-run hidden flags.
 - The LingBot KV cache records tracker commands because its training
   action is a commanded episode-relative EEF target. Measured EEF feedback is
@@ -71,8 +71,11 @@ apps. They still do not publish host commands directly:
   context.
 - LingBot bridge exit is guarded: normal completion, errors, and `Ctrl-C` stop
   the A1 runtime and policy server.
-- ACT execution settings live in `configs/inference/a1_act_joint.toml`; the
+- ACT execution settings live in `configs/deployments/act_joint.toml`; the
   tracked default is `execution.execute = false`.
+- ACT action-step jump rejection is explicitly disabled by
+  `configs/system/a1.toml [joint_safety.action_step_guard_enabled]`. Finite
+  values and absolute joint limits are still enforced before execution.
 - Teleop datasets store only `0` or `1`: `0` is closed and `1` is open.
   Hardware command stroke is controlled separately by the tracked app config.
 - LingBot waits for relay `ACTIVE` before gripper publish because the gripper

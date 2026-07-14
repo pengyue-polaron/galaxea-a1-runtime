@@ -101,12 +101,14 @@ just stop
 ```
 
 LingBot runtime parameters live in
-[configs/inference/a1_lingbot_va.toml](configs/inference/a1_lingbot_va.toml).
+[configs/deployments/lingbot_va.toml](configs/deployments/lingbot_va.toml).
 The tracked command starts the managed deployment policy server before the A1
 runtime. The checked-in profile is currently fail-closed until a new checkpoint,
 prompt, and dataset quantiles are registered. Edit that file when the
-checkpoint, server, prompt, cameras, EEF workspace, execution cadence, or
-gripper mapping changes.
+checkpoint, server, prompt, rollout cadence, or model gripper mapping changes.
+Physical topics, cameras, joint limits, EEF workspace/quaternion behavior, and
+the physical gripper contract live once in
+[configs/system/a1.toml](configs/system/a1.toml).
 
 Deployment weights are registered under the ignored local `models/` directory;
 see [models/README.md](models/README.md). `just models` validates every configured
@@ -121,7 +123,7 @@ just stop
 ```
 
 ACT runtime parameters live in
-[configs/inference/a1_act_joint.toml](configs/inference/a1_act_joint.toml).
+[configs/deployments/act_joint.toml](configs/deployments/act_joint.toml).
 It starts dry-run and step-gated by default. Set `execution.execute = true` in
 that tracked file only after static checks, camera checks, and a clear robot
 workspace.
@@ -219,8 +221,9 @@ devices, restarts the bridge, and waits for the next episode. Discarding an
 episode does not trigger a reset.
 
 Runtime parameters live in [configs/teleop/a1_so100.toml](configs/teleop/a1_so100.toml).
-Edit that tracked file when the SO leader port, cameras, topics, state mode,
-FPS, automatic post-save reset, joint mapping, or gripper stroke range changes.
+Edit it for the SO leader, state mode, FPS, reset, or joint mapping. Edit
+[configs/system/a1.toml](configs/system/a1.toml) for cameras, topics, physical
+joint limits, and physical gripper range.
 The normal collection entrypoint does not take per-run collector flags.
 
 The A1 leader adapter lives in
@@ -245,7 +248,7 @@ that episode.
 
 The default tracked teleop config is USB2-compatible RGB-only. Depth capture is
 still supported, but it should be enabled intentionally in
-`configs/teleop/a1_so100.toml` after the RealSense is on a stable USB3 link or
+`configs/system/a1.toml` after the RealSense is on a stable USB3 link or
 after lowering the camera FPS/resolution for USB2. During recording, stale
 camera samples abort the episode and delete the partial folder instead of
 saving bad data.
@@ -282,7 +285,7 @@ running; Teleop, ACT, and LingBot reuse their existing readers for preview.
 
 ## Dependency Baseline
 
-The main Python environment is pinned to official LeRobot v0.6.0:
+The main Python environment uses the vendored official LeRobot v0.6.0 snapshot:
 
 ```text
 30da8e687a6dfc617fcd94afc367ac7071c376ce
@@ -290,8 +293,8 @@ The main Python environment is pinned to official LeRobot v0.6.0:
 
 Python baseline is `>=3.12,<3.13`.
 
-`third_party/lerobot` is also replaced with the official v0.6.0 checkout at the
-same commit.
+`pyproject.toml` points directly at `third_party/lerobot`; no second Git-installed
+copy or application-level LeRobot `PYTHONPATH` override is used.
 
 ## Docs
 

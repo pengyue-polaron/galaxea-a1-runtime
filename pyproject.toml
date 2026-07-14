@@ -36,7 +36,7 @@ include = ["galaxea_a1_runtime*"]
 environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64')"]
 
 [tool.uv.sources]
-lerobot = { git = "https://github.com/huggingface/lerobot", rev = "30da8e687a6dfc617fcd94afc367ac7071c376ce" }
+lerobot = { path = "third_party/lerobot", editable = true }
 
 [dependency-groups]
 dev = [

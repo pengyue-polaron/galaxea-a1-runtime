@@ -31,7 +31,6 @@ _ROS1_OVERLAY = ROOT_DIR / ".cache" / "ros1_python_overlay"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 for candidate in (
-    str(ROOT_DIR / "third_party" / "lerobot" / "src"),
     "/opt/ros/noetic/lib/python3/dist-packages",
     "/usr/lib/python3/dist-packages",
     str(_A1_SDK / "lib" / "python3" / "dist-packages"),

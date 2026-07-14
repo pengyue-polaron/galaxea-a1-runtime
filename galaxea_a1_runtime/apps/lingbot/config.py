@@ -3,20 +3,26 @@
 from __future__ import annotations
 
 import argparse
-import shlex
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
-from galaxea_a1_runtime.hardware.image_geometry import (
-    ImageRoi,
-    parse_optional_image_roi,
+from galaxea_a1_runtime.configuration.base import (
+    bool_flag as _bool_flag,
+    load_toml,
+    number as _num,
+    referenced_config,
+    repo_path as _repo_path,
+    required_table as _required_table,
+    shell_array as _array,
+    shell_assign as _assign,
+    string as _string,
 )
+from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
+from galaxea_a1_runtime.hardware.image_geometry import ImageRoi
 from galaxea_a1_runtime.hardware.web_preview import (
     WebPreviewConfig,
-    parse_web_preview_config,
     web_preview_argv,
 )
 
@@ -25,7 +31,7 @@ PoseMode = Literal["absolute", "episode-relative"]
 GripperCommandMode = Literal["binary", "continuous"]
 TextEncoderDevice = Literal["cpu", "cuda"]
 
-DEFAULT_LINGBOT_CONFIG = Path("configs/inference/a1_lingbot_va.toml")
+DEFAULT_LINGBOT_CONFIG = Path("configs/deployments/lingbot_va.toml")
 
 
 @dataclass(frozen=True)
@@ -162,6 +168,7 @@ class LingBotCameraConfig:
 @dataclass(frozen=True)
 class LingBotConfig:
     path: Path
+    system: SystemConfig
     session: LingBotSessionConfig
     server: LingBotServerConfig
     policy_server: LingBotPolicyServerConfig
@@ -180,30 +187,21 @@ def default_config_path(repo_root: Path) -> Path:
 
 
 def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBotConfig:
-    path = path.expanduser()
-    if not path.is_absolute() and repo_root is not None:
-        path = repo_root / path
-    path = path.resolve()
-    data = tomllib.loads(path.read_text())
-    repo_root = repo_root.resolve() if repo_root is not None else path.parents[2]
-
+    path, repo_root, data = load_toml(path, repo_root=repo_root)
+    system = load_system_config(referenced_config(data, repo_root), repo_root=repo_root)
     session = _required_table(data, "session")
     server = _required_table(data, "server")
     policy_server = _required_table(data, "policy_server")
+    observations = _required_table(data, "observations")
     execution = _required_table(data, "execution")
-    topics = _required_table(data, "topics")
-    relay = _required_table(data, "relay")
-    eef = _required_table(data, "eef")
-    servo = _required_table(data, "servo")
-    gripper = _required_table(data, "gripper")
-    cameras = _required_table(data, "cameras")
-    front = _required_table(cameras, "front")
-    wrist = _required_table(cameras, "wrist")
-    camera_width = int(cameras.get("width", 640))
-    camera_height = int(cameras.get("height", 480))
+    action = _required_table(data, "action")
+    gripper = _required_table(data, "gripper_policy")
+    front = system.cameras.front
+    wrist = system.cameras.wrist
 
     config = LingBotConfig(
         path=path,
+        system=system,
         session=LingBotSessionConfig(tmux=_string(session, "tmux")),
         server=LingBotServerConfig(
             host=_string(server, "host"),
@@ -255,74 +253,65 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             review_deadband_m=float(execution.get("review_deadband_m", 0.001)),
         ),
         topics=LingBotTopicsConfig(
-            state_pose=_string(topics, "state_pose"),
-            state_gripper=_string(topics, "state_gripper"),
-            cmd_pose=_string(topics, "cmd_pose"),
-            cmd_gripper=_string(topics, "cmd_gripper"),
-            motion_enable=_string(topics, "motion_enable"),
-            relay_status=_string(topics, "relay_status"),
-            staged_command=_string(topics, "staged_command"),
+            state_pose=system.topics.eef_pose,
+            state_gripper=system.topics.gripper_feedback,
+            cmd_pose=system.topics.eef_target,
+            cmd_gripper=system.topics.gripper_command,
+            motion_enable=system.topics.motion_enable,
+            relay_status=system.topics.relay_status,
+            staged_command=system.topics.staged_command,
         ),
         relay=LingBotRelayConfig(
-            enable_timeout_s=float(relay.get("enable_timeout_s", 2.0)),
-            max_status_age_s=float(relay.get("max_status_age_s", 1.0)),
+            enable_timeout_s=system.relay.enable_timeout_s,
+            max_status_age_s=system.relay.max_status_age_s,
         ),
         eef=LingBotEefConfig(
-            command_frame=_string(eef, "command_frame"),
-            action_pose_mode=_pose_mode(_string(eef, "action_pose_mode")),
-            orientation_mode=_orientation_mode(_string(eef, "orientation_mode")),
-            xyz_min=_float_tuple(eef, "xyz_min", 3),
-            xyz_max=_float_tuple(eef, "xyz_max", 3),
-            min_quat_norm=float(eef.get("min_quat_norm", 0.25)),
-            max_feedback_age_s=float(eef.get("max_feedback_age_s", 0.5)),
-            feedback_wait_timeout_s=float(eef.get("feedback_wait_timeout_s", 5.0)),
+            command_frame=system.eef.command_frame,
+            action_pose_mode=_pose_mode(_string(action, "pose_mode")),
+            orientation_mode=_orientation_mode(system.eef.orientation_mode),
+            xyz_min=system.eef.xyz_min,
+            xyz_max=system.eef.xyz_max,
+            min_quat_norm=system.eef.min_quat_norm,
+            max_feedback_age_s=system.eef.max_feedback_age_s,
+            feedback_wait_timeout_s=system.eef.feedback_wait_timeout_s,
         ),
         servo=LingBotServoConfig(
-            gain=float(servo.get("gain", 1.0)),
-            max_extra_m=float(servo.get("max_extra_m", 0.04)),
-            settle_s=float(servo.get("settle_s", 0.0)),
-            tolerance_m=float(servo.get("tolerance_m", 0.01)),
-            corrections=int(servo.get("corrections", 0)),
-            cache_actual_feedback=bool(servo.get("cache_actual_feedback", False)),
+            gain=float(action.get("servo_gain", 1.0)),
+            max_extra_m=float(action.get("servo_max_extra_m", 0.04)),
+            settle_s=float(action.get("servo_settle_s", 0.0)),
+            tolerance_m=float(action.get("servo_tolerance_m", 0.01)),
+            corrections=int(action.get("servo_corrections", 0)),
+            cache_actual_feedback=bool(action.get("cache_actual_feedback", False)),
         ),
         gripper=LingBotGripperConfig(
             stroke_scale_mm=float(gripper.get("stroke_scale_mm", 200.0)),
             stroke_offset_mm=float(gripper.get("stroke_offset_mm", 0.0)),
-            stroke_min_mm=float(gripper.get("stroke_min_mm", 0.0)),
-            stroke_max_mm=float(gripper.get("stroke_max_mm", 200.0)),
+            stroke_min_mm=float(gripper.get("output_stroke_min_mm", 0.0)),
+            stroke_max_mm=float(gripper.get("output_stroke_max_mm", 200.0)),
             command_mode=_gripper_command_mode(str(gripper.get("command_mode", "binary"))),
             command_open_threshold=float(gripper.get("command_open_threshold", 0.5)),
-            feedback_open_threshold_mm=float(gripper.get("feedback_open_threshold_mm", 30.0)),
+            feedback_open_threshold_mm=system.gripper.feedback_open_threshold_mm,
         ),
         cameras=LingBotCameraConfig(
-            width=camera_width,
-            height=camera_height,
-            fps=int(cameras.get("fps", 30)),
-            max_camera_age_s=float(cameras.get("max_camera_age_s", 0.5)),
-            front_serial=str(front.get("serial", "")),
-            front_auto_exposure=bool(front.get("auto_exposure", True)),
-            front_exposure=int(front.get("exposure", 140)),
-            front_gain=int(front.get("gain", 32)),
-            front_auto_white_balance=bool(front.get("auto_white_balance", True)),
-            front_white_balance=int(front.get("white_balance", 4600)),
-            front_observation_key=_string(front, "observation_key"),
-            front_crop=parse_optional_image_roi(
-                front,
-                image_width=camera_width,
-                image_height=camera_height,
-                label="cameras.front crop",
-                require_square=True,
-            ),
-            wrist_backend=str(wrist.get("backend", "v4l2")),
-            wrist_serial=str(wrist.get("serial", "")),
-            wrist_device=str(wrist.get("device", "")),
-            wrist_backend_api=str(wrist.get("backend_api", "v4l2")),
-            wrist_observation_key=_string(wrist, "observation_key"),
+            width=front.width,
+            height=front.height,
+            fps=front.fps,
+            max_camera_age_s=system.cameras.max_age_s,
+            front_serial=front.serial,
+            front_auto_exposure=front.auto_exposure,
+            front_exposure=front.exposure,
+            front_gain=front.gain,
+            front_auto_white_balance=front.auto_white_balance,
+            front_white_balance=front.white_balance,
+            front_observation_key=_string(observations, "front_key"),
+            front_crop=front.crop,
+            wrist_backend=wrist.backend,
+            wrist_serial=wrist.serial,
+            wrist_device=wrist.device,
+            wrist_backend_api=wrist.backend_api,
+            wrist_observation_key=_string(observations, "wrist_key"),
         ),
-        web_preview=parse_web_preview_config(
-            data.get("web_preview", {}) if isinstance(data.get("web_preview", {}), dict) else {},
-            repo_root=repo_root,
-        ),
+        web_preview=system.web_preview,
     )
     validate_lingbot_config(config)
     return config
@@ -392,10 +381,19 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("gripper.stroke_scale_mm must be non-zero")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke_max_mm must be greater than stroke_min_mm")
+    if (
+        config.gripper.stroke_min_mm < config.system.gripper.stroke_min_mm
+        or config.gripper.stroke_max_mm > config.system.gripper.stroke_max_mm
+    ):
+        raise ValueError("gripper policy output stroke must stay inside the physical system range")
     if not 0.0 < config.gripper.command_open_threshold < 1.0:
         raise ValueError("gripper.command_open_threshold must be between 0 and 1")
-    if not config.gripper.stroke_min_mm < config.gripper.feedback_open_threshold_mm < config.gripper.stroke_max_mm:
-        raise ValueError("gripper.feedback_open_threshold_mm must be inside the physical stroke range")
+    if not (
+        config.system.gripper.stroke_min_mm
+        < config.gripper.feedback_open_threshold_mm
+        < config.system.gripper.stroke_max_mm
+    ):
+        raise ValueError("gripper feedback threshold must be inside the physical system range")
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
@@ -541,6 +539,7 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
 def bash_config(config: LingBotConfig) -> str:
     lines = [
         _assign("CONFIG_PATH", str(config.path)),
+        _assign("SYSTEM_CONFIG_PATH", str(config.system.path)),
         _assign("SESSION", config.session.tmux),
         _assign("LINGBOT_HOST", config.server.host),
         _assign("LINGBOT_PORT", str(config.server.port)),
@@ -570,20 +569,6 @@ def bash_config(config: LingBotConfig) -> str:
     return "\n".join(lines)
 
 
-def _required_table(data: dict[str, Any], key: str) -> dict[str, Any]:
-    value = data.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"missing [{key}] table")
-    return value
-
-
-def _string(data: dict[str, Any], key: str) -> str:
-    value = data.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"missing string value: {key}")
-    return value
-
-
 def _orientation_mode(value: str) -> OrientationMode:
     if value not in ("hold-current", "model-quat"):
         raise ValueError(f"unsupported eef.orientation_mode: {value!r}")
@@ -608,16 +593,6 @@ def _text_encoder_device(value: str) -> TextEncoderDevice:
     return value
 
 
-def _float_tuple(data: dict[str, Any], key: str, expected_len: int) -> tuple[float, ...]:
-    value = data.get(key)
-    if not isinstance(value, list):
-        raise ValueError(f"{key} must be a number list")
-    out = tuple(float(item) for item in value)
-    if len(out) != expected_len:
-        raise ValueError(f"{key} expects {expected_len} values, got {len(out)}")
-    return out
-
-
 def _float_tuple_any(data: dict[str, Any], key: str) -> tuple[float, ...]:
     value = data.get(key)
     if not isinstance(value, list) or not value:
@@ -633,8 +608,7 @@ def _int_tuple(data: dict[str, Any], key: str) -> tuple[int, ...]:
 
 
 def _resolved_path(data: dict[str, Any], key: str, repo_root: Path) -> Path:
-    value = Path(_string(data, key)).expanduser()
-    return (repo_root / value).resolve() if not value.is_absolute() else value.resolve()
+    return _repo_path(repo_root, _string(data, key))
 
 
 def _optional_float_tuple(data: dict[str, Any], key: str) -> tuple[float, ...] | None:
@@ -644,22 +618,6 @@ def _optional_float_tuple(data: dict[str, Any], key: str) -> tuple[float, ...] |
     if not isinstance(value, list):
         raise ValueError(f"{key} must be a number list")
     return tuple(float(item) for item in value)
-
-
-def _bool_flag(name: str, enabled: bool) -> str:
-    return f"--{name}" if enabled else f"--no-{name}"
-
-
-def _num(value: float) -> str:
-    return f"{float(value):g}"
-
-
-def _assign(name: str, value: str) -> str:
-    return f"{name}={shlex.quote(value)}"
-
-
-def _array(name: str, values: list[str]) -> str:
-    return f"{name}=({' '.join(shlex.quote(value) for value in values)})"
 
 
 def main(argv: list[str] | None = None) -> int:

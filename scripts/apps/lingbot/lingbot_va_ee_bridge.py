@@ -732,7 +732,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="LingBot-VA EE-pose bridge for Galaxea A1")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=1106)
-    p.add_argument("--prompt", default="Put the banana in the blue plate.")
+    p.add_argument("--prompt", required=True)
     p.add_argument("--execute", action="store_true", help="Actually publish EE commands. Default is dry-run.")
     p.add_argument("--step-mode", action=argparse.BooleanOptionalAction, default=True,
                    help="Wait for Enter before each model inference chunk.")

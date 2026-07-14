@@ -207,7 +207,7 @@ start_bridge() {
   : > "${log_file}"
   setsid env \
     PYTHONUNBUFFERED=1 \
-    PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+    PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     "${PYTHON_BIN}" "${ROOT}/scripts/apps/teleop/so100_joint_bridge.py" \
       "${BRIDGE_ARGS[@]}" \
       >> "${log_file}" 2>&1 < /dev/null &
@@ -241,7 +241,7 @@ wait_bridge_live() {
 
 doctor() {
   local args=("$@")
-  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python - "${LEADER_PORT}" <<'PY'
 import importlib.util
 import sys
@@ -296,7 +296,7 @@ collect() {
 reset_live() {
   step "[Reset] Pausing teleop"
   stop_bridge
-  if ! PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  if ! PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/a1_so100_reset.py" \
       --config "${RESET_CONFIG_PATH}"; then
     failure "[Reset] Failed; teleop remains stopped"
@@ -312,7 +312,7 @@ reset() {
   }
   trap cleanup_reset EXIT
   start_services
-  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/a1_so100_reset.py" \
       --config "${RESET_CONFIG_PATH}"
 }

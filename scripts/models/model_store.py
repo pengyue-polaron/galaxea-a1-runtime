@@ -148,8 +148,8 @@ def _check_extra_lingbot_checkpoints(
 
 def doctor(repo: Path) -> int:
     reporter = Reporter()
-    lingbot = _toml(repo / "configs/inference/a1_lingbot_va.toml")["policy_server"]
-    act = _toml(repo / "configs/inference/a1_act_joint.toml")["policy"]
+    lingbot = _toml(repo / "configs/deployments/lingbot_va.toml")["policy_server"]
+    act = _toml(repo / "configs/deployments/act_joint.toml")["policy"]
 
     base = _require_registry_path(reporter, repo, "lingbot_base", lingbot["base_model"])
     checkpoint = _require_registry_path(

@@ -1,11 +1,10 @@
 # Git-tracked runtime contract for Galaxea A1 SO leader teleoperation.
-# Edit this file when hardware ports, cameras, topics, or collection semantics
-# change. The normal `just teleop <experiment>` path reads this file
-# and does not require per-run bridge/collector CLI flags.
+# Physical A1/camera settings come from the shared system contract.
 
-[host]
-image = "galaxea-a1-runtime/a1-noetic-arm64:local"
-a1_serial = "/dev/a1"
+[system]
+config = "configs/system/a1.toml"
+
+[runtime]
 prefix = "a1-teleop"
 run_dir = "/tmp/a1-teleop"
 
@@ -14,46 +13,20 @@ port = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
 id = "my_leader"
 use_degrees = true
 
-[topics]
-joint_states = "/joint_states_host"
-target = "/arm_joint_target_position"
-staged_command = "/arm_joint_command_a1_staged"
-relay_enable = "/a1_arm_motion_enable"
-relay_status = "/a1_arm_relay_status"
-gripper_command = "/gripper_position_control_host"
-gripper_feedback = "/gripper_stroke_host"
-eef = "/end_effector_pose"
-host_command = "/arm_joint_command_host"
-
 [bridge]
 hz = 60.0
 dof = 6
-target_joint_names = [
-  "arm_joint1",
-  "arm_joint2",
-  "arm_joint3",
-  "arm_joint4",
-  "arm_joint5",
-  "arm_joint6",
-]
 relative = true
 input_degrees = true
 scale = [1, 1, 1, 1, 1, 1]
 sign = [-1, 1, 1, -1, 1, -1]
 bias_rad = [0, 0, 0, 0, 0, 0]
-lower_limits = [-2.8798, 0, -3.3161, -2.8798, -1.6581, -2.8798]
-upper_limits = [2.8798, 3.2289, 0, 2.8798, 1.6581, 2.8798]
-relay_enable_timeout_s = 2.0
-max_relay_status_age_s = 1.0
 # Also covers cold jointTracker initialization before its first staged output.
 a1_state_timeout_s = 30.0
-initial_alignment_tolerance_rad = 0.05
 
 [gripper]
 enabled = true
 source_key = "gripper.pos"
-min_stroke_mm = 0.0
-max_stroke_mm = 200.0
 invert = false
 # Raw leader/feedback values are normalized by 200mm, then recorded as 0 or 1.
 binary_open_threshold = 0.15
@@ -66,42 +39,5 @@ max_duration_s = 0.0
 auto_reset_after_save = true
 jpeg_quality = 95
 ready_timeout_s = 10.0
-max_camera_age_s = 0.5
 # Reject an episode after Enter=save if any joint action jumps farther in one frame.
 max_joint_action_step_rad = 0.35
-
-[cameras.front]
-backend = "realsense"
-serial = "341522300456"
-width = 640
-height = 480
-fps = 30
-# Square collection ROI measured from the operator-approved AgentView frame.
-# Raw live preview remains 640x480 and draws this region in red; recorded RGB
-# (and aligned depth, when enabled) is cropped to 480x480.
-crop_enabled = true
-crop_x = 103
-crop_y = 0
-crop_width = 480
-crop_height = 480
-require_usb3 = false
-depth = false
-depth_width = 640
-depth_height = 480
-align_depth_to_color = true
-
-[cameras.wrist]
-backend = "realsense"
-serial = "218622276998"
-device = ""
-width = 640
-height = 480
-fps = 30
-pixel_format = ""
-
-[web_preview]
-enabled = true
-bind = "0.0.0.0"
-port = 8088
-fps = 10.0
-jpeg_quality = 75

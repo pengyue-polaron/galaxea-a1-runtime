@@ -3,7 +3,7 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
-CONFIG_PATH="${ROOT}/configs/inference/a1_lingbot_va.toml"
+CONFIG_PATH="${ROOT}/configs/deployments/lingbot_va.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -304,7 +304,7 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/inference/a1_lingbot_va.toml] <start|server|server-stop|server-logs|services|tmux|stop|doctor|status|logs>
+Usage: $0 [--config configs/deployments/lingbot_va.toml] <start|server|server-stop|server-logs|services|tmux|stop|doctor|status|logs>
 
   start     Start the deployment server, A1 base runtime, and bridge
   server    Start only the managed deployment policy server

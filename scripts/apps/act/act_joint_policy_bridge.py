@@ -27,7 +27,6 @@ for p in list(sys.path):
     if "/opt/ros/humble" in p:
         sys.path.remove(p)
 for candidate in (
-    str(ROOT_DIR / "third_party" / "lerobot" / "src"),
     "/opt/ros/noetic/lib/python3/dist-packages",
     str(_A1_SDK / "lib" / "python3" / "dist-packages"),
     str(_ROS1_OVERLAY),
@@ -452,12 +451,13 @@ class ActJointBridge:
         count = min(int(self.args.execute_steps_per_inference), len(chunk))
         steps = chunk[:count].copy()
         current = np.asarray(current_joints, dtype=np.float64)
-        first_delta = float(np.max(np.abs(steps[0, :6] - current)))
-        if first_delta > self.args.max_first_target_delta_rad:
-            raise RuntimeError(
-                f"first ACT target jumps {first_delta:.4f} rad from feedback; "
-                f"limit={self.args.max_first_target_delta_rad:.4f}"
-            )
+        if self.args.action_step_guard_enabled:
+            first_delta = float(np.max(np.abs(steps[0, :6] - current)))
+            if first_delta > self.args.max_first_target_delta_rad:
+                raise RuntimeError(
+                    f"first ACT target jumps {first_delta:.4f} rad from feedback; "
+                    f"limit={self.args.max_first_target_delta_rad:.4f}"
+                )
         previous = current
         for index, row in enumerate(steps):
             joints = row[:6]
@@ -465,10 +465,17 @@ class ActJointBridge:
             if violations:
                 detail = "; ".join(violations)
                 raise RuntimeError(f"ACT target {index} violates joint limits: {detail}")
-            step = float(np.max(np.abs(joints - previous)))
-            limit = self.args.max_first_target_delta_rad if index == 0 else self.args.max_joint_action_step_rad
-            if step > limit:
-                raise RuntimeError(f"ACT target {index} step={step:.4f} rad exceeds limit={limit:.4f}")
+            if self.args.action_step_guard_enabled:
+                step = float(np.max(np.abs(joints - previous)))
+                limit = (
+                    self.args.max_first_target_delta_rad
+                    if index == 0
+                    else self.args.max_joint_action_step_rad
+                )
+                if step > limit:
+                    raise RuntimeError(
+                        f"ACT target {index} step={step:.4f} rad exceeds limit={limit:.4f}"
+                    )
             previous = joints
         return steps
 
@@ -654,6 +661,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--target-joint-names", nargs=6, required=True)
     parser.add_argument("--lower-limits", nargs=6, type=float, required=True)
     parser.add_argument("--upper-limits", nargs=6, type=float, required=True)
+    parser.add_argument(
+        "--action-step-guard-enabled",
+        action=argparse.BooleanOptionalAction,
+        default=False,
+    )
     parser.add_argument("--max-joint-action-step-rad", type=float, default=0.25)
     parser.add_argument("--max-first-target-delta-rad", type=float, default=0.25)
     parser.add_argument("--initial-alignment-tolerance", type=float, default=0.05)
@@ -703,8 +715,6 @@ def validate_args(args: argparse.Namespace) -> None:
         "control_hz",
         "relay_enable_timeout",
         "max_relay_status_age",
-        "max_joint_action_step_rad",
-        "max_first_target_delta_rad",
         "initial_alignment_tolerance",
         "state_timeout",
         "max_feedback_age",
@@ -712,6 +722,10 @@ def validate_args(args: argparse.Namespace) -> None:
     ):
         if float(getattr(args, name)) <= 0:
             raise ValueError(f"--{name.replace('_', '-')} must be positive")
+    if args.action_step_guard_enabled:
+        for name in ("max_joint_action_step_rad", "max_first_target_delta_rad"):
+            if float(getattr(args, name)) <= 0:
+                raise ValueError(f"--{name.replace('_', '-')} must be positive when the guard is enabled")
     if args.max_model_calls < 0:
         raise ValueError("--max-model-calls must be >= 0")
     if args.gripper_stroke_max <= args.gripper_stroke_min:

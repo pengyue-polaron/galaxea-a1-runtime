@@ -132,7 +132,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="teleop_joint_limits",
-            path="configs/teleop/a1_so100.toml [bridge.lower_limits / bridge.upper_limits]",
+            path="configs/system/a1.toml [joint_safety.lower_limits / joint_safety.upper_limits]",
             default="A1 SDK joint limits",
             behavior="Mapped leader targets are clipped to explicit joint limits before publishing target positions.",
             visibility="Limits are tracked config values and covered by pure mapping/config tests.",
@@ -140,7 +140,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_workspace_clamp",
-            path="configs/inference/a1_lingbot_va.toml [eef.xyz_min / eef.xyz_max]",
+            path="configs/system/a1.toml [eef.xyz_min / eef.xyz_max]",
             default="x=[0.06,0.44], y=[-0.27,0.14], z=[0.06,0.50]",
             behavior="Absolute LingBot targets outside the configured workspace are clamped.",
             visibility="Bridge preview prints clamp=workspace:<axis>.",
@@ -148,7 +148,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_orientation_mode",
-            path="configs/inference/a1_lingbot_va.toml [eef.orientation_mode]",
+            path="configs/system/a1.toml [eef.orientation_mode]",
             default="hold-current",
             behavior="LingBot quaternion channels are ignored unless orientation mode is model-quat.",
             visibility="Bridge preview prints orientation_mode.",
@@ -156,7 +156,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_eef_servo_compensation",
-            path="configs/inference/a1_lingbot_va.toml [servo.gain]",
+            path="configs/deployments/lingbot_va.toml [action.servo_gain]",
             default="1.0/off",
             behavior="When gain is greater than 1, the bridge sends an amplified tracker target toward the policy target.",
             visibility="Bridge preview prints tracker_cmd_xyz whenever it differs from the policy target.",
@@ -164,7 +164,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_cache_actual_feedback",
-            path="configs/inference/a1_lingbot_va.toml [servo.cache_actual_feedback]",
+            path="configs/deployments/lingbot_va.toml [action.cache_actual_feedback]",
             default="off; cache tracker command",
             behavior="The LingBot KV cache records the tracker command, matching the training action contract.",
             visibility="Bridge startup prints cache_action_source=tracker-command.",
@@ -172,7 +172,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="lingbot_relay_status_guard",
-            path="configs/inference/a1_lingbot_va.toml [relay.max_status_age_s]",
+            path="configs/system/a1.toml [relay.max_status_age_s]",
             default="1.0s",
             behavior="The bridge refuses to keep publishing if relay status is stale or no longer ACTIVE.",
             visibility="RuntimeError includes last relay state.",
@@ -188,7 +188,7 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="gripper_scale_mapping",
-            path="configs/inference/a1_lingbot_va.toml [gripper]",
+            path="configs/deployments/lingbot_va.toml [gripper_policy]",
             default="continuous 0..1 -> 0..80mm",
             behavior="The LingBot bridge clips policy gripper to 0..1 and maps it into the tracked task stroke.",
             visibility="Bridge preview and publish log print gripper_norm and gripper_mm.",

@@ -57,7 +57,7 @@ def test_config_builds_bridge_args_without_per_run_env_overrides():
     assert args[args.index("--initial-alignment-tolerance") + 1] == "0.05"
     assert args[args.index("--gripper-max-stroke-mm") + 1] == "200"
     assert "--sign=-1,1,1,-1,1,-1" in args
-    assert "--lower-limits=-2.8798,0,-3.3161,-2.8798,-1.6581,-2.8798" in args
+    assert "--lower-limits=-2.8798,-0.1,-3.3161,-2.8798,-1.6581,-2.8798" in args
 
 
 def test_config_builds_collector_args_from_tracked_file():

@@ -30,34 +30,7 @@ check:
     just test
 
 test:
-    {{vpy}} -m pytest -q \
-        {{repo}}/tests/test_galaxea_a1_runtime_safety.py \
-        {{repo}}/tests/test_galaxea_a1_cli.py \
-        {{repo}}/tests/test_galaxea_a1_runtime_schema.py \
-        {{repo}}/tests/test_galaxea_a1_runtime_actions.py \
-        {{repo}}/tests/test_galaxea_a1_collection_schema.py \
-        {{repo}}/tests/test_galaxea_a1_teleop_mapping.py \
-        {{repo}}/tests/test_galaxea_a1_teleop_config.py \
-        {{repo}}/tests/test_galaxea_a1_camera_web.py \
-        {{repo}}/tests/test_galaxea_a1_teleop_static.py \
-        {{repo}}/tests/test_galaxea_a1_runtime_safety_report.py \
-        {{repo}}/tests/test_galaxea_a1_runtime_lerobot_dataset.py \
-        {{repo}}/tests/test_galaxea_a1_lerobot_robot.py \
-        {{repo}}/tests/test_galaxea_a1_lerobot_recorder.py \
-        {{repo}}/tests/test_galaxea_a1_eef.py \
-        {{repo}}/tests/test_galaxea_a1_eef_bridge.py \
-        {{repo}}/tests/test_galaxea_a1_ros1_adapter.py \
-        {{repo}}/tests/test_galaxea_a1_lingbot_actions.py \
-        {{repo}}/tests/test_galaxea_a1_lingbot_pack.py \
-        {{repo}}/tests/test_galaxea_a1_lingbot_static.py \
-        {{repo}}/tests/test_galaxea_a1_act_config.py \
-        {{repo}}/tests/test_galaxea_a1_act_static.py \
-        {{repo}}/tests/test_galaxea_a1_runtime_doctor.py \
-        {{repo}}/tests/test_galaxea_a1_policy_profiles.py \
-        {{repo}}/tests/test_galaxea_a1_lerobot_writer.py \
-        {{repo}}/tests/test_galaxea_a1_migration.py \
-        {{repo}}/tests/test_galaxea_a1_convert_raw.py \
-        {{repo}}/tests/test_galaxea_a1_relay_safety.py
+    {{vpy}} -m pytest -q {{repo}}/tests
 
 models:
     {{vpy}} {{repo}}/scripts/models/model_store.py doctor --repo-root "{{repo}}"

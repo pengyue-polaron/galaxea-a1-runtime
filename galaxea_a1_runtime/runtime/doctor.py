@@ -68,7 +68,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         teleop_mapping = JointMappingConfig()
         teleop_config = load_teleop_config(repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root)
         lingbot_config = load_lingbot_config(
-            repo_root / "configs" / "inference" / "a1_lingbot_va.toml",
+            repo_root / "configs" / "deployments" / "lingbot_va.toml",
             repo_root=repo_root,
         )
         decision = validate_relay_inputs(
@@ -110,15 +110,15 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     pyproject = repo_root / "pyproject.toml"
     try:
         data = tomllib.loads(pyproject.read_text())
-        rev = data.get("tool", {}).get("uv", {}).get("sources", {}).get("lerobot", {}).get("rev")
+        source = data.get("tool", {}).get("uv", {}).get("sources", {}).get("lerobot", {})
+        path = source.get("path")
         add(
-            "lerobot_v060_pin",
-            rev == EXPECTED_LEROBOT_V060_COMMIT,
-            f"pyproject lerobot rev={rev!r}; target={EXPECTED_LEROBOT_V060_COMMIT}",
-            required=False,
+            "lerobot_single_source",
+            path == "third_party/lerobot" and source.get("editable") is True,
+            f"pyproject lerobot source={source!r}",
         )
     except Exception as exc:
-        add("lerobot_v060_pin", False, repr(exc), required=False)
+        add("lerobot_single_source", False, repr(exc))
 
     third_party_lerobot = repo_root / "third_party" / "lerobot"
     add("third_party_lerobot", third_party_lerobot.is_dir(), str(third_party_lerobot))

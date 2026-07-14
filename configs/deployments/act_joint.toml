@@ -1,0 +1,34 @@
+# ACT checkpoint and rollout contract. Physical hardware, cameras, topics,
+# joint bounds, and gripper feedback live in configs/system/a1.toml.
+
+[system]
+config = "configs/system/a1.toml"
+
+[session]
+tmux = "act-a1"
+
+[runtime]
+prefix = "a1-act"
+run_dir = "/tmp/a1-act"
+
+[policy]
+checkpoint = "models/checkpoints/act/a1_agentview_square/latest"
+device = "cuda"
+deployment_ready = false
+disable_backbone_download = true
+
+[execution]
+execute = false
+step_mode = true
+execute_steps_per_inference = 100
+control_hz = 30.0
+max_model_calls = 0
+print_actions = true
+preview_steps = 5
+
+[gripper_policy]
+# ACT outputs are continuous 0..1 and map into this task-specific stroke range.
+command_mode = "continuous"
+output_stroke_min_mm = 0.0
+output_stroke_max_mm = 80.0
+command_open_threshold = 0.5

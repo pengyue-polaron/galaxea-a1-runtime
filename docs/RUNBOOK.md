@@ -52,7 +52,7 @@ forwarding for this HTTP service.
 The AgentView panel keeps the full 640x480 sensor view. Its red rectangle is
 the tracked 480x480 region saved by teleop collection; the overlay itself is
 never written into training images. Change the ROI only in
-`configs/teleop/a1_so100.toml`, then restart the camera service.
+`configs/system/a1.toml`, then restart the camera service.
 Do not mix this crop with older 640x480 episodes under one experiment name;
 the collector checks existing metadata and fails before opening ROS/cameras.
 
@@ -105,7 +105,7 @@ just check
 just hardware
 ```
 
-2. Confirm cameras from the tracked teleop config:
+2. Confirm cameras from the tracked system config:
 
 ```bash
 just cameras
@@ -182,8 +182,9 @@ just stop
 
 ## What Teleop Records
 
-Teleop behavior is locked by `configs/teleop/a1_so100.toml`: leader port,
-cameras, state mode, FPS, topics, joint mapping, limits, and gripper range.
+Teleop behavior composes `configs/teleop/a1_so100.toml` (leader, mapping, and
+collection) with `configs/system/a1.toml` (cameras, topics, physical limits,
+and gripper range).
 The default agent D455 RealSense config records RGB only and accepts USB2.1. Depth
 capture remains supported, but enable it intentionally in the tracked config
 after the RealSense is on USB3 or after lowering FPS/resolution for USB2. The
@@ -238,9 +239,10 @@ are not model weights. Use `just model-link <slot> <source>` to register a new
 local source and `just models` before inference. The exact layout and supported
 slot names are documented in `models/README.md`.
 
-Runtime behavior is locked by `configs/inference/a1_lingbot_va.toml`: server,
-checkpoint, prompt, cameras, EEF workspace, orientation mode, relay topics,
-execution cadence, and gripper mapping.
+Deployment behavior is locked by `configs/deployments/lingbot_va.toml`: server,
+checkpoint, prompt, execution cadence, action semantics, and model gripper
+mapping. Physical cameras, EEF workspace/orientation, and relay topics come
+from `configs/system/a1.toml`.
 
 The checked-in profile is dry-run and step-gated until the new checkpoint,
 prompt, and q01/q99 statistics are installed and reviewed. Its configured
@@ -273,7 +275,7 @@ just stop
 ## ACT Joint Policy
 
 The ACT deployment path is configured by
-`configs/inference/a1_act_joint.toml`. The tracked deployment slot is
+`configs/deployments/act_joint.toml`. The tracked deployment slot is
 `models/checkpoints/act/a1_agentview_square/latest` and remains missing until a
 new checkpoint is registered.
 

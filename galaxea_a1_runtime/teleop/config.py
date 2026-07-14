@@ -3,18 +3,27 @@
 from __future__ import annotations
 
 import argparse
-import shlex
 import sys
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from galaxea_a1_runtime.collection import StateMode
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, parse_optional_image_roi
+from galaxea_a1_runtime.configuration.base import (
+    bool_flag as _bool_flag,
+    float_tuple as _float_tuple,
+    load_toml,
+    number as _num,
+    referenced_config,
+    repo_path as _repo_path,
+    required_table as _required_table,
+    shell_array as _array,
+    shell_assign as _assign,
+    string as _string,
+)
+from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
+from galaxea_a1_runtime.hardware.image_geometry import ImageRoi
 from galaxea_a1_runtime.hardware.web_preview import (
     WebPreviewConfig,
-    parse_web_preview_config,
     web_preview_argv,
 )
 from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
@@ -105,6 +114,7 @@ class TeleopCameraConfig:
 @dataclass(frozen=True)
 class TeleopConfig:
     path: Path
+    system: SystemConfig
     host: TeleopHostConfig
     leader: TeleopLeaderConfig
     topics: TeleopTopicsConfig
@@ -121,22 +131,15 @@ def default_config_path(repo_root: Path) -> Path:
 
 
 def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopConfig:
-    path = path.expanduser()
-    if not path.is_absolute() and repo_root is not None:
-        path = repo_root / path
-    path = path.resolve()
-    data = tomllib.loads(path.read_text())
-    repo_root = repo_root.resolve() if repo_root is not None else path.parents[2]
-
-    host = _required_table(data, "host")
+    path, repo_root, data = load_toml(path, repo_root=repo_root)
+    system = load_system_config(referenced_config(data, repo_root), repo_root=repo_root)
+    runtime = _required_table(data, "runtime")
     leader = _required_table(data, "leader")
-    topics = _required_table(data, "topics")
     bridge = _required_table(data, "bridge")
     gripper = _required_table(data, "gripper")
     collection = _required_table(data, "collection")
-    cameras = _required_table(data, "cameras")
-    front = _required_table(cameras, "front")
-    wrist = _required_table(cameras, "wrist")
+    front = system.cameras.front
+    wrist = system.cameras.wrist
 
     dof = int(bridge.get("dof", 6))
     mapping = JointMappingConfig(
@@ -145,25 +148,19 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         scale=_float_tuple(bridge, "scale", dof),
         sign=_float_tuple(bridge, "sign", dof),
         bias_rad=_float_tuple(bridge, "bias_rad", dof),
-        lower_limits=_float_tuple(bridge, "lower_limits", dof),
-        upper_limits=_float_tuple(bridge, "upper_limits", dof),
+        lower_limits=system.joint_safety.lower_limits,
+        upper_limits=system.joint_safety.upper_limits,
     )
     mapping.validate(dof)
 
-    front_width = int(front.get("width", 640))
-    front_height = int(front.get("height", 480))
-    front_depth_width = int(front.get("depth_width", front_width))
-    front_depth_height = int(front.get("depth_height", front_height))
-    wrist_width = int(wrist.get("width", 640))
-    wrist_height = int(wrist.get("height", 480))
-
     config = TeleopConfig(
         path=path,
+        system=system,
         host=TeleopHostConfig(
-            image=_string(host, "image"),
-            a1_serial=_string(host, "a1_serial"),
-            prefix=_string(host, "prefix"),
-            run_dir=_string(host, "run_dir"),
+            image=system.host.image,
+            a1_serial=system.host.a1_serial,
+            prefix=_string(runtime, "prefix"),
+            run_dir=_string(runtime, "run_dir"),
         ),
         leader=TeleopLeaderConfig(
             port=_string(leader, "port"),
@@ -171,79 +168,70 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             use_degrees=bool(leader.get("use_degrees", True)),
         ),
         topics=TeleopTopicsConfig(
-            joint_states=_string(topics, "joint_states"),
-            target=_string(topics, "target"),
-            staged_command=_string(topics, "staged_command"),
-            relay_enable=_string(topics, "relay_enable"),
-            relay_status=_string(topics, "relay_status"),
-            gripper_command=_string(topics, "gripper_command"),
-            gripper_feedback=_string(topics, "gripper_feedback"),
-            eef=_string(topics, "eef"),
-            host_command=_string(topics, "host_command"),
+            joint_states=system.topics.joint_states,
+            target=system.topics.joint_target,
+            staged_command=system.topics.staged_command,
+            relay_enable=system.topics.motion_enable,
+            relay_status=system.topics.relay_status,
+            gripper_command=system.topics.gripper_command,
+            gripper_feedback=system.topics.gripper_feedback,
+            eef=system.topics.eef_pose,
+            host_command=system.topics.host_command,
         ),
         bridge=TeleopBridgeConfig(
             hz=float(bridge.get("hz", 60.0)),
             dof=dof,
-            target_joint_names=_string_tuple(bridge, "target_joint_names", dof),
+            target_joint_names=system.joint_safety.names,
             mapping=mapping,
-            relay_enable_timeout_s=float(bridge.get("relay_enable_timeout_s", 2.0)),
-            max_relay_status_age_s=float(bridge.get("max_relay_status_age_s", 1.0)),
-            a1_state_timeout_s=float(bridge.get("a1_state_timeout_s", 10.0)),
-            initial_alignment_tolerance_rad=float(
-                bridge.get("initial_alignment_tolerance_rad", 0.05)
-            ),
+            relay_enable_timeout_s=system.relay.enable_timeout_s,
+            max_relay_status_age_s=system.relay.max_status_age_s,
+            a1_state_timeout_s=float(bridge.get("a1_state_timeout_s", system.joint_safety.state_timeout_s)),
+            initial_alignment_tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
         ),
         gripper=TeleopGripperConfig(
             enabled=bool(gripper.get("enabled", True)),
             source_key=_string(gripper, "source_key"),
-            min_stroke_mm=float(gripper.get("min_stroke_mm", 0.0)),
-            max_stroke_mm=float(gripper.get("max_stroke_mm", 200.0)),
+            min_stroke_mm=system.gripper.stroke_min_mm,
+            max_stroke_mm=system.gripper.stroke_max_mm,
             invert=bool(gripper.get("invert", False)),
             binary_open_threshold=float(gripper.get("binary_open_threshold", 0.15)),
         ),
         collection=TeleopCollectionConfig(
-            data_root=_resolve_path(_string(collection, "data_root"), repo_root),
+            data_root=_repo_path(repo_root, _string(collection, "data_root")),
             state_mode=StateMode(_string(collection, "state_mode")),
             fps=float(collection.get("fps", 30.0)),
             max_duration_s=float(collection.get("max_duration_s", 0.0)),
             auto_reset_after_save=bool(collection.get("auto_reset_after_save", True)),
             jpeg_quality=int(collection.get("jpeg_quality", 95)),
             ready_timeout_s=float(collection.get("ready_timeout_s", 10.0)),
-            max_camera_age_s=float(collection.get("max_camera_age_s", 0.5)),
+            max_camera_age_s=system.cameras.max_age_s,
             max_joint_action_step_rad=float(collection.get("max_joint_action_step_rad", 0.35)),
         ),
         front_camera=TeleopCameraConfig(
-            backend=str(front.get("backend", "realsense")),
-            serial=str(front.get("serial", "")),
-            width=front_width,
-            height=front_height,
-            fps=int(front.get("fps", 30)),
-            require_usb3=bool(front.get("require_usb3", True)),
-            depth=bool(front.get("depth", False)),
-            depth_width=front_depth_width,
-            depth_height=front_depth_height,
-            align_depth_to_color=bool(front.get("align_depth_to_color", True)),
-            crop=parse_optional_image_roi(
-                front,
-                image_width=front_width,
-                image_height=front_height,
-                label="cameras.front crop",
-                require_square=True,
-            ),
+            backend=front.backend,
+            serial=front.serial,
+            device=front.device,
+            pixel_format=front.pixel_format,
+            width=front.width,
+            height=front.height,
+            fps=front.fps,
+            require_usb3=front.require_usb3,
+            depth=front.depth,
+            depth_width=front.depth_width,
+            depth_height=front.depth_height,
+            align_depth_to_color=front.align_depth_to_color,
+            crop=front.crop,
         ),
         wrist_camera=TeleopCameraConfig(
-            backend=str(wrist.get("backend", "v4l2")),
-            serial=str(wrist.get("serial", "")),
-            device=str(wrist.get("device", "")),
-            pixel_format=str(wrist.get("pixel_format", "YUYV")),
-            width=wrist_width,
-            height=wrist_height,
-            fps=int(wrist.get("fps", 30)),
+            backend=wrist.backend,
+            serial=wrist.serial,
+            device=wrist.device,
+            pixel_format=wrist.pixel_format,
+            width=wrist.width,
+            height=wrist.height,
+            fps=wrist.fps,
         ),
-        web_preview=parse_web_preview_config(
-            data.get("web_preview", {}) if isinstance(data.get("web_preview", {}), dict) else {},
-            repo_root=repo_root,
-        ),
+        web_preview=system.web_preview,
     )
     validate_teleop_config(config)
     return config
@@ -435,6 +423,7 @@ def collect_argv(config: TeleopConfig) -> list[str]:
 def bash_config(config: TeleopConfig) -> str:
     lines = [
         _assign("CONFIG_PATH", str(config.path)),
+        _assign("SYSTEM_CONFIG_PATH", str(config.system.path)),
         _assign("IMAGE", config.host.image),
         _assign("SERIAL", config.host.a1_serial),
         _assign("LEADER_PORT", config.leader.port),
@@ -454,64 +443,8 @@ def bash_config(config: TeleopConfig) -> str:
     return "\n".join(lines)
 
 
-def _required_table(data: dict[str, Any], key: str) -> dict[str, Any]:
-    value = data.get(key)
-    if not isinstance(value, dict):
-        raise ValueError(f"missing [{key}] table")
-    return value
-
-
-def _string(data: dict[str, Any], key: str) -> str:
-    value = data.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"missing string value: {key}")
-    return value
-
-
-def _string_tuple(data: dict[str, Any], key: str, expected_len: int) -> tuple[str, ...]:
-    value = data.get(key)
-    if not isinstance(value, list) or not all(isinstance(item, str) for item in value):
-        raise ValueError(f"{key} must be a string list")
-    if len(value) != expected_len:
-        raise ValueError(f"{key} expects {expected_len} values, got {len(value)}")
-    return tuple(value)
-
-
-def _float_tuple(data: dict[str, Any], key: str, expected_len: int) -> tuple[float, ...]:
-    value = data.get(key)
-    if not isinstance(value, list):
-        raise ValueError(f"{key} must be a number list")
-    out = tuple(float(item) for item in value)
-    if len(out) != expected_len:
-        raise ValueError(f"{key} expects {expected_len} values, got {len(out)}")
-    return out
-
-
-def _resolve_path(value: str, repo_root: Path) -> Path:
-    path = Path(value).expanduser()
-    if path.is_absolute():
-        return path
-    return (repo_root / path).resolve()
-
-
-def _bool_flag(name: str, enabled: bool) -> str:
-    return f"--{name}" if enabled else f"--no-{name}"
-
-
 def _csv(values: tuple[float, ...] | tuple[str, ...]) -> str:
     return ",".join(_num(value) if isinstance(value, float) else str(value) for value in values)
-
-
-def _num(value: float) -> str:
-    return f"{float(value):g}"
-
-
-def _assign(name: str, value: str) -> str:
-    return f"{name}={shlex.quote(value)}"
-
-
-def _array(name: str, values: list[str]) -> str:
-    return f"{name}=({' '.join(shlex.quote(value) for value in values)})"
 
 
 def main(argv: list[str] | None = None) -> int:

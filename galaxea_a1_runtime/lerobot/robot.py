@@ -47,7 +47,7 @@ class GalaxeaA1RobotConfig(_RobotConfigBase):
     action_mode: ActionMode = ActionMode.EEF_DELTA
     camera_specs: tuple[CameraSpec, ...] = field(
         default_factory=lambda: (
-            CameraSpec("front", height=480, width=640),
+            CameraSpec("front", height=480, width=480),
             CameraSpec("wrist", height=480, width=640),
         )
     )

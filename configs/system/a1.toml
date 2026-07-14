@@ -1,0 +1,93 @@
+# Physical Galaxea A1 system contract shared by Teleop and every deployment.
+# Model checkpoints, prompts, quantiles, and rollout cadence do not belong here.
+
+[host]
+image = "galaxea-a1-runtime/a1-noetic-arm64:local"
+a1_serial = "/dev/a1"
+
+[topics]
+joint_states = "/joint_states_host"
+joint_target = "/arm_joint_target_position"
+staged_command = "/arm_joint_command_a1_staged"
+host_command = "/arm_joint_command_host"
+motion_enable = "/a1_arm_motion_enable"
+relay_status = "/a1_arm_relay_status"
+gripper_command = "/gripper_position_control_host"
+gripper_feedback = "/gripper_stroke_host"
+eef_pose = "/end_effector_pose"
+eef_target = "/a1_ee_target"
+
+[relay]
+enable_timeout_s = 2.0
+max_status_age_s = 1.0
+
+[joint_safety]
+names = ["arm_joint1", "arm_joint2", "arm_joint3", "arm_joint4", "arm_joint5", "arm_joint6"]
+lower_limits = [-2.8798, -0.1, -3.3161, -2.8798, -1.6581, -2.8798]
+upper_limits = [2.8798, 3.2289, 0, 2.8798, 1.6581, 2.8798]
+# Explicitly disabled by operator decision. Joint range and finite-value checks remain active.
+action_step_guard_enabled = false
+max_action_step_rad = 0.25
+max_first_target_delta_rad = 0.25
+initial_alignment_tolerance_rad = 0.05
+state_timeout_s = 10.0
+max_feedback_age_s = 0.5
+
+[eef]
+command_frame = "world"
+orientation_mode = "hold-current"
+xyz_min = [0.06, -0.27, 0.06]
+xyz_max = [0.44, 0.14, 0.50]
+min_quat_norm = 0.25
+max_feedback_age_s = 0.5
+feedback_wait_timeout_s = 5.0
+
+[gripper]
+# Physical A1 gripper contract. Model output mappings remain deployment-specific.
+stroke_min_mm = 0.0
+stroke_max_mm = 200.0
+feedback_open_threshold_mm = 30.0
+
+[cameras]
+warmup_frames = 20
+max_age_s = 0.5
+
+[cameras.front]
+backend = "realsense"
+serial = "341522300456"
+device = ""
+width = 640
+height = 480
+fps = 30
+require_usb3 = false
+depth = false
+depth_width = 640
+depth_height = 480
+align_depth_to_color = true
+auto_exposure = true
+exposure = 140
+gain = 32
+auto_white_balance = true
+white_balance = 4600
+crop_enabled = true
+crop_x = 103
+crop_y = 0
+crop_width = 480
+crop_height = 480
+
+[cameras.wrist]
+backend = "realsense"
+serial = "218622276998"
+device = ""
+width = 640
+height = 480
+fps = 30
+backend_api = "v4l2"
+pixel_format = ""
+
+[web_preview]
+enabled = true
+bind = "0.0.0.0"
+port = 8088
+fps = 10.0
+jpeg_quality = 75

@@ -37,8 +37,9 @@ LeRobotDataset v3.0.
 
 - `Justfile` exposes the small operator surface; scripts can stay detailed, but
   daily commands should remain short.
-- Runtime behavior is controlled by tracked config files, especially
-  `configs/teleop/a1_so100.toml`.
+- Runtime behavior composes one tracked physical contract in
+  `configs/system/a1.toml` with app or model contracts under `configs/teleop/`
+  and `configs/deployments/`.
 - `third_party/` contains reproducible vendor snapshots listed in
   `third_party/vendors.toml`. A1-specific behavior belongs in
   `galaxea_a1_runtime/` or `scripts/apps/`, not vendor patches.
@@ -108,7 +109,7 @@ LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and binary
 gripper state, predicts absolute joint targets, and publishes only
 `/arm_joint_target_position`. The isolated jointTracker stages motor commands,
 then the relay guards the final host command topic. The bridge starts dry-run
-and step-gated from `configs/inference/a1_act_joint.toml`.
+and step-gated from `configs/deployments/act_joint.toml`.
 
 ## Teleop Collection Design
 
@@ -139,9 +140,11 @@ Teleop is the built-in demonstration collection mode.
 - `scripts/apps/teleop/a1_teleop_runtime.sh`: starts/stops ROS, driver, staged
   joint tracker, relay, bridge, and recorder. It also owns the post-episode
   sequence that pauses the bridge, homes both devices, and resumes the bridge.
-- `configs/teleop/a1_so100.toml`: tracked runtime contract for leader port,
-  cameras, topics, joint mapping, gripper range, state mode, FPS, and
-  RealSense depth capture.
+- `configs/system/a1.toml`: shared physical contract for cameras, topics,
+  relay timing, workspaces, joint limits, and gripper stroke.
+- `configs/teleop/a1_so100.toml`: teleop-only leader, joint mapping, and
+  collection contract.
+- `configs/deployments/`: checkpoint-specific model and rollout contracts.
 
 The episode interaction is:
 

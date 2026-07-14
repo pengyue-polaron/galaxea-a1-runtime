@@ -80,16 +80,16 @@ arm is disconnected.
   just teleop <experiment>
   ```
 
-- Teleop hardware and data semantics are controlled by the tracked config file:
+- Teleop app/data semantics are controlled by the tracked config file:
 
   ```text
   configs/teleop/a1_so100.toml
   ```
 
-- Do not change teleop behavior with ad hoc per-run collector flags. If camera
-  devices, RealSense depth capture, leader port, state mode, FPS, gripper
-  stroke range, topics, joint mapping, or joint limits change, edit and commit
-  the TOML config instead.
+- Do not change teleop behavior with ad hoc per-run collector flags. Camera
+  devices, depth, physical gripper range, topics, and joint limits live in
+  `configs/system/a1.toml`; leader mapping and collection semantics live in
+  `configs/teleop/a1_so100.toml`.
 - For an alternate tracked hardware setup, add another TOML file under
   `configs/teleop/` and run the app script with an explicit config path:
 
@@ -114,8 +114,8 @@ arm is disconnected.
   - Default collection FPS `30`.
   - Gripper data and policy actions are binary: `0=closed`, `1=open`; hardware
     adapters send only `0mm` or `200mm`.
-- If any of those defaults must change, update `configs/teleop/a1_so100.toml`,
-  docs, and the pure/static tests in the same change.
+- If any of those defaults must change, update the owning tracked config,
+  docs, and behavioral tests in the same change.
 
 ### Official/Original ROS Debug Path
 
@@ -244,14 +244,13 @@ tmux attach -t lingbot-a1
 tmux attach -t act-a1
 ```
 
-Teleop hardware/data semantics are configured in
-`configs/teleop/a1_so100.toml`. Edit and commit that file when camera devices,
-RealSense depth capture, leader port, state mode, FPS, gripper stroke range, or
-joint mapping changes.
+Shared physical hardware is configured in `configs/system/a1.toml`. Teleop
+leader mapping and collection semantics are configured in
+`configs/teleop/a1_so100.toml`.
 The default teleop config is RGB-only and binds both RealSense cameras by
 serial: D455 agent view `341522300456` and D405 wrist `218622276998`.
 Depth capture remains supported, but enable it intentionally in the tracked
-config after the agent RealSense is on USB3 or after lowering FPS/resolution
+system config after the agent RealSense is on USB3 or after lowering FPS/resolution
 for USB2. The shared read-only LAN web preview is configured under
 `[web_preview]` and must reuse the owning app's camera readers rather than
 opening the same RealSense from a second process.
@@ -266,14 +265,13 @@ reset implementation before the next episode when
 the operator intentionally changes the collection start pose or reset speed.
 
 LingBot inference semantics are configured in
-`configs/inference/a1_lingbot_va.toml`. Edit and commit that file when the
-server, prompt, cameras, EEF workspace, orientation mode, relay topics,
-execution cadence, or gripper mapping changes.
+`configs/deployments/lingbot_va.toml`. Edit and commit that file when the
+server, prompt, execution cadence, or model gripper mapping changes.
 
 ACT joint inference semantics are configured in
-`configs/inference/a1_act_joint.toml`. It starts dry-run and step-gated by
-default. Edit and commit that file when the checkpoint, cameras, joint limits,
-relay topics, execution cadence, or gripper mapping changes.
+`configs/deployments/act_joint.toml`. It starts dry-run and step-gated by
+default. Edit and commit that file when the checkpoint, execution cadence, or
+model gripper mapping changes.
 
 Useful direct-debug checks inside the ROS/Docker environment:
 

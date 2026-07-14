@@ -14,6 +14,7 @@ def test_default_contract_targets_lerobot_v3():
 
     assert contract.dataset_format == LEROBOT_DATASET_FORMAT
     assert contract.dataset_format == "v3.0"
+    assert contract.features()["observation.images.front"]["shape"] == (480, 480, 3)
 
 
 def test_default_contract_exposes_expected_feature_keys():

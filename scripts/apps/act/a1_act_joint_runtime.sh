@@ -3,7 +3,7 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 JOINT_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
-CONFIG_PATH="${ROOT}/configs/inference/a1_act_joint.toml"
+CONFIG_PATH="${ROOT}/configs/deployments/act_joint.toml"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -70,7 +70,7 @@ start_tmux() {
   local bridge_command_q
   printf -v bridge_command_q "%q " "${bridge_command[@]}"
   tmux new-session -d -s "${SESSION}" -c "${ROOT}" \
-    "export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo ACT_BRIDGE_EXIT=\$rc; exec bash"
+    "export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo ACT_BRIDGE_EXIT=\$rc; exec bash"
   sleep 4
   if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
     echo "[FAIL] tmux session exited during startup." >&2
@@ -88,7 +88,7 @@ start_tmux() {
 doctor() {
   local args=("$@")
   joint_runtime_env "${JOINT_RUNTIME}" doctor "${args[@]}"
-  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${ROOT}/third_party/lerobot/src:${PYTHONPATH:-}" \
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/act/a1_act_doctor.py" \
       --checkpoint "${CHECKPOINT}" \
       --wrist-backend "${WRIST_BACKEND}" \
@@ -141,7 +141,7 @@ case "${1:-help}" in
     ;;
   *)
     cat <<EOF
-Usage: $0 [--config configs/inference/a1_act_joint.toml] <start|services|tmux|stop|doctor|status|logs>
+Usage: $0 [--config configs/deployments/act_joint.toml] <start|services|tmux|stop|doctor|status|logs>
 
   start     Start A1 joint runtime, then open the interactive ACT bridge tmux
   services  Start only ROS, A1 driver, jointTracker, and locked relay

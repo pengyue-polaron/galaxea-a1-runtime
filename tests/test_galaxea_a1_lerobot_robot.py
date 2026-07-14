@@ -39,7 +39,9 @@ def test_galaxea_a1_robot_uses_null_io_without_hardware():
 
 
 def test_galaxea_a1_robot_features_match_contract():
-    robot = GalaxeaA1Robot(GalaxeaA1RobotConfig())
+    config = GalaxeaA1RobotConfig()
+    robot = GalaxeaA1Robot(config)
 
+    assert config.camera_specs[0] == CameraSpec("front", height=480, width=480)
     assert robot.observation_features["observation.state"] == (14,)
     assert robot.action_features["action"] == (7,)
