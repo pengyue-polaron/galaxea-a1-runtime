@@ -4,19 +4,19 @@
 source_root = "data/processed/banana_in_the_plate_lerobot_v3"
 
 [outputs.v3]
-target_root = "data/processed/banana_in_the_plate_lingbot_eef_binary_v3"
-archive_path = "data/exports/banana_in_the_plate_lingbot_eef_binary_v3.tar.gz"
-repo_id = "galaxea-a1/banana_in_the_plate_lingbot_eef_binary_v3"
+target_root = "data/processed/banana_in_the_plate_lingbot_eef_continuous_v3"
+archive_path = "data/exports/banana_in_the_plate_lingbot_eef_continuous_v3.tar.gz"
+repo_id = "galaxea-a1/banana_in_the_plate_lingbot_eef_continuous_v3"
 
 [outputs.v21]
-target_root = "data/processed/banana_in_the_plate_lingbot_eef_binary_v21"
-archive_path = "data/exports/banana_in_the_plate_lingbot_eef_binary_v21.tar.gz"
-repo_id = "galaxea-a1/banana_in_the_plate_lingbot_eef_binary_v21"
+target_root = "data/processed/banana_in_the_plate_lingbot_eef_continuous_v21"
+archive_path = "data/exports/banana_in_the_plate_lingbot_eef_continuous_v21.tar.gz"
+repo_id = "galaxea-a1/banana_in_the_plate_lingbot_eef_continuous_v21"
 
 [outputs.joint_v3]
-target_root = "data/processed/banana_in_the_plate_joint_binary_v3"
-archive_path = "data/exports/banana_in_the_plate_joint_binary_v3.tar.gz"
-repo_id = "galaxea-a1/banana_in_the_plate_joint_binary_v3"
+target_root = "data/processed/banana_in_the_plate_joint_continuous_v3"
+archive_path = "data/exports/banana_in_the_plate_joint_continuous_v3.tar.gz"
+repo_id = "galaxea-a1/banana_in_the_plate_joint_continuous_v3"
 
 [kinematics]
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
@@ -24,8 +24,5 @@ base_link = "base_link"
 tip_link = "arm_seg6"
 
 [gripper]
-stroke_scale_mm = 200.0
-# Existing continuous teleop values at or above this are open.
-source_open_threshold = 0.15
-# Policy predictions at or above this execute the open state.
-policy_open_threshold = 0.5
+stroke_min_mm = 0.0
+stroke_max_mm = 200.0

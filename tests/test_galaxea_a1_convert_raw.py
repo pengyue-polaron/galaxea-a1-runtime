@@ -98,7 +98,7 @@ def make_teleop_raw_episode(root: Path) -> None:
     (episode / "metadata.json").write_text(
         json.dumps(
             {
-                "schema_version": "galaxea_a1_teleop_raw_v1",
+                "schema_version": "galaxea_a1_teleop_raw_v2",
                 "fps_target": 30,
                 "state_names": state_names,
                 "action_names": action_names,
@@ -134,7 +134,7 @@ def test_iter_episode_frames_preserves_new_teleop_state_and_action(tmp_path):
 
     frames = list(iter_episode_frames(episode=episode, task=summary.task, contract=contract))
 
-    assert episode.schema_version == "galaxea_a1_teleop_raw_v1"
+    assert episode.schema_version == "galaxea_a1_teleop_raw_v2"
     assert frames[0]["observation.state"] == pytest.approx(tuple(float(i) for i in range(14)))
     assert frames[0]["action"] == pytest.approx(tuple(float(i + 10) for i in range(7)))
     assert frames[0]["observation.state"].dtype == np.float32

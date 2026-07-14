@@ -105,8 +105,8 @@ Future FastWAM/GR00T app scripts should reuse `apps.eef_bridge` and only provide
 their own model IO plus action conversion into the normalized A1 EEF contract.
 
 ACT is the built-in joint-state policy deployment path. It loads a local
-LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and binary
-gripper state, predicts absolute joint targets, and publishes only
+LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and continuous
+normalized gripper state, predicts absolute joint targets, and publishes only
 `/arm_joint_target_position`. The isolated jointTracker stages motor commands,
 then the relay guards the final host command topic. The bridge starts dry-run
 and step-gated from `configs/deployments/act_joint.toml`.
@@ -220,10 +220,10 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
   `/a1_ee_target`; rejects `joint_absolute`.
 - LingBot app: finite continuous inference and publishing, relay guard,
   episode-relative EEF state conditioning, absolute workspace validation, and
-  tracked binary/continuous gripper execution.
+  shared continuous gripper execution.
 - ACT app: dry-run default, local checkpoint loading, action preview, staged
-  jointTracker alignment, relay guard, joint limit/step checks, and binary
-  gripper execution.
+  jointTracker alignment, relay guard, joint limit/step checks, and continuous
+  normalized gripper execution.
 - Dataset: LeRobotDataset v3 contract, writer helpers, passive episode recorder,
   teleop raw migration, v2.1 migration plan, raw RealSense depth capture, and
   `observation.images.front_depth` conversion for depth-enabled teleop episodes.

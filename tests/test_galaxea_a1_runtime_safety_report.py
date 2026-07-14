@@ -19,7 +19,7 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "lingbot_cache_actual_feedback" in settings
     assert settings["lingbot_cache_actual_feedback"].default == "off; cache tracker command"
     assert "lingbot_relay_status_guard" in settings
-    assert settings["gripper_scale_mapping"].default == "continuous 0..1 -> 0..80mm"
+    assert settings["gripper_scale_mapping"].default == "continuous 0..1 -> system stroke range"
     assert settings["generic_ros1_adapter_arm_motion"].default == "feedback-driven EEF target synthesis"
     assert "does not modify commands" in settings["initial_command_alignment"].operator_note
 

@@ -8,13 +8,13 @@ publishes directly to `/arm_joint_command_host`.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from math import isfinite
 from typing import Any
 
 from galaxea_a1_runtime.config import RuntimeConfig
 from galaxea_a1_runtime.constants import EEF_FEEDBACK_TOPIC, JOINT_FEEDBACK_TOPIC
 from galaxea_a1_runtime.hardware.eef import EefPose, action_to_eef_target
 from galaxea_a1_runtime.hardware.io import A1Observation
+from galaxea_a1_runtime.gripper import denormalize_stroke
 from galaxea_a1_runtime.policies.actions import RuntimeAction
 from galaxea_a1_runtime.schema import ActionMode, DEFAULT_STATE_NAMES
 
@@ -208,10 +208,7 @@ def build_ros1_safe_adapter(config: RuntimeConfig) -> Ros1A1HardwareIO:
 
 
 def _normalized_gripper_to_stroke_mm(value: float) -> float:
-    normalized = float(value)
-    if not isfinite(normalized) or normalized < 0.0 or normalized > 1.0:
-        raise ValueError(f"gripper action must be normalized to [0, 1], got {value!r}")
-    return 200.0 if normalized >= 0.5 else 0.0
+    return denormalize_stroke(value, stroke_min_mm=0.0, stroke_max_mm=200.0)
 
 
 def _stamp_to_seconds(stamp: Any) -> float | None:

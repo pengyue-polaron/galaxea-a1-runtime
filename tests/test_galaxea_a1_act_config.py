@@ -43,10 +43,8 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
     )
     assert config.safety.action_step_guard_enabled is False
     assert config.safety.initial_alignment_tolerance_rad == 0.05
-    assert config.gripper.command_mode == "continuous"
     assert config.gripper.stroke_min_mm == 0.0
-    assert config.gripper.stroke_max_mm == 80.0
-    assert config.gripper.command_open_threshold == 0.5
+    assert config.gripper.stroke_max_mm == 200.0
     assert config.cameras.front_crop is not None
     assert config.cameras.front_crop.xywh == (103, 0, 480, 480)
 
@@ -68,8 +66,8 @@ def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
     assert "--step-mode" in args
     assert args[args.index("--execute-steps-per-inference") + 1] == "100"
     assert args[args.index("--max-model-calls") + 1] == "0"
-    assert args[args.index("--gripper-command-mode") + 1] == "continuous"
-    assert args[args.index("--gripper-stroke-max") + 1] == "80"
+    assert args[args.index("--gripper-stroke-max") + 1] == "200"
+    assert "--gripper-command-mode" not in args
     assert "--disable-backbone-download" in args
     assert args[args.index("--cam0-serial") + 1] == "341522300456"
     assert args[args.index("--cam1-backend") + 1] == "realsense"
@@ -92,7 +90,7 @@ def test_act_bash_config_exports_joint_runtime_environment(tmp_path):
     assert "DEPLOYMENT_READY=0" in text
     assert "--no-execute" in text
     assert "--step-mode" in text
-    assert "--gripper-command-mode continuous" in text
+    assert "--gripper-stroke-max 200" in text
 
 
 def test_act_runtime_refuses_unreviewed_deployment():

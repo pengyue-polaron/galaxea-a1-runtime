@@ -55,6 +55,8 @@ never written into training images. Change the ROI only in
 `configs/system/a1.toml`, then restart the camera service.
 Do not mix this crop with older 640x480 episodes under one experiment name;
 the collector checks existing metadata and fails before opening ROS/cameras.
+The continuous gripper contract is raw schema `galaxea_a1_teleop_raw_v2` and
+must use a new experiment directory instead of appending to v1 data.
 
 3. Test EEF control:
 
@@ -214,8 +216,9 @@ just convert banana_in_the_plate
 ```
 
 Conversion semantics and paths come only from
-`configs/datasets/<experiment>.toml`. LingBot packages use binary gripper
-actions: `0=closed`, `1=open`. Each conversion emits EEF v3.0, EEF v2.1, and
+`configs/datasets/<experiment>.toml`. All packages preserve continuous
+normalized gripper state/actions: `0=minimum stroke`, `1=maximum stroke`.
+Each conversion emits EEF v3.0, EEF v2.1, and
 joint-action v3.0 packages; never mix their files in one directory. Joint
 positions remain absolute targets in radians.
 
@@ -249,8 +252,8 @@ prompt, and q01/q99 statistics are installed and reviewed. Its configured
 rollout remains 36 model calls, four latent frames per call, four actions per
 frame, at 30 Hz. Model EEF
 poses are episode-relative and are composed onto the measured startup pose
-before the absolute A1 workspace clamp. The gripper uses the ACT deployment
-mapping: continuous policy values map to 0-80 mm. KV-cache action history uses
+before the absolute A1 workspace clamp. Continuous gripper values map linearly
+through the shared physical range in `configs/system/a1.toml`. KV-cache action history uses
 the target actually sent to the tracker, matching the checkpoint's training
 action contract; measured EEF feedback remains the observation and safety
 signal, not the model's past-action token.
@@ -303,7 +306,7 @@ targets without enabling the relay. To move the arm, edit the tracked config and
 set `execution.execute = true` after the robot is powered, reset, and clear.
 Execution still remains step-gated: the bridge aligns jointTracker output to
 current feedback, waits for relay `ACTIVE`, then publishes only
-`/arm_joint_target_position` plus binary gripper commands.
+`/arm_joint_target_position` plus continuous gripper targets.
 
 Stop with:
 

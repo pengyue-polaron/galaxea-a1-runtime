@@ -28,7 +28,6 @@ from galaxea_a1_runtime.hardware.web_preview import (
 
 OrientationMode = Literal["hold-current", "model-quat"]
 PoseMode = Literal["absolute", "episode-relative"]
-GripperCommandMode = Literal["binary", "continuous"]
 TextEncoderDevice = Literal["cpu", "cuda"]
 
 DEFAULT_LINGBOT_CONFIG = Path("configs/deployments/lingbot_va.toml")
@@ -135,13 +134,8 @@ class LingBotServoConfig:
 
 @dataclass(frozen=True)
 class LingBotGripperConfig:
-    stroke_scale_mm: float
-    stroke_offset_mm: float
     stroke_min_mm: float
     stroke_max_mm: float
-    command_mode: GripperCommandMode
-    command_open_threshold: float
-    feedback_open_threshold_mm: float
 
 
 @dataclass(frozen=True)
@@ -195,7 +189,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     observations = _required_table(data, "observations")
     execution = _required_table(data, "execution")
     action = _required_table(data, "action")
-    gripper = _required_table(data, "gripper_policy")
     front = system.cameras.front
     wrist = system.cameras.wrist
 
@@ -284,13 +277,8 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             cache_actual_feedback=bool(action.get("cache_actual_feedback", False)),
         ),
         gripper=LingBotGripperConfig(
-            stroke_scale_mm=float(gripper.get("stroke_scale_mm", 200.0)),
-            stroke_offset_mm=float(gripper.get("stroke_offset_mm", 0.0)),
-            stroke_min_mm=float(gripper.get("output_stroke_min_mm", 0.0)),
-            stroke_max_mm=float(gripper.get("output_stroke_max_mm", 200.0)),
-            command_mode=_gripper_command_mode(str(gripper.get("command_mode", "binary"))),
-            command_open_threshold=float(gripper.get("command_open_threshold", 0.5)),
-            feedback_open_threshold_mm=system.gripper.feedback_open_threshold_mm,
+            stroke_min_mm=system.gripper.stroke_min_mm,
+            stroke_max_mm=system.gripper.stroke_max_mm,
         ),
         cameras=LingBotCameraConfig(
             width=front.width,
@@ -377,23 +365,8 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("servo.gain must be positive")
     if config.servo.corrections < 0:
         raise ValueError("servo.corrections must be >= 0")
-    if config.gripper.stroke_scale_mm == 0:
-        raise ValueError("gripper.stroke_scale_mm must be non-zero")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke_max_mm must be greater than stroke_min_mm")
-    if (
-        config.gripper.stroke_min_mm < config.system.gripper.stroke_min_mm
-        or config.gripper.stroke_max_mm > config.system.gripper.stroke_max_mm
-    ):
-        raise ValueError("gripper policy output stroke must stay inside the physical system range")
-    if not 0.0 < config.gripper.command_open_threshold < 1.0:
-        raise ValueError("gripper.command_open_threshold must be between 0 and 1")
-    if not (
-        config.system.gripper.stroke_min_mm
-        < config.gripper.feedback_open_threshold_mm
-        < config.system.gripper.stroke_max_mm
-    ):
-        raise ValueError("gripper feedback threshold must be inside the physical system range")
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be an absolute ROS topic: {value!r}")
@@ -497,20 +470,10 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         _num(config.eef.max_feedback_age_s),
         "--feedback-wait-timeout",
         _num(config.eef.feedback_wait_timeout_s),
-        "--gripper-stroke-scale",
-        _num(config.gripper.stroke_scale_mm),
-        "--gripper-stroke-offset",
-        _num(config.gripper.stroke_offset_mm),
         "--gripper-stroke-min",
         _num(config.gripper.stroke_min_mm),
         "--gripper-stroke-max",
         _num(config.gripper.stroke_max_mm),
-        "--gripper-command-mode",
-        config.gripper.command_mode,
-        "--gripper-command-open-threshold",
-        _num(config.gripper.command_open_threshold),
-        "--gripper-feedback-open-threshold-mm",
-        _num(config.gripper.feedback_open_threshold_mm),
     ]
     if config.execution.execute:
         args.append("--execute")
@@ -578,12 +541,6 @@ def _orientation_mode(value: str) -> OrientationMode:
 def _pose_mode(value: str) -> PoseMode:
     if value not in ("absolute", "episode-relative"):
         raise ValueError(f"unsupported eef.action_pose_mode: {value!r}")
-    return value
-
-
-def _gripper_command_mode(value: str) -> GripperCommandMode:
-    if value not in ("binary", "continuous"):
-        raise ValueError(f"unsupported gripper.command_mode: {value!r}")
     return value
 
 

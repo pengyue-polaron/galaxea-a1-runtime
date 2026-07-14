@@ -18,12 +18,14 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.policy_server.deployment_ready is False
     assert config.eef.orientation_mode == "hold-current"
     assert config.eef.action_pose_mode == "episode-relative"
-    assert config.gripper.command_mode == "continuous"
-    assert config.gripper.stroke_max_mm == 80.0
+    assert config.gripper.stroke_min_mm == 0.0
+    assert config.gripper.stroke_max_mm == 200.0
     assert config.cameras.front_crop is not None
     assert config.cameras.front_crop.xywh == (103, 0, 480, 480)
     assert args[args.index("--cmd-pose-topic") + 1] == "/a1_ee_target"
     assert args[args.index("--cam1-backend") + 1] == "realsense"
+    assert args[args.index("--gripper-stroke-max") + 1] == "200"
+    assert "--gripper-command-mode" not in args
     assert "--execute" not in args
 
 

@@ -20,7 +20,7 @@ JOINT_ACTION_NAMES = (
     "joint_4_rad",
     "joint_5_rad",
     "joint_6_rad",
-    "gripper_binary",
+    "gripper_normalized",
 )
 
 
@@ -29,14 +29,11 @@ def pack_joint_v3_dataset(
     source_root: Path,
     target_root: Path,
     repo_id: str,
-    gripper_open_threshold: float,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
     target_root = target_root.expanduser().resolve()
-    if not 0.0 < gripper_open_threshold < 1.0:
-        raise ValueError("gripper_open_threshold must be between 0 and 1")
     info = _read_json(source_root / "meta/info.json")
     _validate_source(info)
     if target_root.exists():
@@ -52,8 +49,8 @@ def pack_joint_v3_dataset(
         frame = pd.read_parquet(path)
         actions = np.stack(frame["action"].to_numpy()).astype(np.float32)
         states = np.stack(frame["observation.state"].to_numpy()).astype(np.float32)
-        actions[:, -1] = (actions[:, -1] >= gripper_open_threshold).astype(np.float32)
-        states[:, -1] = (states[:, -1] >= gripper_open_threshold).astype(np.float32)
+        _validate_normalized_gripper(actions[:, -1], label="action")
+        _validate_normalized_gripper(states[:, -1], label="observation.state")
         for episode_index in frame["episode_index"].drop_duplicates().tolist():
             key = int(episode_index)
             if key in episode_actions:
@@ -72,7 +69,7 @@ def pack_joint_v3_dataset(
     _rewrite_episode_stats(target_root, episode_actions, episode_states)
 
     manifest = {
-        "format": "lerobot_v3_galaxea_a1_joint_binary_v1",
+        "format": "lerobot_v3_galaxea_a1_joint_continuous_v1",
         "repo_id": repo_id,
         "source_dataset": str(source_root),
         "episodes": int(info["total_episodes"]),
@@ -80,33 +77,34 @@ def pack_joint_v3_dataset(
         "fps": int(info["fps"]),
         "observation": {
             "shape": [14],
-            "semantics": "EEF pose (xyz+quaternion), six measured joints, binary gripper",
+            "semantics": "EEF pose (xyz+quaternion), six measured joints, continuous normalized gripper",
             "joint_unit": "radian",
         },
         "action": {
             "shape": [7],
             "names": list(JOINT_ACTION_NAMES),
-            "semantics": "six absolute A1 joint targets plus binary gripper",
+            "semantics": "six absolute A1 joint targets plus continuous normalized gripper target",
             "joint_unit": "radian",
-            "gripper": "0=closed, 1=open; no intermediate values",
-            "source_open_threshold": gripper_open_threshold,
+            "gripper": "continuous normalized target: 0=minimum stroke, 1=maximum stroke",
         },
         "cameras": {
             "ordered_keys": ["observation.images.front", "observation.images.wrist"],
         },
         "validation": {
-            "action_gripper_unique_values": np.unique(all_actions[:, -1]).tolist(),
-            "state_gripper_unique_values": np.unique(all_states[:, -1]).tolist(),
-            "closed_action_frames": int(np.count_nonzero(all_actions[:, -1] == 0.0)),
-            "open_action_frames": int(np.count_nonzero(all_actions[:, -1] == 1.0)),
-            "action_transitions": _count_episode_transitions(episode_actions),
+            "action_gripper_min": float(np.min(all_actions[:, -1])),
+            "action_gripper_max": float(np.max(all_actions[:, -1])),
+            "state_gripper_min": float(np.min(all_states[:, -1])),
+            "state_gripper_max": float(np.max(all_states[:, -1])),
+            "intermediate_action_frames": int(
+                np.count_nonzero((all_actions[:, -1] > 0.0) & (all_actions[:, -1] < 1.0))
+            ),
         },
     }
     _write_json(target_root / "meta/joint_v3.json", manifest)
     (target_root / "TRAINING.md").write_text(
         "# A1 Joint LeRobot Dataset\n\n"
         "Action is `[joint_1..joint_6, gripper]`. Joint values are absolute targets in radians. "
-        "Gripper is binary: `0=closed`, `1=open`.\n",
+        "Gripper is continuous and normalized: `0=minimum stroke`, `1=maximum stroke`.\n",
         encoding="utf-8",
     )
     manifest["package_sha256"] = _dataset_digest(target_root, exclude={Path("meta/joint_v3.json")})
@@ -166,7 +164,7 @@ def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
     info["features"]["action"]["names"] = list(JOINT_ACTION_NAMES)
     state_names = info["features"]["observation.state"]["names"]
     state_names[7:13] = [f"joint_{index}_rad" for index in range(1, 7)]
-    state_names[-1] = "gripper_binary"
+    state_names[-1] = "gripper_normalized"
     _write_json(target_root / "meta/info.json", info)
 
 
@@ -211,11 +209,11 @@ def _vector_stats(values: np.ndarray) -> dict[str, list[float]]:
     }
 
 
-def _count_episode_transitions(episodes: dict[int, np.ndarray]) -> int:
-    return sum(
-        int(np.count_nonzero(np.diff(episodes[index][:, -1])))
-        for index in sorted(episodes)
-    )
+def _validate_normalized_gripper(values: np.ndarray, *, label: str) -> None:
+    if not np.all(np.isfinite(values)):
+        raise ValueError(f"{label} gripper contains non-finite values")
+    if np.any(values < -1e-6) or np.any(values > 1.0 + 1e-6):
+        raise ValueError(f"{label} gripper is outside normalized [0, 1]")
 
 
 def _dataset_digest(root: Path, *, exclude: set[Path]) -> str:

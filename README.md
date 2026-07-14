@@ -226,6 +226,11 @@ Edit it for the SO leader, state mode, FPS, reset, or joint mapping. Edit
 joint limits, and physical gripper range.
 The normal collection entrypoint does not take per-run collector flags.
 
+The gripper contract is continuous end to end. Leader `0..100`, collected
+state/action `0..1`, and ACT/LingBot output `0..1` all map linearly onto the
+tracked system stroke range. Fresh `/gripper_stroke_host` feedback is required;
+the collector never guesses millimeters from the seventh joint-state value.
+
 The A1 leader adapter lives in
 [galaxea_a1_runtime/teleop/a1_so_leader.py](galaxea_a1_runtime/teleop/a1_so_leader.py):
 leader actions use six arm axes `joint0.pos..joint5.pos` plus an independent
@@ -260,6 +265,8 @@ saved. Wrist frames remain uncropped.
 The collector rejects appending 480x480 AgentView frames to an older raw
 experiment containing 640x480 frames; use a new experiment name or migrate the
 whole existing experiment first.
+Continuous gripper episodes use raw schema `galaxea_a1_teleop_raw_v2`; the
+collector also rejects appending them to a v1/binary experiment directory.
 
 Enter requests a save; it does not make the episode durable immediately. The
 collector first checks joint-action continuity using the tracked

@@ -38,9 +38,10 @@ action_inference_steps = 10
 snr_shift = 5.0
 action_snr_shift = 1.0
 used_action_channel_ids = [0, 1, 2, 3, 4, 5, 6, 28]
-# Replace both arrays from the new training run before deployment_ready=true.
-q01_source = [-0.0205872823, -0.0816254982, -0.1587257938, -0.1585423197, -0.0502871116, -0.1319347475, 0.7473538256, 0.0]
-q99_source = [0.3058666354, 0.1699677740, 0.1147735418, 0.1790102567, 0.6598575765, 0.3804598969, 0.9999967217, 1.0]
+# Deliberately invalid-for-deployment placeholders. Replace both arrays from
+# the new continuous-gripper training run before deployment_ready=true.
+q01_source = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+q99_source = [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0]
 
 [observations]
 front_key = "observation.images.front"
@@ -69,10 +70,4 @@ servo_tolerance_m = 0.01
 servo_corrections = 0
 cache_actual_feedback = false
 
-[gripper_policy]
-stroke_scale_mm = 80.0
-stroke_offset_mm = 0.0
-output_stroke_min_mm = 0.0
-output_stroke_max_mm = 80.0
-command_mode = "continuous"
-command_open_threshold = 0.5
+# Gripper state/action use the shared continuous 0..1 contract from the system config.

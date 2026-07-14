@@ -112,8 +112,12 @@ arm is disconnected.
   - Default collected state mode `eef_joint` so every frame preserves both EEF
     pose and joint state.
   - Default collection FPS `30`.
-  - Gripper data and policy actions are binary: `0=closed`, `1=open`; hardware
-    adapters send only `0mm` or `200mm`.
+  - Gripper state and policy actions are continuous normalized values:
+    `0=minimum stroke`, `1=maximum stroke`. The SO leader, collector, dataset
+    converters, ACT, and LingBot all use the physical stroke range from
+    `configs/system/a1.toml`; do not add per-app thresholds or binary rewrites.
+  - `/gripper_stroke_host` is the only collection/inference feedback source.
+    Do not reinterpret the seventh `/joint_states_host` value as millimeters.
 - If any of those defaults must change, update the owning tracked config,
   docs, and behavioral tests in the same change.
 

@@ -14,6 +14,7 @@ from galaxea_a1_runtime.collection import (
     state_names_for_mode,
     teleop_frame_header,
     validate_existing_camera_shape,
+    validate_existing_schema,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
@@ -152,3 +153,16 @@ def test_existing_experiment_rejects_mixed_camera_shapes(tmp_path: Path):
         assert "cannot append front 480x480" in str(exc)
     else:
         raise AssertionError("mixed camera dimensions should be rejected")
+
+
+def test_existing_experiment_rejects_old_gripper_schema(tmp_path: Path):
+    episode = tmp_path / "episode_000_20260714_000000"
+    episode.mkdir()
+    (episode / "metadata.json").write_text('{"schema_version": "galaxea_a1_teleop_raw_v1"}')
+
+    try:
+        validate_existing_schema(tmp_path, expected=TELEOP_RAW_SCHEMA_VERSION)
+    except ValueError as exc:
+        assert "use a new experiment name" in str(exc)
+    else:
+        raise AssertionError("old binary gripper schema should be rejected")

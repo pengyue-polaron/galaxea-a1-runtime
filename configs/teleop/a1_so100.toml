@@ -28,8 +28,7 @@ a1_state_timeout_s = 30.0
 enabled = true
 source_key = "gripper.pos"
 invert = false
-# Raw leader/feedback values are normalized by 200mm, then recorded as 0 or 1.
-binary_open_threshold = 0.15
+# Leader 0..100 maps continuously onto the shared system stroke range.
 
 [collection]
 data_root = "data/raw"

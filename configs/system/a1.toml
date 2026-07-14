@@ -43,10 +43,10 @@ max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
 
 [gripper]
-# Physical A1 gripper contract. Model output mappings remain deployment-specific.
+# Shared continuous contract: every new dataset and policy uses normalized 0..1,
+# mapped linearly onto this physical A1 stroke range.
 stroke_min_mm = 0.0
 stroke_max_mm = 200.0
-feedback_open_threshold_mm = 30.0
 
 [cameras]
 warmup_frames = 20

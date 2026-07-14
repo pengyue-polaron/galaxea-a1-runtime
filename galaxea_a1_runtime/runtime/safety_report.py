@@ -106,10 +106,10 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="generic_ros1_gripper_range_check",
             path="galaxea_a1_runtime.hardware.ros1",
-            default="binary 0/1 -> 0/200mm",
-            behavior="The generic ROS1 adapter thresholds policy gripper at 0.5 and sends only 0mm or 200mm.",
-            visibility="ValueError at send_action time.",
-            operator_note="Normal GalaxeaA1Robot actions are clamped upstream, so this check catches direct adapter misuse.",
+            default="continuous 0..1 -> 0..200mm",
+            behavior="The generic ROS1 adapter clips finite normalized policy gripper values and maps them linearly to millimeters.",
+            visibility="Published gripper stroke follows the normalized value continuously.",
+            operator_note="The managed ACT and LingBot paths read the same range from configs/system/a1.toml.",
         ),
         SafetySetting(
             name="teleop_staged_joint_path",
@@ -188,11 +188,11 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="gripper_scale_mapping",
-            path="configs/deployments/lingbot_va.toml [gripper_policy]",
-            default="continuous 0..1 -> 0..80mm",
-            behavior="The LingBot bridge clips policy gripper to 0..1 and maps it into the tracked task stroke.",
+            path="configs/system/a1.toml [gripper]",
+            default="continuous 0..1 -> system stroke range",
+            behavior="Feedback outside the physical range is rejected; finite policy outputs are clipped to 0..1 and mapped linearly into the shared stroke range.",
             visibility="Bridge preview and publish log print gripper_norm and gripper_mm.",
-            operator_note="Dataset gripper values remain binary; deployment stroke mapping is an explicit app setting.",
+            operator_note="Changing this range changes the data and checkpoint contract; collect and train a new run after changing it.",
         ),
     )
 

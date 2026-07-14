@@ -26,9 +26,4 @@ max_model_calls = 0
 print_actions = true
 preview_steps = 5
 
-[gripper_policy]
-# ACT outputs are continuous 0..1 and map into this task-specific stroke range.
-command_mode = "continuous"
-output_stroke_min_mm = 0.0
-output_stroke_max_mm = 80.0
-command_open_threshold = 0.5
+# Gripper state/action use the shared continuous 0..1 contract from the system config.

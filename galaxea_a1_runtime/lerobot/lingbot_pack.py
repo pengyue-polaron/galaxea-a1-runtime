@@ -29,7 +29,7 @@ ACTION_NAMES = (
     "eef_delta_qy_from_episode_start",
     "eef_delta_qz_from_episode_start",
     "eef_delta_qw_from_episode_start",
-    "gripper_binary",
+    "gripper_normalized",
 )
 USED_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)
 SOURCE_ACTION_NAMES = ("joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6", "gripper")
@@ -66,9 +66,8 @@ class LingBotPackConfig:
     urdf_path: Path
     base_link: str
     tip_link: str
-    gripper_stroke_scale_mm: float
-    gripper_source_open_threshold: float
-    gripper_policy_open_threshold: float
+    gripper_stroke_min_mm: float
+    gripper_stroke_max_mm: float
 
 
 def load_pack_config(path: Path) -> LingBotPackConfig:
@@ -97,9 +96,8 @@ def load_pack_config(path: Path) -> LingBotPackConfig:
         urdf_path=_repo_path(repo_root, kinematics["urdf"]),
         base_link=str(kinematics["base_link"]),
         tip_link=str(kinematics["tip_link"]),
-        gripper_stroke_scale_mm=float(gripper["stroke_scale_mm"]),
-        gripper_source_open_threshold=float(gripper["source_open_threshold"]),
-        gripper_policy_open_threshold=float(gripper["policy_open_threshold"]),
+        gripper_stroke_min_mm=float(gripper["stroke_min_mm"]),
+        gripper_stroke_max_mm=float(gripper["stroke_max_mm"]),
     )
 
 
@@ -109,11 +107,10 @@ def pack_lingbot_dataset(
     target_root: Path,
     urdf_path: Path,
     repo_id: str,
-    gripper_stroke_scale_mm: float = 200.0,
+    gripper_stroke_min_mm: float = 0.0,
+    gripper_stroke_max_mm: float = 200.0,
     base_link: str = "base_link",
     tip_link: str = "arm_seg6",
-    gripper_source_open_threshold: float = 0.15,
-    gripper_policy_open_threshold: float = 0.5,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -122,14 +119,8 @@ def pack_lingbot_dataset(
     urdf_path = urdf_path.expanduser().resolve()
     info = _load_json(source_root / "meta/info.json")
     _validate_source(info)
-    if gripper_stroke_scale_mm <= 0:
-        raise ValueError("gripper_stroke_scale_mm must be positive")
-    for label, threshold in (
-        ("gripper_source_open_threshold", gripper_source_open_threshold),
-        ("gripper_policy_open_threshold", gripper_policy_open_threshold),
-    ):
-        if not 0.0 < threshold < 1.0:
-            raise ValueError(f"{label} must be between 0 and 1")
+    if gripper_stroke_max_mm <= gripper_stroke_min_mm:
+        raise ValueError("gripper stroke maximum must be greater than minimum")
     if target_root.exists():
         if not overwrite:
             raise FileExistsError(f"target root exists: {target_root}")
@@ -184,14 +175,15 @@ def pack_lingbot_dataset(
             source_gripper = episode_joint_actions[:, 6]
             if np.any(source_gripper < -1e-6) or np.any(source_gripper > 1.0 + 1e-6):
                 raise ValueError(f"episode {episode_index} gripper action is outside normalized [0, 1]")
-            episode_converted[:, 7] = (source_gripper >= gripper_source_open_threshold).astype(np.float64)
+            episode_converted[:, 7] = np.clip(source_gripper, 0.0, 1.0)
             if int(episode_index) in episode_state_values:
                 raise ValueError(f"episode {episode_index} appears in more than one data file")
-            binary_state = episode_observations.astype(np.float32, copy=True)
-            binary_state[:, -1] = (
-                episode_observations[:, -1] >= gripper_source_open_threshold
-            ).astype(np.float32)
-            converted_states[mask] = binary_state
+            source_state_gripper = episode_observations[:, -1]
+            if np.any(source_state_gripper < -1e-6) or np.any(source_state_gripper > 1.0 + 1e-6):
+                raise ValueError(f"episode {episode_index} gripper state is outside normalized [0, 1]")
+            continuous_state = episode_observations.astype(np.float32, copy=True)
+            continuous_state[:, -1] = np.clip(source_state_gripper, 0.0, 1.0)
+            converted_states[mask] = continuous_state
 
             reconstructed = np.stack(
                 [compose_relative_pose(values[:7], initial_pose) for values in episode_converted]
@@ -201,7 +193,7 @@ def pack_lingbot_dataset(
             reconstructed_quat_dots.append(np.abs(np.sum(reconstructed[:, 3:7] * target_fk[:, 3:7], axis=1)))
             converted[mask] = episode_converted.astype(np.float32)
             episode_actions[int(episode_index)] = episode_converted.astype(np.float32)
-            episode_state_values[int(episode_index)] = binary_state
+            episode_state_values[int(episode_index)] = continuous_state
 
         frame["observation.state"] = list(converted_states)
         frame["action"] = list(converted)
@@ -222,16 +214,18 @@ def pack_lingbot_dataset(
         "fk_feedback_min_abs_quaternion_dot": float(np.min(np.concatenate(fk_feedback_quat_dots))),
         "roundtrip_position_error_m": _error_summary(np.concatenate(reconstructed_position_errors)),
         "roundtrip_min_abs_quaternion_dot": float(np.min(np.concatenate(reconstructed_quat_dots))),
-        "binary_gripper": {
-            "action_unique_values": np.unique(all_actions[:, -1]).tolist(),
-            "state_unique_values": np.unique(all_states[:, -1]).tolist(),
-            "closed_action_frames": int(np.count_nonzero(all_actions[:, -1] == 0.0)),
-            "open_action_frames": int(np.count_nonzero(all_actions[:, -1] == 1.0)),
-            "action_transitions": _count_episode_transitions(episode_actions),
+        "continuous_gripper": {
+            "action_min": float(np.min(all_actions[:, -1])),
+            "action_max": float(np.max(all_actions[:, -1])),
+            "state_min": float(np.min(all_states[:, -1])),
+            "state_max": float(np.max(all_states[:, -1])),
+            "intermediate_action_frames": int(
+                np.count_nonzero((all_actions[:, -1] > 0.0) & (all_actions[:, -1] < 1.0))
+            ),
         },
     }
     manifest = {
-        "format": "lerobot_v3_lingbot_va_a1_eef_binary_v1",
+        "format": "lerobot_v3_lingbot_va_a1_eef_continuous_v1",
         "repo_id": repo_id,
         "source_dataset": str(source_root),
         "source_data_sha256": source_hash.hexdigest(),
@@ -253,10 +247,12 @@ def pack_lingbot_dataset(
             "translation": "target_xyz_base_link - initial_xyz_base_link",
             "rotation": "inverse(initial_quaternion) * target_quaternion, xyzw",
             "target_source": "FK of same-frame joint_absolute action",
-            "gripper": "binary: closed=0, open=1; no intermediate values",
-            "gripper_physical_mapping": f"0 -> 0 mm, 1 -> {gripper_stroke_scale_mm:g} mm",
-            "gripper_stroke_scale_mm": gripper_stroke_scale_mm,
-            "source_open_threshold": gripper_source_open_threshold,
+            "gripper": "continuous normalized target: 0=minimum stroke, 1=maximum stroke",
+            "gripper_physical_mapping": (
+                f"0 -> {gripper_stroke_min_mm:g} mm, 1 -> {gripper_stroke_max_mm:g} mm"
+            ),
+            "gripper_stroke_min_mm": gripper_stroke_min_mm,
+            "gripper_stroke_max_mm": gripper_stroke_max_mm,
             "lingbot_used_action_channel_ids": list(USED_ACTION_CHANNEL_IDS),
         },
         "cameras": {
@@ -270,8 +266,8 @@ def pack_lingbot_dataset(
             "obs_cam_keys": ["observation.images.front", "observation.images.wrist"],
             "camera_layout": "width_concat",
             "used_action_channel_ids": list(USED_ACTION_CHANNEL_IDS),
-            "runtime_gripper_stroke_scale_mm": gripper_stroke_scale_mm,
-            "runtime_gripper_open_threshold": gripper_policy_open_threshold,
+            "runtime_gripper_stroke_min_mm": gripper_stroke_min_mm,
+            "runtime_gripper_stroke_max_mm": gripper_stroke_max_mm,
             "action_per_frame": 4,
             "frame_chunk_size": 4,
         },
@@ -279,7 +275,7 @@ def pack_lingbot_dataset(
     }
     _write_json(target_root / "meta/lingbot_va.json", manifest)
     (target_root / "TRAINING.md").write_text(
-        _training_doc(gripper_stroke_scale_mm), encoding="utf-8"
+        _training_doc(gripper_stroke_min_mm, gripper_stroke_max_mm), encoding="utf-8"
     )
     package_sha256 = _dataset_digest(target_root)
     manifest["package_sha256"] = package_sha256
@@ -338,7 +334,7 @@ def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
         "shape": [8],
         "names": list(ACTION_NAMES),
     }
-    info["features"]["observation.state"]["names"][-1] = "gripper_binary"
+    info["features"]["observation.state"]["names"][-1] = "gripper_normalized"
     _write_json(target_root / "meta/info.json", info)
 
 
@@ -386,13 +382,6 @@ def _vector_stats(values: np.ndarray) -> dict[str, list[float]]:
         "q90": np.quantile(x, 0.90, axis=0).tolist(),
         "q99": np.quantile(x, 0.99, axis=0).tolist(),
     }
-
-
-def _count_episode_transitions(episodes: dict[int, np.ndarray]) -> int:
-    return sum(
-        int(np.count_nonzero(np.diff(episodes[index][:, -1])))
-        for index in sorted(episodes)
-    )
 
 
 def _align_quaternion_signs(values: np.ndarray, references: np.ndarray) -> None:
@@ -449,7 +438,7 @@ def _write_json(path: Path, value: dict[str, Any]) -> None:
     path.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 
-def _training_doc(gripper_stroke_scale_mm: float) -> str:
+def _training_doc(gripper_stroke_min_mm: float, gripper_stroke_max_mm: float) -> str:
     return f"""# A1 LingBot-VA Dataset
 
 The two ordered observations are the external `front` camera followed by the eye-in-hand
@@ -459,8 +448,8 @@ EEF action convention, source hash, URDF hash, channel mapping, and validation r
 Use the RoboTwin checkpoint as the action-semantics baseline, LoRA/PEFT training, camera layout
 `width_concat`, and action channels `[0,1,2,3,4,5,6,28]`. At inference, compose each predicted
 EEF delta onto the episode's measured initial `base_link -> arm_seg6` pose before publishing the
-absolute target. Gripper is strictly binary: closed=0 and open=1. The hardware adapter maps these
-states to 0 mm and {gripper_stroke_scale_mm:g} mm respectively.
+absolute target. Gripper state and action are continuous normalized values. The hardware adapter
+maps 0 to {gripper_stroke_min_mm:g} mm and 1 to {gripper_stroke_max_mm:g} mm linearly.
 """
 
 
@@ -479,11 +468,10 @@ def main(argv: list[str] | None = None) -> int:
         target_root=config.v3_target_root,
         urdf_path=config.urdf_path,
         repo_id=config.v3_repo_id,
-        gripper_stroke_scale_mm=config.gripper_stroke_scale_mm,
+        gripper_stroke_min_mm=config.gripper_stroke_min_mm,
+        gripper_stroke_max_mm=config.gripper_stroke_max_mm,
         base_link=config.base_link,
         tip_link=config.tip_link,
-        gripper_source_open_threshold=config.gripper_source_open_threshold,
-        gripper_policy_open_threshold=config.gripper_policy_open_threshold,
         overwrite=args.overwrite,
         archive_path=config.v3_archive_path,
     )
@@ -498,7 +486,6 @@ def main(argv: list[str] | None = None) -> int:
         source_root=config.source_root,
         target_root=config.joint_v3_target_root,
         repo_id=config.joint_v3_repo_id,
-        gripper_open_threshold=config.gripper_source_open_threshold,
         overwrite=args.overwrite,
         archive_path=config.joint_v3_archive_path,
     )

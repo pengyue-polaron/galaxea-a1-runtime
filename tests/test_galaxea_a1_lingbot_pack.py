@@ -41,20 +41,19 @@ def test_lingbot_a1_action_contract():
         "joint_4_rad",
         "joint_5_rad",
         "joint_6_rad",
-        "gripper_binary",
+        "gripper_normalized",
     )
 
 
 def test_tracked_lingbot_pack_config():
     config = load_pack_config(REPO_ROOT / "configs/datasets/banana_in_the_plate.toml")
     assert config.source_root.name == "banana_in_the_plate_lerobot_v3"
-    assert config.v3_target_root.name == "banana_in_the_plate_lingbot_eef_binary_v3"
-    assert config.v21_target_root.name == "banana_in_the_plate_lingbot_eef_binary_v21"
-    assert config.joint_v3_target_root.name == "banana_in_the_plate_joint_binary_v3"
+    assert config.v3_target_root.name == "banana_in_the_plate_lingbot_eef_continuous_v3"
+    assert config.v21_target_root.name == "banana_in_the_plate_lingbot_eef_continuous_v21"
+    assert config.joint_v3_target_root.name == "banana_in_the_plate_joint_continuous_v3"
     assert config.urdf_path == URDF
-    assert config.gripper_stroke_scale_mm == 200.0
-    assert config.gripper_source_open_threshold == 0.15
-    assert config.gripper_policy_open_threshold == 0.5
+    assert config.gripper_stroke_min_mm == 0.0
+    assert config.gripper_stroke_max_mm == 200.0
 
 
 def test_v21_json_conversion_handles_nested_numpy_values():

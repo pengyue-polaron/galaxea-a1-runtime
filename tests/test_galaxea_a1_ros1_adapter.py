@@ -119,7 +119,7 @@ def test_ros1_adapter_publishes_eef_target_through_relay_enable():
     assert target_msg.pose.position.y == pytest.approx(0.18)
     assert target_msg.pose.position.z == pytest.approx(0.33)
     assert target_msg.pose.orientation.w == pytest.approx(1.0)
-    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(200.0)
+    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(100.0)
 
 
 def test_ros1_adapter_requires_eef_feedback_before_arm_motion():
@@ -152,7 +152,7 @@ def test_ros1_adapter_allows_gripper_only_without_eef_feedback():
 
     assert adapter._ee_pub.published == []
     assert adapter._motion_enable_pub.published == []
-    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(0.0)
+    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(50.0)
 
 
 def test_ros1_adapter_eef_feedback_updates_observation_state():

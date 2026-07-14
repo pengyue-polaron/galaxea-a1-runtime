@@ -68,18 +68,17 @@ def test_servo_compensation_is_off_by_default_and_explicit_when_enabled():
     assert on[:3] == pytest.approx((0.25, 0.10, 0.10))
 
 
-def test_gripper_mapping_is_binary():
+def test_gripper_mapping_is_continuous_across_shared_stroke():
     cfg = LingBotActionConfig()
 
-    assert gripper_stroke_from_norm(0.49, cfg) == pytest.approx(0.0)
-    assert gripper_stroke_from_norm(0.50, cfg) == pytest.approx(200.0)
-    assert gripper_norm_from_stroke(29.9, cfg) == pytest.approx(0.0)
-    assert gripper_norm_from_stroke(30.0, cfg) == pytest.approx(1.0)
+    assert gripper_stroke_from_norm(0.25, cfg) == pytest.approx(50.0)
+    assert gripper_stroke_from_norm(0.50, cfg) == pytest.approx(100.0)
+    assert gripper_norm_from_stroke(50.0, cfg) == pytest.approx(0.25)
+    assert gripper_norm_from_stroke(100.0, cfg) == pytest.approx(0.50)
 
 
-def test_gripper_mapping_matches_act_continuous_task_stroke():
+def test_gripper_mapping_clips_to_configured_stroke():
     cfg = LingBotActionConfig(
-        gripper_command_mode="continuous",
         gripper_stroke_min=0.0,
         gripper_stroke_max=80.0,
     )

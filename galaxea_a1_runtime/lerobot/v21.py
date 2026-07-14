@@ -142,7 +142,7 @@ def export_v21_dataset(
         source_v3_package_sha256 = manifest.pop("package_sha256", None)
         manifest.pop("archive", None)
         manifest.pop("archive_sha256", None)
-        manifest["format"] = "lerobot_v2.1_lingbot_va_a1_eef_binary_v1"
+        manifest["format"] = "lerobot_v2.1_lingbot_va_a1_eef_continuous_v1"
         manifest["repo_id"] = repo_id
         manifest["source_v3_dataset"] = str(source_root)
         manifest["v21_video_codec"] = "h264"

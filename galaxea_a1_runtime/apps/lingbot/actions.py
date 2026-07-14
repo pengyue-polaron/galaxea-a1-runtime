@@ -7,8 +7,9 @@ from typing import Literal, Sequence
 
 import numpy as np
 
+from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_stroke
+
 OrientationMode = Literal["hold-current", "model-quat"]
-GripperCommandMode = Literal["binary", "continuous"]
 
 
 @dataclass(frozen=True)
@@ -19,13 +20,8 @@ class LingBotActionConfig:
     orientation_mode: OrientationMode = "hold-current"
     eef_servo_gain: float = 1.0
     eef_servo_max_extra: float = 0.04
-    gripper_stroke_scale: float = 200.0
-    gripper_stroke_offset: float = 0.0
     gripper_stroke_min: float = 0.0
     gripper_stroke_max: float = 200.0
-    gripper_command_mode: GripperCommandMode = "binary"
-    gripper_command_open_threshold: float = 0.5
-    gripper_feedback_open_threshold_mm: float = 30.0
 
 
 def normalize_condition_action(action8: Sequence[float], config: LingBotActionConfig) -> np.ndarray:
@@ -33,7 +29,7 @@ def normalize_condition_action(action8: Sequence[float], config: LingBotActionCo
 
     action = _as_action8(action8, label="EE state condition")
     action[3:7] = normalize_quat(action[3:7], min_norm=config.min_quat_norm, label="EE state condition")
-    action[7] = _binary_gripper(action[7], config.gripper_command_open_threshold)
+    action[7] = _continuous_gripper(action[7])
     return action
 
 
@@ -116,19 +112,18 @@ def tracker_command_action(
 
 
 def gripper_norm_from_stroke(stroke_mm: float, config: LingBotActionConfig) -> float:
-    return 1.0 if float(stroke_mm) >= config.gripper_feedback_open_threshold_mm else 0.0
+    return normalize_stroke(
+        stroke_mm,
+        stroke_min_mm=config.gripper_stroke_min,
+        stroke_max_mm=config.gripper_stroke_max,
+    )
 
 
 def gripper_stroke_from_norm(norm: float, config: LingBotActionConfig) -> float:
-    if config.gripper_command_mode == "continuous":
-        normalized = float(np.clip(norm, 0.0, 1.0))
-        return config.gripper_stroke_min + normalized * (
-            config.gripper_stroke_max - config.gripper_stroke_min
-        )
-    return (
-        config.gripper_stroke_max
-        if float(norm) >= config.gripper_command_open_threshold
-        else config.gripper_stroke_min
+    return denormalize_stroke(
+        norm,
+        stroke_min_mm=config.gripper_stroke_min,
+        stroke_max_mm=config.gripper_stroke_max,
     )
 
 
@@ -176,14 +171,16 @@ def absolute_action_to_relative(
     return relative
 
 
-def _binary_gripper(value: float, threshold: float) -> float:
-    return 1.0 if float(value) >= threshold else 0.0
-
-
 def _command_gripper(value: float, config: LingBotActionConfig) -> float:
-    if config.gripper_command_mode == "continuous":
-        return float(np.clip(value, 0.0, 1.0))
-    return _binary_gripper(value, config.gripper_command_open_threshold)
+    del config
+    return _continuous_gripper(value)
+
+
+def _continuous_gripper(value: float) -> float:
+    result = float(value)
+    if not np.isfinite(result):
+        raise ValueError(f"Non-finite gripper value: {result}")
+    return float(np.clip(result, 0.0, 1.0))
 
 
 def _quat_inverse(quat: Sequence[float]) -> np.ndarray:

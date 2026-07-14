@@ -92,11 +92,8 @@ class ActSafetyConfig:
 
 @dataclass(frozen=True)
 class ActGripperConfig:
-    command_mode: str
     stroke_min_mm: float
     stroke_max_mm: float
-    command_open_threshold: float
-    feedback_open_threshold_mm: float
 
 
 @dataclass(frozen=True)
@@ -147,7 +144,6 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
     runtime = _required_table(data, "runtime")
     policy = _required_table(data, "policy")
     execution = _required_table(data, "execution")
-    gripper = _required_table(data, "gripper_policy")
     front = system.cameras.front
     wrist = system.cameras.wrist
 
@@ -202,11 +198,8 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
             max_camera_age_s=system.cameras.max_age_s,
         ),
         gripper=ActGripperConfig(
-            command_mode=str(gripper.get("command_mode", "binary")),
-            stroke_min_mm=float(gripper.get("output_stroke_min_mm", 0.0)),
-            stroke_max_mm=float(gripper.get("output_stroke_max_mm", 200.0)),
-            command_open_threshold=float(gripper.get("command_open_threshold", 0.5)),
-            feedback_open_threshold_mm=system.gripper.feedback_open_threshold_mm,
+            stroke_min_mm=system.gripper.stroke_min_mm,
+            stroke_max_mm=system.gripper.stroke_max_mm,
         ),
         cameras=ActCameraConfig(
             width=front.width,
@@ -276,21 +269,6 @@ def validate_act_config(config: ActConfig) -> None:
             raise ValueError(f"{label} must be positive")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper.stroke_max_mm must be greater than stroke_min_mm")
-    if (
-        config.gripper.stroke_min_mm < config.system.gripper.stroke_min_mm
-        or config.gripper.stroke_max_mm > config.system.gripper.stroke_max_mm
-    ):
-        raise ValueError("gripper policy output stroke must stay inside the physical system range")
-    if config.gripper.command_mode not in {"binary", "continuous"}:
-        raise ValueError("gripper.command_mode must be 'binary' or 'continuous'")
-    if not 0.0 < config.gripper.command_open_threshold < 1.0:
-        raise ValueError("gripper.command_open_threshold must be between 0 and 1")
-    if not (
-        config.system.gripper.stroke_min_mm
-        < config.gripper.feedback_open_threshold_mm
-        < config.system.gripper.stroke_max_mm
-    ):
-        raise ValueError("gripper feedback threshold must be inside the physical system range")
 
 
 def bridge_argv(config: ActConfig) -> list[str]:
@@ -325,8 +303,6 @@ def bridge_argv(config: ActConfig) -> list[str]:
         config.topics.gripper_command,
         "--gripper-feedback-topic",
         config.topics.gripper_feedback,
-        "--gripper-command-mode",
-        config.gripper.command_mode,
         "--relay-enable-timeout",
         _num(config.relay.enable_timeout_s),
         "--max-relay-status-age",
@@ -354,10 +330,6 @@ def bridge_argv(config: ActConfig) -> list[str]:
         _num(config.gripper.stroke_min_mm),
         "--gripper-stroke-max",
         _num(config.gripper.stroke_max_mm),
-        "--gripper-command-open-threshold",
-        _num(config.gripper.command_open_threshold),
-        "--gripper-feedback-open-threshold-mm",
-        _num(config.gripper.feedback_open_threshold_mm),
         "--cam-width",
         str(config.cameras.width),
         "--cam-height",

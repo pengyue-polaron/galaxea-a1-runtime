@@ -9,7 +9,7 @@ from pathlib import Path
 
 from galaxea_a1_runtime.schema import ActionMode, DEFAULT_STATE_NAMES, JOINT_ACTION_NAMES
 
-TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v1"
+TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v2"
 
 EEF_STATE_NAMES = DEFAULT_STATE_NAMES[:7]
 JOINT_STATE_NAMES = DEFAULT_STATE_NAMES[7:]
@@ -174,4 +174,25 @@ def validate_existing_camera_shape(
             f"cannot append {camera_name} {width}x{height} frames to an existing experiment "
             f"with a different camera shape ({preview}{suffix}); use a new experiment name "
             "or migrate all existing episodes to the tracked crop first"
+        )
+
+
+def validate_existing_schema(experiment_dir: Path, *, expected: str) -> None:
+    """Reject appending the continuous contract to an older experiment directory."""
+
+    mismatches: list[str] = []
+    for metadata_path in sorted(experiment_dir.glob("episode_*/metadata.json")):
+        try:
+            payload = json.loads(metadata_path.read_text())
+        except (OSError, json.JSONDecodeError) as exc:
+            raise ValueError(f"cannot read existing episode metadata: {metadata_path}: {exc}") from exc
+        actual = str(payload.get("schema_version", "missing"))
+        if actual != expected:
+            mismatches.append(f"{metadata_path.parent.name}={actual}")
+    if mismatches:
+        preview = ", ".join(mismatches[:3])
+        suffix = " ..." if len(mismatches) > 3 else ""
+        raise ValueError(
+            f"cannot append {expected} episodes to an experiment with another schema "
+            f"({preview}{suffix}); use a new experiment name"
         )

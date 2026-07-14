@@ -58,9 +58,11 @@ apps. They still do not publish host commands directly:
   Optional `RuntimeConfig.safety` delta limits must be set explicitly.
 - Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
 - Generic ROS1 adapter rejects `joint_absolute`.
-- Collected policy gripper data is binary. Deployment mapping is explicit in
-  each tracked inference config; the current LingBot and ACT profiles use
-  continuous policy output mapped into a task-sized 0-80 mm stroke.
+- Collected gripper state and action are continuous normalized values. Teleop,
+  dataset conversion, ACT, and LingBot use the same linear mapping from `0..1`
+  into the physical range in `configs/system/a1.toml`.
+- Collection and ACT require fresh `/gripper_stroke_host` feedback. They do not
+  fall back to the unit-ambiguous seventh `/joint_states_host` value.
 - LingBot workspace bounds apply to outgoing targets, not feedback state.
 - LingBot orientation defaults to `hold-current`.
 - LingBot execution settings live in `configs/deployments/lingbot_va.toml`;

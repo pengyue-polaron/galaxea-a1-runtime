@@ -38,6 +38,7 @@ from galaxea_a1_runtime.apps.eef_bridge import (
     relay_state_summary,
     relay_status_is_fresh,
 )
+from galaxea_a1_runtime.gripper import denormalize_stroke
 from galaxea_a1_runtime.teleop import (
     JointMappingConfig,
     detect_leader_joint_keys,
@@ -317,10 +318,10 @@ def publish_gripper(pub: Any, leader_action: dict[str, float], args: argparse.Na
     if args.gripper_invert:
         pct = 100.0 - pct
     normalized = pct / 100.0
-    stroke = (
-        args.gripper_max_stroke_mm
-        if normalized >= args.gripper_binary_open_threshold
-        else args.gripper_min_stroke_mm
+    stroke = denormalize_stroke(
+        normalized,
+        stroke_min_mm=args.gripper_min_stroke_mm,
+        stroke_max_mm=args.gripper_max_stroke_mm,
     )
     msg = gripper_position_control()
     msg.header.stamp = stamp
@@ -360,7 +361,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--gripper-topic", default="/gripper_position_control_host")
     parser.add_argument("--gripper-min-stroke-mm", type=float, default=0.0)
     parser.add_argument("--gripper-max-stroke-mm", type=float, default=200.0)
-    parser.add_argument("--gripper-binary-open-threshold", type=float, default=0.15)
     parser.add_argument("--gripper-invert", action="store_true", default=False)
     return parser.parse_args()
 

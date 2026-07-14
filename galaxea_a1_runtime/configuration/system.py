@@ -71,7 +71,6 @@ class SystemEefConfig:
 class SystemGripperConfig:
     stroke_min_mm: float
     stroke_max_mm: float
-    feedback_open_threshold_mm: float
 
 
 @dataclass(frozen=True)
@@ -174,7 +173,6 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         gripper=SystemGripperConfig(
             stroke_min_mm=float(gripper.get("stroke_min_mm", 0.0)),
             stroke_max_mm=float(gripper.get("stroke_max_mm", 200.0)),
-            feedback_open_threshold_mm=float(gripper.get("feedback_open_threshold_mm", 30.0)),
         ),
         cameras=SystemCamerasConfig(
             warmup_frames=int(cameras.get("warmup_frames", 20)),

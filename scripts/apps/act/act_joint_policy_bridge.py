@@ -59,6 +59,7 @@ from galaxea_a1_runtime.hardware.web_preview import (
     color_from_frameset,
     web_preview_config_from_args,
 )
+from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_stroke
 from lerobot.configs import PreTrainedConfig
 from lerobot.policies import get_policy_class, make_pre_post_processors
 from sensor_msgs.msg import JointState
@@ -109,16 +110,6 @@ class A1JointStateCache:
                 return tuple(float(values[index]) for index in indices)
         return tuple(float(value) for value in values[: len(self.ordered_names)])
 
-    def raw_gripper_value(self, *, max_age_s: float) -> float | None:
-        msg, updated = self.cache.get()
-        if msg is None or updated is None or time.monotonic() - updated > max_age_s:
-            return None
-        values = list(getattr(msg, "position", []))
-        if len(values) < 7:
-            return None
-        return float(values[6])
-
-
 class GripperFeedbackCache:
     def __init__(self):
         self.cache = LatestCache()
@@ -126,14 +117,24 @@ class GripperFeedbackCache:
     def callback(self, msg: JointState) -> None:
         self.cache.set(msg)
 
-    def binary(self, *, max_age_s: float, feedback_open_threshold_mm: float) -> float | None:
+    def normalized(
+        self,
+        *,
+        max_age_s: float,
+        stroke_min_mm: float,
+        stroke_max_mm: float,
+    ) -> float | None:
         msg, updated = self.cache.get()
         if msg is None or updated is None or time.monotonic() - updated > max_age_s:
             return None
         values = list(getattr(msg, "position", []))
         if not values:
             return None
-        return 1.0 if float(values[0]) >= feedback_open_threshold_mm else 0.0
+        return normalize_stroke(
+            float(values[0]),
+            stroke_min_mm=stroke_min_mm,
+            stroke_max_mm=stroke_max_mm,
+        )
 
 
 class RelayMonitor:
@@ -386,7 +387,7 @@ class ActJointBridge:
 
     def _read_observation(self) -> tuple[np.ndarray, np.ndarray, tuple[float, ...], tuple[float, ...]]:
         current_joints = self._wait_for_joints()
-        gripper = self._gripper_binary()
+        gripper = self._gripper_normalized()
         front_bgr, wrist_bgr = self._wait_for_cameras()
         state7 = (*current_joints, gripper)
         return front_bgr, wrist_bgr, state7, current_joints
@@ -400,22 +401,15 @@ class ActJointBridge:
             time.sleep(0.02)
         raise RuntimeError(f"No fresh usable joint feedback on {self.args.joint_states_topic}")
 
-    def _gripper_binary(self) -> float:
-        feedback = self.gripper_feedback.binary(
+    def _gripper_normalized(self) -> float:
+        feedback = self.gripper_feedback.normalized(
             max_age_s=self.args.max_feedback_age,
-            feedback_open_threshold_mm=self.args.gripper_feedback_open_threshold_mm,
+            stroke_min_mm=self.args.gripper_stroke_min,
+            stroke_max_mm=self.args.gripper_stroke_max,
         )
         if feedback is not None:
             return feedback
-        raw = self.joints.raw_gripper_value(max_age_s=self.args.max_feedback_age)
-        if raw is None:
-            raise RuntimeError(
-                f"No fresh gripper feedback on {self.args.gripper_feedback_topic} "
-                "or seventh joint state value"
-            )
-        if abs(raw) > 1.5:
-            return 1.0 if raw >= self.args.gripper_feedback_open_threshold_mm else 0.0
-        return 1.0 if raw >= self.args.gripper_command_open_threshold else 0.0
+        raise RuntimeError(f"No fresh gripper feedback on {self.args.gripper_feedback_topic}")
 
     def _wait_for_cameras(self) -> tuple[np.ndarray, np.ndarray]:
         deadline = time.monotonic() + self.args.state_timeout
@@ -509,10 +503,9 @@ class ActJointBridge:
         )
         for idx in range(count):
             row = chunk[idx]
-            gripper = "open" if row[6] >= self.args.gripper_command_open_threshold else "closed"
             log(
                 f"  step {idx:02d}: joints={np.round(row[:6], 4).tolist()} "
-                f"gripper={row[6]:.3f}->{gripper}"
+                f"gripper_norm={row[6]:.3f}"
             )
 
     def _wait_for_staged_alignment(self, target: tuple[float, ...]) -> None:
@@ -582,17 +575,11 @@ class ActJointBridge:
     def _publish_gripper(self, value: float, stamp: Any) -> float:
         msg = gripper_position_control()
         msg.header.stamp = stamp
-        if self.args.gripper_command_mode == "continuous":
-            normalized = float(np.clip(value, 0.0, 1.0))
-            stroke = float(self.args.gripper_stroke_min) + normalized * (
-                float(self.args.gripper_stroke_max) - float(self.args.gripper_stroke_min)
-            )
-        else:
-            stroke = (
-                float(self.args.gripper_stroke_max)
-                if value >= self.args.gripper_command_open_threshold
-                else float(self.args.gripper_stroke_min)
-            )
+        stroke = denormalize_stroke(
+            value,
+            stroke_min_mm=self.args.gripper_stroke_min,
+            stroke_max_mm=self.args.gripper_stroke_max,
+        )
         msg.gripper_stroke = stroke
         self.gripper_pub.publish(msg)
         return stroke
@@ -674,9 +661,6 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-camera-age", type=float, default=0.5)
     parser.add_argument("--gripper-stroke-min", type=float, default=0.0)
     parser.add_argument("--gripper-stroke-max", type=float, default=200.0)
-    parser.add_argument("--gripper-command-mode", choices=("binary", "continuous"), default="binary")
-    parser.add_argument("--gripper-command-open-threshold", type=float, default=0.5)
-    parser.add_argument("--gripper-feedback-open-threshold-mm", type=float, default=30.0)
     parser.add_argument("--cam-width", type=int, default=640)
     parser.add_argument("--cam-height", type=int, default=480)
     parser.add_argument("--cam-fps", type=int, default=30)
@@ -730,10 +714,6 @@ def validate_args(args: argparse.Namespace) -> None:
         raise ValueError("--max-model-calls must be >= 0")
     if args.gripper_stroke_max <= args.gripper_stroke_min:
         raise ValueError("--gripper-stroke-max must be greater than --gripper-stroke-min")
-    if not 0.0 < args.gripper_command_open_threshold < 1.0:
-        raise ValueError("--gripper-command-open-threshold must be between 0 and 1")
-    if not args.gripper_stroke_min < args.gripper_feedback_open_threshold_mm < args.gripper_stroke_max:
-        raise ValueError("--gripper-feedback-open-threshold-mm must be inside the stroke range")
     lower = np.asarray(args.lower_limits, dtype=np.float64)
     upper = np.asarray(args.upper_limits, dtype=np.float64)
     if np.any(lower >= upper):

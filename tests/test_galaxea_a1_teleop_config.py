@@ -9,7 +9,7 @@ CONFIG = REPO / "configs/teleop/a1_so100.toml"
 LEADER_PORT = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
 
 
-def test_default_teleop_config_locks_old_working_behavior():
+def test_default_teleop_config_locks_continuous_gripper_contract():
     config = load_teleop_config(CONFIG, repo_root=REPO)
 
     assert config.leader.port == LEADER_PORT
@@ -29,8 +29,8 @@ def test_default_teleop_config_locks_old_working_behavior():
     assert config.bridge.a1_state_timeout_s == 30.0
     assert config.bridge.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
+    assert config.gripper.min_stroke_mm == 0.0
     assert config.gripper.max_stroke_mm == 200.0
-    assert config.gripper.binary_open_threshold == 0.15
     assert config.front_camera.depth is False
     assert config.front_camera.backend == "realsense"
     assert config.front_camera.serial == "341522300456"
@@ -39,6 +39,7 @@ def test_default_teleop_config_locks_old_working_behavior():
     assert config.front_camera.crop is not None
     assert config.front_camera.crop.xywh == (103, 0, 480, 480)
     assert config.collection.max_camera_age_s == 0.5
+    assert config.collection.max_gripper_age_s == 0.5
     assert config.collection.auto_reset_after_save is True
     assert config.collection.max_joint_action_step_rad == 0.35
     assert config.wrist_camera.backend == "realsense"
@@ -66,11 +67,12 @@ def test_config_builds_collector_args_from_tracked_file():
 
     assert args[args.index("--data-root") + 1] == str(REPO / "data/raw")
     assert args[args.index("--state-mode") + 1] == "eef_joint"
-    assert args[args.index("--gripper-stroke-scale") + 1] == "200"
-    assert args[args.index("--gripper-binary-open-threshold") + 1] == "0.15"
+    assert args[args.index("--gripper-stroke-min") + 1] == "0"
+    assert args[args.index("--gripper-stroke-max") + 1] == "200"
     assert args[args.index("--cam1-backend") + 1] == "realsense"
     assert args[args.index("--cam1-serial") + 1] == "218622276998"
     assert args[args.index("--max-camera-age-s") + 1] == "0.5"
+    assert args[args.index("--max-gripper-age-s") + 1] == "0.5"
     assert "--auto-reset-after-save" in args
     assert args[args.index("--max-joint-action-step-rad") + 1] == "0.35"
     assert args[args.index("--cam0-serial") + 1] == "341522300456"

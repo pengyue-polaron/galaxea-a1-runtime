@@ -127,6 +127,7 @@ class A1LingBotEEBridge:
         self.latest_pose = None
         self.latest_pose_monotonic = None
         self.latest_gripper = None
+        self.latest_gripper_monotonic = None
         self.motion_enabled = False
         self.relay_status = None
         self.relay_status_monotonic = None
@@ -209,13 +210,8 @@ class A1LingBotEEBridge:
             orientation_mode=args.orientation_mode,
             eef_servo_gain=float(args.eef_servo_gain),
             eef_servo_max_extra=float(args.eef_servo_max_extra),
-            gripper_stroke_scale=float(args.gripper_stroke_scale),
-            gripper_stroke_offset=float(args.gripper_stroke_offset),
             gripper_stroke_min=float(args.gripper_stroke_min),
             gripper_stroke_max=float(args.gripper_stroke_max),
-            gripper_command_mode=args.gripper_command_mode,
-            gripper_command_open_threshold=float(args.gripper_command_open_threshold),
-            gripper_feedback_open_threshold_mm=float(args.gripper_feedback_open_threshold_mm),
         )
 
     def _pose_cb(self, msg: PoseStamped):
@@ -225,6 +221,7 @@ class A1LingBotEEBridge:
     def _gripper_cb(self, msg: JointState):
         if msg.position:
             self.latest_gripper = float(msg.position[0])
+            self.latest_gripper_monotonic = time.monotonic()
 
     def _relay_status_cb(self, msg: String):
         self.relay_status = decode_relay_status(msg.data)
@@ -335,14 +332,23 @@ class A1LingBotEEBridge:
             return False
         return time.monotonic() - self.latest_pose_monotonic <= self.args.max_feedback_age
 
+    def _gripper_feedback_is_fresh(self) -> bool:
+        if self.latest_gripper_monotonic is None:
+            return False
+        return time.monotonic() - self.latest_gripper_monotonic <= self.args.max_feedback_age
+
     def _wait_for_fresh_feedback(self) -> None:
         deadline = time.monotonic() + self.args.feedback_wait_timeout
         while not rospy.is_shutdown() and time.monotonic() < deadline:
-            if self._feedback_is_fresh() and self._current_quat() is not None:
+            if (
+                self._feedback_is_fresh()
+                and self._gripper_feedback_is_fresh()
+                and self._current_quat() is not None
+            ):
                 return
             time.sleep(0.05)
         raise RuntimeError(
-            f"No fresh {self.args.state_pose_topic} feedback within "
+            f"No fresh pose and gripper feedback within "
             f"{self.args.feedback_wait_timeout:.1f}s; check /dev/a1 and the A1 driver"
         )
 
@@ -358,7 +364,7 @@ class A1LingBotEEBridge:
         return normalize_condition_action(action8, self.action_config)
 
     def _current_absolute_action8(self) -> np.ndarray | None:
-        if not self._feedback_is_fresh():
+        if not self._feedback_is_fresh() or not self._gripper_feedback_is_fresh():
             if self.args.initial_ee_pose is None:
                 return None
             return self._normalize_condition_action(np.asarray(self.args.initial_ee_pose, dtype=np.float64))
@@ -366,7 +372,7 @@ class A1LingBotEEBridge:
         quat = self._current_quat()
         if xyz is None or quat is None:
             return None
-        if self.latest_gripper is not None and self.args.gripper_stroke_scale != 0:
+        if self._gripper_feedback_is_fresh() and self.latest_gripper is not None:
             gripper_norm = gripper_norm_from_stroke(float(self.latest_gripper), self.action_config)
         else:
             gripper_norm = 0.0
@@ -447,7 +453,7 @@ class A1LingBotEEBridge:
             actual[:3] = xyz
         if quat is not None:
             actual[3:7] = quat
-        if self.latest_gripper is not None and self.args.gripper_stroke_scale != 0:
+        if self._gripper_feedback_is_fresh() and self.latest_gripper is not None:
             actual[7] = gripper_norm_from_stroke(float(self.latest_gripper), self.action_config)
         return actual
 
@@ -478,8 +484,8 @@ class A1LingBotEEBridge:
         self.commander.publish_action(action8, publish_gripper=publish_gripper)
 
     def _publish_ee_action(self, policy_action: np.ndarray) -> np.ndarray:
-        if not self._feedback_is_fresh():
-            raise RuntimeError("A1 end-effector feedback is missing or stale; refusing to publish")
+        if not self._feedback_is_fresh() or not self._gripper_feedback_is_fresh():
+            raise RuntimeError("A1 pose or gripper feedback is missing or stale; refusing to publish")
 
         started = time.monotonic()
         last_command = self._tracker_command_action(policy_action)
@@ -808,13 +814,8 @@ def parse_args():
     p.add_argument("--min-quat-norm", type=float, default=0.25)
     p.add_argument("--max-feedback-age", type=float, default=0.5)
     p.add_argument("--feedback-wait-timeout", type=float, default=5.0)
-    p.add_argument("--gripper-stroke-scale", type=float, default=200.0)
-    p.add_argument("--gripper-stroke-offset", type=float, default=0.0)
     p.add_argument("--gripper-stroke-min", type=float, default=0.0)
     p.add_argument("--gripper-stroke-max", type=float, default=200.0)
-    p.add_argument("--gripper-command-mode", choices=["binary", "continuous"], default="binary")
-    p.add_argument("--gripper-command-open-threshold", type=float, default=0.5)
-    p.add_argument("--gripper-feedback-open-threshold-mm", type=float, default=30.0)
     add_web_preview_arguments(p)
     return p.parse_args()
 
@@ -842,6 +843,8 @@ def _front_roi_from_args(args) -> ImageRoi:
 
 def main():
     args = parse_args()
+    if args.gripper_stroke_max <= args.gripper_stroke_min:
+        raise ValueError("--gripper-stroke-max must be greater than --gripper-stroke-min")
     if not args.execute:
         print("[Bridge] DRY RUN: not publishing robot commands. Pass --execute to move the robot.")
     bridge = A1LingBotEEBridge(args)

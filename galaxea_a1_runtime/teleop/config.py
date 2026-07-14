@@ -78,7 +78,6 @@ class TeleopGripperConfig:
     min_stroke_mm: float
     max_stroke_mm: float
     invert: bool
-    binary_open_threshold: float
 
 
 @dataclass(frozen=True)
@@ -91,6 +90,7 @@ class TeleopCollectionConfig:
     jpeg_quality: int
     ready_timeout_s: float
     max_camera_age_s: float
+    max_gripper_age_s: float
     max_joint_action_step_rad: float
 
 
@@ -194,7 +194,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             min_stroke_mm=system.gripper.stroke_min_mm,
             max_stroke_mm=system.gripper.stroke_max_mm,
             invert=bool(gripper.get("invert", False)),
-            binary_open_threshold=float(gripper.get("binary_open_threshold", 0.15)),
         ),
         collection=TeleopCollectionConfig(
             data_root=_repo_path(repo_root, _string(collection, "data_root")),
@@ -205,6 +204,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             jpeg_quality=int(collection.get("jpeg_quality", 95)),
             ready_timeout_s=float(collection.get("ready_timeout_s", 10.0)),
             max_camera_age_s=system.cameras.max_age_s,
+            max_gripper_age_s=system.joint_safety.max_feedback_age_s,
             max_joint_action_step_rad=float(collection.get("max_joint_action_step_rad", 0.35)),
         ),
         front_camera=TeleopCameraConfig(
@@ -244,14 +244,14 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("collection.fps must be positive")
     if config.collection.max_camera_age_s <= 0:
         raise ValueError("collection.max_camera_age_s must be positive")
+    if config.collection.max_gripper_age_s <= 0:
+        raise ValueError("collection.max_gripper_age_s must be positive")
     if config.collection.max_joint_action_step_rad <= 0:
         raise ValueError("collection.max_joint_action_step_rad must be positive")
     if config.bridge.initial_alignment_tolerance_rad < 0:
         raise ValueError("bridge.initial_alignment_tolerance_rad must be non-negative")
     if config.gripper.max_stroke_mm <= config.gripper.min_stroke_mm:
         raise ValueError("gripper.max_stroke_mm must be greater than min_stroke_mm")
-    if not 0.0 < config.gripper.binary_open_threshold < 1.0:
-        raise ValueError("gripper.binary_open_threshold must be between 0 and 1")
     for label, camera in (("front", config.front_camera), ("wrist", config.wrist_camera)):
         if camera.width <= 0 or camera.height <= 0 or camera.fps <= 0:
             raise ValueError(f"cameras.{label} width/height/fps must be positive")
@@ -328,8 +328,6 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         _num(config.gripper.min_stroke_mm),
         "--gripper-max-stroke-mm",
         _num(config.gripper.max_stroke_mm),
-        "--gripper-binary-open-threshold",
-        _num(config.gripper.binary_open_threshold),
     ]
     if config.gripper.invert:
         args.append("--gripper-invert")
@@ -353,6 +351,8 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         _num(config.collection.ready_timeout_s),
         "--max-camera-age-s",
         _num(config.collection.max_camera_age_s),
+        "--max-gripper-age-s",
+        _num(config.collection.max_gripper_age_s),
         "--max-joint-action-step-rad",
         _num(config.collection.max_joint_action_step_rad),
         "--joint-topic",
@@ -365,10 +365,10 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         config.topics.gripper_feedback,
         "--gripper-action-topic",
         config.topics.gripper_command,
-        "--gripper-stroke-scale",
+        "--gripper-stroke-min",
+        _num(config.gripper.min_stroke_mm),
+        "--gripper-stroke-max",
         _num(config.gripper.max_stroke_mm),
-        "--gripper-binary-open-threshold",
-        _num(config.gripper.binary_open_threshold),
         "--staged-command-topic",
         config.topics.staged_command,
         "--host-command-topic",
