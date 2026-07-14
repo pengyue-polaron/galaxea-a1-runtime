@@ -53,7 +53,7 @@ class TeleopTopicsConfig:
     staged_command: str
     relay_enable: str
     relay_status: str
-    gripper_command: str
+    gripper_target: str
     gripper_feedback: str
     eef: str
     host_command: str
@@ -173,7 +173,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             staged_command=system.topics.staged_command,
             relay_enable=system.topics.motion_enable,
             relay_status=system.topics.relay_status,
-            gripper_command=system.topics.gripper_command,
+            gripper_target=system.topics.gripper_target,
             gripper_feedback=system.topics.gripper_feedback,
             eef=system.topics.eef_pose,
             host_command=system.topics.host_command,
@@ -323,7 +323,7 @@ def bridge_argv(config: TeleopConfig) -> list[str]:
         "--gripper-source-key",
         config.gripper.source_key,
         "--gripper-topic",
-        config.topics.gripper_command,
+        config.topics.gripper_target,
         "--gripper-min-stroke-mm",
         _num(config.gripper.min_stroke_mm),
         "--gripper-max-stroke-mm",
@@ -364,7 +364,7 @@ def collect_argv(config: TeleopConfig) -> list[str]:
         "--gripper-feedback-topic",
         config.topics.gripper_feedback,
         "--gripper-action-topic",
-        config.topics.gripper_command,
+        config.topics.gripper_target,
         "--gripper-stroke-min",
         _num(config.gripper.min_stroke_mm),
         "--gripper-stroke-max",
@@ -433,6 +433,18 @@ def bash_config(config: TeleopConfig) -> str:
         _assign("STAGED_TOPIC", config.topics.staged_command),
         _assign("RELAY_ENABLE_TOPIC", config.topics.relay_enable),
         _assign("RELAY_STATUS_TOPIC", config.topics.relay_status),
+        _assign("JOINT_STATES_TOPIC", config.system.topics.joint_states),
+        _assign("HOST_COMMAND_TOPIC", config.system.topics.host_command),
+        _assign("MOTOR_STATUS_TOPIC", config.system.topics.motor_status),
+        _assign("GRIPPER_TARGET_TOPIC", config.system.topics.gripper_target),
+        _assign("GRIPPER_COMMAND_TOPIC", config.system.topics.gripper_command),
+        _assign("EEF_POSE_TOPIC", config.system.topics.eef_pose),
+        _assign("RELAY_MAX_INPUT_AGE_S", _num(config.system.relay.max_input_age_s)),
+        _assign("RELAY_ARMING_TIMEOUT_S", _num(config.system.relay.arming_timeout_s)),
+        _assign(
+            "RELAY_MAX_INITIAL_ERROR_RAD",
+            _num(config.system.joint_safety.initial_alignment_tolerance_rad),
+        ),
         _assign("TARGET_TOPIC", config.topics.target),
         _assign("GRIPPER_MIN_STROKE_MM", _num(config.gripper.min_stroke_mm)),
         _assign("GRIPPER_MAX_STROKE_MM", _num(config.gripper.max_stroke_mm)),

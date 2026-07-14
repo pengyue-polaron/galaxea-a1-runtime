@@ -26,6 +26,7 @@ eval "$(
     --shell \
     "${CONFIG_PATH}"
 )"
+export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 
 ROSCORE_CONTAINER="${PREFIX}-roscore"
 DRIVER_CONTAINER="${PREFIX}-driver"
@@ -118,13 +119,13 @@ wait_valid_joint_feedback() {
   local deadline=$((SECONDS + 20))
   while (( SECONDS < deadline )); do
     if docker exec "${DRIVER_CONTAINER}" bash -lc \
-      "${ros_prefix}; timeout 2 rostopic echo -n1 /joint_states_host | grep -Eq '^position: \\[[^]]+\\]'" \
+      "${ros_prefix}; timeout 2 rostopic echo -n1 '${JOINT_STATES_TOPIC}' | grep -Eq '^position: \\[[^]]+\\]'" \
       >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
-  echo "[FAIL] No non-empty /joint_states_host after 20 seconds." >&2
+  echo "[FAIL] No non-empty ${JOINT_STATES_TOPIC} after 20 seconds." >&2
   return 1
 }
 
@@ -185,11 +186,18 @@ start_services() {
   step "[3/4] Joint tracker"
   container_run "${TRACKER_CONTAINER}" \
     "${ros_prefix} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} target_topic:=${TARGET_TOPIC}"
-  wait_topic "${TRACKER_CONTAINER}" /end_effector_pose
+  wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
 
   step "[4/4] Command relay"
   container_run "${RELAY_CONTAINER}" \
-    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
+    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py \
+      --input-topic '${STAGED_TOPIC}' --output-topic '${HOST_COMMAND_TOPIC}' \
+      --joint-topic '${JOINT_STATES_TOPIC}' --motor-status-topic '${MOTOR_STATUS_TOPIC}' \
+      --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}' \
+      --gripper-input-topic '${GRIPPER_TARGET_TOPIC}' --gripper-output-topic '${GRIPPER_COMMAND_TOPIC}' \
+      --gripper-min-stroke-mm '${GRIPPER_MIN_STROKE_MM}' --gripper-max-stroke-mm '${GRIPPER_MAX_STROKE_MM}' \
+      --max-input-age '${RELAY_MAX_INPUT_AGE_S}' --arming-timeout '${RELAY_ARMING_TIMEOUT_S}' \
+      --max-initial-error '${RELAY_MAX_INITIAL_ERROR_RAD}'"
   wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
   success "[Setup] Services ready"
@@ -259,11 +267,7 @@ for name, ok in checks.items():
     print(f"[{'PASS' if ok else 'FAIL'}] {name}  {leader if name == 'leader_port' else ''}")
 raise SystemExit(0 if all(checks.values()) else 1)
 PY
-  A1_SERIAL="${SERIAL}" \
-    A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
-    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
-    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
-    A1_TRACKER_NODE="/jointTracker_demo_node" \
+  A1_TRACKER_NODE="/jointTracker_demo_node" \
     "${BASE_RUNTIME}" doctor "${args[@]}"
 }
 

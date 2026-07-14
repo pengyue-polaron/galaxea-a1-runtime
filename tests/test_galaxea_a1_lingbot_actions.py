@@ -14,8 +14,21 @@ from galaxea_a1_runtime.apps.lingbot.actions import (
 )
 
 
+def action_config(**overrides) -> LingBotActionConfig:
+    values = {
+        "xyz_min": (0.06, -0.27, 0.06),
+        "xyz_max": (0.44, 0.14, 0.50),
+        "min_quat_norm": 0.25,
+        "orientation_mode": "hold-current",
+        "gripper_stroke_min": 0.0,
+        "gripper_stroke_max": 100.0,
+    }
+    values.update(overrides)
+    return LingBotActionConfig(**values)
+
+
 def test_condition_action_preserves_feedback_xyz_outside_workspace():
-    cfg = LingBotActionConfig(xyz_min=(0.0, 0.0, 0.0), xyz_max=(1.0, 1.0, 1.0))
+    cfg = action_config(xyz_min=(0.0, 0.0, 0.0), xyz_max=(1.0, 1.0, 1.0))
 
     action = normalize_condition_action([2.0, -1.0, 0.5, 0.0, 0.0, 0.0, 2.0, 1.2], cfg)
 
@@ -25,7 +38,7 @@ def test_condition_action_preserves_feedback_xyz_outside_workspace():
 
 
 def test_policy_action_applies_workspace_without_per_step_delta_clamp():
-    cfg = LingBotActionConfig(
+    cfg = action_config(
         xyz_min=(0.0, 0.0, 0.0),
         xyz_max=(1.0, 1.0, 1.0),
     )
@@ -41,7 +54,7 @@ def test_policy_action_applies_workspace_without_per_step_delta_clamp():
 
 
 def test_hold_current_orientation_replaces_model_quaternion():
-    cfg = LingBotActionConfig(orientation_mode="hold-current")
+    cfg = action_config(orientation_mode="hold-current")
 
     action = prepare_policy_action(
         [0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 1.0, 0.5],
@@ -57,10 +70,10 @@ def test_hold_current_orientation_replaces_model_quaternion():
 def test_servo_compensation_is_off_by_default_and_explicit_when_enabled():
     policy_action = np.array([0.20, 0.10, 0.10, 0.0, 0.0, 0.0, 1.0, 0.5])
 
-    off = tracker_command_action(policy_action, LingBotActionConfig(), current_xyz=(0.10, 0.10, 0.10))
+    off = tracker_command_action(policy_action, action_config(), current_xyz=(0.10, 0.10, 0.10))
     on = tracker_command_action(
         policy_action,
-        LingBotActionConfig(eef_servo_gain=1.5, eef_servo_max_extra=1.0),
+        action_config(eef_servo_gain=1.5, eef_servo_max_extra=1.0),
         current_xyz=(0.10, 0.10, 0.10),
     )
 
@@ -69,16 +82,16 @@ def test_servo_compensation_is_off_by_default_and_explicit_when_enabled():
 
 
 def test_gripper_mapping_is_continuous_across_shared_stroke():
-    cfg = LingBotActionConfig()
+    cfg = action_config()
 
-    assert gripper_stroke_from_norm(0.25, cfg) == pytest.approx(50.0)
-    assert gripper_stroke_from_norm(0.50, cfg) == pytest.approx(100.0)
-    assert gripper_norm_from_stroke(50.0, cfg) == pytest.approx(0.25)
-    assert gripper_norm_from_stroke(100.0, cfg) == pytest.approx(0.50)
+    assert gripper_stroke_from_norm(0.25, cfg) == pytest.approx(25.0)
+    assert gripper_stroke_from_norm(0.50, cfg) == pytest.approx(50.0)
+    assert gripper_norm_from_stroke(50.0, cfg) == pytest.approx(0.50)
+    assert gripper_norm_from_stroke(100.0, cfg) == pytest.approx(1.0)
 
 
 def test_gripper_mapping_clips_to_configured_stroke():
-    cfg = LingBotActionConfig(
+    cfg = action_config(
         gripper_stroke_min=0.0,
         gripper_stroke_max=80.0,
     )

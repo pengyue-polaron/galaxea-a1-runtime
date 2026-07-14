@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import math
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -98,7 +99,7 @@ class LingBotTopicsConfig:
     state_pose: str
     state_gripper: str
     cmd_pose: str
-    cmd_gripper: str
+    target_gripper: str
     motion_enable: str
     relay_status: str
     staged_command: str
@@ -191,6 +192,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     action = _required_table(data, "action")
     front = system.cameras.front
     wrist = system.cameras.wrist
+    deployment_ready = bool(policy_server.get("deployment_ready", False))
 
     config = LingBotConfig(
         path=path,
@@ -226,9 +228,9 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             snr_shift=float(policy_server.get("snr_shift", 5.0)),
             action_snr_shift=float(policy_server.get("action_snr_shift", 1.0)),
             used_action_channel_ids=_int_tuple(policy_server, "used_action_channel_ids"),
-            q01_source=_float_tuple_any(policy_server, "q01_source"),
-            q99_source=_float_tuple_any(policy_server, "q99_source"),
-            deployment_ready=bool(policy_server.get("deployment_ready", False)),
+            q01_source=_float_tuple(policy_server, "q01_source"),
+            q99_source=_float_tuple(policy_server, "q99_source"),
+            deployment_ready=deployment_ready,
         ),
         execution=LingBotExecutionConfig(
             execute=bool(execution.get("execute", True)),
@@ -249,7 +251,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             state_pose=system.topics.eef_pose,
             state_gripper=system.topics.gripper_feedback,
             cmd_pose=system.topics.eef_target,
-            cmd_gripper=system.topics.gripper_command,
+            target_gripper=system.topics.gripper_target,
             motion_enable=system.topics.motion_enable,
             relay_status=system.topics.relay_status,
             staged_command=system.topics.staged_command,
@@ -311,20 +313,37 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
     policy = config.policy_server
     if policy.master_port <= 0 or policy.startup_timeout_s <= 0:
         raise ValueError("policy_server master port and startup timeout must be positive")
-    if policy.expected_weight_size_bytes <= 0:
-        raise ValueError("policy_server.expected_weight_size_bytes must be positive")
+    if policy.expected_weight_size_bytes < 0:
+        raise ValueError("policy_server.expected_weight_size_bytes must be non-negative")
     if min(policy.height, policy.width, policy.frame_chunk_size, policy.action_per_frame) <= 0:
         raise ValueError("policy_server dimensions must be positive")
     if policy.attention_window <= 0 or policy.video_inference_steps <= 0 or policy.action_inference_steps <= 0:
         raise ValueError("policy_server inference settings must be positive")
-    if len(policy.used_action_channel_ids) != len(policy.q01_source) or len(policy.q01_source) != len(
-        policy.q99_source
+    if policy.deployment_ready:
+        if config.server.prompt.startswith("REPLACE_WITH_"):
+            raise ValueError("deployment-ready LingBot config requires a real server.prompt")
+        if policy.expected_weight_size_bytes <= 0:
+            raise ValueError(
+                "deployment-ready LingBot config requires expected_weight_size_bytes"
+            )
+        if not policy.q01_source or not policy.q99_source:
+            raise ValueError("deployment-ready LingBot config requires real q01/q99 statistics")
+    elif policy.q01_source or policy.q99_source:
+        raise ValueError(
+            "unready LingBot config must keep q01_source/q99_source empty; "
+            "do not use numeric placeholders"
+        )
+    if policy.q01_source and (
+        len(policy.used_action_channel_ids) != len(policy.q01_source)
+        or len(policy.q01_source) != len(policy.q99_source)
     ):
         raise ValueError("policy_server action channels and quantiles must have equal lengths")
     if len(set(policy.used_action_channel_ids)) != len(policy.used_action_channel_ids):
         raise ValueError("policy_server.used_action_channel_ids must be unique")
     if any(channel < 0 or channel >= 30 for channel in policy.used_action_channel_ids):
         raise ValueError("policy_server action channels must be in [0, 30)")
+    if any(not math.isfinite(value) for value in (*policy.q01_source, *policy.q99_source)):
+        raise ValueError("policy_server quantiles must be finite")
     if any(lo >= hi for lo, hi in zip(policy.q01_source, policy.q99_source, strict=True)):
         raise ValueError("policy_server q01_source values must be lower than q99_source")
     if config.execution.max_model_calls < 0:
@@ -434,7 +453,7 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         "--cmd-pose-topic",
         config.topics.cmd_pose,
         "--cmd-gripper-topic",
-        config.topics.cmd_gripper,
+        config.topics.target_gripper,
         "--motion-enable-topic",
         config.topics.motion_enable,
         "--relay-status-topic",
@@ -550,10 +569,10 @@ def _text_encoder_device(value: str) -> TextEncoderDevice:
     return value
 
 
-def _float_tuple_any(data: dict[str, Any], key: str) -> tuple[float, ...]:
+def _float_tuple(data: dict[str, Any], key: str) -> tuple[float, ...]:
     value = data.get(key)
-    if not isinstance(value, list) or not value:
-        raise ValueError(f"{key} must be a non-empty number list")
+    if not isinstance(value, list):
+        raise ValueError(f"{key} must be a number list")
     return tuple(float(item) for item in value)
 
 

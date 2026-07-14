@@ -1,4 +1,10 @@
-from galaxea_a1_runtime.safety import RelayInputs, relay_block_reason, validate_initial_alignment
+from galaxea_a1_runtime.safety import (
+    RelayInputs,
+    actuator_error_block_reason,
+    gripper_stroke_block_reason,
+    relay_block_reason,
+    validate_initial_alignment,
+)
 
 
 def healthy_inputs(**overrides):
@@ -58,3 +64,25 @@ def test_initial_alignment_check_rejects_large_start_error():
         assert "initial command error exceeds" in str(exc)
     else:
         raise AssertionError("expected large initial command error to be rejected")
+
+
+def test_gripper_relay_accepts_only_finite_targets_in_system_range():
+    assert gripper_stroke_block_reason(100.0, minimum_mm=0.0, maximum_mm=100.0) is None
+    assert "outside" in gripper_stroke_block_reason(
+        100.1,
+        minimum_mm=0.0,
+        maximum_mm=100.0,
+    )
+    assert "not finite" in gripper_stroke_block_reason(
+        float("nan"),
+        minimum_mm=0.0,
+        maximum_mm=100.0,
+    )
+
+
+def test_gripper_relay_accepts_idle_status_but_rejects_extra_error_bits():
+    assert actuator_error_block_reason((0, 0, 0, 0, 0, 0, 64), index=6, label="gripper") is None
+    assert (
+        actuator_error_block_reason((0, 0, 0, 0, 0, 0, 68), index=6, label="gripper")
+        == "gripper motor error: 68"
+    )

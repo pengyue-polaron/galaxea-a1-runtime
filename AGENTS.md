@@ -55,6 +55,10 @@ arm is disconnected.
   `/a1_arm_relay_status`.
 - The relay starts `LOCKED`. It only publishes to `/arm_joint_command_host`
   after an app explicitly enables motion and validation passes.
+- Normal gripper apps publish `/a1_gripper_target`, never the host gripper
+  topic. The same relay validates and forwards fresh targets to
+  `/gripper_position_control_host` only while `ACTIVE` and gripper status is
+  healthy (`0` or idle `64`).
 
 ### Safe Teleop Path
 
@@ -225,8 +229,8 @@ arm is disconnected.
   ```
 
 - Start with translation-only EEF control and hold the current orientation.
-- Use `/gripper_position_control_host` for the gripper; do not send gripper
-  actions through the EE tracker.
+- Use `/a1_gripper_target` for normal gripper control; do not send gripper
+  actions through the EE tracker or bypass the relay.
 - Suggested initial policy loop: 2-5 Hz decisions, while holding each target at
   20-30 Hz. Start with `2-3 cm` max EEF deltas and clamp the workspace tightly
   before expanding.
@@ -270,12 +274,14 @@ the operator intentionally changes the collection start pose or reset speed.
 
 LingBot inference semantics are configured in
 `configs/deployments/lingbot_va.toml`. Edit and commit that file when the
-server, prompt, execution cadence, or model gripper mapping changes.
+server, prompt, checkpoint statistics, or execution cadence changes. Physical
+gripper mapping remains owned by `configs/system/a1.toml`.
 
 ACT joint inference semantics are configured in
 `configs/deployments/act_joint.toml`. It starts dry-run and step-gated by
 default. Edit and commit that file when the checkpoint, execution cadence, or
-model gripper mapping changes.
+model action semantics change. Physical gripper mapping remains owned by
+`configs/system/a1.toml`.
 
 Useful direct-debug checks inside the ROS/Docker environment:
 
@@ -287,11 +293,11 @@ rostopic info /a1_ee_target
 rostopic info /arm_joint_command_host
 ```
 
-Open/close gripper:
+Explicit direct-debug open/close gripper commands (run only after `just stop`):
 
 ```bash
 rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
-  "{header: {stamp: now}, gripper_stroke: 200.0}"
+  "{header: {stamp: now}, gripper_stroke: 100.0}"
 rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
   "{header: {stamp: now}, gripper_stroke: 0.0}"
 ```

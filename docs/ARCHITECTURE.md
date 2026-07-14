@@ -72,6 +72,18 @@ with a joint tracker:
   -> /arm_joint_command_host
 ```
 
+All normal gripper actions share one staged path:
+
+```text
+/a1_gripper_target
+  -> safe_arm_command_relay.py
+  -> /gripper_position_control_host
+```
+
+The physical `0..100 mm` range, both topics, and relay timing live only in
+`configs/system/a1.toml`. Apps and converters receive those typed values; they
+do not define fallback stroke ranges.
+
 ## Reusable Policy Bridge Design
 
 The LingBot bridge used to be too large because it did four jobs in one file:
@@ -79,7 +91,7 @@ The LingBot bridge used to be too large because it did four jobs in one file:
 - model protocol: LingBot WebSocket and KV-cache updates
 - observation IO: RealSense color, optional RealSense depth, and wrist color cameras
 - policy action transforms: LingBot 8D action cleanup
-- A1 execution: EEF target publishing, relay enable, gripper publish, feedback
+- A1 execution: EEF target publishing, relay enable, staged gripper target, feedback
 
 The reusable parts now live in package modules:
 
@@ -116,7 +128,8 @@ and step-gated from `configs/deployments/act_joint.toml`.
 Teleop is the built-in demonstration collection mode.
 
 - `scripts/apps/teleop/so100_joint_bridge.py`: reads an SO leader, maps it to
-  A1 joint targets, publishes `/arm_joint_target_position`, and arms the relay.
+  A1 joint targets, publishes `/arm_joint_target_position` and
+  `/a1_gripper_target`, and arms the relay.
 - `galaxea_a1_runtime.teleop.a1_so_leader`: A1-specific SO leader motor layout
   (`joint0..joint5` plus gripper) built on LeRobot motor primitives without
   patching vendored LeRobot source.
@@ -145,6 +158,11 @@ Teleop is the built-in demonstration collection mode.
 - `configs/teleop/a1_so100.toml`: teleop-only leader, joint mapping, and
   collection contract.
 - `configs/deployments/`: checkpoint-specific model and rollout contracts.
+
+`SystemConfig` is the only typed physical configuration. The former parallel
+`RuntimeConfig/TopicConfig/SafetyConfig` stack has been removed. Dataset writer
+settings remain a data-layer `DatasetConfig`; they contain no hardware topics,
+limits, or gripper range.
 
 The episode interaction is:
 

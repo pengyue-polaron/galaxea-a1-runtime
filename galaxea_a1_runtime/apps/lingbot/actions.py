@@ -12,16 +12,16 @@ from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_stroke
 OrientationMode = Literal["hold-current", "model-quat"]
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, kw_only=True)
 class LingBotActionConfig:
-    xyz_min: tuple[float, float, float] = (0.06, -0.27, 0.06)
-    xyz_max: tuple[float, float, float] = (0.44, 0.14, 0.50)
-    min_quat_norm: float = 0.25
-    orientation_mode: OrientationMode = "hold-current"
+    xyz_min: tuple[float, float, float]
+    xyz_max: tuple[float, float, float]
+    min_quat_norm: float
+    orientation_mode: OrientationMode
+    gripper_stroke_min: float
+    gripper_stroke_max: float
     eef_servo_gain: float = 1.0
     eef_servo_max_extra: float = 0.04
-    gripper_stroke_min: float = 0.0
-    gripper_stroke_max: float = 200.0
 
 
 def normalize_condition_action(action8: Sequence[float], config: LingBotActionConfig) -> np.ndarray:

@@ -4,13 +4,8 @@
 name = "a1_so100_collection_start"
 description = "User-selected A1 and LeRobot/SO leader start pose for teleop data collection."
 
-[topics]
-joint_states = "/joint_states_host"
-target = "/arm_joint_target_position"
-staged_command = "/arm_joint_command_a1_staged"
-relay_enable = "/a1_arm_motion_enable"
-relay_status = "/a1_arm_relay_status"
-gripper_command = "/gripper_position_control_host"
+[system]
+config = "configs/system/a1.toml"
 
 [joints]
 names = [
@@ -93,8 +88,5 @@ max_velocity_rad_s = 0.30
 # Cold jointTracker startup may spend about 10 seconds compiling CppAD code.
 # Keep enough margin for the first staged command while the relay is locked.
 tracker_alignment_timeout_s = 30.0
-tracker_alignment_tolerance_rad = 0.05
-relay_enable_timeout_s = 3.0
-max_relay_status_age_s = 1.0
 hold_s = 1.0
 goal_tolerance_rad = 0.08

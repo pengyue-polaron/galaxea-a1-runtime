@@ -25,6 +25,7 @@ eval "$(
     --shell \
     "${CONFIG_PATH}"
 )"
+export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 
 check_act_app() {
   if [[ "${DEPLOYMENT_READY}" != "1" ]]; then
@@ -43,13 +44,7 @@ check_act_app() {
 
 joint_runtime_env() {
   env \
-    A1_NOETIC_IMAGE="${IMAGE}" \
-    A1_SERIAL="${SERIAL}" \
     A1_RUNTIME_PREFIX="${PREFIX}" \
-    A1_JOINT_TARGET_TOPIC="${TARGET_TOPIC}" \
-    A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
-    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
-    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
     A1_TRACKER_NODE="/jointTracker_demo_node" \
     "$@"
 }

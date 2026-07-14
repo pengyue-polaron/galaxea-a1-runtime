@@ -3,20 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any
 
-from galaxea_a1_runtime.constants import (
-    DEFAULT_MAX_COMMAND_AGE_S,
-    DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD,
-    DEFAULT_RELAY_ARMING_TIMEOUT_S,
-    EE_TARGET_TOPIC,
-    GRIPPER_COMMAND_TOPIC,
-    HOST_ARM_COMMAND_TOPIC,
-    IDLE_TIMEOUT_CODE,
-    RELAY_ENABLE_TOPIC,
-    RELAY_STATUS_TOPIC,
-    STAGED_ARM_COMMAND_TOPIC,
-)
+from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.constants import IDLE_TIMEOUT_CODE
+
+ROOT = Path(__file__).resolve().parents[2]
 
 
 @dataclass(frozen=True)
@@ -29,30 +22,33 @@ class SafetySetting:
     operator_note: str
 
 
-def build_safety_settings() -> tuple[SafetySetting, ...]:
+def build_safety_settings(system_path: Path | None = None) -> tuple[SafetySetting, ...]:
     """Return the runtime safety controls that can change execution behavior."""
+
+    system = load_system_config(system_path or ROOT / "configs/system/a1.toml", repo_root=ROOT)
+    topics = system.topics
 
     return (
         SafetySetting(
             name="safe_command_path",
-            path=f"{EE_TARGET_TOPIC} -> {STAGED_ARM_COMMAND_TOPIC} -> relay -> {HOST_ARM_COMMAND_TOPIC}",
+            path=f"{topics.eef_target} -> {topics.staged_command} -> relay -> {topics.host_command}",
             default="enabled for normal apps",
             behavior="App EE targets are staged and only forwarded by the relay after validation.",
-            visibility=f"relay status on {RELAY_STATUS_TOPIC}",
+            visibility=f"relay status on {topics.relay_status}",
             operator_note="Direct host command publishing exists only in the direct-debug profile.",
         ),
         SafetySetting(
             name="relay_lock",
-            path=RELAY_ENABLE_TOPIC,
+            path=topics.motion_enable,
             default="LOCKED",
             behavior="The relay publishes nothing to the host command topic until an app explicitly enables motion.",
-            visibility=f"LOCKED/ARMING/ACTIVE/FAULT JSON on {RELAY_STATUS_TOPIC}",
+            visibility=f"LOCKED/ARMING/ACTIVE/FAULT JSON on {topics.relay_status}",
             operator_note="This is intentional fail-closed behavior, not a motion-planning feature.",
         ),
         SafetySetting(
             name="freshness_gate",
             path="safe_arm_command_relay.py",
-            default=f"{DEFAULT_MAX_COMMAND_AGE_S:.2f}s",
+            default=f"{system.relay.max_input_age_s:.2f}s",
             behavior="Joint feedback, staged tracker command, and motor status must all be fresh.",
             visibility="ARMING reason names the stale input; FAULT latches after arming timeout.",
             operator_note="A stale source looks like no motion unless the relay status is checked.",
@@ -60,15 +56,15 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="arming_timeout",
             path="safe_arm_command_relay.py",
-            default=f"{DEFAULT_RELAY_ARMING_TIMEOUT_S:.1f}s",
+            default=f"{system.relay.arming_timeout_s:.1f}s",
             behavior="If enabled but validation cannot become healthy, the relay latches FAULT.",
-            visibility=f"FAULT reason on {RELAY_STATUS_TOPIC}",
+            visibility=f"FAULT reason on {topics.relay_status}",
             operator_note="Stop/restart or explicitly re-enable only after inspecting the reason.",
         ),
         SafetySetting(
             name="initial_command_alignment",
             path="safe_arm_command_relay.py",
-            default=f"{DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD:.2f}rad",
+            default=f"{system.joint_safety.initial_alignment_tolerance_rad:.2f}rad",
             behavior="Only the first staged tracker command is checked against current joint feedback.",
             visibility="FAULT with initial command error values if exceeded.",
             operator_note="This check does not modify commands; after validation the relay forwards staged joint commands unchanged.",
@@ -84,10 +80,10 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="generic_policy_delta_limits",
             path="GalaxeaA1Robot.send_action",
-            default="off unless RuntimeConfig.safety sets max_eef_delta_m or max_rot_delta_rad",
+            default="off",
             behavior=(
-                "LeRobot EEF delta actions are forwarded unchanged by default; explicit runtime "
-                "limits clamp them before hardware IO."
+                "LeRobot EEF delta actions are forwarded unchanged by the generic adapter. "
+                "Managed deployments use the explicit tracked system and deployment contracts."
             ),
             visibility="Returned action dict shows the post-limit action when limits are configured.",
             operator_note="No model-output delta clamp is active in the default generic robot config.",
@@ -106,7 +102,10 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="generic_ros1_gripper_range_check",
             path="galaxea_a1_runtime.hardware.ros1",
-            default="continuous 0..1 -> 0..200mm",
+            default=(
+                f"continuous 0..1 -> {system.gripper.stroke_min_mm:g}.."
+                f"{system.gripper.stroke_max_mm:g}mm"
+            ),
             behavior="The generic ROS1 adapter clips finite normalized policy gripper values and maps them linearly to millimeters.",
             visibility="Published gripper stroke follows the normalized value continuously.",
             operator_note="The managed ACT and LingBot paths read the same range from configs/system/a1.toml.",
@@ -180,11 +179,11 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         ),
         SafetySetting(
             name="gripper_path",
-            path=GRIPPER_COMMAND_TOPIC,
-            default="independent of arm relay",
-            behavior="The LingBot bridge delays gripper publishes until the relay is confirmed ACTIVE.",
+            path=f"{topics.gripper_target} -> relay -> {topics.gripper_command}",
+            default="staged and fail-closed",
+            behavior="Normal apps publish staged targets; only the ACTIVE relay may publish hardware commands.",
             visibility="Bridge publish log prints gripper_mm.",
-            operator_note="Other manual gripper commands still bypass the arm relay by design.",
+            operator_note="Direct host-topic publishing is reserved for explicit hardware debugging.",
         ),
         SafetySetting(
             name="gripper_scale_mapping",

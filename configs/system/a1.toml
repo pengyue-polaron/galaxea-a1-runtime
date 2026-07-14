@@ -10,8 +10,10 @@ joint_states = "/joint_states_host"
 joint_target = "/arm_joint_target_position"
 staged_command = "/arm_joint_command_a1_staged"
 host_command = "/arm_joint_command_host"
+motor_status = "/arm_status_host"
 motion_enable = "/a1_arm_motion_enable"
 relay_status = "/a1_arm_relay_status"
+gripper_target = "/a1_gripper_target"
 gripper_command = "/gripper_position_control_host"
 gripper_feedback = "/gripper_stroke_host"
 eef_pose = "/end_effector_pose"
@@ -20,6 +22,8 @@ eef_target = "/a1_ee_target"
 [relay]
 enable_timeout_s = 2.0
 max_status_age_s = 1.0
+max_input_age_s = 0.25
+arming_timeout_s = 1.0
 
 [joint_safety]
 names = ["arm_joint1", "arm_joint2", "arm_joint3", "arm_joint4", "arm_joint5", "arm_joint6"]
@@ -46,7 +50,7 @@ feedback_wait_timeout_s = 5.0
 # Shared continuous contract: every new dataset and policy uses normalized 0..1,
 # mapped linearly onto this physical A1 stroke range.
 stroke_min_mm = 0.0
-stroke_max_mm = 200.0
+stroke_max_mm = 100.0
 
 [cameras]
 warmup_frames = 20

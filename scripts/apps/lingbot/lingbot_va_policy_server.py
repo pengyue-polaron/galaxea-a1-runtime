@@ -25,6 +25,8 @@ def main() -> int:
 
     config = load_lingbot_config(args.config, repo_root=args.repo_root)
     policy = config.policy_server
+    if not policy.deployment_ready:
+        raise RuntimeError("LingBot policy server refuses deployment_ready=false")
     if str(policy.checkout) not in sys.path:
         sys.path.insert(0, str(policy.checkout))
     os.chdir(policy.checkout)

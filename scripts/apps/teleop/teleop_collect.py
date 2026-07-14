@@ -472,7 +472,7 @@ def write_metadata(
         },
         action_topics={
             "joint_target": args.action_topic,
-            "gripper_command": args.gripper_action_topic,
+            "gripper_target": args.gripper_action_topic,
         },
         control_path=(
             args.action_topic,
@@ -515,9 +515,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--eef-topic", default="/end_effector_pose")
     parser.add_argument("--action-topic", default="/arm_joint_target_position")
     parser.add_argument("--gripper-feedback-topic", default="/gripper_stroke_host")
-    parser.add_argument("--gripper-action-topic", default="/gripper_position_control_host")
-    parser.add_argument("--gripper-stroke-min", type=float, default=0.0)
-    parser.add_argument("--gripper-stroke-max", type=float, default=200.0)
+    parser.add_argument("--gripper-action-topic", required=True)
+    parser.add_argument("--gripper-stroke-min", type=float, required=True)
+    parser.add_argument("--gripper-stroke-max", type=float, required=True)
     parser.add_argument("--staged-command-topic", default="/arm_joint_command_a1_staged")
     parser.add_argument("--host-command-topic", default="/arm_joint_command_host")
     parser.add_argument("--cam0-serial")

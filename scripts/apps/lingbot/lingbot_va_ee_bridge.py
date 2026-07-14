@@ -3,7 +3,7 @@
 """LingBot-VA -> Galaxea A1 end-effector pose bridge.
 
 This is intentionally dry-run by default. Pass --execute to publish commands to
-/a1_ee_target and /gripper_position_control_host.
+/a1_ee_target and the staged gripper target consumed by the safe relay.
 """
 from __future__ import annotations
 
@@ -786,7 +786,7 @@ def parse_args():
     p.add_argument("--state-pose-topic", default="/end_effector_pose")
     p.add_argument("--state-gripper-topic", default="/gripper_stroke_host")
     p.add_argument("--cmd-pose-topic", default="/a1_ee_target")
-    p.add_argument("--cmd-gripper-topic", default="/gripper_position_control_host")
+    p.add_argument("--cmd-gripper-topic", required=True)
     p.add_argument("--motion-enable-topic", default="/a1_arm_motion_enable")
     p.add_argument("--relay-status-topic", default="/a1_arm_relay_status")
     p.add_argument("--relay-enable-timeout", type=float, default=2.0)
@@ -814,8 +814,8 @@ def parse_args():
     p.add_argument("--min-quat-norm", type=float, default=0.25)
     p.add_argument("--max-feedback-age", type=float, default=0.5)
     p.add_argument("--feedback-wait-timeout", type=float, default=5.0)
-    p.add_argument("--gripper-stroke-min", type=float, default=0.0)
-    p.add_argument("--gripper-stroke-max", type=float, default=200.0)
+    p.add_argument("--gripper-stroke-min", type=float, required=True)
+    p.add_argument("--gripper-stroke-max", type=float, required=True)
     add_web_preview_arguments(p)
     return p.parse_args()
 

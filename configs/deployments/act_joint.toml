@@ -9,7 +9,6 @@ tmux = "act-a1"
 
 [runtime]
 prefix = "a1-act"
-run_dir = "/tmp/a1-act"
 
 [policy]
 checkpoint = "models/checkpoints/act/a1_agentview_square/latest"

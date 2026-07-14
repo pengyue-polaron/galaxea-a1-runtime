@@ -2,11 +2,29 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from galaxea_a1_runtime.config import DatasetConfig
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.schema import DatasetContract
+
+
+@dataclass(frozen=True)
+class DatasetConfig:
+    """Dataset writer settings; deliberately separate from physical system config."""
+
+    repo_id: str
+    root: Path
+    fps: int
+    robot_type: str = "galaxea_a1"
+    use_videos: bool = True
+
+    def validate(self) -> None:
+        if "/" not in self.repo_id:
+            raise ValueError("repo_id should be namespaced, for example 'user/a1_task'")
+        if self.fps <= 0:
+            raise ValueError(f"fps must be positive, got {self.fps}")
 
 
 def build_dataset_create_kwargs(

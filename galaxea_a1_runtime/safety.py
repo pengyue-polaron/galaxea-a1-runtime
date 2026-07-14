@@ -11,7 +11,6 @@ from typing import Sequence
 
 from .constants import (
     ARM_JOINT_COUNT,
-    DEFAULT_MAX_COMMAND_AGE_S,
     DEFAULT_MAX_EEF_DELTA_M,
     DEFAULT_MAX_ROT_DELTA_RAD,
     IDLE_TIMEOUT_CODE,
@@ -77,7 +76,7 @@ def validate_relay_inputs(
     inputs: RelayInputs,
     *,
     arm_joints: int = ARM_JOINT_COUNT,
-    max_age: float = DEFAULT_MAX_COMMAND_AGE_S,
+    max_age: float,
 ) -> SafetyDecision:
     """Return a fail-closed decision for one staged joint command."""
 
@@ -91,7 +90,7 @@ def relay_block_reason(
     inputs: RelayInputs,
     *,
     arm_joints: int = ARM_JOINT_COUNT,
-    max_age: float = DEFAULT_MAX_COMMAND_AGE_S,
+    max_age: float,
 ) -> str | None:
     if not inputs.enabled:
         return "locked"
@@ -136,6 +135,39 @@ def validate_initial_alignment(
     error = tuple(raw[i] - current[i] for i in range(len(current)))
     if error and max(abs(v) for v in error) > max_abs_error:
         raise ValueError(f"initial command error exceeds {max_abs_error}: {list(error)}")
+
+
+def gripper_stroke_block_reason(stroke_mm: float, *, minimum_mm: float, maximum_mm: float) -> str | None:
+    """Validate a physical gripper target without clamping or rewriting it."""
+
+    if not isfinite(minimum_mm) or not isfinite(maximum_mm) or minimum_mm >= maximum_mm:
+        return f"invalid gripper range [{minimum_mm}, {maximum_mm}]mm"
+    if not isfinite(stroke_mm):
+        return f"gripper target is not finite: {stroke_mm!r}"
+    if stroke_mm < minimum_mm or stroke_mm > maximum_mm:
+        return (
+            f"gripper target {stroke_mm:g}mm is outside "
+            f"[{minimum_mm:g}, {maximum_mm:g}]mm"
+        )
+    return None
+
+
+def actuator_error_block_reason(
+    motor_error_codes: Sequence[int],
+    *,
+    index: int,
+    label: str,
+) -> str | None:
+    """Return a fault reason for one actuator while accepting observed idle code 64."""
+
+    if index < 0:
+        return f"invalid {label} motor index: {index}"
+    if len(motor_error_codes) <= index:
+        return f"motor status has {len(motor_error_codes)} entries, need {index + 1} for {label}"
+    code = int(motor_error_codes[index])
+    if code not in (0, IDLE_TIMEOUT_CODE):
+        return f"{label} motor error: {code}"
+    return None
 
 
 def clamp_eef_delta(

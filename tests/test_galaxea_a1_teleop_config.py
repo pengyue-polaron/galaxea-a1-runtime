@@ -30,7 +30,8 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.bridge.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
     assert config.gripper.min_stroke_mm == 0.0
-    assert config.gripper.max_stroke_mm == 200.0
+    assert config.gripper.max_stroke_mm == 100.0
+    assert config.topics.gripper_target == "/a1_gripper_target"
     assert config.front_camera.depth is False
     assert config.front_camera.backend == "realsense"
     assert config.front_camera.serial == "341522300456"
@@ -56,7 +57,8 @@ def test_config_builds_bridge_args_without_per_run_env_overrides():
     assert args[args.index("--target-topic") + 1] == "/arm_joint_target_position"
     assert args[args.index("--staged-command-topic") + 1] == "/arm_joint_command_a1_staged"
     assert args[args.index("--initial-alignment-tolerance") + 1] == "0.05"
-    assert args[args.index("--gripper-max-stroke-mm") + 1] == "200"
+    assert args[args.index("--gripper-max-stroke-mm") + 1] == "100"
+    assert args[args.index("--gripper-topic") + 1] == "/a1_gripper_target"
     assert "--sign=-1,1,1,-1,1,-1" in args
     assert "--lower-limits=-2.8798,-0.1,-3.3161,-2.8798,-1.6581,-2.8798" in args
 
@@ -68,7 +70,8 @@ def test_config_builds_collector_args_from_tracked_file():
     assert args[args.index("--data-root") + 1] == str(REPO / "data/raw")
     assert args[args.index("--state-mode") + 1] == "eef_joint"
     assert args[args.index("--gripper-stroke-min") + 1] == "0"
-    assert args[args.index("--gripper-stroke-max") + 1] == "200"
+    assert args[args.index("--gripper-stroke-max") + 1] == "100"
+    assert args[args.index("--gripper-action-topic") + 1] == "/a1_gripper_target"
     assert args[args.index("--cam1-backend") + 1] == "realsense"
     assert args[args.index("--cam1-serial") + 1] == "218622276998"
     assert args[args.index("--max-camera-age-s") + 1] == "0.5"

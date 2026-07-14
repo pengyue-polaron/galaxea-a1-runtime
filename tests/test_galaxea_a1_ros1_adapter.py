@@ -1,6 +1,8 @@
+from pathlib import Path
+
 import pytest
 
-from galaxea_a1_runtime.config import RuntimeConfig, RuntimeProfile
+from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.hardware.eef import EefPose
 from galaxea_a1_runtime.hardware.ros1 import Ros1A1HardwareIO
 from galaxea_a1_runtime.policies.actions import RuntimeAction
@@ -86,7 +88,10 @@ class FakeSubscriber:
 
 
 def configured_adapter() -> Ros1A1HardwareIO:
-    adapter = Ros1A1HardwareIO(RuntimeConfig(profile=RuntimeProfile.SAFE))
+    repo = Path(__file__).resolve().parents[1]
+    adapter = Ros1A1HardwareIO(
+        load_system_config(repo / "configs/system/a1.toml", repo_root=repo)
+    )
     adapter._connected = True
     adapter._rospy = FakeRospy
     adapter._ee_pub = FakePublisher()
@@ -119,7 +124,7 @@ def test_ros1_adapter_publishes_eef_target_through_relay_enable():
     assert target_msg.pose.position.y == pytest.approx(0.18)
     assert target_msg.pose.position.z == pytest.approx(0.33)
     assert target_msg.pose.orientation.w == pytest.approx(1.0)
-    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(100.0)
+    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(50.0)
 
 
 def test_ros1_adapter_requires_eef_feedback_before_arm_motion():
@@ -139,8 +144,26 @@ def test_ros1_adapter_requires_eef_feedback_before_arm_motion():
     assert adapter._gripper_pub.published == []
 
 
-def test_ros1_adapter_allows_gripper_only_without_eef_feedback():
+def test_ros1_adapter_rejects_gripper_only_without_feedback_needed_to_activate_relay():
     adapter = configured_adapter()
+    action = RuntimeAction(
+        mode=ActionMode.EEF_TRANSLATION,
+        values=(0.0, 0.0, 0.0, 0.25),
+        names=("delta_x", "delta_y", "delta_z", "gripper"),
+        source="test",
+    )
+
+    with pytest.raises(RuntimeError, match="activate the command relay"):
+        adapter.send_runtime_action(action)
+
+    assert adapter._ee_pub.published == []
+    assert adapter._motion_enable_pub.published == []
+    assert adapter._gripper_pub.published == []
+
+
+def test_ros1_adapter_stages_hold_target_before_gripper_only_command():
+    adapter = configured_adapter()
+    adapter._latest_eef_pose = EefPose((0.1, 0.2, 0.3), (0.0, 0.0, 0.0, 1.0), "base_link")
     action = RuntimeAction(
         mode=ActionMode.EEF_TRANSLATION,
         values=(0.0, 0.0, 0.0, 0.25),
@@ -150,9 +173,10 @@ def test_ros1_adapter_allows_gripper_only_without_eef_feedback():
 
     adapter.send_runtime_action(action)
 
-    assert adapter._ee_pub.published == []
-    assert adapter._motion_enable_pub.published == []
-    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(50.0)
+    assert [msg.data for msg in adapter._motion_enable_pub.published] == [True]
+    assert len(adapter._ee_pub.published) == 2
+    assert adapter._ee_pub.published[-1].pose.position.x == pytest.approx(0.1)
+    assert adapter._gripper_pub.published[-1].gripper_stroke == pytest.approx(25.0)
 
 
 def test_ros1_adapter_eef_feedback_updates_observation_state():

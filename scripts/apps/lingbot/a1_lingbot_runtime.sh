@@ -28,6 +28,7 @@ eval "$(
     --shell \
     "${CONFIG_PATH}"
 )"
+export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 
 check_lingbot_server() {
   if ! uv run --project "${ROOT}" python - "${LINGBOT_HOST}" "${LINGBOT_PORT}" >/dev/null 2>&1 <<'PY'
@@ -177,10 +178,7 @@ start_model_server() {
 
 start_services() {
   echo "Using LingBot config: ${CONFIG_PATH}"
-  A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
-    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
-    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
-    "${BASE_RUNTIME}" services
+  "${BASE_RUNTIME}" services
 }
 
 start_tmux() {
@@ -234,10 +232,7 @@ start_pipeline() {
 
 doctor() {
   local args=("$@")
-  A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
-    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
-    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
-    "${BASE_RUNTIME}" doctor "${args[@]}"
+  "${BASE_RUNTIME}" doctor "${args[@]}"
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/lingbot/a1_lingbot_doctor.py" \
       --lingbot-host "${LINGBOT_HOST}" \
@@ -258,10 +253,7 @@ stop_runtime() {
 }
 
 status() {
-  A1_STAGED_COMMAND_TOPIC="${STAGED_TOPIC}" \
-    A1_RELAY_ENABLE_TOPIC="${RELAY_ENABLE_TOPIC}" \
-    A1_RELAY_STATUS_TOPIC="${RELAY_STATUS_TOPIC}" \
-    "${BASE_RUNTIME}" status
+  "${BASE_RUNTIME}" status
   echo
   echo "tmux:"
   tmux list-sessions 2>/dev/null | grep "${SESSION}" || echo "${SESSION}: not running"

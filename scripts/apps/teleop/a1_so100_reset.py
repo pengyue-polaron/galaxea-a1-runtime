@@ -44,6 +44,7 @@ from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
+from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
 
 
@@ -57,7 +58,7 @@ class HomeTopics:
     staged_command: str
     relay_enable: str
     relay_status: str
-    gripper_command: str
+    gripper_target: str
 
 
 @dataclass(frozen=True)
@@ -171,7 +172,7 @@ class A1HomeRunner:
         rospy.init_node("a1_return_home", anonymous=False, disable_signals=True)
         self.target_pub = rospy.Publisher(pose.topics.target, JointState, queue_size=1)
         self.gripper_pub = rospy.Publisher(
-            pose.topics.gripper_command,
+            pose.topics.gripper_target,
             gripper_position_control,
             queue_size=1,
         )
@@ -192,7 +193,6 @@ class A1HomeRunner:
         self.enable_pub.publish(Bool(data=False))
         current = self.wait_for_joints()
         self.progress.update("A1", 0)
-        self.close_a1_gripper()
 
         self.wait_for_staged_alignment(
             current,
@@ -204,6 +204,7 @@ class A1HomeRunner:
         self.wait_for_relay_state("ACTIVE", timeout_s=motion.relay_enable_timeout_s)
 
         try:
+            self.close_a1_gripper()
             self.move_smooth(current, rate)
             final = self.hold_target(rate)
             self.close_a1_gripper()
@@ -331,7 +332,13 @@ def load_home_pose(path: Path) -> HomePose:
     positions = tuple(float(value) for value in _required_list(data["joints"], "position_rad", float))
     if len(names) != len(positions):
         raise ValueError("joints.names and joints.position_rad must have the same length")
-    topics = data["topics"]
+    system_path = ROOT_DIR / str(data["system"]["config"])
+    system = load_system_config(system_path, repo_root=ROOT_DIR)
+    if names != system.joint_safety.names:
+        raise ValueError("reset joint names must match configs/system/a1.toml")
+    a1_gripper = _load_a1_gripper_home(data)
+    if not system.gripper.stroke_min_mm <= a1_gripper.closed_stroke_mm <= system.gripper.stroke_max_mm:
+        raise ValueError("reset gripper target is outside configs/system/a1.toml range")
     motion = data["motion"]
     leader = _load_leader_home(data)
     home = HomePose(
@@ -339,25 +346,25 @@ def load_home_pose(path: Path) -> HomePose:
         names=names,
         positions=positions,
         topics=HomeTopics(
-            joint_states=_topic(topics, "joint_states"),
-            target=_topic(topics, "target"),
-            staged_command=_topic(topics, "staged_command"),
-            relay_enable=_topic(topics, "relay_enable"),
-            relay_status=_topic(topics, "relay_status"),
-            gripper_command=_topic(topics, "gripper_command"),
+            joint_states=system.topics.joint_states,
+            target=system.topics.joint_target,
+            staged_command=system.topics.staged_command,
+            relay_enable=system.topics.motion_enable,
+            relay_status=system.topics.relay_status,
+            gripper_target=system.topics.gripper_target,
         ),
         motion=HomeMotion(
             hz=float(motion["hz"]),
             min_duration_s=float(motion["min_duration_s"]),
             max_velocity_rad_s=float(motion["max_velocity_rad_s"]),
             tracker_alignment_timeout_s=float(motion["tracker_alignment_timeout_s"]),
-            tracker_alignment_tolerance_rad=float(motion["tracker_alignment_tolerance_rad"]),
-            relay_enable_timeout_s=float(motion["relay_enable_timeout_s"]),
-            max_relay_status_age_s=float(motion["max_relay_status_age_s"]),
+            tracker_alignment_tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
+            relay_enable_timeout_s=system.relay.enable_timeout_s,
+            max_relay_status_age_s=system.relay.max_status_age_s,
             hold_s=float(motion["hold_s"]),
             goal_tolerance_rad=float(motion["goal_tolerance_rad"]),
         ),
-        gripper=_load_a1_gripper_home(data),
+        gripper=a1_gripper,
         leader=leader[0],
         leader_motion=leader[1],
     )
@@ -587,13 +594,6 @@ def _required_string(data: dict[str, Any], key: str) -> str:
     value = data.get(key)
     if not isinstance(value, str) or not value:
         raise ValueError(f"{key} must be a non-empty string")
-    return value
-
-
-def _topic(data: dict[str, Any], key: str) -> str:
-    value = data.get(key)
-    if not isinstance(value, str) or not value.startswith("/"):
-        raise ValueError(f"topics.{key} must be an absolute ROS topic")
     return value
 
 

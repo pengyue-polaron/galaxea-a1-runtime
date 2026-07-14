@@ -10,8 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from galaxea_a1_runtime.config import RuntimeConfig
-from galaxea_a1_runtime.constants import EEF_FEEDBACK_TOPIC, JOINT_FEEDBACK_TOPIC
+from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.hardware.eef import EefPose, action_to_eef_target
 from galaxea_a1_runtime.hardware.io import A1Observation
 from galaxea_a1_runtime.gripper import denormalize_stroke
@@ -24,7 +23,7 @@ class Ros1AdapterTopics:
     ee_target: str
     relay_enable: str
     relay_status: str
-    gripper_command: str
+    gripper_target: str
     eef_feedback: str
     joint_feedback: str
 
@@ -37,7 +36,7 @@ class Ros1A1HardwareIO:
     commands directly.
     """
 
-    def __init__(self, config: RuntimeConfig):
+    def __init__(self, config: SystemConfig):
         self.config = config
         self._connected = False
         self._rospy: Any | None = None
@@ -58,12 +57,12 @@ class Ros1A1HardwareIO:
     @property
     def topics(self) -> Ros1AdapterTopics:
         return Ros1AdapterTopics(
-            ee_target=self.config.topics.ee_target,
-            relay_enable=self.config.topics.relay_enable,
+            ee_target=self.config.topics.eef_target,
+            relay_enable=self.config.topics.motion_enable,
             relay_status=self.config.topics.relay_status,
-            gripper_command=self.config.topics.gripper_command,
-            eef_feedback=EEF_FEEDBACK_TOPIC,
-            joint_feedback=JOINT_FEEDBACK_TOPIC,
+            gripper_target=self.config.topics.gripper_target,
+            eef_feedback=self.config.topics.eef_pose,
+            joint_feedback=self.config.topics.joint_states,
         )
 
     def connect(self) -> None:
@@ -78,19 +77,19 @@ class Ros1A1HardwareIO:
         self._gripper_type = gripper_position_control
         if not rospy.core.is_initialized():
             rospy.init_node("galaxea_a1_runtime_adapter", anonymous=True, disable_signals=True)
-        self._ee_pub = rospy.Publisher(self.config.topics.ee_target, PoseStamped, queue_size=1)
+        self._ee_pub = rospy.Publisher(self.config.topics.eef_target, PoseStamped, queue_size=1)
         self._motion_enable_pub = rospy.Publisher(
-            self.config.topics.relay_enable,
+            self.config.topics.motion_enable,
             Bool,
             queue_size=1,
         )
         self._gripper_pub = rospy.Publisher(
-            self.config.topics.gripper_command,
+            self.config.topics.gripper_target,
             gripper_position_control,
             queue_size=1,
         )
         self._eef_sub = rospy.Subscriber(
-            EEF_FEEDBACK_TOPIC,
+            self.config.topics.eef_pose,
             PoseStamped,
             self._eef_pose_cb,
             queue_size=1,
@@ -130,13 +129,16 @@ class Ros1A1HardwareIO:
             raise ValueError("ROS1 safe adapter only supports EEF action modes")
         if self._latest_eef_pose is None:
             target = action_to_eef_target(EefPose((0.0, 0.0, 0.0), (0.0, 0.0, 0.0, 1.0)), action)
-            if target is None:
+            if target is None and "gripper" not in action.names:
                 return None
             raise RuntimeError(
-                f"No {EEF_FEEDBACK_TOPIC} feedback has been received; cannot synthesize a safe "
-                "/a1_ee_target for arm motion"
+                f"No {self.config.topics.eef_pose} feedback has been received; cannot synthesize a safe "
+                f"{self.config.topics.eef_target} to activate the command relay"
             )
-        return action_to_eef_target(self._latest_eef_pose, action)
+        target = action_to_eef_target(self._latest_eef_pose, action)
+        if target is None and "gripper" in action.names:
+            return self._latest_eef_pose.normalized()
+        return target
 
     def _publish_eef_target(self, target: EefPose) -> None:
         if self._ee_pub is None:
@@ -157,7 +159,11 @@ class Ros1A1HardwareIO:
             raise RuntimeError("ROS1 A1 adapter gripper message type is not initialized")
         msg = self._gripper_type()
         msg.header.stamp = self._rospy.Time.now()
-        msg.gripper_stroke = _normalized_gripper_to_stroke_mm(action.as_dict()["gripper"])
+        msg.gripper_stroke = denormalize_stroke(
+            action.as_dict()["gripper"],
+            stroke_min_mm=self.config.gripper.stroke_min_mm,
+            stroke_max_mm=self.config.gripper.stroke_max_mm,
+        )
         self._gripper_pub.publish(msg)
 
     def _pose_to_msg(self, target: EefPose) -> Any:
@@ -201,14 +207,8 @@ class Ros1A1HardwareIO:
         )
 
 
-def build_ros1_safe_adapter(config: RuntimeConfig) -> Ros1A1HardwareIO:
-    if not config.touches_hardware:
-        raise ValueError("ROS1 adapter requires a hardware-touching runtime profile")
+def build_ros1_safe_adapter(config: SystemConfig) -> Ros1A1HardwareIO:
     return Ros1A1HardwareIO(config=config)
-
-
-def _normalized_gripper_to_stroke_mm(value: float) -> float:
-    return denormalize_stroke(value, stroke_min_mm=0.0, stroke_max_mm=200.0)
 
 
 def _stamp_to_seconds(stamp: Any) -> float | None:

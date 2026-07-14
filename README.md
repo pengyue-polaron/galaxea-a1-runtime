@@ -45,6 +45,17 @@ jointTracker output:
   -> /arm_joint_command_host
 ```
 
+Normal gripper control is staged through that relay as well:
+
+```text
+/a1_gripper_target
+  -> safe_arm_command_relay.py
+  -> /gripper_position_control_host
+```
+
+The relay forwards only fresh, finite targets inside the `0..100 mm` physical
+range while it is `ACTIVE` and the gripper motor status is `0` or idle `64`.
+
 ## Current Main Commands
 
 Daily local checks, no hardware motion:
@@ -105,7 +116,7 @@ LingBot runtime parameters live in
 The tracked command starts the managed deployment policy server before the A1
 runtime. The checked-in profile is currently fail-closed until a new checkpoint,
 prompt, and dataset quantiles are registered. Edit that file when the
-checkpoint, server, prompt, rollout cadence, or model gripper mapping changes.
+checkpoint, server, prompt, rollout cadence, or action normalization changes.
 Physical topics, cameras, joint limits, EEF workspace/quaternion behavior, and
 the physical gripper contract live once in
 [configs/system/a1.toml](configs/system/a1.toml).
@@ -151,7 +162,7 @@ Use motion commands only after the arm is powered on and positioned safely.
 galaxea_a1_runtime/
   safety.py           # pure fail-closed validation and limiters
   schema.py           # LeRobot v3 state/action/camera contracts
-  config.py           # typed runtime and dataset config
+  configuration/      # the single typed physical system configuration
   hardware/           # IO protocol, EEF helpers, ROS1 safe adapter
   collection/         # teleop state/action schema and episode helpers
   teleop/             # SO leader to A1 joint mapping helpers
@@ -228,7 +239,9 @@ The normal collection entrypoint does not take per-run collector flags.
 
 The gripper contract is continuous end to end. Leader `0..100`, collected
 state/action `0..1`, and ACT/LingBot output `0..1` all map linearly onto the
-tracked system stroke range. Fresh `/gripper_stroke_host` feedback is required;
+single tracked `0..100 mm` system stroke range. Apps publish
+`/a1_gripper_target`; the relay alone publishes the hardware command topic.
+Fresh `/gripper_stroke_host` feedback is required;
 the collector never guesses millimeters from the seventh joint-state value.
 
 The A1 leader adapter lives in

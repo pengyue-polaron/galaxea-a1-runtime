@@ -6,7 +6,6 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from galaxea_a1_runtime.config import RuntimeConfig
 from galaxea_a1_runtime.hardware.io import A1HardwareIO, NullA1HardwareIO
 from galaxea_a1_runtime.policies.actions import normalize_action
 from galaxea_a1_runtime.schema import (
@@ -51,7 +50,6 @@ class GalaxeaA1RobotConfig(_RobotConfigBase):
             CameraSpec("wrist", height=480, width=640),
         )
     )
-    runtime: RuntimeConfig = RuntimeConfig()
 
 
 if _LeRobotRobotConfig is not None:
@@ -119,8 +117,6 @@ class GalaxeaA1Robot(_LeRobotRobot):
         runtime_action = normalize_action(
             raw,
             mode=self.config.action_mode,
-            max_translation=self.config.runtime.safety.max_eef_delta_m,
-            max_rotation=self.config.runtime.safety.max_rot_delta_rad,
         )
         sent = self.io.send_runtime_action(runtime_action)
         return sent.as_dict()

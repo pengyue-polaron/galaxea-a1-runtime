@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import argparse
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -9,12 +11,16 @@ from typing import Any
 from galaxea_a1_runtime.configuration.base import (
     float_tuple,
     load_toml,
+    number,
     required_table,
+    shell_assign,
     string,
     string_tuple,
 )
 from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, parse_optional_image_roi
 from galaxea_a1_runtime.hardware.web_preview import WebPreviewConfig, parse_web_preview_config
+
+DEFAULT_SYSTEM_CONFIG = Path("configs/system/a1.toml")
 
 
 @dataclass(frozen=True)
@@ -29,8 +35,10 @@ class SystemTopicsConfig:
     joint_target: str
     staged_command: str
     host_command: str
+    motor_status: str
     motion_enable: str
     relay_status: str
+    gripper_target: str
     gripper_command: str
     gripper_feedback: str
     eef_pose: str
@@ -41,6 +49,8 @@ class SystemTopicsConfig:
 class SystemRelayConfig:
     enable_timeout_s: float
     max_status_age_s: float
+    max_input_age_s: float
+    arming_timeout_s: float
 
 
 @dataclass(frozen=True)
@@ -139,16 +149,20 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             joint_target=string(topics, "joint_target"),
             staged_command=string(topics, "staged_command"),
             host_command=string(topics, "host_command"),
+            motor_status=string(topics, "motor_status"),
             motion_enable=string(topics, "motion_enable"),
             relay_status=string(topics, "relay_status"),
+            gripper_target=string(topics, "gripper_target"),
             gripper_command=string(topics, "gripper_command"),
             gripper_feedback=string(topics, "gripper_feedback"),
             eef_pose=string(topics, "eef_pose"),
             eef_target=string(topics, "eef_target"),
         ),
         relay=SystemRelayConfig(
-            enable_timeout_s=float(relay.get("enable_timeout_s", 2.0)),
-            max_status_age_s=float(relay.get("max_status_age_s", 1.0)),
+            enable_timeout_s=float(relay["enable_timeout_s"]),
+            max_status_age_s=float(relay["max_status_age_s"]),
+            max_input_age_s=float(relay["max_input_age_s"]),
+            arming_timeout_s=float(relay["arming_timeout_s"]),
         ),
         joint_safety=SystemJointSafetyConfig(
             names=string_tuple(joint, "names", 6),
@@ -171,8 +185,8 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             feedback_wait_timeout_s=float(eef.get("feedback_wait_timeout_s", 5.0)),
         ),
         gripper=SystemGripperConfig(
-            stroke_min_mm=float(gripper.get("stroke_min_mm", 0.0)),
-            stroke_max_mm=float(gripper.get("stroke_max_mm", 200.0)),
+            stroke_min_mm=float(gripper["stroke_min_mm"]),
+            stroke_max_mm=float(gripper["stroke_max_mm"]),
         ),
         cameras=SystemCamerasConfig(
             warmup_frames=int(cameras.get("warmup_frames", 20)),
@@ -223,6 +237,10 @@ def validate_system_config(config: SystemConfig) -> None:
     for name, value in config.topics.__dict__.items():
         if not value.startswith("/"):
             raise ValueError(f"topics.{name} must be absolute: {value!r}")
+    if config.topics.staged_command == config.topics.host_command:
+        raise ValueError("topics.staged_command must differ from topics.host_command")
+    if config.topics.gripper_target == config.topics.gripper_command:
+        raise ValueError("topics.gripper_target must differ from topics.gripper_command")
     if any(lo >= hi for lo, hi in zip(config.joint_safety.lower_limits, config.joint_safety.upper_limits, strict=True)):
         raise ValueError("joint_safety lower_limits must be below upper_limits")
     if config.eef.orientation_mode not in {"hold-current", "model-quat"}:
@@ -231,6 +249,13 @@ def validate_system_config(config: SystemConfig) -> None:
         raise ValueError("eef.xyz_min must be below xyz_max")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke range is invalid")
+    if min(
+        config.relay.enable_timeout_s,
+        config.relay.max_status_age_s,
+        config.relay.max_input_age_s,
+        config.relay.arming_timeout_s,
+    ) <= 0:
+        raise ValueError("relay timeouts must be positive")
     if config.cameras.front.crop is None:
         raise ValueError("system AgentView crop must be enabled")
     for name, camera in (("front", config.cameras.front), ("wrist", config.cameras.wrist)):
@@ -238,3 +263,51 @@ def validate_system_config(config: SystemConfig) -> None:
             raise ValueError(f"cameras.{name} dimensions/fps must be positive")
         if camera.backend == "realsense" and not camera.serial:
             raise ValueError(f"cameras.{name}.serial is required")
+
+
+def bash_config(config: SystemConfig) -> str:
+    """Emit the physical runtime contract for the boring shell entrypoints."""
+
+    values = {
+        "SYSTEM_CONFIG_PATH": str(config.path),
+        "IMAGE": config.host.image,
+        "SERIAL": config.host.a1_serial,
+        "JOINT_STATES_TOPIC": config.topics.joint_states,
+        "JOINT_TARGET_TOPIC": config.topics.joint_target,
+        "STAGED_TOPIC": config.topics.staged_command,
+        "HOST_COMMAND_TOPIC": config.topics.host_command,
+        "MOTOR_STATUS_TOPIC": config.topics.motor_status,
+        "RELAY_ENABLE_TOPIC": config.topics.motion_enable,
+        "RELAY_STATUS_TOPIC": config.topics.relay_status,
+        "GRIPPER_TARGET_TOPIC": config.topics.gripper_target,
+        "GRIPPER_COMMAND_TOPIC": config.topics.gripper_command,
+        "GRIPPER_FEEDBACK_TOPIC": config.topics.gripper_feedback,
+        "EEF_POSE_TOPIC": config.topics.eef_pose,
+        "EEF_TARGET_TOPIC": config.topics.eef_target,
+        "RELAY_MAX_INPUT_AGE_S": number(config.relay.max_input_age_s),
+        "RELAY_ARMING_TIMEOUT_S": number(config.relay.arming_timeout_s),
+        "RELAY_ENABLE_TIMEOUT_S": number(config.relay.enable_timeout_s),
+        "RELAY_MAX_STATUS_AGE_S": number(config.relay.max_status_age_s),
+        "RELAY_MAX_INITIAL_ERROR_RAD": number(
+            config.joint_safety.initial_alignment_tolerance_rad
+        ),
+        "GRIPPER_MIN_STROKE_MM": number(config.gripper.stroke_min_mm),
+        "GRIPPER_MAX_STROKE_MM": number(config.gripper.stroke_max_mm),
+        "EEF_COMMAND_FRAME": config.eef.command_frame,
+    }
+    return "\n".join(shell_assign(name, value) for name, value in values.items())
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Read the unique A1 physical system config.")
+    parser.add_argument("config", nargs="?", type=Path, default=DEFAULT_SYSTEM_CONFIG)
+    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
+    parser.add_argument("--shell", action="store_true")
+    args = parser.parse_args(argv)
+    config = load_system_config(args.config, repo_root=args.repo_root)
+    print(bash_config(config) if args.shell else config.path)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

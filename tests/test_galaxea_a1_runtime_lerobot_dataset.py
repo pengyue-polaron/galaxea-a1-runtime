@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from galaxea_a1_runtime.config import DatasetConfig
+from galaxea_a1_runtime.lerobot.dataset import DatasetConfig
 from galaxea_a1_runtime.lerobot.dataset import build_dataset_create_kwargs
 from galaxea_a1_runtime.schema import CameraSpec, default_dataset_contract
 

@@ -2,7 +2,7 @@ from pathlib import Path
 
 import pytest
 
-from galaxea_a1_runtime.config import DatasetConfig
+from galaxea_a1_runtime.lerobot.dataset import DatasetConfig
 from galaxea_a1_runtime.hardware.io import A1Observation, NullA1HardwareIO
 from galaxea_a1_runtime.lerobot.recorder import LeRobotEpisodeRecorder
 from galaxea_a1_runtime.lerobot.writer import LeRobotV3DatasetWriter

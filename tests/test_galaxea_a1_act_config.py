@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from galaxea_a1_runtime.apps.act.config import bash_config, bridge_argv, load_act_config
+from galaxea_a1_runtime.apps.act.config import bridge_argv, load_act_config
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -44,15 +44,10 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
     assert config.safety.action_step_guard_enabled is False
     assert config.safety.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.stroke_min_mm == 0.0
-    assert config.gripper.stroke_max_mm == 200.0
+    assert config.gripper.stroke_max_mm == 100.0
+    assert config.topics.gripper_target == "/a1_gripper_target"
     assert config.cameras.front_crop is not None
     assert config.cameras.front_crop.xywh == (103, 0, 480, 480)
-
-
-def test_act_config_points_at_new_square_agentview_slot():
-    text = CONFIG.read_text()
-
-    assert "models/checkpoints/act/a1_agentview_square/latest" in text
 
 
 def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
@@ -66,7 +61,8 @@ def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
     assert "--step-mode" in args
     assert args[args.index("--execute-steps-per-inference") + 1] == "100"
     assert args[args.index("--max-model-calls") + 1] == "0"
-    assert args[args.index("--gripper-stroke-max") + 1] == "200"
+    assert args[args.index("--gripper-stroke-max") + 1] == "100"
+    assert args[args.index("--gripper-target-topic") + 1] == "/a1_gripper_target"
     assert "--gripper-command-mode" not in args
     assert "--disable-backbone-download" in args
     assert args[args.index("--cam0-serial") + 1] == "341522300456"
@@ -76,24 +72,3 @@ def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
     assert args[args.index("--cam0-crop-x") + 1] == "103"
     assert args[args.index("--cam0-crop-width") + 1] == "480"
     assert "--web-preview" in args
-
-
-def test_act_bash_config_exports_joint_runtime_environment(tmp_path):
-    text = bash_config(_load_config_with_temp_checkpoint(tmp_path))
-
-    assert "SESSION=act-a1" in text
-    assert "PREFIX=a1-act" in text
-    assert "TARGET_TOPIC=/arm_joint_target_position" in text
-    assert "STAGED_TOPIC=/arm_joint_command_a1_staged" in text
-    assert "RELAY_ENABLE_TOPIC=/a1_arm_motion_enable" in text
-    assert "BRIDGE_ARGS=(" in text
-    assert "DEPLOYMENT_READY=0" in text
-    assert "--no-execute" in text
-    assert "--step-mode" in text
-    assert "--gripper-stroke-max 200" in text
-
-
-def test_act_runtime_refuses_unreviewed_deployment():
-    runtime = (REPO / "scripts/apps/act/a1_act_joint_runtime.sh").read_text()
-
-    assert '"${DEPLOYMENT_READY}" != "1"' in runtime

@@ -41,6 +41,10 @@ apps. They still do not publish host commands directly:
 - Relay requires fresh joint feedback, staged tracker command, and motor status.
 - First staged command must align with current joint feedback within `0.05rad`.
 - After validation, relay forwards staged tracker commands unchanged.
+- Normal gripper commands follow `/a1_gripper_target -> relay ->
+  /gripper_position_control_host`. The relay rejects non-finite or out-of-range
+  targets, requires gripper status `0` or idle `64`, and forwards only fresh
+  targets while `ACTIVE`.
 - Relay does not apply hidden joint tracking-error or joint-speed clamps.
 - Motor status code `64` alone is accepted as observed idle timeout; additional
   error bits still fault.
@@ -55,7 +59,7 @@ apps. They still do not publish host commands directly:
 ## Action Behavior
 
 - Generic `GalaxeaA1Robot` forwards LeRobot EEF deltas unchanged by default.
-  Optional `RuntimeConfig.safety` delta limits must be set explicitly.
+  Managed app limits live in their tracked deployment/system contracts.
 - Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
 - Generic ROS1 adapter rejects `joint_absolute`.
 - Collected gripper state and action are continuous normalized values. Teleop,
@@ -78,10 +82,10 @@ apps. They still do not publish host commands directly:
 - ACT action-step jump rejection is explicitly disabled by
   `configs/system/a1.toml [joint_safety.action_step_guard_enabled]`. Finite
   values and absolute joint limits are still enforced before execution.
-- Teleop datasets store only `0` or `1`: `0` is closed and `1` is open.
-  Hardware command stroke is controlled separately by the tracked app config.
-- LingBot waits for relay `ACTIVE` before gripper publish because the gripper
-  topic is independent of the arm relay.
+- Teleop gripper state/action is continuous normalized `0..1`, mapped to the
+  unique `0..100 mm` range in `configs/system/a1.toml`.
+- Teleop, ACT, LingBot, reset, EEF tools, and the generic ROS1 adapter publish
+  only the staged gripper target. The relay owns the hardware command topic.
 
 ## Direct Debug
 

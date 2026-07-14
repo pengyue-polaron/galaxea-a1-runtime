@@ -10,6 +10,10 @@ import sys
 from dataclasses import asdict, dataclass
 from pathlib import Path
 
+from galaxea_a1_runtime.configuration.system import load_system_config
+
+ROOT = Path(__file__).resolve().parents[2]
+
 
 @dataclass
 class Check:
@@ -79,14 +83,13 @@ def main():
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--timeout", type=float, default=1.5)
     parser.add_argument("--require-execution", action="store_true")
-    parser.add_argument("--serial", default="/dev/a1")
-    parser.add_argument("--staged-command-topic", default="/arm_joint_command_a1_staged")
-    parser.add_argument("--relay-status-topic", default="/a1_arm_relay_status")
+    parser.add_argument("--system-config", type=Path, default=ROOT / "configs/system/a1.toml")
     parser.add_argument("--tracker-node", default="/eeTracker_demo_node")
     args = parser.parse_args()
+    system = load_system_config(args.system_config, repo_root=ROOT)
 
     checks = []
-    serial = Path(args.serial)
+    serial = Path(system.host.a1_serial)
     serial_ok = serial.exists()
     serial_detail = "missing (expected while arm power is off)"
     if serial_ok:
@@ -133,7 +136,7 @@ def main():
             return None
 
     def motor_status_check(required):
-        topic = "/arm_status_host"
+        topic = system.topics.motor_status
         if topic not in topics:
             add(checks, "motor_status", False, f"{topic} not published", required=required)
             return None
@@ -150,7 +153,7 @@ def main():
 
     message_check(
         "joint_feedback",
-        "/joint_states_host",
+        system.topics.joint_states,
         JointState,
         lambda msg: (
             len(msg.position) >= 7,
@@ -161,7 +164,7 @@ def main():
     motor_status_check(args.require_execution)
     message_check(
         "ee_feedback",
-        "/end_effector_pose",
+        system.topics.eef_pose,
         PoseStamped,
         lambda msg: (
             True,
@@ -178,7 +181,7 @@ def main():
     )
     message_check(
         "staged_command",
-        args.staged_command_topic,
+        system.topics.staged_command,
         arm_control,
         lambda msg: (len(msg.p_des) >= 6, f"p_des_count={len(msg.p_des)}"),
         args.require_execution,
@@ -210,9 +213,28 @@ def main():
         "relay responds to XML-RPC" if relay_alive else "missing or stale registration",
         required=args.require_execution,
     )
+    try:
+        publishers, _, _ = rosgraph.Master(rospy.get_name()).getSystemState()
+        publisher_map = {topic: set(names) for topic, names in publishers}
+        gripper_publishers = publisher_map.get(system.topics.gripper_command, set())
+        add(
+            checks,
+            "gripper_relay_ownership",
+            gripper_publishers == {"/safe_arm_command_relay"},
+            f"{system.topics.gripper_command} publishers={sorted(gripper_publishers)}",
+            required=args.require_execution,
+        )
+    except Exception as exc:
+        add(
+            checks,
+            "gripper_relay_ownership",
+            False,
+            repr(exc),
+            required=args.require_execution,
+        )
     message_check(
         "relay_state",
-        args.relay_status_topic,
+        system.topics.relay_status,
         String,
         lambda msg: relay_status(msg, args.require_execution),
         args.require_execution,

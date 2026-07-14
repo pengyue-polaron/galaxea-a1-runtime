@@ -2,16 +2,22 @@
 set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-IMAGE="${A1_NOETIC_IMAGE:-galaxea-a1-runtime/a1-noetic-arm64:local}"
-SERIAL="${A1_SERIAL:-/dev/a1}"
+SYSTEM_CONFIG_PATH="${A1_SYSTEM_CONFIG_PATH:-${ROOT}/configs/system/a1.toml}"
 PREFIX="${A1_RUNTIME_PREFIX:-a1-runtime}"
+PYTHON_BIN="${ROOT}/.venv/bin/python"
+if [[ ! -x "${PYTHON_BIN}" ]]; then
+  PYTHON_BIN="python3"
+fi
+if [[ "${1:-help}" != "stop" && "${1:-help}" != "logs" ]]; then
+  eval "$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.configuration.system \
+      --repo-root "${ROOT}" --shell "${SYSTEM_CONFIG_PATH}"
+  )"
+fi
 ROSCORE_CONTAINER="${PREFIX}-roscore"
 DRIVER_CONTAINER="${PREFIX}-driver"
 TRACKER_CONTAINER="${PREFIX}-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
-STAGED_TOPIC="${A1_STAGED_COMMAND_TOPIC:-/arm_joint_command_a1_staged}"
-RELAY_ENABLE_TOPIC="${A1_RELAY_ENABLE_TOPIC:-/a1_arm_motion_enable}"
-RELAY_STATUS_TOPIC="${A1_RELAY_STATUS_TOPIC:-/a1_arm_relay_status}"
 TRACKER_NODE="${A1_TRACKER_NODE:-/eeTracker_demo_node}"
 
 ros_prefix='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash"'
@@ -54,13 +60,13 @@ wait_valid_joint_feedback() {
   local deadline=$((SECONDS + 20))
   while (( SECONDS < deadline )); do
     if docker exec "${DRIVER_CONTAINER}" bash -lc \
-      "${ros_prefix}; timeout 2 rostopic echo -n1 /joint_states_host | grep -Eq '^position: \\[[^]]+\\]'" \
+      "${ros_prefix}; timeout 2 rostopic echo -n1 '${JOINT_STATES_TOPIC}' | grep -Eq '^position: \\[[^]]+\\]'" \
       >/dev/null 2>&1; then
       return 0
     fi
     sleep 1
   done
-  echo "[FAIL] No non-empty /joint_states_host after 20 seconds." >&2
+  echo "[FAIL] No non-empty ${JOINT_STATES_TOPIC} after 20 seconds." >&2
   return 1
 }
 
@@ -118,12 +124,19 @@ start_services() {
   echo "[2/4] Starting isolated EE tracker..."
   container_run "${TRACKER_CONTAINER}" \
     "${ros_prefix} && exec roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC}"
-  wait_topic "${TRACKER_CONTAINER}" /end_effector_pose
+  wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
   wait_topic "${TRACKER_CONTAINER}" "${STAGED_TOPIC}"
 
   echo "[3/4] Starting fail-closed relay (LOCKED)..."
   container_run "${RELAY_CONTAINER}" \
-    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py --input-topic '${STAGED_TOPIC}' --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}'"
+    "${ros_prefix} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py \
+      --input-topic '${STAGED_TOPIC}' --output-topic '${HOST_COMMAND_TOPIC}' \
+      --joint-topic '${JOINT_STATES_TOPIC}' --motor-status-topic '${MOTOR_STATUS_TOPIC}' \
+      --enable-topic '${RELAY_ENABLE_TOPIC}' --relay-status-topic '${RELAY_STATUS_TOPIC}' \
+      --gripper-input-topic '${GRIPPER_TARGET_TOPIC}' --gripper-output-topic '${GRIPPER_COMMAND_TOPIC}' \
+      --gripper-min-stroke-mm '${GRIPPER_MIN_STROKE_MM}' --gripper-max-stroke-mm '${GRIPPER_MAX_STROKE_MM}' \
+      --max-input-age '${RELAY_MAX_INPUT_AGE_S}' --arming-timeout '${RELAY_ARMING_TIMEOUT_S}' \
+      --max-initial-error '${RELAY_MAX_INITIAL_ERROR_RAD}'"
   wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
   echo "[4/4] Running execution doctor..."
@@ -140,9 +153,7 @@ doctor() {
   local args=("$@")
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_runtime_doctor.py" \
-      --serial "${SERIAL}" \
-      --staged-command-topic "${STAGED_TOPIC}" \
-      --relay-status-topic "${RELAY_STATUS_TOPIC}" \
+      --system-config "${SYSTEM_CONFIG_PATH}" \
       --tracker-node "${TRACKER_NODE}" \
       "${args[@]}"
 }
@@ -168,7 +179,16 @@ logs() {
 
 eef_nudge() {
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" "$@"
+    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" \
+      --state-pose-topic "${EEF_POSE_TOPIC}" \
+      --cmd-pose-topic "${EEF_TARGET_TOPIC}" \
+      --cmd-gripper-topic "${GRIPPER_TARGET_TOPIC}" \
+      --motion-enable-topic "${RELAY_ENABLE_TOPIC}" \
+      --relay-status-topic "${RELAY_STATUS_TOPIC}" \
+      --relay-enable-timeout-s "${RELAY_ENABLE_TIMEOUT_S}" \
+      --max-relay-status-age-s "${RELAY_MAX_STATUS_AGE_S}" \
+      --command-frame "${EEF_COMMAND_FRAME}" \
+      "$@"
 }
 
 case "${1:-help}" in
@@ -205,10 +225,8 @@ Usage: $0 <start|services|stop|doctor|status|logs|eef-nudge>
   eef-nudge Interactive safe EEF nudge tool; pass --execute to move hardware
 
 Environment:
-  A1_SERIAL=${SERIAL}
-  A1_STAGED_COMMAND_TOPIC=${STAGED_TOPIC}
-  A1_RELAY_ENABLE_TOPIC=${RELAY_ENABLE_TOPIC}
-  A1_RELAY_STATUS_TOPIC=${RELAY_STATUS_TOPIC}
+  A1_SYSTEM_CONFIG_PATH=${SYSTEM_CONFIG_PATH}
+  A1_RUNTIME_PREFIX=${PREFIX}
   A1_TRACKER_NODE=${TRACKER_NODE}
 EOF
     ;;

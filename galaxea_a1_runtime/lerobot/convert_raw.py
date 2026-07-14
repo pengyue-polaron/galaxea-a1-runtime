@@ -20,8 +20,7 @@ import pandas as pd
 from PIL import Image
 
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
-from galaxea_a1_runtime.config import DatasetConfig
-from galaxea_a1_runtime.lerobot.dataset import create_lerobot_dataset
+from galaxea_a1_runtime.lerobot.dataset import DatasetConfig, create_lerobot_dataset
 from galaxea_a1_runtime.schema import ActionMode, CameraSpec, DatasetContract, validate_frame_keys
 
 NON_JOINT_COLS = {

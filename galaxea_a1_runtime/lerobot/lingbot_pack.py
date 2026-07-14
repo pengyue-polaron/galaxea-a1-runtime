@@ -9,7 +9,6 @@ import os
 import shutil
 import sys
 import tarfile
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -17,6 +16,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from galaxea_a1_runtime.configuration.base import load_toml, referenced_config
+from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.kinematics import SerialChainFK, compose_relative_pose, relative_pose
 from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
@@ -71,17 +72,14 @@ class LingBotPackConfig:
 
 
 def load_pack_config(path: Path) -> LingBotPackConfig:
-    config_path = path.expanduser().resolve()
-    repo_root = config_path.parents[2]
-    with config_path.open("rb") as handle:
-        raw = tomllib.load(handle)
+    config_path, repo_root, raw = load_toml(path)
+    system = load_system_config(referenced_config(raw, repo_root), repo_root=repo_root)
     dataset = raw["dataset"]
     outputs = raw["outputs"]
     v3 = outputs["v3"]
     v21 = outputs["v21"]
     joint_v3 = outputs["joint_v3"]
     kinematics = raw["kinematics"]
-    gripper = raw["gripper"]
     return LingBotPackConfig(
         source_root=_repo_path(repo_root, dataset["source_root"]),
         v3_target_root=_repo_path(repo_root, v3["target_root"]),
@@ -96,8 +94,8 @@ def load_pack_config(path: Path) -> LingBotPackConfig:
         urdf_path=_repo_path(repo_root, kinematics["urdf"]),
         base_link=str(kinematics["base_link"]),
         tip_link=str(kinematics["tip_link"]),
-        gripper_stroke_min_mm=float(gripper["stroke_min_mm"]),
-        gripper_stroke_max_mm=float(gripper["stroke_max_mm"]),
+        gripper_stroke_min_mm=system.gripper.stroke_min_mm,
+        gripper_stroke_max_mm=system.gripper.stroke_max_mm,
     )
 
 
@@ -108,7 +106,7 @@ def pack_lingbot_dataset(
     urdf_path: Path,
     repo_id: str,
     gripper_stroke_min_mm: float = 0.0,
-    gripper_stroke_max_mm: float = 200.0,
+    gripper_stroke_max_mm: float,
     base_link: str = "base_link",
     tip_link: str = "arm_seg6",
     overwrite: bool = False,

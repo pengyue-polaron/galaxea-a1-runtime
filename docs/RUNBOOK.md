@@ -187,6 +187,9 @@ just stop
 Teleop behavior composes `configs/teleop/a1_so100.toml` (leader, mapping, and
 collection) with `configs/system/a1.toml` (cameras, topics, physical limits,
 and gripper range).
+The system file is the only physical source of truth. The tracked gripper range
+is `0..100 mm`; Teleop and inference publish `/a1_gripper_target`, and the
+`ACTIVE` relay alone publishes `/gripper_position_control_host`.
 The default agent D455 RealSense config records RGB only and accepts USB2.1. Depth
 capture remains supported, but enable it intentionally in the tracked config
 after the RealSense is on USB3 or after lowering FPS/resolution for USB2. The
@@ -215,8 +218,9 @@ camera settings, FPS target, and the staged relay control path.
 just convert banana_in_the_plate
 ```
 
-Conversion semantics and paths come only from
-`configs/datasets/<experiment>.toml`. All packages preserve continuous
+Conversion paths and task packaging come from
+`configs/datasets/<experiment>.toml`; that file references the same system
+config for the physical gripper range. All packages preserve continuous
 normalized gripper state/actions: `0=minimum stroke`, `1=maximum stroke`.
 Each conversion emits EEF v3.0, EEF v2.1, and
 joint-action v3.0 packages; never mix their files in one directory. Joint
@@ -243,12 +247,14 @@ local source and `just models` before inference. The exact layout and supported
 slot names are documented in `models/README.md`.
 
 Deployment behavior is locked by `configs/deployments/lingbot_va.toml`: server,
-checkpoint, prompt, execution cadence, action semantics, and model gripper
-mapping. Physical cameras, EEF workspace/orientation, and relay topics come
+checkpoint, prompt, execution cadence, action semantics, and checkpoint
+quantiles. Physical cameras, EEF workspace/orientation, gripper range, and relay topics come
 from `configs/system/a1.toml`.
 
-The checked-in profile is dry-run and step-gated until the new checkpoint,
-prompt, and q01/q99 statistics are installed and reviewed. Its configured
+The checked-in profile is dry-run and step-gated with empty q01/q99 arrays,
+`expected_weight_size_bytes = 0`, and a replacement prompt. The loader refuses
+`deployment_ready = true` until real statistics, prompt, and weight size are
+provided. Its configured
 rollout remains 36 model calls, four latent frames per call, four actions per
 frame, at 30 Hz. Model EEF
 poses are episode-relative and are composed onto the measured startup pose
@@ -287,8 +293,9 @@ For both inference systems, AgentView is cropped to
 the full 640x480 stream. ACT also checks the image shapes stored in the
 checkpoint and refuses to start if they do not match this contract.
 
-After retraining, register the two new slots, replace the LingBot prompt and
-q01/q99 values from that same run, and only then set `deployment_ready = true`.
+After retraining, register the two new slots, replace the LingBot prompt,
+expected weight size, and q01/q99 values from that same run, and only then set
+`deployment_ready = true`.
 Enabling real robot motion remains a separate `execution.execute = true` review.
 
 Start in the default dry-run mode:
@@ -306,7 +313,7 @@ targets without enabling the relay. To move the arm, edit the tracked config and
 set `execution.execute = true` after the robot is powered, reset, and clear.
 Execution still remains step-gated: the bridge aligns jointTracker output to
 current feedback, waits for relay `ACTIVE`, then publishes only
-`/arm_joint_target_position` plus continuous gripper targets.
+`/arm_joint_target_position` plus continuous staged `/a1_gripper_target` values.
 
 Stop with:
 

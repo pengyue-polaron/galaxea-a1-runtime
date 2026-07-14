@@ -19,16 +19,13 @@ if str(ROOT) not in sys.path:
 
 import rospy
 from sensor_msgs.msg import JointState
-from signal_arm.msg import arm_control, status_stamped
+from signal_arm.msg import arm_control, gripper_position_control, status_stamped
 from std_msgs.msg import Bool, String
 
-from galaxea_a1_runtime.constants import (  # noqa: E402
-    DEFAULT_MAX_COMMAND_AGE_S,
-    DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD,
-    DEFAULT_RELAY_ARMING_TIMEOUT_S,
-)
 from galaxea_a1_runtime.safety import (  # noqa: E402
     RelayInputs,
+    actuator_error_block_reason,
+    gripper_stroke_block_reason,
     relay_block_reason,
     validate_initial_alignment,
 )
@@ -42,6 +39,8 @@ class SafeArmCommandRelay:
         self.joint_time = 0.0
         self.command = None
         self.command_time = 0.0
+        self.gripper_command = None
+        self.gripper_command_time = 0.0
         self.motor_errors = ()
         self.status_time = 0.0
         self.requested_enabled = False
@@ -49,9 +48,20 @@ class SafeArmCommandRelay:
         self.initial_alignment_checked = False
 
         self.command_pub = rospy.Publisher(args.output_topic, arm_control, queue_size=1)
+        self.gripper_pub = rospy.Publisher(
+            args.gripper_output_topic,
+            gripper_position_control,
+            queue_size=1,
+        )
         self.status_pub = rospy.Publisher(args.relay_status_topic, String, queue_size=1, latch=True)
         rospy.Subscriber(args.joint_topic, JointState, self._joint_cb, queue_size=1)
         rospy.Subscriber(args.input_topic, arm_control, self._command_cb, queue_size=1)
+        rospy.Subscriber(
+            args.gripper_input_topic,
+            gripper_position_control,
+            self._gripper_command_cb,
+            queue_size=1,
+        )
         rospy.Subscriber(args.motor_status_topic, status_stamped, self._status_cb, queue_size=1)
         rospy.Subscriber(args.enable_topic, Bool, self._enable_cb, queue_size=1)
 
@@ -82,11 +92,29 @@ class SafeArmCommandRelay:
             self.motor_errors = tuple(int(item.error_code) for item in msg.data.motor_errors)
             self.status_time = time.monotonic()
 
+    def _gripper_command_cb(self, msg):
+        stroke = float(msg.gripper_stroke)
+        reason = gripper_stroke_block_reason(
+            stroke,
+            minimum_mm=self.args.gripper_min_stroke_mm,
+            maximum_mm=self.args.gripper_max_stroke_mm,
+        )
+        if reason is not None:
+            self._latch_fault(reason)
+            return
+        with self.lock:
+            self.gripper_command = copy.deepcopy(msg)
+            self.gripper_command_time = time.monotonic()
+
     def _snapshot(self):
         now = time.monotonic()
         with self.lock:
             joints = list(self.joints)
             command = None if self.command is None else copy.deepcopy(self.command)
+            gripper_command = (
+                None if self.gripper_command is None else copy.deepcopy(self.gripper_command)
+            )
+            gripper_age = now - self.gripper_command_time
             inputs = RelayInputs(
                 enabled=self.requested_enabled,
                 joint_age=now - self.joint_time,
@@ -97,9 +125,9 @@ class SafeArmCommandRelay:
                 motor_error_codes=self.motor_errors,
             )
             fault_reason = self.fault_reason
-        return now, joints, command, inputs, fault_reason
+        return now, joints, command, gripper_command, gripper_age, inputs, fault_reason
 
-    def _publish_status(self, state, reason, inputs):
+    def _publish_status(self, state, reason, inputs, gripper_age, gripper_forwarding):
         payload = {
             "state": state,
             "reason": reason,
@@ -110,6 +138,8 @@ class SafeArmCommandRelay:
             "joint_count": inputs.joint_count,
             "source_count": inputs.source_count,
             "motor_error_codes": list(inputs.motor_error_codes),
+            "gripper_age_s": None if gripper_age == float("inf") else round(gripper_age, 3),
+            "gripper_forwarding": gripper_forwarding,
         }
         self.status_pub.publish(String(data=json.dumps(payload, sort_keys=True)))
 
@@ -125,8 +155,9 @@ class SafeArmCommandRelay:
         status_period = 1.0 / self.args.status_rate
         last_status_time = 0.0
         while not rospy.is_shutdown():
-            now, joints, command, inputs, fault_reason = self._snapshot()
+            now, joints, command, gripper_command, gripper_age, inputs, fault_reason = self._snapshot()
             reason = relay_block_reason(inputs, arm_joints=self.args.arm_joints, max_age=self.args.max_input_age)
+            gripper_forwarding = False
 
             if fault_reason:
                 state, reason = "FAULT", fault_reason
@@ -152,11 +183,27 @@ class SafeArmCommandRelay:
                     rate.sleep()
                     continue
 
+                gripper_ready = gripper_command is not None and gripper_age <= self.args.max_input_age
+                if gripper_ready:
+                    gripper_reason = actuator_error_block_reason(
+                        inputs.motor_error_codes,
+                        index=self.args.arm_joints,
+                        label="gripper",
+                    )
+                    if gripper_reason is not None:
+                        self._latch_fault(gripper_reason)
+                        rate.sleep()
+                        continue
+
                 command.header.stamp = rospy.Time.now()
                 p_des = list(command.p_des)
                 p_des[: self.args.arm_joints] = output
                 command.p_des = p_des
                 self.command_pub.publish(command)
+                if gripper_ready:
+                    gripper_command.header.stamp = rospy.Time.now()
+                    self.gripper_pub.publish(gripper_command)
+                    gripper_forwarding = True
 
             if inputs.enabled and state == "ARMING" and reason:
                 oldest = max(inputs.joint_age, inputs.source_age, inputs.status_age)
@@ -164,26 +211,43 @@ class SafeArmCommandRelay:
                     self._latch_fault(reason)
 
             if now - last_status_time >= status_period:
-                self._publish_status(state, reason or "", inputs)
+                self._publish_status(
+                    state,
+                    reason or "",
+                    inputs,
+                    gripper_age if gripper_command is not None else float("inf"),
+                    gripper_forwarding,
+                )
                 last_status_time = now
             rate.sleep()
 
 
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input-topic", default="/arm_joint_command_a1_staged")
-    parser.add_argument("--output-topic", default="/arm_joint_command_host")
-    parser.add_argument("--joint-topic", default="/joint_states_host")
-    parser.add_argument("--motor-status-topic", default="/arm_status_host")
-    parser.add_argument("--enable-topic", default="/a1_arm_motion_enable")
-    parser.add_argument("--relay-status-topic", default="/a1_arm_relay_status")
+    parser.add_argument("--input-topic", required=True)
+    parser.add_argument("--output-topic", required=True)
+    parser.add_argument("--joint-topic", required=True)
+    parser.add_argument("--motor-status-topic", required=True)
+    parser.add_argument("--enable-topic", required=True)
+    parser.add_argument("--relay-status-topic", required=True)
+    parser.add_argument("--gripper-input-topic", required=True)
+    parser.add_argument("--gripper-output-topic", required=True)
+    parser.add_argument("--gripper-min-stroke-mm", type=float, required=True)
+    parser.add_argument("--gripper-max-stroke-mm", type=float, required=True)
     parser.add_argument("--arm-joints", type=int, default=6)
     parser.add_argument("--rate", type=float, default=100.0)
     parser.add_argument("--status-rate", type=float, default=5.0)
-    parser.add_argument("--max-input-age", type=float, default=DEFAULT_MAX_COMMAND_AGE_S)
-    parser.add_argument("--arming-timeout", type=float, default=DEFAULT_RELAY_ARMING_TIMEOUT_S)
-    parser.add_argument("--max-initial-error", type=float, default=DEFAULT_MAX_INITIAL_COMMAND_ERROR_RAD)
-    return parser.parse_args()
+    parser.add_argument("--max-input-age", type=float, required=True)
+    parser.add_argument("--arming-timeout", type=float, required=True)
+    parser.add_argument("--max-initial-error", type=float, required=True)
+    args = parser.parse_args()
+    if min(args.rate, args.status_rate, args.max_input_age, args.arming_timeout) <= 0:
+        parser.error("relay rates and timeouts must be positive")
+    if args.max_initial_error < 0:
+        parser.error("--max-initial-error must be non-negative")
+    if args.gripper_min_stroke_mm >= args.gripper_max_stroke_mm:
+        parser.error("gripper minimum must be below maximum")
+    return args
 
 
 def main():

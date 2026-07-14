@@ -1,5 +1,8 @@
 # Reproducible LingBot-VA package for `just convert banana_in_the_plate`.
 
+[system]
+config = "configs/system/a1.toml"
+
 [dataset]
 source_root = "data/processed/banana_in_the_plate_lerobot_v3"
 
@@ -22,7 +25,3 @@ repo_id = "galaxea-a1/banana_in_the_plate_joint_continuous_v3"
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
 base_link = "base_link"
 tip_link = "arm_seg6"
-
-[gripper]
-stroke_min_mm = 0.0
-stroke_max_mm = 200.0

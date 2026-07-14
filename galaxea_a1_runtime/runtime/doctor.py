@@ -63,7 +63,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         from galaxea_a1_runtime.teleop.config import load_teleop_config
 
         contract = default_dataset_contract()
-        settings = build_safety_settings()
+        settings = build_safety_settings(repo_root / "configs" / "system" / "a1.toml")
         teleop_state_names = state_names_for_mode("eef_joint")
         teleop_mapping = JointMappingConfig()
         teleop_config = load_teleop_config(repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root)
@@ -80,7 +80,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
                 joint_count=0,
                 source_count=0,
                 motor_error_codes=(),
-            )
+            ),
+            max_age=teleop_config.system.relay.max_input_age_s,
         )
         add(
             "pure_imports",
@@ -94,7 +95,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         add(
             "teleop_config",
             teleop_config.collection.state_mode.value == "eef_joint"
-            and teleop_config.gripper.max_stroke_mm == 200.0,
+            and teleop_config.gripper.max_stroke_mm
+            == teleop_config.system.gripper.stroke_max_mm,
             str(teleop_config.path),
         )
         add(

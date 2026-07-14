@@ -33,11 +33,8 @@ class ActSessionConfig:
 
 
 @dataclass(frozen=True)
-class ActHostConfig:
-    image: str
-    a1_serial: str
+class ActRuntimeConfig:
     prefix: str
-    run_dir: str
 
 
 @dataclass(frozen=True)
@@ -66,7 +63,7 @@ class ActTopicsConfig:
     staged_command: str
     motion_enable: str
     relay_status: str
-    gripper_command: str
+    gripper_target: str
     gripper_feedback: str
 
 
@@ -121,7 +118,7 @@ class ActConfig:
     path: Path
     system: SystemConfig
     session: ActSessionConfig
-    host: ActHostConfig
+    runtime: ActRuntimeConfig
     policy: ActPolicyConfig
     execution: ActExecutionConfig
     topics: ActTopicsConfig
@@ -151,11 +148,8 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
         path=path,
         system=system,
         session=ActSessionConfig(tmux=_string(session, "tmux")),
-        host=ActHostConfig(
-            image=system.host.image,
-            a1_serial=system.host.a1_serial,
+        runtime=ActRuntimeConfig(
             prefix=_string(runtime, "prefix"),
-            run_dir=_string(runtime, "run_dir"),
         ),
         policy=ActPolicyConfig(
             checkpoint=_repo_path(repo_root, _string(policy, "checkpoint")),
@@ -178,7 +172,7 @@ def load_act_config(path: Path, *, repo_root: Path | None = None) -> ActConfig:
             staged_command=system.topics.staged_command,
             motion_enable=system.topics.motion_enable,
             relay_status=system.topics.relay_status,
-            gripper_command=system.topics.gripper_command,
+            gripper_target=system.topics.gripper_target,
             gripper_feedback=system.topics.gripper_feedback,
         ),
         relay=ActRelayConfig(
@@ -299,8 +293,8 @@ def bridge_argv(config: ActConfig) -> list[str]:
         config.topics.motion_enable,
         "--relay-status-topic",
         config.topics.relay_status,
-        "--gripper-command-topic",
-        config.topics.gripper_command,
+        "--gripper-target-topic",
+        config.topics.gripper_target,
         "--gripper-feedback-topic",
         config.topics.gripper_feedback,
         "--relay-enable-timeout",
@@ -382,19 +376,12 @@ def bash_config(config: ActConfig) -> str:
         _assign("CONFIG_PATH", str(config.path)),
         _assign("SYSTEM_CONFIG_PATH", str(config.system.path)),
         _assign("SESSION", config.session.tmux),
-        _assign("IMAGE", config.host.image),
-        _assign("SERIAL", config.host.a1_serial),
-        _assign("PREFIX", config.host.prefix),
-        _assign("RUN_DIR", config.host.run_dir),
+        _assign("PREFIX", config.runtime.prefix),
         _assign("CHECKPOINT", str(config.policy.checkpoint)),
         _assign("DEPLOYMENT_READY", "1" if config.policy.deployment_ready else "0"),
         _assign("WRIST_BACKEND", config.cameras.wrist_backend),
         _assign("WRIST_SERIAL", config.cameras.wrist_serial),
         _assign("WRIST_CAMERA", config.cameras.wrist_device),
-        _assign("TARGET_TOPIC", config.topics.target),
-        _assign("STAGED_TOPIC", config.topics.staged_command),
-        _assign("RELAY_ENABLE_TOPIC", config.topics.motion_enable),
-        _assign("RELAY_STATUS_TOPIC", config.topics.relay_status),
         _array("BRIDGE_ARGS", bridge_argv(config)),
     ]
     return "\n".join(lines)

@@ -5,12 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from galaxea_a1_runtime.config import DatasetConfig
 from galaxea_a1_runtime.hardware.io import A1Observation
 from galaxea_a1_runtime.policies.actions import RuntimeAction
 from galaxea_a1_runtime.schema import DatasetContract, validate_frame_keys
 
-from .dataset import create_lerobot_dataset
+from .dataset import DatasetConfig, create_lerobot_dataset
 
 
 def build_lerobot_frame(

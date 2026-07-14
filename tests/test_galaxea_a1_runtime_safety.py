@@ -47,7 +47,7 @@ def test_relay_blocks_extra_motor_error_bits():
 
 
 def test_relay_locked_is_fail_closed_state():
-    decision = validate_relay_inputs(healthy_inputs(enabled=False))
+    decision = validate_relay_inputs(healthy_inputs(enabled=False), max_age=0.25)
 
     assert decision.allowed is False
     assert decision.reason == "locked"
