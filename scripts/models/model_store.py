@@ -14,6 +14,9 @@ SLOTS = {
     "lingbot-a1-banana-step500": Path(
         "checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500"
     ),
+    "lingbot-a1-banana-step1000": Path(
+        "checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_1000"
+    ),
     "act-a1-banana-step30000": Path(
         "checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000"
     ),
@@ -124,6 +127,28 @@ def _check_git_storage(reporter: Reporter, repo: Path) -> None:
         reporter.pass_("git_object_garbage", "none")
 
 
+def _check_extra_lingbot_checkpoints(
+    reporter: Reporter, repo: Path, configured: Path, expected_size: int
+) -> None:
+    checkpoint_root = repo / "models/checkpoints/lingbot"
+    for checkpoint in sorted(checkpoint_root.glob("*/checkpoint_step_*")):
+        if checkpoint == configured:
+            continue
+        name = f"registered_{checkpoint.parent.name}_{checkpoint.name}"
+        _require_directory(
+            reporter,
+            name,
+            checkpoint,
+            ("transformer/config.json", "transformer/diffusion_pytorch_model.safetensors"),
+        )
+        weight = checkpoint / "transformer/diffusion_pytorch_model.safetensors"
+        if weight.is_file() and weight.stat().st_size != expected_size:
+            reporter.fail(
+                f"{name}_size",
+                f"expected {expected_size}, got {weight.stat().st_size}",
+            )
+
+
 def doctor(repo: Path) -> int:
     reporter = Reporter()
     lingbot = _toml(repo / "configs/inference/lingbot_va_a1.toml")["policy_server"]
@@ -156,6 +181,7 @@ def doctor(repo: Path) -> int:
             "lingbot_weight_size",
             f"expected {expected_size}, got {weight.stat().st_size}",
         )
+    _check_extra_lingbot_checkpoints(reporter, repo, checkpoint, expected_size)
 
     _require_directory(
         reporter, "act_checkpoint", act_checkpoint, ("config.json", "model.safetensors")

@@ -9,6 +9,7 @@ The local layout is:
 models/
   base/lingbot-va-base
   checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500
+  checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_1000
   checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000
   runtime/lingbot/a1_banana_in_plate/checkpoint_step_500
 ```
@@ -22,6 +23,7 @@ Register the current supported slots without copying their contents:
 ```bash
 just model-link lingbot-base /path/to/lingbot-va-base
 just model-link lingbot-a1-banana-step500 /path/to/checkpoint_step_500
+just model-link lingbot-a1-banana-step1000 /path/to/checkpoint_step_1000
 just model-link act-a1-banana-step30000 /path/to/pretrained_model
 just models
 ```

@@ -95,6 +95,9 @@ def test_lingbot_config_uses_canonical_model_store():
         in text
     )
 
+    model_store = (REPO / "scripts" / "models" / "model_store.py").read_text()
+    assert '"lingbot-a1-banana-step1000"' in model_store
+
 
 def test_lingbot_runtime_manages_the_tracked_step500_server():
     runtime = (REPO / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh").read_text()
