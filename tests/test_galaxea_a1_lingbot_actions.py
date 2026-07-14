@@ -3,10 +3,12 @@ import pytest
 
 from galaxea_a1_runtime.apps.lingbot.actions import (
     LingBotActionConfig,
+    absolute_action_to_relative,
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
     normalize_condition_action,
     prepare_policy_action,
+    relative_action_to_absolute,
     sanitize_policy_action,
     tracker_command_action,
 )
@@ -73,3 +75,34 @@ def test_gripper_mapping_is_binary():
     assert gripper_stroke_from_norm(0.50, cfg) == pytest.approx(200.0)
     assert gripper_norm_from_stroke(29.9, cfg) == pytest.approx(0.0)
     assert gripper_norm_from_stroke(30.0, cfg) == pytest.approx(1.0)
+
+
+def test_gripper_mapping_matches_act_continuous_task_stroke():
+    cfg = LingBotActionConfig(
+        gripper_command_mode="continuous",
+        gripper_stroke_min=0.0,
+        gripper_stroke_max=80.0,
+    )
+
+    action = sanitize_policy_action(
+        [0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 1.0, 0.25],
+        cfg,
+        current_xyz=None,
+    )
+
+    assert action[7] == pytest.approx(0.25)
+    assert gripper_stroke_from_norm(action[7], cfg) == pytest.approx(20.0)
+    assert gripper_stroke_from_norm(2.0, cfg) == pytest.approx(80.0)
+
+
+def test_episode_relative_action_roundtrips_xyz_and_quaternion():
+    origin = [0.2, -0.1, 0.3, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5), 1.0]
+    relative = [0.1, 0.02, -0.03, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5), 0.25]
+
+    absolute = relative_action_to_absolute(relative, origin, min_quat_norm=0.25)
+    recovered = absolute_action_to_relative(absolute, origin, min_quat_norm=0.25)
+
+    assert absolute[:3] == pytest.approx((0.3, -0.08, 0.27))
+    assert abs(float(np.dot(recovered[3:7], relative[3:7]))) == pytest.approx(1.0)
+    assert recovered[:3] == pytest.approx(relative[:3])
+    assert recovered[7] == pytest.approx(0.25)

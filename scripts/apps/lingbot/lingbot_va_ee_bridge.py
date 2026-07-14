@@ -49,11 +49,13 @@ from galaxea_a1_runtime.apps.eef_bridge import (
 )
 from galaxea_a1_runtime.apps.lingbot.actions import (
     LingBotActionConfig,
+    absolute_action_to_relative,
     clamp_notes,
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
     normalize_condition_action,
     prepare_policy_action,
+    relative_action_to_absolute,
     sanitize_policy_action,
     tracker_command_action,
 )
@@ -116,6 +118,7 @@ class A1LingBotEEBridge:
         self.relay_status = None
         self.relay_status_monotonic = None
         self.reported_condition_state = False
+        self.episode_origin = None
         self.action_config = self._action_config_from_args(args)
         rospy.init_node("lingbot_va_ee_bridge", anonymous=False)
         pose_pub = rospy.Publisher(args.cmd_pose_topic, PoseStamped, queue_size=10)
@@ -172,6 +175,7 @@ class A1LingBotEEBridge:
             gripper_stroke_offset=float(args.gripper_stroke_offset),
             gripper_stroke_min=float(args.gripper_stroke_min),
             gripper_stroke_max=float(args.gripper_stroke_max),
+            gripper_command_mode=args.gripper_command_mode,
             gripper_command_open_threshold=float(args.gripper_command_open_threshold),
             gripper_feedback_open_threshold_mm=float(args.gripper_feedback_open_threshold_mm),
         )
@@ -246,8 +250,8 @@ class A1LingBotEEBridge:
         if high is None or wrist is None:
             return None
         obs = {
-            "observation.images.cam_high": high,
-            "observation.images.cam_wrist": wrist,
+            self.args.cam0_observation_key: high,
+            self.args.cam1_observation_key: wrist,
         }
         packet = {"obs": [obs], "prompt": self.args.prompt}
         if self.args.condition_on_ee_state:
@@ -295,12 +299,11 @@ class A1LingBotEEBridge:
     def _normalize_condition_action(self, action8: np.ndarray) -> np.ndarray:
         return normalize_condition_action(action8, self.action_config)
 
-    def _current_or_initial_action8(self) -> np.ndarray | None:
-        if self.args.initial_ee_pose is not None:
-            return self._normalize_condition_action(np.asarray(self.args.initial_ee_pose, dtype=np.float64))
-
+    def _current_absolute_action8(self) -> np.ndarray | None:
         if not self._feedback_is_fresh():
-            return None
+            if self.args.initial_ee_pose is None:
+                return None
+            return self._normalize_condition_action(np.asarray(self.args.initial_ee_pose, dtype=np.float64))
         xyz = self._current_xyz()
         quat = self._current_quat()
         if xyz is None or quat is None:
@@ -310,6 +313,46 @@ class A1LingBotEEBridge:
         else:
             gripper_norm = 0.0
         return self._normalize_condition_action(np.concatenate([xyz, quat, [gripper_norm]]))
+
+    def _ensure_episode_origin(self) -> np.ndarray | None:
+        if self.episode_origin is not None:
+            return self.episode_origin
+        if self.args.initial_ee_pose is not None:
+            origin = self._normalize_condition_action(np.asarray(self.args.initial_ee_pose, dtype=np.float64))
+        else:
+            origin = self._current_absolute_action8()
+        if origin is None:
+            return None
+        self.episode_origin = origin
+        print(
+            "[Bridge] Episode EEF origin "
+            f"xyz={np.round(origin[:3], 4).tolist()} "
+            f"quat={np.round(origin[3:7], 4).tolist()} "
+            f"pose_mode={self.args.action_pose_mode}"
+        )
+        return self.episode_origin
+
+    def _absolute_to_model_action(self, absolute8: np.ndarray) -> np.ndarray:
+        if self.args.action_pose_mode == "absolute":
+            return np.asarray(absolute8, dtype=np.float64).reshape(8).copy()
+        origin = self._ensure_episode_origin()
+        if origin is None:
+            raise RuntimeError("Episode EEF origin is unavailable")
+        return absolute_action_to_relative(absolute8, origin, min_quat_norm=self.args.min_quat_norm)
+
+    def _model_to_absolute_action(self, model8: np.ndarray) -> np.ndarray:
+        if self.args.action_pose_mode == "absolute":
+            return np.asarray(model8, dtype=np.float64).reshape(8).copy()
+        origin = self._ensure_episode_origin()
+        if origin is None:
+            raise RuntimeError("Episode EEF origin is unavailable")
+        return relative_action_to_absolute(model8, origin, min_quat_norm=self.args.min_quat_norm)
+
+    def _current_or_initial_action8(self) -> np.ndarray | None:
+        absolute = self._current_absolute_action8()
+        if absolute is None:
+            return None
+        return self._normalize_condition_action(self._absolute_to_model_action(absolute))
 
     def _lingbot_state_condition(self) -> np.ndarray | None:
         action = self._current_or_initial_action8()
@@ -322,11 +365,13 @@ class A1LingBotEEBridge:
         )
 
     def _sanitize_action(self, raw8: np.ndarray) -> np.ndarray:
-        return sanitize_policy_action(raw8, self.action_config, current_xyz=self._current_xyz())
+        absolute = self._model_to_absolute_action(raw8)
+        return sanitize_policy_action(absolute, self.action_config, current_xyz=self._current_xyz())
 
     def _prepare_action_for_execution(self, raw8: np.ndarray) -> np.ndarray:
+        absolute = self._model_to_absolute_action(raw8)
         return prepare_policy_action(
-            raw8,
+            absolute,
             self.action_config,
             current_xyz=self._current_xyz(),
             current_quat=self._current_quat(),
@@ -374,11 +419,10 @@ class A1LingBotEEBridge:
     def _publish_pose_and_gripper(self, action8: np.ndarray, *, publish_gripper: bool) -> None:
         self.commander.publish_action(action8, publish_gripper=publish_gripper)
 
-    def _publish_ee_action(self, action8: np.ndarray) -> np.ndarray:
+    def _publish_ee_action(self, policy_action: np.ndarray) -> np.ndarray:
         if not self._feedback_is_fresh():
             raise RuntimeError("A1 end-effector feedback is missing or stale; refusing to publish")
 
-        policy_action = self._prepare_action_for_execution(action8)
         started = time.monotonic()
         last_command = self._tracker_command_action(policy_action)
 
@@ -414,7 +458,7 @@ class A1LingBotEEBridge:
             f"quat={np.round(policy_action[3:7], 4).tolist()} "
             f"gripper_mm={round(float(grip_mm), 3)}"
         )
-        return self._actual_action_state(policy_action) if self.args.cache_actual_feedback else policy_action
+        return self._actual_action_state(policy_action) if self.args.cache_actual_feedback else last_command
 
     @staticmethod
     def _ask_next(prompt: str) -> str:
@@ -427,22 +471,25 @@ class A1LingBotEEBridge:
         return format_xyz_direction(delta, deadband_m=self.args.review_deadband)
 
     def _clamp_notes(self, raw8: np.ndarray) -> list[str]:
-        return clamp_notes(raw8, self.action_config, current_xyz=self._current_xyz())
+        absolute = self._model_to_absolute_action(raw8)
+        return clamp_notes(absolute, self.action_config, current_xyz=self._current_xyz())
 
     def _print_step_preview(self, call_idx: int, frame_i: int, step_i: int, raw8: np.ndarray, safe: np.ndarray) -> None:
         cur = self._current_xyz()
         if cur is None:
-            condition_action = self._current_or_initial_action8()
+            condition_action = self._current_absolute_action8()
             if condition_action is not None:
                 cur = condition_action[:3]
-        raw_xyz = np.asarray(raw8[:3], dtype=np.float64)
+        raw_absolute = self._model_to_absolute_action(raw8)
+        raw_xyz = np.asarray(raw_absolute[:3], dtype=np.float64)
         safe_delta = None if cur is None else safe[:3] - cur
         raw_delta = None if cur is None else raw_xyz - cur
         grip_mm = gripper_stroke_from_norm(float(safe[7]), self.action_config)
         clamp_notes = self._clamp_notes(raw8)
         print(
             f"[Next] call={call_idx + 1} frame={frame_i} step={step_i} "
-            f"raw={np.round(raw8, 4).tolist()} safe={np.round(safe, 4).tolist()}"
+            f"model={np.round(raw8, 4).tolist()} absolute={np.round(raw_absolute, 4).tolist()} "
+            f"safe={np.round(safe, 4).tolist()}"
         )
         if cur is not None:
             print(
@@ -473,9 +520,20 @@ class A1LingBotEEBridge:
         call_idx = 0
         if self.args.execute:
             self._wait_for_fresh_feedback()
+            if self._ensure_episode_origin() is None:
+                raise RuntimeError("Cannot establish the episode EEF origin")
             self._hold_current_pose()
             rospy.sleep(1.0)
-            print("[Bridge] Holding the current EE pose continuously while waiting for Enter.")
+            if self.args.step_mode:
+                print("[Bridge] Holding the current EE pose continuously while waiting for Enter.")
+            else:
+                cache_source = "measured-feedback" if self.args.cache_actual_feedback else "tracker-command"
+                print(
+                    "[Bridge] Continuous execution armed: "
+                    f"calls={self.args.max_model_calls or 'unbounded'} "
+                    f"frames_per_call={self.args.execute_frames} rate={self.args.exec_rate:.1f}Hz "
+                    f"cache_action_source={cache_source}"
+                )
         while not rospy.is_shutdown():
             if self.args.max_model_calls > 0 and call_idx >= self.args.max_model_calls:
                 break
@@ -539,7 +597,7 @@ class A1LingBotEEBridge:
                     raw8 = action[:, frame_i, step_i]
                     safe = self._prepare_action_for_execution(raw8)
                     cache_frame_i = frame_i if first else frame_i - start_frame
-                    cache_state[:, cache_frame_i, step_i] = safe
+                    cache_state[:, cache_frame_i, step_i] = self._absolute_to_model_action(safe)
                     should_preview = self.args.print_actions and (step_i == 0 or self.args.step_actions)
                     if should_preview:
                         self._print_step_preview(call_idx, frame_i, step_i, raw8, safe)
@@ -553,7 +611,7 @@ class A1LingBotEEBridge:
                             continue
                     if self.args.execute:
                         executed_state = self._publish_ee_action(safe)
-                        cache_state[:, cache_frame_i, step_i] = executed_state
+                        cache_state[:, cache_frame_i, step_i] = self._absolute_to_model_action(executed_state)
                     time.sleep(max(0.0, 1.0 / self.args.exec_rate))
 
                     if (step_i + 1) % actions_per_observation == 0:
@@ -611,7 +669,7 @@ def parse_args():
     p = argparse.ArgumentParser(description="LingBot-VA EE-pose bridge for Galaxea A1")
     p.add_argument("--host", default="127.0.0.1")
     p.add_argument("--port", type=int, default=1106)
-    p.add_argument("--prompt", default="pick up that bowl")
+    p.add_argument("--prompt", default="Put the banana in the blue plate.")
     p.add_argument("--execute", action="store_true", help="Actually publish EE commands. Default is dry-run.")
     p.add_argument("--step-mode", action=argparse.BooleanOptionalAction, default=True,
                    help="Wait for Enter before each model inference chunk.")
@@ -644,8 +702,10 @@ def parse_args():
     p.add_argument("--cam0-gain", type=int, default=32)
     p.add_argument("--cam0-auto-white-balance", action=argparse.BooleanOptionalAction, default=True)
     p.add_argument("--cam0-white-balance", type=int, default=4600)
+    p.add_argument("--cam0-observation-key", default="observation.images.front")
     p.add_argument("--cam1-device", default="/dev/video0")
     p.add_argument("--cam1-backend-api", default="v4l2")
+    p.add_argument("--cam1-observation-key", default="observation.images.wrist")
     p.add_argument("--state-pose-topic", default="/end_effector_pose")
     p.add_argument("--state-gripper-topic", default="/gripper_stroke_host")
     p.add_argument("--cmd-pose-topic", default="/a1_ee_target")
@@ -656,6 +716,8 @@ def parse_args():
     p.add_argument("--max-relay-status-age", type=float, default=1.0,
                    help="Maximum age in seconds for trusting /a1_arm_relay_status while executing.")
     p.add_argument("--command-frame", default="world")
+    p.add_argument("--action-pose-mode", choices=["absolute", "episode-relative"], default="absolute",
+                   help="Interpret model EEF poses as world-absolute or relative to the startup EEF pose.")
     p.add_argument("--orientation-mode", choices=["hold-current", "model-quat"], default="hold-current",
                    help="Safest default holds current EE orientation; model-quat uses LingBot channels 3..6 directly.")
     p.add_argument("--eef-servo-gain", type=float, default=1.0,
@@ -668,8 +730,8 @@ def parse_args():
                    help="XYZ norm tolerance in meters for servo settle/correction.")
     p.add_argument("--eef-servo-corrections", type=int, default=0,
                    help="Additional correction publishes after settle if actual EEF is still far from the policy target.")
-    p.add_argument("--cache-actual-feedback", action=argparse.BooleanOptionalAction, default=True,
-                   help="Use measured /end_effector_pose, not commanded target, for LingBot KV-cache action state.")
+    p.add_argument("--cache-actual-feedback", action=argparse.BooleanOptionalAction, default=False,
+                   help="Cache measured EEF feedback instead of the tracker command; enable only for matching training data.")
     p.add_argument("--xyz-min", type=float, nargs=3, default=[0.06, -0.27, 0.06])
     p.add_argument("--xyz-max", type=float, nargs=3, default=[0.44, 0.14, 0.50])
     p.add_argument("--min-quat-norm", type=float, default=0.25)
@@ -679,6 +741,7 @@ def parse_args():
     p.add_argument("--gripper-stroke-offset", type=float, default=0.0)
     p.add_argument("--gripper-stroke-min", type=float, default=0.0)
     p.add_argument("--gripper-stroke-max", type=float, default=200.0)
+    p.add_argument("--gripper-command-mode", choices=["binary", "continuous"], default="binary")
     p.add_argument("--gripper-command-open-threshold", type=float, default=0.5)
     p.add_argument("--gripper-feedback-open-threshold-mm", type=float, default=30.0)
     return p.parse_args()

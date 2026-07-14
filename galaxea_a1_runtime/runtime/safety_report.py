@@ -165,10 +165,10 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="lingbot_cache_actual_feedback",
             path="configs/inference/lingbot_va_a1.toml [servo.cache_actual_feedback]",
-            default="on",
-            behavior="LingBot KV-cache action state is updated with measured EEF feedback instead of the commanded target.",
-            visibility="Runbook documents this; publish logs show commanded and actual tracking diagnostics when settle is enabled.",
-            operator_note="This changes future model context, not the immediate command. It reduces pretend-success drift.",
+            default="off; cache tracker command",
+            behavior="The step-500 LingBot KV cache records the tracker command, matching the training action contract.",
+            visibility="Bridge startup prints cache_action_source=tracker-command.",
+            operator_note="Enable measured feedback only for a model trained with measured feedback as its action history.",
         ),
         SafetySetting(
             name="lingbot_relay_status_guard",
@@ -189,10 +189,10 @@ def build_safety_settings() -> tuple[SafetySetting, ...]:
         SafetySetting(
             name="gripper_scale_mapping",
             path="configs/inference/lingbot_va_a1.toml [gripper]",
-            default="binary 0/1 -> 0/200mm",
-            behavior="The LingBot bridge thresholds policy gripper at 0.5 and sends only 0mm or 200mm.",
+            default="continuous 0..1 -> 0..80mm",
+            behavior="The LingBot bridge clips policy gripper to 0..1 and maps it into the tracked task stroke.",
             visibility="Bridge preview and publish log print gripper_norm and gripper_mm.",
-            operator_note="Collection, datasets, generic ROS1 execution, and LingBot execution use the same mapping.",
+            operator_note="Dataset gripper values remain binary; deployment stroke mapping is an explicit app setting.",
         ),
     )
 
@@ -202,7 +202,7 @@ def build_architecture_findings() -> tuple[str, ...]:
         "The generic LeRobot ROS1 adapter now executes EEF translation/delta actions through the safe target path, but still rejects joint-space arm execution.",
         "Teleop joint-space control is implemented as an app runtime that stages jointTracker output through the relay.",
         "The relay no longer applies joint tracking-error or velocity clamps; staged tracker output is forwarded unchanged once validation passes.",
-        "LingBot absolute-target execution and generic LeRobot delta-action execution are still separate runner paths, though both use the staged EEF target route.",
+        "LingBot episode-relative targets are composed onto the startup pose before using the staged EEF target route.",
         "The direct-debug profile deliberately bypasses the relay and should remain isolated from normal app commands.",
     )
 

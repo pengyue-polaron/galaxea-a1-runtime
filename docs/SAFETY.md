@@ -52,16 +52,23 @@ apps. They still do not publish host commands directly:
   Optional `RuntimeConfig.safety` delta limits must be set explicitly.
 - Generic ROS1 adapter needs live `/end_effector_pose` before arm motion.
 - Generic ROS1 adapter rejects `joint_absolute`.
-- Policy gripper is binary: values below `0.5` become closed `0`, values at or
-  above `0.5` become open `1` before execution.
+- Collected policy gripper data is binary. Deployment mapping is explicit in
+  each tracked inference config; the A1 step-500 LingBot and ACT profiles use
+  continuous policy output mapped into a task-sized 0-80 mm stroke.
 - LingBot workspace bounds apply to outgoing targets, not feedback state.
 - LingBot orientation defaults to `hold-current`.
 - LingBot execution settings live in `configs/inference/lingbot_va_a1.toml`;
   avoid per-run hidden flags.
+- The step-500 LingBot KV cache records tracker commands because its training
+  action is a commanded episode-relative EEF target. Measured EEF feedback is
+  still used for freshness checks, workspace-relative diagnostics, and camera
+  context.
+- LingBot bridge exit is guarded: normal completion, errors, and `Ctrl-C` stop
+  the A1 runtime and policy server.
 - ACT execution settings live in `configs/inference/act_joint_a1.toml`; the
   tracked default is `execution.execute = false`.
-- Every policy and dataset stores only `0` or `1`: `0` is fully closed and `1`
-  is fully open. Hardware adapters send only `0mm` or `200mm`.
+- Teleop datasets store only `0` or `1`: `0` is closed and `1` is open.
+  Hardware command stroke is controlled separately by the tracked app config.
 - LingBot waits for relay `ACTIVE` before gripper publish because the gripper
   topic is independent of the arm relay.
 

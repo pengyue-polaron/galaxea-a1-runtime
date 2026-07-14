@@ -192,15 +192,18 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 - Manual EEF acceptance: `just eef-test`.
 - Teleop collection: `just teleop <experiment>`.
 - Manual teleop acceptance: `just teleop-test`, `just logs`, `just stop`.
-- LingBot app: `just lingbot`, then `tmux attach -t lingbot-a1`.
+- LingBot app: `just lingbot` manages the step-500 policy server and A1 bridge;
+  inspect them with `tmux attach -t lingbot-va-server` and
+  `tmux attach -t lingbot-a1`.
 - ACT joint policy: `just act`, then `tmux attach -t act-a1`.
 - Dataset conversion: `just convert <experiment>` using
   `configs/datasets/<experiment>.toml`; each run emits independent LeRobot
   EEF v3.0, EEF v2.1, and joint-action v3.0 packages.
 - Generic LeRobot robot adapter: safe EEF translation/delta actions through
   `/a1_ee_target`; rejects `joint_absolute`.
-- LingBot app: step-gated inference and publishing, relay guard, EEF state
-  conditioning, workspace validation, and binary gripper execution.
+- LingBot app: finite continuous inference and publishing, relay guard,
+  episode-relative EEF state conditioning, absolute workspace validation, and
+  tracked binary/continuous gripper execution.
 - ACT app: dry-run default, local checkpoint loading, action preview, staged
   jointTracker alignment, relay guard, joint limit/step checks, and binary
   gripper execution.

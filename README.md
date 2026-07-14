@@ -86,8 +86,10 @@ just stop
 
 LingBot runtime parameters live in
 [configs/inference/lingbot_va_a1.toml](configs/inference/lingbot_va_a1.toml).
-Edit that tracked file when the server, prompt, cameras, EEF workspace,
-execution cadence, or gripper mapping changes.
+The tracked command starts the managed step-500 policy server before the A1
+runtime and runs a finite continuous rollout. Edit that file when the
+checkpoint, server, prompt, cameras, EEF workspace, execution cadence, or
+gripper mapping changes.
 
 ACT joint policy:
 

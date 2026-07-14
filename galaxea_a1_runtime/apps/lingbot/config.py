@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Any, Literal
 
 OrientationMode = Literal["hold-current", "model-quat"]
+PoseMode = Literal["absolute", "episode-relative"]
+GripperCommandMode = Literal["binary", "continuous"]
+TextEncoderDevice = Literal["cpu", "cuda"]
 
 DEFAULT_LINGBOT_CONFIG = Path("configs/inference/lingbot_va_a1.toml")
 
@@ -25,6 +28,36 @@ class LingBotServerConfig:
     host: str
     port: int
     prompt: str
+
+
+@dataclass(frozen=True)
+class LingBotPolicyServerConfig:
+    tmux: str
+    checkout: Path
+    python: Path
+    base_model: Path
+    checkpoint: Path
+    model_root: Path
+    save_root: Path
+    master_port: int
+    startup_timeout_s: float
+    expected_weight_size_bytes: int
+    text_encoder_device: TextEncoderDevice
+    seed: int
+    height: int
+    width: int
+    frame_chunk_size: int
+    action_per_frame: int
+    attention_window: int
+    guidance_scale: float
+    action_guidance_scale: float
+    video_inference_steps: int
+    action_inference_steps: int
+    snr_shift: float
+    action_snr_shift: float
+    used_action_channel_ids: tuple[int, ...]
+    q01_source: tuple[float, ...]
+    q99_source: tuple[float, ...]
 
 
 @dataclass(frozen=True)
@@ -64,6 +97,7 @@ class LingBotRelayConfig:
 @dataclass(frozen=True)
 class LingBotEefConfig:
     command_frame: str
+    action_pose_mode: PoseMode
     orientation_mode: OrientationMode
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
@@ -88,6 +122,7 @@ class LingBotGripperConfig:
     stroke_offset_mm: float
     stroke_min_mm: float
     stroke_max_mm: float
+    command_mode: GripperCommandMode
     command_open_threshold: float
     feedback_open_threshold_mm: float
 
@@ -103,8 +138,10 @@ class LingBotCameraConfig:
     front_gain: int
     front_auto_white_balance: bool
     front_white_balance: int
+    front_observation_key: str
     wrist_device: str
     wrist_backend_api: str
+    wrist_observation_key: str
 
 
 @dataclass(frozen=True)
@@ -112,6 +149,7 @@ class LingBotConfig:
     path: Path
     session: LingBotSessionConfig
     server: LingBotServerConfig
+    policy_server: LingBotPolicyServerConfig
     execution: LingBotExecutionConfig
     topics: LingBotTopicsConfig
     relay: LingBotRelayConfig
@@ -132,10 +170,10 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     path = path.resolve()
     data = tomllib.loads(path.read_text())
     repo_root = repo_root.resolve() if repo_root is not None else path.parents[2]
-    del repo_root
 
     session = _required_table(data, "session")
     server = _required_table(data, "server")
+    policy_server = _required_table(data, "policy_server")
     execution = _required_table(data, "execution")
     topics = _required_table(data, "topics")
     relay = _required_table(data, "relay")
@@ -153,6 +191,34 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             host=_string(server, "host"),
             port=int(server.get("port", 1106)),
             prompt=_string(server, "prompt"),
+        ),
+        policy_server=LingBotPolicyServerConfig(
+            tmux=_string(policy_server, "tmux"),
+            checkout=_resolved_path(policy_server, "checkout", repo_root),
+            python=_resolved_path(policy_server, "python", repo_root),
+            base_model=_resolved_path(policy_server, "base_model", repo_root),
+            checkpoint=_resolved_path(policy_server, "checkpoint", repo_root),
+            model_root=_resolved_path(policy_server, "model_root", repo_root),
+            save_root=_resolved_path(policy_server, "save_root", repo_root),
+            master_port=int(policy_server.get("master_port", 29501)),
+            startup_timeout_s=float(policy_server.get("startup_timeout_s", 120.0)),
+            expected_weight_size_bytes=int(policy_server.get("expected_weight_size_bytes", 0)),
+            text_encoder_device=_text_encoder_device(str(policy_server.get("text_encoder_device", "cpu"))),
+            seed=int(policy_server.get("seed", 42)),
+            height=int(policy_server.get("height", 256)),
+            width=int(policy_server.get("width", 256)),
+            frame_chunk_size=int(policy_server.get("frame_chunk_size", 4)),
+            action_per_frame=int(policy_server.get("action_per_frame", 4)),
+            attention_window=int(policy_server.get("attention_window", 30)),
+            guidance_scale=float(policy_server.get("guidance_scale", 5.0)),
+            action_guidance_scale=float(policy_server.get("action_guidance_scale", 1.0)),
+            video_inference_steps=int(policy_server.get("video_inference_steps", 5)),
+            action_inference_steps=int(policy_server.get("action_inference_steps", 10)),
+            snr_shift=float(policy_server.get("snr_shift", 5.0)),
+            action_snr_shift=float(policy_server.get("action_snr_shift", 1.0)),
+            used_action_channel_ids=_int_tuple(policy_server, "used_action_channel_ids"),
+            q01_source=_float_tuple_any(policy_server, "q01_source"),
+            q99_source=_float_tuple_any(policy_server, "q99_source"),
         ),
         execution=LingBotExecutionConfig(
             execute=bool(execution.get("execute", True)),
@@ -184,6 +250,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
         ),
         eef=LingBotEefConfig(
             command_frame=_string(eef, "command_frame"),
+            action_pose_mode=_pose_mode(_string(eef, "action_pose_mode")),
             orientation_mode=_orientation_mode(_string(eef, "orientation_mode")),
             xyz_min=_float_tuple(eef, "xyz_min", 3),
             xyz_max=_float_tuple(eef, "xyz_max", 3),
@@ -197,13 +264,14 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             settle_s=float(servo.get("settle_s", 0.0)),
             tolerance_m=float(servo.get("tolerance_m", 0.01)),
             corrections=int(servo.get("corrections", 0)),
-            cache_actual_feedback=bool(servo.get("cache_actual_feedback", True)),
+            cache_actual_feedback=bool(servo.get("cache_actual_feedback", False)),
         ),
         gripper=LingBotGripperConfig(
             stroke_scale_mm=float(gripper.get("stroke_scale_mm", 200.0)),
             stroke_offset_mm=float(gripper.get("stroke_offset_mm", 0.0)),
             stroke_min_mm=float(gripper.get("stroke_min_mm", 0.0)),
             stroke_max_mm=float(gripper.get("stroke_max_mm", 200.0)),
+            command_mode=_gripper_command_mode(str(gripper.get("command_mode", "binary"))),
             command_open_threshold=float(gripper.get("command_open_threshold", 0.5)),
             feedback_open_threshold_mm=float(gripper.get("feedback_open_threshold_mm", 30.0)),
         ),
@@ -217,8 +285,10 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             front_gain=int(front.get("gain", 32)),
             front_auto_white_balance=bool(front.get("auto_white_balance", True)),
             front_white_balance=int(front.get("white_balance", 4600)),
+            front_observation_key=_string(front, "observation_key"),
             wrist_device=_string(wrist, "device"),
             wrist_backend_api=_string(wrist, "backend_api"),
+            wrist_observation_key=_string(wrist, "observation_key"),
         ),
     )
     validate_lingbot_config(config)
@@ -228,6 +298,25 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
 def validate_lingbot_config(config: LingBotConfig) -> None:
     if config.server.port <= 0:
         raise ValueError("server.port must be positive")
+    policy = config.policy_server
+    if policy.master_port <= 0 or policy.startup_timeout_s <= 0:
+        raise ValueError("policy_server master port and startup timeout must be positive")
+    if policy.expected_weight_size_bytes <= 0:
+        raise ValueError("policy_server.expected_weight_size_bytes must be positive")
+    if min(policy.height, policy.width, policy.frame_chunk_size, policy.action_per_frame) <= 0:
+        raise ValueError("policy_server dimensions must be positive")
+    if policy.attention_window <= 0 or policy.video_inference_steps <= 0 or policy.action_inference_steps <= 0:
+        raise ValueError("policy_server inference settings must be positive")
+    if len(policy.used_action_channel_ids) != len(policy.q01_source) or len(policy.q01_source) != len(
+        policy.q99_source
+    ):
+        raise ValueError("policy_server action channels and quantiles must have equal lengths")
+    if len(set(policy.used_action_channel_ids)) != len(policy.used_action_channel_ids):
+        raise ValueError("policy_server.used_action_channel_ids must be unique")
+    if any(channel < 0 or channel >= 30 for channel in policy.used_action_channel_ids):
+        raise ValueError("policy_server action channels must be in [0, 30)")
+    if any(lo >= hi for lo, hi in zip(policy.q01_source, policy.q99_source, strict=True)):
+        raise ValueError("policy_server q01_source values must be lower than q99_source")
     if config.execution.max_model_calls < 0:
         raise ValueError("execution.max_model_calls must be >= 0")
     if config.execution.execute_frames <= 0:
@@ -236,6 +325,10 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("execution.initial_ee_pose must contain 8 values")
     if config.execution.lingbot_frame_chunk_size <= 0 or config.execution.lingbot_action_per_frame <= 0:
         raise ValueError("LingBot frame/action dimensions must be positive")
+    if config.execution.lingbot_frame_chunk_size != policy.frame_chunk_size:
+        raise ValueError("execution and policy_server frame_chunk_size must match")
+    if config.execution.lingbot_action_per_frame != policy.action_per_frame:
+        raise ValueError("execution and policy_server action_per_frame must match")
     if config.execution.exec_rate <= 0:
         raise ValueError("execution.exec_rate must be positive")
     if config.relay.enable_timeout_s <= 0 or config.relay.max_status_age_s <= 0:
@@ -302,10 +395,14 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         _bool_flag("cam0-auto-white-balance", config.cameras.front_auto_white_balance),
         "--cam0-white-balance",
         str(config.cameras.front_white_balance),
+        "--cam0-observation-key",
+        config.cameras.front_observation_key,
         "--cam1-device",
         config.cameras.wrist_device,
         "--cam1-backend-api",
         config.cameras.wrist_backend_api,
+        "--cam1-observation-key",
+        config.cameras.wrist_observation_key,
         "--state-pose-topic",
         config.topics.state_pose,
         "--state-gripper-topic",
@@ -324,6 +421,8 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         _num(config.relay.max_status_age_s),
         "--command-frame",
         config.eef.command_frame,
+        "--action-pose-mode",
+        config.eef.action_pose_mode,
         "--orientation-mode",
         config.eef.orientation_mode,
         "--eef-servo-gain",
@@ -355,6 +454,8 @@ def bridge_argv(config: LingBotConfig) -> list[str]:
         _num(config.gripper.stroke_min_mm),
         "--gripper-stroke-max",
         _num(config.gripper.stroke_max_mm),
+        "--gripper-command-mode",
+        config.gripper.command_mode,
         "--gripper-command-open-threshold",
         _num(config.gripper.command_open_threshold),
         "--gripper-feedback-open-threshold-mm",
@@ -378,6 +479,16 @@ def bash_config(config: LingBotConfig) -> str:
         _assign("LINGBOT_HOST", config.server.host),
         _assign("LINGBOT_PORT", str(config.server.port)),
         _assign("PROMPT", config.server.prompt),
+        _assign("MODEL_SESSION", config.policy_server.tmux),
+        _assign("MODEL_CHECKOUT", str(config.policy_server.checkout)),
+        _assign("MODEL_PYTHON", str(config.policy_server.python)),
+        _assign("BASE_MODEL", str(config.policy_server.base_model)),
+        _assign("MODEL_CHECKPOINT", str(config.policy_server.checkpoint)),
+        _assign("MODEL_ROOT", str(config.policy_server.model_root)),
+        _assign("MODEL_SAVE_ROOT", str(config.policy_server.save_root)),
+        _assign("MODEL_MASTER_PORT", str(config.policy_server.master_port)),
+        _assign("MODEL_STARTUP_TIMEOUT", _num(config.policy_server.startup_timeout_s)),
+        _assign("MODEL_EXPECTED_WEIGHT_SIZE", str(config.policy_server.expected_weight_size_bytes)),
         _assign("WRIST_CAMERA", config.cameras.wrist_device),
         _assign("STAGED_TOPIC", config.topics.staged_command),
         _assign("RELAY_ENABLE_TOPIC", config.topics.motion_enable),
@@ -407,6 +518,24 @@ def _orientation_mode(value: str) -> OrientationMode:
     return value
 
 
+def _pose_mode(value: str) -> PoseMode:
+    if value not in ("absolute", "episode-relative"):
+        raise ValueError(f"unsupported eef.action_pose_mode: {value!r}")
+    return value
+
+
+def _gripper_command_mode(value: str) -> GripperCommandMode:
+    if value not in ("binary", "continuous"):
+        raise ValueError(f"unsupported gripper.command_mode: {value!r}")
+    return value
+
+
+def _text_encoder_device(value: str) -> TextEncoderDevice:
+    if value not in ("cpu", "cuda"):
+        raise ValueError(f"unsupported policy_server.text_encoder_device: {value!r}")
+    return value
+
+
 def _float_tuple(data: dict[str, Any], key: str, expected_len: int) -> tuple[float, ...]:
     value = data.get(key)
     if not isinstance(value, list):
@@ -415,6 +544,25 @@ def _float_tuple(data: dict[str, Any], key: str, expected_len: int) -> tuple[flo
     if len(out) != expected_len:
         raise ValueError(f"{key} expects {expected_len} values, got {len(out)}")
     return out
+
+
+def _float_tuple_any(data: dict[str, Any], key: str) -> tuple[float, ...]:
+    value = data.get(key)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{key} must be a non-empty number list")
+    return tuple(float(item) for item in value)
+
+
+def _int_tuple(data: dict[str, Any], key: str) -> tuple[int, ...]:
+    value = data.get(key)
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{key} must be a non-empty integer list")
+    return tuple(int(item) for item in value)
+
+
+def _resolved_path(data: dict[str, Any], key: str, repo_root: Path) -> Path:
+    value = Path(_string(data, key)).expanduser()
+    return (repo_root / value).resolve() if not value.is_absolute() else value.resolve()
 
 
 def _optional_float_tuple(data: dict[str, Any], key: str) -> tuple[float, ...] | None:

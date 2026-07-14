@@ -197,7 +197,9 @@ positions remain absolute targets in radians.
 
 ## LingBot-VA
 
-Start the LingBot server separately, then:
+The tracked LingBot command assembles the step-500 model root from the frozen
+base components and fine-tuned transformer, then starts the policy server, A1
+runtime, and bridge:
 
 ```bash
 just lingbot
@@ -205,13 +207,29 @@ tmux attach -t lingbot-a1
 ```
 
 Runtime behavior is locked by `configs/inference/lingbot_va_a1.toml`: server,
-prompt, cameras, EEF workspace, orientation mode, relay topics, execution
-cadence, and gripper mapping.
+checkpoint, prompt, cameras, EEF workspace, orientation mode, relay topics,
+execution cadence, and gripper mapping.
 
-The bridge is step-gated:
+The A1 step-500 profile is a finite continuous rollout: 36 model calls, four
+latent frames per call, four actions per frame, at 30 Hz. The first model frame
+is the episode condition, so execution is approximately 19 seconds. Model EEF
+poses are episode-relative and are composed onto the measured startup pose
+before the absolute A1 workspace clamp. The gripper uses the ACT deployment
+mapping: continuous policy values map to 0-80 mm. KV-cache action history uses
+the target actually sent to the tracker, matching the checkpoint's training
+action contract; measured EEF feedback remains the observation and safety
+signal, not the model's past-action token.
 
-- `INFERENCE #N READY`: Enter runs one new model inference.
-- `Next=publish this EE step`: Enter publishes one already predicted EEF step.
+When the bridge completes, raises an error, or receives `Ctrl-C`, its process
+guard stops the A1 runtime and policy server. `just stop` remains the operator
+emergency-stop command.
+
+Start only the model server for a no-ROS load test with:
+
+```bash
+scripts/apps/lingbot/a1_lingbot_runtime.sh server
+scripts/apps/lingbot/a1_lingbot_runtime.sh server-logs
+```
 
 Stop with:
 

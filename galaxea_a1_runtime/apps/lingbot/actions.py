@@ -8,6 +8,7 @@ from typing import Literal, Sequence
 import numpy as np
 
 OrientationMode = Literal["hold-current", "model-quat"]
+GripperCommandMode = Literal["binary", "continuous"]
 
 
 @dataclass(frozen=True)
@@ -22,6 +23,7 @@ class LingBotActionConfig:
     gripper_stroke_offset: float = 0.0
     gripper_stroke_min: float = 0.0
     gripper_stroke_max: float = 200.0
+    gripper_command_mode: GripperCommandMode = "binary"
     gripper_command_open_threshold: float = 0.5
     gripper_feedback_open_threshold_mm: float = 30.0
 
@@ -47,7 +49,7 @@ def sanitize_policy_action(
     del current_xyz
     action[:3] = _clamp_xyz(action[:3], config)
     action[3:7] = normalize_quat(action[3:7], min_norm=config.min_quat_norm, label="LingBot action")
-    action[7] = _binary_gripper(action[7], config.gripper_command_open_threshold)
+    action[7] = _command_gripper(action[7], config)
     return action
 
 
@@ -118,6 +120,11 @@ def gripper_norm_from_stroke(stroke_mm: float, config: LingBotActionConfig) -> f
 
 
 def gripper_stroke_from_norm(norm: float, config: LingBotActionConfig) -> float:
+    if config.gripper_command_mode == "continuous":
+        normalized = float(np.clip(norm, 0.0, 1.0))
+        return config.gripper_stroke_min + normalized * (
+            config.gripper_stroke_max - config.gripper_stroke_min
+        )
     return (
         config.gripper_stroke_max
         if float(norm) >= config.gripper_command_open_threshold
@@ -125,8 +132,77 @@ def gripper_stroke_from_norm(norm: float, config: LingBotActionConfig) -> float:
     )
 
 
+def relative_action_to_absolute(
+    relative8: Sequence[float],
+    origin8: Sequence[float],
+    *,
+    min_quat_norm: float,
+) -> np.ndarray:
+    """Compose an episode-relative xyz+xyzw action onto the episode origin."""
+
+    relative = _as_action8(relative8, label="relative LingBot action")
+    origin = _as_action8(origin8, label="episode origin")
+    relative_quat = normalize_quat(relative[3:7], min_norm=min_quat_norm, label="relative quaternion")
+    origin_quat = normalize_quat(origin[3:7], min_norm=min_quat_norm, label="origin quaternion")
+    absolute = relative.copy()
+    absolute[:3] = origin[:3] + relative[:3]
+    absolute[3:7] = normalize_quat(
+        _quat_multiply(origin_quat, relative_quat),
+        min_norm=min_quat_norm,
+        label="absolute quaternion",
+    )
+    return absolute
+
+
+def absolute_action_to_relative(
+    absolute8: Sequence[float],
+    origin8: Sequence[float],
+    *,
+    min_quat_norm: float,
+) -> np.ndarray:
+    """Express an absolute xyz+xyzw action relative to the episode origin."""
+
+    absolute = _as_action8(absolute8, label="absolute A1 action")
+    origin = _as_action8(origin8, label="episode origin")
+    absolute_quat = normalize_quat(absolute[3:7], min_norm=min_quat_norm, label="absolute quaternion")
+    origin_quat = normalize_quat(origin[3:7], min_norm=min_quat_norm, label="origin quaternion")
+    relative = absolute.copy()
+    relative[:3] = absolute[:3] - origin[:3]
+    relative[3:7] = normalize_quat(
+        _quat_multiply(_quat_inverse(origin_quat), absolute_quat),
+        min_norm=min_quat_norm,
+        label="relative quaternion",
+    )
+    return relative
+
+
 def _binary_gripper(value: float, threshold: float) -> float:
     return 1.0 if float(value) >= threshold else 0.0
+
+
+def _command_gripper(value: float, config: LingBotActionConfig) -> float:
+    if config.gripper_command_mode == "continuous":
+        return float(np.clip(value, 0.0, 1.0))
+    return _binary_gripper(value, config.gripper_command_open_threshold)
+
+
+def _quat_inverse(quat: Sequence[float]) -> np.ndarray:
+    x, y, z, w = np.asarray(quat, dtype=np.float64).reshape(4)
+    return np.asarray([-x, -y, -z, w], dtype=np.float64)
+
+
+def _quat_multiply(left: Sequence[float], right: Sequence[float]) -> np.ndarray:
+    lx, ly, lz, lw = np.asarray(left, dtype=np.float64).reshape(4)
+    rx, ry, rz, rw = np.asarray(right, dtype=np.float64).reshape(4)
+    return np.asarray(
+        [
+            lw * rx + lx * rw + ly * rz - lz * ry,
+            lw * ry - lx * rz + ly * rw + lz * rx,
+            lw * rz + lx * ry - ly * rx + lz * rw,
+            lw * rw - lx * rx - ly * ry - lz * rz,
+        ],
+        dtype=np.float64,
+    )
 
 
 def clamp_notes(
