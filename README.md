@@ -9,7 +9,8 @@ This repository is being rebuilt around:
 - LeRobotDataset v3.0,
 - SO leader teleoperation collection,
 - ACT joint-state policy deployment,
-- LingBot-VA, FastWAM, and GR00T N1.7 policy profiles,
+- managed ACT and LingBot deployments plus design profiles for future FastWAM
+  and GR00T N1.7 integrations,
 - clean module boundaries for safety, hardware IO, datasets, and policies.
 
 SO-100 leader printable parts are kept under
@@ -168,8 +169,8 @@ galaxea_a1_runtime/
   teleop/             # SO leader to A1 joint mapping helpers
   lerobot/            # Robot adapter, dataset writer, recorder, migration
   policies/           # action normalization and policy profiles
-  apps/               # reusable app helpers and app-specific transforms
-  runtime/            # static doctor and safety disclosure
+  apps/               # managed app implementations split by protocol/IO/CLI
+  runtime/            # doctor, safety disclosure, and ROS1 env bootstrap
 assets/cad/            # versioned robot/leader mechanical assets
 configs/               # tracked runtime, inference, pose, and dataset contracts
 scripts/               # operator entrypoints grouped by runtime/app responsibility
@@ -183,10 +184,13 @@ parallel app-specific config objects.
 
 ## Policy Targets
 
-Profiles currently cover:
+Managed deployment paths currently cover:
 
-- ACT joint-state: `policy.type=act`
-- LingBot-VA: `policy.type=lingbot_va`
+- ACT joint-state through `configs/deployments/act_joint.toml`
+- LingBot-VA through `configs/deployments/lingbot_va.toml`
+
+The lightweight future-integration profile registry additionally describes:
+
 - FastWAM: `policy.type=fastwam`
 - GR00T N1.7: `policy.type=groot`
 
@@ -230,8 +234,8 @@ just teleop pick_cube
 `just reset` moves the A1 and the SO leader to the tracked collection start pose
 in [configs/poses/a1_so100_collection_start.toml](configs/poses/a1_so100_collection_start.toml), closes both
 grippers, resets both devices concurrently, disables leader torque, and stops
-the runtime. `just teleop
-<experiment>` then starts the staged joint teleop runtime, records front RGB,
+the runtime. `just teleop <experiment>` then starts the staged joint teleop
+runtime, records front RGB,
 wrist RGB, and A1 state/action data, and keeps the old episode loop:
 Enter starts recording, Enter saves, `d` discards, and `q` exits.
 After each successful save, it pauses the bridge, automatically restores both
@@ -268,8 +272,9 @@ Teleop actions are recorded as `joint_absolute` targets from
 `/arm_joint_target_position`. Each saved episode contains `frames.csv`,
 `metadata.json`, `cam0/`, and `cam1/`; `cam0_depth/` is present only when
 RealSense depth is enabled in the tracked config. The metadata records the
-state topics, action topics, cameras, and staged relay control path used for
-that episode.
+state topics, action topics, cameras, staged relay control path, and tracked
+teleop config path used for that episode, so the referenced system contract can
+be recovered later.
 
 The default tracked teleop config is USB2-compatible RGB-only. Depth capture is
 still supported, but it should be enabled intentionally in
@@ -332,6 +337,11 @@ copy or application-level LeRobot `PYTHONPATH` override is used.
 - [Architecture](docs/ARCHITECTURE.md)
 - [Runbook](docs/RUNBOOK.md)
 - [Safety](docs/SAFETY.md)
+- [Environment setup](docs/SETUP_ENV.md)
+- [udev/serial setup](docs/SETUP_UDEV.md)
+- [Local model registry](models/README.md)
+- [Third-party vendor policy](third_party/README.md)
+- [SO-100 leader CAD](assets/cad/so100_leader/README.md)
 
 ## Legacy Systems
 

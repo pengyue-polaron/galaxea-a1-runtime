@@ -34,10 +34,13 @@ The installed rule content is:
 
 ```udev
 # Galaxea A1 arm controller (STM32 Virtual ComPort) -> /dev/a1
-SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="336635623233", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="a1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{serial}=="326D39703133", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1", SYMLINK+="a1"
 
 # Secondary USB serial dongle seen on this machine
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", ATTRS{serial}=="5A7A016967", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
+
+# Global Shutter Camera -> allow OpenCV access without relying on the video group
+SUBSYSTEM=="video4linux", ATTRS{idVendor}=="32e4", ATTRS{idProduct}=="2234", ATTRS{serial}=="01.00.00", MODE:="0666", GROUP:="plugdev"
 ```
 
 If you need to reload manually:

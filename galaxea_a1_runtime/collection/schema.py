@@ -60,6 +60,7 @@ class TeleopRawEpisodeMetadata:
     action_topics: dict[str, str]
     control_path: tuple[str, ...]
     cameras: tuple[CameraMetadata, ...]
+    config_path: str | None = None
     quality_checks: dict[str, float] = field(default_factory=dict)
 
 

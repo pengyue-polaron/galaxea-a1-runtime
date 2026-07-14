@@ -11,7 +11,7 @@ camera service.
 
 ## Required Path
 
-Normal apps must publish EEF targets only:
+Normal EEF apps must publish EEF targets only:
 
 ```text
 /a1_ee_target

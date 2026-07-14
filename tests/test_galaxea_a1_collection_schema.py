@@ -127,6 +127,7 @@ def test_metadata_json_explains_topics_and_control_path():
             "/arm_joint_command_host",
         ),
         cameras=(CameraMetadata("front", "cam0", 640, 480),),
+        config_path="configs/teleop/a1_so100.toml",
         quality_checks={"max_joint_action_step_rad": 0.35},
     )
 
@@ -137,6 +138,7 @@ def test_metadata_json_explains_topics_and_control_path():
     assert payload["action_topics"]["joint_target"] == "/arm_joint_target_position"
     assert payload["control_path"][-1] == "/arm_joint_command_host"
     assert payload["cameras"][0]["modality"] == "rgb"
+    assert payload["config_path"] == "configs/teleop/a1_so100.toml"
     assert payload["quality_checks"]["max_joint_action_step_rad"] == 0.35
 
 

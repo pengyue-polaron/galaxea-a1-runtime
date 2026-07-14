@@ -12,10 +12,10 @@ LeRobotDataset v3.0.
    - `teleop/`: pure SO leader to A1 joint mapping helpers.
    - `hardware/`: IO protocol, EEF helpers, shared camera IO, and web preview.
    - `policies/`: normalized action contract and policy profile metadata.
-   - `apps/`: reusable app helpers plus app-specific transforms.
+   - `apps/`: managed implementations split by app and responsibility.
    - `lerobot/`: explicit-IO `GalaxeaA1Robot`, writer helpers, passive recorder,
      migration, and atomic dataset output.
-   - `runtime/`: doctor and safety report.
+   - `runtime/`: doctor, safety report, and the shared ROS1 Python-path bootstrap.
 
 2. Base runtime: `scripts/runtime`
 
@@ -27,9 +27,10 @@ LeRobotDataset v3.0.
    - Must stay app-agnostic and LingBot-free.
 
 3. App runtime: `scripts/apps/<app>`
-   - Owns model servers, cameras, prompts, teleop leaders, and UI loops.
-   - Reuses shared EEF bridge helpers instead of publishing directly to host
-     joint commands.
+   - Provides thin operator/process-lifecycle entrypoints at stable paths.
+   - Dispatches stateful Python work to `galaxea_a1_runtime/apps/<app>/`, where
+     protocol, camera, ROS state, recording, policy, and CLI responsibilities
+     are separated and testable.
 
 4. Data tools: `scripts/process_data`
    - Migration and diagnostic utilities only.
@@ -92,10 +93,11 @@ do not define fallback stroke ranges.
 
 ## Reusable Policy Bridge Design
 
-The LingBot bridge used to be too large because it did four jobs in one file:
+The former LingBot entrypoint was too large because it did four jobs in one
+file:
 
 - model protocol: LingBot WebSocket and KV-cache updates
-- observation IO: RealSense color, optional RealSense depth, and wrist color cameras
+- observation IO: AgentView and wrist color cameras plus preview
 - policy action transforms: LingBot 8D action cleanup
 - A1 execution: EEF target publishing, relay enable, staged gripper target, feedback
 
@@ -107,10 +109,18 @@ The reusable parts now live in package modules:
 - `galaxea_a1_runtime.apps.lingbot.actions`: LingBot-specific 8D action
   sanitation, workspace bounds, orientation behavior, gripper mapping, and
   optional tracker compensation.
+- `galaxea_a1_runtime.apps.lingbot.client`: WebSocket/MessagePack protocol.
+- `galaxea_a1_runtime.apps.lingbot.camera_session`: exclusive camera ownership,
+  freshness, AgentView crop, and read-only preview lifecycle.
+- `galaxea_a1_runtime.apps.lingbot.bridge` and `.cli`: stateful EEF execution
+  and the operator-facing argument contract, respectively.
 - `galaxea_a1_runtime.apps.lingbot.config`: tracked LingBot runtime config
   loading and conversion into the bridge arguments used by `just lingbot`.
 - `galaxea_a1_runtime.apps.act.config`: tracked ACT joint runtime config
   loading and conversion into the bridge arguments used by `just act`.
+- `galaxea_a1_runtime.apps.act.policy`, `.ros_state`, `.bridge`, and `.cli`:
+  checkpoint inference, fresh ROS caches, guarded execution, and argument
+  parsing as independent responsibilities.
 - `galaxea_a1_runtime.hardware.cameras`: shared RealSense color/depth and
   OpenCV color camera wrappers used by teleop collection, camera snapshots, and
   LingBot.
@@ -119,8 +129,9 @@ The reusable parts now live in package modules:
   never opens cameras or imports ROS. Teleop, ACT, and LingBot therefore expose
   preview without creating a second RealSense owner.
 
-Future FastWAM/GR00T app scripts should reuse `apps.eef_bridge` and only provide
-their own model IO plus action conversion into the normalized A1 EEF contract.
+Future FastWAM/GR00T implementations should reuse `apps.eef_bridge`, keep their
+operator scripts thin, and provide only model IO plus conversion into the
+normalized A1 EEF contract.
 
 ACT is the built-in joint-state policy deployment path. It loads a local
 LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and continuous
@@ -133,22 +144,22 @@ and step-gated from `configs/deployments/act_joint.toml`.
 
 Teleop is the built-in demonstration collection mode.
 
-- `scripts/apps/teleop/so100_joint_bridge.py`: reads an SO leader, maps it to
-  A1 joint targets, publishes `/arm_joint_target_position` and
+- `scripts/apps/teleop/so100_joint_bridge.py`: stable, thin bridge entrypoint.
+- `galaxea_a1_runtime.apps.teleop.bridge`: reads an SO leader, maps it to A1
+  joint targets, publishes `/arm_joint_target_position` and
   `/a1_gripper_target`, and arms the relay.
 - `galaxea_a1_runtime.teleop.a1_so_leader`: A1-specific SO leader motor layout
   (`joint0..joint5` plus gripper) built on LeRobot motor primitives without
   patching vendored LeRobot source.
-- `scripts/apps/teleop/teleop_collect.py`: records synchronized front RGB,
-  optional front depth, wrist RGB, A1 state, and target actions. It does not
-  command the robot. Camera streams are read by background latest-frame readers
-  so a blocking camera read cannot silently stop state/action recording. Each
-  frame requires fresh front/wrist, joint, EEF, joint-target action, and
-  gripper samples; any stale required stream aborts and deletes the partial
-  episode. Enter=save runs the pure collection quality checks before metadata
-  is committed; discontinuous joint actions reject and delete the episode.
-  Episode metadata records the state topics, action topics, cameras, freshness
-  limits, quality thresholds, and staged relay path.
+- `scripts/apps/teleop/teleop_collect.py`: stable, thin collector entrypoint.
+- `galaxea_a1_runtime.apps.teleop`: separates fresh ROS state assembly,
+  frame recording, episode metadata, collector orchestration, reset config,
+  and reset execution. The collector does not command the robot. Background
+  readers prevent a blocking camera read from silently stopping state/action
+  recording; stale required streams abort and delete the partial episode.
+  Enter=save runs quality checks before metadata is committed.
+  Metadata includes the tracked teleop config path along with topics, cameras,
+  freshness thresholds, and the staged relay path.
 - `scripts/apps/cameras/a1_camera_diagnostics.py`: captures front/wrist snapshots from
   the same tracked config without starting ROS or moving the robot, and probes
   sustained camera FPS plus the RealSense USB link type.
@@ -245,8 +256,8 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 - Dataset conversion: `just convert <experiment>` using
   `configs/datasets/<experiment>.toml`; each run emits independent LeRobot
   EEF v3.0, EEF v2.1, and joint-action v3.0 packages.
-- Generic LeRobot robot adapter: safe EEF translation/delta actions through
-  `/a1_ee_target`; rejects `joint_absolute`.
+- Generic LeRobot robot wrapper: schema/IO composition only; callers must inject
+  an explicit `A1HardwareIO`, and managed apps own all live ROS control paths.
 - LingBot app: finite continuous inference and publishing, relay guard,
   episode-relative EEF state conditioning, absolute workspace validation, and
   shared continuous gripper execution.
@@ -260,6 +271,6 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 ## Intentionally Not Done Yet
 
 - FastWAM and GR00T have profiles but not dedicated A1 app scripts yet.
-- LingBot still keeps model protocol and the interactive operator loop in one
-  script; config loading, camera IO, action transforms, and A1 EEF execution
-  pieces are reusable.
+- LingBot's interactive execution loop remains a cohesive stateful bridge, but
+  protocol, camera ownership, action transforms, configuration, and CLI are
+  independent package modules.

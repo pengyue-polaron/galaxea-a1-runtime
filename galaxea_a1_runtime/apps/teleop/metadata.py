@@ -40,6 +40,7 @@ def write_metadata(
     cam1_label: str,
     cam1_width: int,
     cam1_height: int,
+    config_path: str,
     args: argparse.Namespace,
 ) -> None:
     cameras = [
@@ -100,6 +101,7 @@ def write_metadata(
             args.host_command_topic,
         ),
         cameras=tuple(cameras),
+        config_path=config_path,
         quality_checks={
             "max_joint_action_step_rad": args.max_joint_action_step_rad,
             "max_camera_age_s": args.max_camera_age_s,

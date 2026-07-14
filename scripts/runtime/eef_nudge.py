@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
 import threading
 import time
@@ -15,18 +14,12 @@ from typing import Any
 import numpy as np
 
 ROOT_DIR = Path(__file__).resolve().parents[2]
-_A1_SDK = ROOT_DIR / "third_party" / "A1_SDK" / "install"
-_ROS1_OVERLAY = ROOT_DIR / ".cache" / "ros1_python_overlay"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
-for candidate in (
-    "/opt/ros/noetic/lib/python3/dist-packages",
-    "/usr/lib/python3/dist-packages",
-    str(_A1_SDK / "lib" / "python3" / "dist-packages"),
-    str(_ROS1_OVERLAY),
-):
-    if os.path.isdir(candidate) and candidate not in sys.path:
-        sys.path.append(candidate)
+
+from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
+
+configure_ros1_python(ROOT_DIR)
 
 import rospy
 from geometry_msgs.msg import PoseStamped

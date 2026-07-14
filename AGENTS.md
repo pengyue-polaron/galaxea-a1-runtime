@@ -13,9 +13,11 @@ arm is disconnected.
   the A1 driver, the isolated EE tracker, and the safe relay.
 - Keep `scripts/runtime/a1_joint_runtime.sh` app-agnostic. It owns only ROS,
   the A1 driver, the isolated joint tracker, and the safe relay.
-- Keep app-specific logic in app scripts. LingBot belongs under
-  `scripts/apps/lingbot/a1_lingbot_runtime.sh` and
-  `scripts/apps/lingbot/lingbot_va_ee_bridge.py`.
+- Keep `scripts/apps/**` as thin operator/runtime entrypoints. Stateful app
+  implementations belong under `galaxea_a1_runtime/apps/<app>/`; for example,
+  LingBot protocol, cameras, CLI, and bridge code live under
+  `galaxea_a1_runtime/apps/lingbot/`, while
+  `scripts/apps/lingbot/lingbot_va_ee_bridge.py` only dispatches to that package.
 - Teleop collection, inference, and data processing should
   use shared runtime/doctor concepts but should not depend on LingBot being
   installed or running.
@@ -221,7 +223,7 @@ arm is disconnected.
 
   ```text
     camera + current EEF
-    -> policy predicts dx, dy, dz, gripper
+    -> policy predicts an explicit absolute/relative EEF action plus gripper
     -> apply explicit runtime policy
     -> publish /a1_ee_target
     -> read /end_effector_pose
@@ -239,7 +241,9 @@ arm is disconnected.
 
 ```bash
 just check
+just hardware
 just cameras
+just camera-web
 just reset
 just eef-test
 just teleop-test
@@ -313,8 +317,12 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   print the tracked config they are using and fail closed when required devices
   are missing.
 - Keep app-level scripts out of `scripts/runtime/`. Runtime scripts own ROS,
-  the A1 driver, staged trackers, and relays; app scripts own leader/model/camera
-  loops.
+  the A1 driver, staged trackers, and relays. Thin scripts under `scripts/apps/`
+  own operator process lifecycle; reusable leader/model/camera/recording logic
+  belongs under `galaxea_a1_runtime/apps/` or another focused package module.
+- Reuse `galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python` before
+  importing `rospy` or A1 message types; do not duplicate ROS1/SDK path surgery
+  in each app.
 - Preserve old working teleop semantics unless a change is intentional and
   visible in config, docs, and tests.
 - Do not add new hidden clamps, scaling, or policy-output rewrites. If a limit

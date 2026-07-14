@@ -18,6 +18,11 @@ Check it with:
 just check
 ```
 
+Use `just` recipes or `${PWD}/.venv/bin/python` for first-party Python tools.
+Do not invoke the app entrypoints with an older system Python: the runtime uses
+Python 3.12 features and the shell launchers deliberately run them through the
+locked project environment.
+
 ## Dependency Baseline
 
 - Python: `>=3.12,<3.13`

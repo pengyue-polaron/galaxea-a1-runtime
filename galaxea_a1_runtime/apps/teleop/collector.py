@@ -16,18 +16,12 @@ from typing import Any
 os.environ["OPENCV_LOG_LEVEL"] = "SILENT"
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
-_A1_SDK = ROOT_DIR / "third_party" / "A1_SDK" / "install"
-_ROS1_OVERLAY = ROOT_DIR / ".cache" / "ros1_python_overlay"
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
-for candidate in (
-    "/opt/ros/noetic/lib/python3/dist-packages",
-    "/usr/lib/python3/dist-packages",
-    str(_A1_SDK / "lib" / "python3" / "dist-packages"),
-    str(_ROS1_OVERLAY),
-):
-    if os.path.isdir(candidate) and candidate not in sys.path:
-        sys.path.append(candidate)
+
+from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
+
+configure_ros1_python(ROOT_DIR)
 
 import rospy
 
@@ -433,6 +427,7 @@ def main() -> int:
                 cam1_label=wrist.label,
                 cam1_width=args.cam1_width,
                 cam1_height=args.cam1_height,
+                config_path=_config_reference(args.teleop_config),
                 args=args,
             )
             nominal_s = recording.frame_count / args.fps if args.fps > 0 else 0.0
@@ -482,6 +477,14 @@ def reset_for_next_episode(*, runtime_script: Path, teleop_config: Path) -> None
             "automatic reset failed; collection stopped before the next episode"
         ) from exc
     print()
+
+
+def _config_reference(path: Path) -> str:
+    resolved = path.resolve()
+    try:
+        return resolved.relative_to(ROOT_DIR).as_posix()
+    except ValueError:
+        return str(resolved)
 
 
 def cli_main() -> int:

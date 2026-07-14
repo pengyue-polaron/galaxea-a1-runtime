@@ -25,6 +25,9 @@ Vendor source metadata is tracked in `vendors.toml`.
 
 - SO leader six-axis A1 wiring lives in
   `galaxea_a1_runtime.teleop.a1_so_leader`.
-- LingBot runtime integration lives in `scripts/apps/lingbot/` and
-  `galaxea_a1_runtime.apps.lingbot`.
+- Managed app implementations live under `galaxea_a1_runtime.apps`; thin
+  operator and process-lifecycle entrypoints remain under `scripts/apps/`.
+- LingBot runtime integration specifically lives in
+  `galaxea_a1_runtime.apps.lingbot` with its launcher under
+  `scripts/apps/lingbot/`.
 - Safe ROS relay and tracker wrappers live in `scripts/runtime/`.

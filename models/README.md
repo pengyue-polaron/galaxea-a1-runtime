@@ -31,10 +31,11 @@ the configured `(x=103, y=0, width=480, height=480)` crop. ACT additionally
 stores that raw front shape in its checkpoint input-feature contract and will
 refuse to load a mismatched checkpoint.
 
-After registering new weights, update the LingBot prompt and q01/q99 statistics
-from the same training run, then set `deployment_ready = true` in each reviewed
-inference config. Both profiles remain dry-run until execution is enabled
-separately.
+After registering new weights, update the LingBot prompt, expected weight size,
+and q01/q99 statistics from that same training run before setting LingBot
+`deployment_ready = true`. Review the ACT checkpoint contract separately before
+setting ACT `deployment_ready = true`. Both deployments remain dry-run until
+their independent execution setting is enabled.
 
 Storage ownership is intentionally separate:
 

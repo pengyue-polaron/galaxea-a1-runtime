@@ -212,7 +212,8 @@ in millimetres and converts to LeRobot as `observation.images.front_depth`.
 The raw frame table contains frame index, wall-clock timestamp, ROS timestamp,
 relative image paths, configured state columns, and configured action columns.
 Episode metadata stores task text, experiment name, state/action names, topics,
-camera settings, FPS target, and the staged relay control path.
+camera settings, FPS target, the tracked teleop config path, and the staged
+relay control path.
 
 ## Convert Training Data
 
@@ -273,7 +274,8 @@ When the bridge completes, raises an error, or receives `Ctrl-C`, its process
 guard stops the A1 runtime and policy server. `just stop` remains the operator
 emergency-stop command.
 
-Start only the model server for a no-ROS load test with:
+After the tracked LingBot profile is deployment-ready, start only the model
+server for a no-ROS load test with:
 
 ```bash
 scripts/apps/lingbot/a1_lingbot_runtime.sh server
@@ -298,10 +300,12 @@ For both inference systems, AgentView is cropped to
 the full 640x480 stream. ACT also checks the image shapes stored in the
 checkpoint and refuses to start if they do not match this contract.
 
-After retraining, register the two new slots, replace the LingBot prompt,
-expected weight size, and q01/q99 values from that same run, and only then set
-`deployment_ready = true`.
-Enabling real robot motion remains a separate `execution.execute = true` review.
+After retraining, register both new slots. For LingBot, replace the prompt,
+expected weight size, and q01/q99 values from that same run before setting its
+`deployment_ready = true`. For ACT, verify the checkpoint image/state/action
+contract before setting its separate `deployment_ready = true`. Enabling real
+robot motion remains an independent `execution.execute = true` review in each
+deployment config.
 
 Start in the default dry-run mode:
 
