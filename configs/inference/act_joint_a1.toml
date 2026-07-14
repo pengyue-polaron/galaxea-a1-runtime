@@ -12,7 +12,7 @@ prefix = "a1-act"
 run_dir = "/tmp/a1-act"
 
 [policy]
-checkpoint = "outputs/train/act_banana_joint_state_30k/checkpoints/030000/pretrained_model"
+checkpoint = "models/checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000"
 device = "cuda"
 # The checkpoint contains trained ResNet weights; avoid torchvision network
 # downloads during deployment.

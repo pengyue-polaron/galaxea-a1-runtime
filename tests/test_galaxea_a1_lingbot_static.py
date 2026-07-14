@@ -82,6 +82,20 @@ def test_lingbot_config_locks_runtime_defaults():
     assert "--no-cache-actual-feedback" in args
 
 
+def test_lingbot_config_uses_canonical_model_store():
+    text = CONFIG.read_text()
+
+    assert 'base_model = "models/base/lingbot-va-base"' in text
+    assert (
+        'checkpoint = "models/checkpoints/lingbot/a1_banana_in_plate/checkpoint_step_500"'
+        in text
+    )
+    assert (
+        'model_root = "models/runtime/lingbot/a1_banana_in_plate/checkpoint_step_500"'
+        in text
+    )
+
+
 def test_lingbot_runtime_manages_the_tracked_step500_server():
     runtime = (REPO / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh").read_text()
     server = (REPO / "scripts" / "apps" / "lingbot" / "lingbot_va_policy_server.py").read_text()

@@ -205,9 +205,18 @@ base components and fine-tuned transformer, then starts the policy server, A1
 runtime, and bridge:
 
 ```bash
+just models
 just lingbot
 tmux attach -t lingbot-a1
 ```
+
+All inference configs use the ignored local registry under `models/`. On this
+machine the registry links to the existing LingBot base, step-500 training
+output, and ACT export, so no weight is copied. Native training outputs stay in
+`train_out/` or `outputs/train/`; runtime observations stay in `outputs/` and
+are not model weights. Use `just model-link <slot> <source>` to register a new
+local source and `just models` before inference. The exact layout and supported
+slot names are documented in `models/README.md`.
 
 Runtime behavior is locked by `configs/inference/lingbot_va_a1.toml`: server,
 checkpoint, prompt, cameras, EEF workspace, orientation mode, relay topics,
@@ -243,8 +252,8 @@ just stop
 ## ACT Joint Policy
 
 The ACT deployment path is configured by
-`configs/inference/act_joint_a1.toml`. The tracked checkpoint is
-`outputs/train/act_banana_joint_state_30k/checkpoints/030000/pretrained_model`.
+`configs/inference/act_joint_a1.toml`. The tracked deployment path is
+`models/checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000`.
 
 Start in the default dry-run mode:
 

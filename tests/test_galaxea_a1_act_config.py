@@ -12,7 +12,7 @@ def _load_config_with_temp_checkpoint(tmp_path: Path):
     checkpoint.mkdir()
     text = CONFIG.read_text()
     text = text.replace(
-        'checkpoint = "outputs/train/act_banana_joint_state_30k/checkpoints/030000/pretrained_model"',
+        'checkpoint = "models/checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000"',
         f'checkpoint = "{checkpoint}"',
     )
     path = tmp_path / "act_joint_a1.toml"
@@ -51,7 +51,9 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
 def test_act_config_points_at_trained_banana_checkpoint():
     text = CONFIG.read_text()
 
-    assert "outputs/train/act_banana_joint_state_30k/checkpoints/030000/pretrained_model" in text
+    assert (
+        "models/checkpoints/act/a1_banana_joint_state_30k/checkpoint_step_30000" in text
+    )
 
 
 def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):

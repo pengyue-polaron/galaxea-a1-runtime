@@ -58,6 +58,13 @@ test:
         {{repo}}/tests/test_galaxea_a1_convert_raw.py \
         {{repo}}/tests/test_galaxea_a1_relay_safety.py
 
+models:
+    {{vpy}} {{repo}}/scripts/models/model_store.py doctor --repo-root "{{repo}}"
+
+model-link slot source:
+    {{vpy}} {{repo}}/scripts/models/model_store.py register \
+        --repo-root "{{repo}}" "{{slot}}" "{{source}}"
+
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
 hardware *args:

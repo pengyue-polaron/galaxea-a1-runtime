@@ -79,6 +79,7 @@ just stop
 LingBot:
 
 ```bash
+just models
 just lingbot
 tmux attach -t lingbot-a1
 just stop
@@ -90,6 +91,10 @@ The tracked command starts the managed step-500 policy server before the A1
 runtime and runs a finite continuous rollout. Edit that file when the
 checkpoint, server, prompt, cameras, EEF workspace, execution cadence, or
 gripper mapping changes.
+
+Deployment weights are registered under the ignored local `models/` directory;
+see [models/README.md](models/README.md). `just models` validates every configured
+weight, catches tracked files over 100 MiB, and reports stale Git pack garbage.
 
 ACT joint policy:
 

@@ -20,6 +20,21 @@ arm is disconnected.
   use shared runtime/doctor concepts but should not depend on LingBot being
   installed or running.
 
+## Model Storage
+
+- Inference configs must reference deployment weights through the ignored local
+  registry under `models/`; do not point tracked configs directly at a user's
+  home directory or a native training output.
+- Keep downloaded base models under `models/base/`, trained deployment exports
+  under `models/checkpoints/<app>/<run>/`, and generated component assemblies
+  under `models/runtime/`.
+- Register existing files with `just model-link <slot> <source>`. The registry
+  uses symlinks so large weights are not copied.
+- Native training jobs may continue writing to `train_out/` or `outputs/train/`.
+  Treat those as sources, `outputs/` as run logs/results, and `data/` as datasets.
+- Never commit model weights or use Git LFS for them in this repo. Run
+  `just models` before inference and after any interrupted large Git operation.
+
 ## ROS Control Paths
 
 ### Safe Runtime Path
