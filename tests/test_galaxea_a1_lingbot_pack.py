@@ -89,7 +89,7 @@ def test_tracked_lingbot_pack_config():
     assert config.joint_v3_target_root.name == "banana_in_the_plate_joint_continuous_v3"
     assert config.urdf_path == URDF
     assert config.gripper_stroke_min_mm == 0.0
-    assert config.gripper_stroke_max_mm == 100.0
+    assert config.gripper_stroke_max_mm == 104.0
 
 
 def test_lingbot_pack_config_rejects_unknown_keys(tmp_path):

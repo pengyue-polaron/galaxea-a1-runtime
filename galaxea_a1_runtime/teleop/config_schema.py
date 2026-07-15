@@ -45,6 +45,7 @@ class TeleopGripperConfig:
     source_min: float
     source_max: float
     invert: bool
+    saturate_out_of_range: bool
 
 
 @dataclass(frozen=True)
@@ -54,6 +55,7 @@ class TeleopCollectionConfig:
     fps: float
     max_duration_s: float
     auto_reset_after_save: bool
+    auto_reset_after_discard: bool
     jpeg_quality: int
     ready_timeout_s: float
     max_joint_action_step_rad: float

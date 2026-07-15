@@ -56,3 +56,22 @@ def test_wait_topic_succeeds_without_inspect_after_message() -> None:
 
     assert result.returncode == 0
     assert result.stderr == ""
+
+
+def test_relay_command_executes_its_python312_entrypoint_directly() -> None:
+    result = run_services_bash(
+        r"""
+        ROOT=/workspace
+        SYSTEM_CONFIG_PATH=/workspace/configs/system/a1.toml
+        a1_container_run() {
+          printf '%s\n' "$1|$2|$3"
+        }
+        a1_start_command_relay relay-container
+        """
+    )
+
+    assert result.returncode == 0
+    assert "relay|relay-container|" in result.stdout
+    assert "exec /workspace/scripts/runtime/safe_arm_command_relay.py" in result.stdout
+    assert "--config '/workspace/configs/system/a1.toml'" in result.stdout
+    assert "exec python3 " not in result.stdout

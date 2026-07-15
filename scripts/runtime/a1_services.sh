@@ -220,6 +220,6 @@ a1_start_command_relay() {
     return 2
   fi
   a1_container_run relay "${container}" \
-    "${A1_ROS_PREFIX} && exec python3 /workspace/scripts/runtime/safe_arm_command_relay.py \
+    "${A1_ROS_PREFIX} && exec /workspace/scripts/runtime/safe_arm_command_relay.py \
       --config '/workspace/${relative_config}'"
 }

@@ -116,7 +116,7 @@ The normal entrypoint is `just teleop <experiment>`:
 6. arm the relay only after readiness checks pass;
 7. record episodes into hidden sibling staging directories;
 8. validate quality and exact files, then atomically rename a successful save;
-9. reset both devices after a successful save when configured.
+9. reset both devices after a successful save or discard when configured.
 
 Unknown leader key layouts, non-finite values, stale samples, camera skew, or a
 partial episode fail closed. A rejected episode does not consume its index.
@@ -146,8 +146,10 @@ observation must contain fresh frames whose monotonic-time skew is within the
 system limit.
 
 The gripper contract is continuous: application state and action use normalized
-`0..1`, mapped linearly to the single physical `0..100 mm` system range. The
-only feedback source is `/gripper_stroke_host`.
+`0..1`, mapped exactly once to the physical `0..104 mm` A1 stroke. The tracked
+SO leader input range `0..53.16` maps directly to that interval. Full-open
+feedback is about `103.8 mm`, and the only feedback source is
+`/gripper_stroke_host`.
 
 ## Raw Episode Commit
 

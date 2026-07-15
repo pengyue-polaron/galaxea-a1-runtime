@@ -105,6 +105,7 @@ class SystemRelayConfig:
     max_status_age_s: float
     max_input_age_s: float
     arming_timeout_s: float
+    gripper_ignored_error_mask: int
     allowed_control_modes: tuple[int, ...]
 
 
@@ -255,6 +256,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             max_status_age_s=floating(relay, "max_status_age_s"),
             max_input_age_s=floating(relay, "max_input_age_s"),
             arming_timeout_s=floating(relay, "arming_timeout_s"),
+            gripper_ignored_error_mask=integer(relay, "gripper_ignored_error_mask"),
             allowed_control_modes=integer_tuple(relay, "allowed_control_modes"),
         ),
         doctor=SystemDoctorConfig(
@@ -380,6 +382,8 @@ def validate_system_config(config: SystemConfig) -> None:
         raise ValueError("relay timeouts must be positive")
     if not config.relay.allowed_control_modes:
         raise ValueError("relay.allowed_control_modes must not be empty")
+    if not 0 <= config.relay.gripper_ignored_error_mask <= 0xFFFFFFFF:
+        raise ValueError("relay.gripper_ignored_error_mask must be a uint32 mask")
     if len(set(config.relay.allowed_control_modes)) != len(
         config.relay.allowed_control_modes
     ) or any(mode < 0 or mode > 255 for mode in config.relay.allowed_control_modes):

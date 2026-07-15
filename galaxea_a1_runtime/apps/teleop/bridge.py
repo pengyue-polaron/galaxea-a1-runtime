@@ -239,6 +239,7 @@ def publish_gripper(
         source_min=config.gripper.source_min,
         source_max=config.gripper.source_max,
         invert=config.gripper.invert,
+        saturate_out_of_range=config.gripper.saturate_out_of_range,
     )
     stroke = denormalize_stroke(
         normalized,

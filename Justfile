@@ -32,10 +32,27 @@ check:
     {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/teleop/a1_gripper_debug.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/lingbot/decode_lingbot_latents.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/runtime/a1_ros_python_check.py --help >/dev/null
     {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     just test
+
+ros-python-check:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    source {{repo}}/scripts/runtime/a1_config.sh
+    a1_load_shell_config env \
+      PYTHONPATH="{{repo}}:${PYTHONPATH:-}" \
+      {{vpy}} -m galaxea_a1_runtime.configuration.system \
+      --repo-root "{{repo}}" --shell
+    docker image inspect "${IMAGE}" >/dev/null
+    docker run --rm --network none \
+      --entrypoint /workspace/scripts/runtime/a1_ros_python_check.py \
+      -v "{{repo}}:/workspace:ro" \
+      "${IMAGE}" \
+      --config /workspace/configs/system/a1.toml
 
 test:
     {{vpy}} -m pytest -q {{repo}}/tests
@@ -66,9 +83,14 @@ teleop experiment:
     scripts/apps/teleop/a1_teleop_runtime.sh collect "{{experiment}}"
 
 teleop-test:
+    #!/usr/bin/env bash
+    set -euo pipefail
     scripts/apps/teleop/a1_teleop_runtime.sh start
     source {{repo}}/scripts/runtime/a1_console.sh
     a1_info "Teleop is live. Check leader keys with: just logs"
+
+grippers *args:
+    {{vpy}} {{repo}}/scripts/apps/teleop/a1_gripper_debug.py {{args}}
 
 reset:
     scripts/apps/teleop/a1_teleop_runtime.sh reset

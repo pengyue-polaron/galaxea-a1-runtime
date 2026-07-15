@@ -32,9 +32,12 @@ a1_state_timeout_s = 30.0
 enabled = true
 source_key = "gripper.pos"
 source_min = 0.0
-source_max = 100.0
+source_max = 53.16
 invert = false
-# This tracked leader range maps continuously onto the shared system stroke range.
+saturate_out_of_range = true
+# The installed SO leader calibration reports about 53.16 at its usable open
+# endpoint. Map that endpoint to canonical action 1.0 and the A1 physical maximum.
+# Clamp only endpoint overshoot; do not apply another scale or binary rewrite.
 
 [collection]
 data_root = "data/raw"
@@ -42,6 +45,7 @@ state_mode = "eef_joint"
 fps = 30.0
 max_duration_s = 0.0
 auto_reset_after_save = true
+auto_reset_after_discard = true
 jpeg_quality = 95
 ready_timeout_s = 10.0
 # Reject an episode after Enter=save if any joint action jumps farther in one frame.

@@ -143,8 +143,12 @@ The current default records at 30 FPS:
 - reproducibility metadata for configs, topics, cameras, control path, and
   freshness limits.
 
-Gripper values are continuous `0..1`; the relay maps them to the single tracked
-physical `0..100 mm` stroke. `/gripper_stroke_host` is required feedback.
+Gripper values are continuous `0..1` and map exactly once to the tracked
+physical `0..104 mm` A1 stroke. The SO leader's usable `0..53.16` input range
+maps to the same normalized interval, so leader full-open, collected action
+`1.0`, and an A1 target of `104 mm` have one meaning. Measured full-open feedback
+is about `103.8 mm`. `/gripper_stroke_host` is required feedback. Run `just
+grippers` during Teleop for read-only target/feedback comparison.
 
 During every frame, collection requires fresh joint, EEF, gripper-feedback,
 joint-action, and paired-camera samples. A stale stream or excessive camera
@@ -161,7 +165,10 @@ data/raw/<experiment>/episode_NNN_timestamp/
 
 Rejected saves print the exact failure and reuse the index. With
 `collection.auto_reset_after_save = true`, successful saves reset both devices
-before the next episode. A discard does not reset them.
+before the next episode. With `collection.auto_reset_after_discard = true`, a
+user discard or quality-check rejection removes the staged data, resets both
+devices, and only then permits retrying the same episode index. Quit does not
+reset because collection does not continue.
 
 Formal collection writes only `galaxea_a1_teleop_raw_v3`. Do not mix manually
 edited episodes or previous raw schemas into the experiment directory.

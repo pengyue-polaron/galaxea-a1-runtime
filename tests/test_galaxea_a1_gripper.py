@@ -34,3 +34,10 @@ def test_leader_gripper_range_is_explicit_and_not_silently_clipped():
     ) == pytest.approx(0.75)
     with pytest.raises(ValueError, match="outside configured range"):
         normalize_source_position(101.0, source_min=0.0, source_max=100.0, invert=False)
+    assert normalize_source_position(
+        101.0,
+        source_min=0.0,
+        source_max=100.0,
+        invert=False,
+        saturate_out_of_range=True,
+    ) == pytest.approx(1.0)

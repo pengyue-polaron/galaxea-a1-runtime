@@ -81,3 +81,7 @@ def test_episode_metadata_derives_camera_contract_from_typed_config(tmp_path):
     assert cameras["front_depth"]["width"] == 480
     assert cameras["front_depth"]["height"] == 480
     assert payload["quality_checks"]["max_camera_pair_skew_s"] == 0.1
+    assert payload["quality_checks"]["leader_gripper_source_min"] == 0.0
+    assert payload["quality_checks"]["leader_gripper_source_max"] == 53.16
+    assert payload["quality_checks"]["gripper_continuous_stroke_min_mm"] == 0.0
+    assert payload["quality_checks"]["gripper_continuous_stroke_max_mm"] == 104.0

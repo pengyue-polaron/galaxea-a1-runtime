@@ -20,7 +20,7 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.system.eef.orientation_mode == "hold-current"
     assert config.action.pose_mode == "episode-relative"
     assert config.system.gripper.stroke_min_mm == 0.0
-    assert config.system.gripper.stroke_max_mm == 100.0
+    assert config.system.gripper.stroke_max_mm == 104.0
     assert config.execution.kv_observations_per_frame == 4
     assert config.execution.initial_ee_pose is None
 

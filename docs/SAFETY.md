@@ -86,10 +86,13 @@ apps. They still do not publish host commands directly:
 - ACT action-step jump rejection is explicitly disabled by
   `configs/system/a1.toml [joint_safety.action_step_guard_enabled]`. Finite
   values and absolute joint limits are still enforced before execution.
-- Teleop gripper state/action is continuous normalized `0..1`, mapped to the
-  unique `0..100 mm` range in `configs/system/a1.toml`.
+- Teleop gripper state/action is continuous normalized `0..1`, mapped exactly
+  once to the physical `0..104 mm` range in `configs/system/a1.toml`.
 - Teleop, ACT, LingBot, reset, and EEF tools publish only the staged gripper
   target. The relay owns the hardware command topic.
+- The tracked relay policy ignores only gripper DTC bit 3 (`Position Jump`,
+  mask `8`) for Teleop compatibility. Idle bit 6 remains accepted; every other
+  gripper error bit still blocks forwarding and latches relay FAULT.
 
 ## Direct Debug
 

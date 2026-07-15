@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python3.12
 # ruff: noqa: E402
 """Fail-closed command relay for the Galaxea A1 arm."""
 
@@ -16,6 +16,10 @@ ROOT = Path(__file__).resolve().parents[2]
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
+from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python  # noqa: E402
+
+configure_ros1_python(ROOT)
+
 import rospy
 from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, gripper_position_control, status_stamped
@@ -31,7 +35,7 @@ from galaxea_a1_runtime.safety import (  # noqa: E402
     validate_initial_alignment,
 )
 from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
-from galaxea_a1_runtime.constants import SAFE_RELAY_NODE  # noqa: E402
+from galaxea_a1_runtime.constants import SAFE_RELAY_NODE_NAME  # noqa: E402
 from galaxea_a1_runtime.configuration.system import (  # noqa: E402
     DEFAULT_SYSTEM_CONFIG,
     load_system_config,
@@ -57,6 +61,7 @@ class RelayRuntimeConfig:
     max_status_age: float
     arming_timeout: float
     max_initial_error: float
+    gripper_ignored_error_mask: int
     allowed_control_modes: tuple[int, ...]
 
 
@@ -292,6 +297,7 @@ class SafeArmCommandRelay:
                         inputs.motor_error_codes,
                         index=self.config.arm_joints,
                         label="gripper",
+                        ignored_mask=self.config.gripper_ignored_error_mask,
                     )
                     if gripper_reason is not None:
                         self._latch_fault(gripper_reason)
@@ -351,13 +357,14 @@ def parse_args() -> RelayRuntimeConfig:
         max_status_age=config.relay.max_status_age_s,
         arming_timeout=config.relay.arming_timeout_s,
         max_initial_error=config.joint_safety.initial_alignment_tolerance_rad,
+        gripper_ignored_error_mask=config.relay.gripper_ignored_error_mask,
         allowed_control_modes=config.relay.allowed_control_modes,
     )
 
 
 def main():
     config = parse_args()
-    rospy.init_node(SAFE_RELAY_NODE.removeprefix("/"), anonymous=False)
+    rospy.init_node(SAFE_RELAY_NODE_NAME, anonymous=False)
     SafeArmCommandRelay(config).run()
 
 

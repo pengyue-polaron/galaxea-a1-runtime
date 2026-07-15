@@ -39,8 +39,9 @@ def normalize_source_position(
     source_min: float,
     source_max: float,
     invert: bool,
+    saturate_out_of_range: bool = False,
 ) -> float:
-    """Normalize a tracked leader gripper range without hidden clipping."""
+    """Normalize a tracked leader gripper range with explicit saturation policy."""
 
     lower = _finite(source_min, label="leader gripper source minimum")
     upper = _finite(source_max, label="leader gripper source maximum")
@@ -48,10 +49,12 @@ def normalize_source_position(
         raise ValueError("leader gripper source maximum must be greater than minimum")
     value = _finite(position, label="leader gripper source position")
     if value < lower or value > upper:
-        raise ValueError(
-            f"leader gripper source position {value:g} is outside configured range "
-            f"[{lower:g}, {upper:g}]"
-        )
+        if not saturate_out_of_range:
+            raise ValueError(
+                f"leader gripper source position {value:g} is outside configured range "
+                f"[{lower:g}, {upper:g}]"
+            )
+        value = min(upper, max(lower, value))
     normalized = (value - lower) / (upper - lower)
     return 1.0 - normalized if invert else normalized
 

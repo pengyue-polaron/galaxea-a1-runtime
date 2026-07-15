@@ -168,15 +168,19 @@ def actuator_error_block_reason(
     *,
     index: int,
     label: str,
+    ignored_mask: int = 0,
 ) -> str | None:
-    """Return a fault reason for one actuator while accepting observed idle code 64."""
+    """Return a fault reason after removing explicitly accepted status bits."""
 
     if index < 0:
         return f"invalid {label} motor index: {index}"
     if len(motor_error_codes) <= index:
         return f"motor status has {len(motor_error_codes)} entries, need {index + 1} for {label}"
+    if ignored_mask < 0:
+        return f"invalid {label} ignored motor error mask: {ignored_mask}"
     code = int(motor_error_codes[index])
-    if code not in (0, IDLE_TIMEOUT_CODE):
+    remaining = code & ~(IDLE_TIMEOUT_CODE | int(ignored_mask))
+    if remaining:
         return f"{label} motor error: {code}"
     return None
 

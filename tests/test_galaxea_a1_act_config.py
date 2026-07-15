@@ -44,7 +44,7 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
     assert config.system.joint_safety.action_step_guard_enabled is False
     assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
     assert config.system.gripper.stroke_min_mm == 0.0
-    assert config.system.gripper.stroke_max_mm == 100.0
+    assert config.system.gripper.stroke_max_mm == 104.0
     assert config.system.topics.gripper_target == "/a1_gripper_target"
     assert config.system.cameras.front.crop is not None
     assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)

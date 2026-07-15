@@ -12,6 +12,7 @@ from galaxea_a1_runtime.collection import (
     metadata_to_json_dict,
     next_episode_index,
     normalize_episode_decision,
+    reset_required_after_episode,
     state_columns,
     state_names_for_mode,
     teleop_frame_header,
@@ -89,6 +90,17 @@ def test_episode_decision_matches_old_teleop_interaction():
     assert normalize_episode_decision("d") == EpisodeDecision.DISCARD
     assert normalize_episode_decision("discard") == EpisodeDecision.DISCARD
     assert normalize_episode_decision("q") == EpisodeDecision.QUIT
+
+
+def test_episode_reset_policy_resets_discard_before_retry_but_not_quit():
+    policy = {
+        "after_save": True,
+        "after_discard": True,
+    }
+
+    assert reset_required_after_episode(EpisodeDecision.SAVE, **policy) is True
+    assert reset_required_after_episode(EpisodeDecision.DISCARD, **policy) is True
+    assert reset_required_after_episode(EpisodeDecision.QUIT, **policy) is False
 
 
 def test_joint_action_quality_check_rejects_discontinuity():

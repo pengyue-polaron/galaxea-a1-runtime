@@ -17,6 +17,7 @@ from galaxea_a1_runtime.collection import (
     EpisodeDecision,
     StateMode,
     find_joint_action_step_violation,
+    reset_required_after_episode,
 )
 from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
 from galaxea_a1_runtime.configuration.image import ImageRoi
@@ -97,7 +98,16 @@ class TeleopEpisodeSession:
                     )
                     info(f"Episode {episode_index}: {reason}; staging output removed.")
                     print()
-                    return EpisodeCompletion(recording.decision)
+                    return EpisodeCompletion(
+                        recording.decision,
+                        reset_required=reset_required_after_episode(
+                            recording.decision,
+                            after_save=self.config.collection.auto_reset_after_save,
+                            after_discard=(
+                                self.config.collection.auto_reset_after_discard
+                            ),
+                        ),
+                    )
 
                 violation = find_joint_action_step_violation(
                     recording.actions,
@@ -115,7 +125,13 @@ class TeleopEpisodeSession:
                     print()
                     return EpisodeCompletion(
                         EpisodeDecision.DISCARD,
-                        reset_required=self.config.collection.auto_reset_after_save,
+                        reset_required=reset_required_after_episode(
+                            EpisodeDecision.DISCARD,
+                            after_save=self.config.collection.auto_reset_after_save,
+                            after_discard=(
+                                self.config.collection.auto_reset_after_discard
+                            ),
+                        ),
                     )
 
                 self._write_metadata(
@@ -144,7 +160,11 @@ class TeleopEpisodeSession:
         print()
         return EpisodeCompletion(
             EpisodeDecision.SAVE,
-            reset_required=self.config.collection.auto_reset_after_save,
+            reset_required=reset_required_after_episode(
+                EpisodeDecision.SAVE,
+                after_save=self.config.collection.auto_reset_after_save,
+                after_discard=self.config.collection.auto_reset_after_discard,
+            ),
         )
 
     def _write_metadata(

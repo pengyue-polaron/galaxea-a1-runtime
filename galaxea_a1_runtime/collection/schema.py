@@ -35,6 +35,22 @@ class EpisodeDecision(StrEnum):
     QUIT = "quit"
 
 
+def reset_required_after_episode(
+    decision: EpisodeDecision | str,
+    *,
+    after_save: bool,
+    after_discard: bool,
+) -> bool:
+    """Return the tracked reset policy for a completed recording decision."""
+
+    decision = EpisodeDecision(decision)
+    if decision == EpisodeDecision.SAVE:
+        return after_save
+    if decision == EpisodeDecision.DISCARD:
+        return after_discard
+    return False
+
+
 def validate_experiment_name(value: str) -> str:
     if value in {".", ".."} or EXPERIMENT_NAME.fullmatch(value) is None:
         raise ValueError(

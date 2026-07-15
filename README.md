@@ -30,7 +30,8 @@ just teleop banana_in_the_plate
 The recorder prompts once for a task, then uses this episode loop:
 
 - `Enter`: start recording; while recording, save and validate the episode.
-- `d` + `Enter`: discard the current episode.
+- `d` + `Enter`: discard the current episode, reset both devices, then retry
+  the same episode index.
 - `q` + `Enter`: quit.
 - `Ctrl+C`: stop immediately.
 
@@ -114,7 +115,7 @@ explicit debug after `just stop`.
 
 | Path | Owns |
 | --- | --- |
-| `configs/system/a1.toml` | physical devices, ROS topics, cameras, joint/EEF safety, relay, 0-100 mm gripper stroke |
+| `configs/system/a1.toml` | physical devices, ROS topics, cameras, joint/EEF safety, relay, 0-104 mm physical gripper stroke |
 | `configs/teleop/a1_so100.toml` | SO leader mapping, collection state/FPS/quality behavior, reset reference |
 | `configs/poses/` | tracked reset target values and reset motion behavior |
 | `configs/datasets/` | raw source and generated dataset/package locations; reference to its Teleop collection contract |
@@ -133,10 +134,14 @@ per-run overrides for hardware or safety settings.
   red; it does not save the overlay.
 - Default state: EEF pose + six arm joints + continuous gripper.
 - Action: six absolute joint targets + continuous gripper.
-- Gripper: normalized `0..1` everywhere above hardware, mapped once to the
-  system-owned physical `0..100 mm` stroke.
+- Gripper: normalized `0..1` everywhere above hardware, mapped exactly once to
+  the system-owned `0..104 mm` physical stroke. The SO leader's tracked
+  `0..53.16` usable input range maps to that same `0..1` contract; there is no
+  binary threshold or second scale rewrite.
 - Feedback: `/gripper_stroke_host`; the seventh joint-state value is never
   reinterpreted as millimeters.
+- Read-only comparison: `just grippers` shows the leader-derived target and A1
+  feedback side by side without opening either serial device.
 - Runtime action-step protection is intentionally disabled in the system
   config. Enter-to-save collection continuity validation remains enabled in
   the teleop config.

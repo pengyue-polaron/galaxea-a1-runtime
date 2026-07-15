@@ -93,7 +93,14 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     )
     require_exact_keys(
         gripper,
-        required={"enabled", "source_key", "source_min", "source_max", "invert"},
+        required={
+            "enabled",
+            "source_key",
+            "source_min",
+            "source_max",
+            "invert",
+            "saturate_out_of_range",
+        },
         label="gripper",
     )
     require_exact_keys(
@@ -104,6 +111,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "fps",
             "max_duration_s",
             "auto_reset_after_save",
+            "auto_reset_after_discard",
             "jpeg_quality",
             "ready_timeout_s",
             "max_joint_action_step_rad",
@@ -152,6 +160,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             source_min=floating(gripper, "source_min"),
             source_max=floating(gripper, "source_max"),
             invert=boolean(gripper, "invert"),
+            saturate_out_of_range=boolean(gripper, "saturate_out_of_range"),
         ),
         collection=TeleopCollectionConfig(
             data_root=_repo_path(repo_root, _string(collection, "data_root")),
@@ -159,6 +168,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             fps=floating(collection, "fps"),
             max_duration_s=floating(collection, "max_duration_s"),
             auto_reset_after_save=boolean(collection, "auto_reset_after_save"),
+            auto_reset_after_discard=boolean(collection, "auto_reset_after_discard"),
             jpeg_quality=integer(collection, "jpeg_quality"),
             ready_timeout_s=floating(collection, "ready_timeout_s"),
             max_joint_action_step_rad=floating(collection, "max_joint_action_step_rad"),

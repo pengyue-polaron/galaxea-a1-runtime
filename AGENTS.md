@@ -199,6 +199,10 @@ arm is disconnected.
 - Pure `64` is treated as non-blocking by the runtime/LingBot doctors and relay
   safety core. Error codes with additional bits, such as `68` (`64 + motor
   disconnected`), should still be treated as faults.
+- The tracked compatibility exception is gripper bit 3 (`Position Jump`, mask
+  `8`): the relay may ignore that bit only when explicitly configured by
+  `relay.gripper_ignored_error_mask`. All other additional gripper bits remain
+  faults.
 - Gripper control has been verified to work through
   `/gripper_position_control_host` even when idle status includes `64`.
 
@@ -281,7 +285,9 @@ through the staged jointTracker and relay path while moving the SO leader to
 its tracked Feetech position, explicitly closes both grippers, disables leader
 torque, and stops the runtime. Successful teleop saves reuse the same concurrent
 reset implementation before the next episode when
-`collection.auto_reset_after_save` is enabled. Update and commit that file when
+`collection.auto_reset_after_save` is enabled. User discards and quality-check
+rejections reuse that reset before retry when
+`collection.auto_reset_after_discard` is enabled. Update and commit that file when
 the operator intentionally changes the collection start pose or reset speed.
 The pose file owns only targets and reset motion behavior; leader identity and
 mapping are injected by the owning Teleop config, while physical topics,
@@ -312,7 +318,7 @@ Explicit direct-debug open/close gripper commands (run only after `just stop`):
 
 ```bash
 rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
-  "{header: {stamp: now}, gripper_stroke: 100.0}"
+  "{header: {stamp: now}, gripper_stroke: 104.0}"
 rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
   "{header: {stamp: now}, gripper_stroke: 0.0}"
 ```

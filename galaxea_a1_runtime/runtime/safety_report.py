@@ -263,7 +263,26 @@ def build_safety_settings(
                 f"{system.gripper.stroke_max_mm:g}]mm."
             ),
             visibility="Teleop config doctor and collected run metadata expose both ranges.",
-            operator_note="Out-of-range leader feedback fails instead of being silently clamped.",
+            operator_note=(
+                "Out-of-range leader feedback saturates only when the tracked "
+                "Teleop compatibility policy explicitly enables it."
+            ),
+        ),
+        SafetySetting(
+            name="gripper_position_jump_compatibility",
+            path=f"{SYSTEM_CONFIG} [relay.gripper_ignored_error_mask]",
+            default=f"mask={system.relay.gripper_ignored_error_mask}",
+            behavior=(
+                "The relay removes only the configured gripper status bits before "
+                "deciding whether gripper forwarding is healthy."
+            ),
+            visibility=(
+                f"Raw motor_error_codes remain visible on {topics.relay_status}."
+            ),
+            operator_note=(
+                "The tracked mask is 8 for Position Jump compatibility; every "
+                "other non-idle gripper bit remains fatal."
+            ),
         ),
         SafetySetting(
             name="gripper_path",

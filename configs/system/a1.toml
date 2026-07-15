@@ -26,6 +26,9 @@ enable_timeout_s = 2.0
 max_status_age_s = 1.0
 max_input_age_s = 0.25
 arming_timeout_s = 1.0
+# Operator-approved Teleop compatibility policy: ignore only gripper bit 3
+# (decimal 8, Position Jump). Every other non-idle gripper bit remains fatal.
+gripper_ignored_error_mask = 8
 # The vendored A1 driver documents mode 0 as MIT control. The relay rejects
 # every other mode unless this tracked system safety contract is changed.
 allowed_control_modes = [0]
@@ -66,9 +69,10 @@ settle_s = 1.0
 
 [gripper]
 # Shared continuous contract: every new dataset and policy uses normalized 0..1,
-# mapped linearly onto this physical A1 stroke range.
+# mapped exactly once onto this physical A1 stroke range. Full-open feedback was
+# observed at about 103.8 mm on this arm on 2026-07-15.
 stroke_min_mm = 0.0
-stroke_max_mm = 100.0
+stroke_max_mm = 104.0
 
 [cameras]
 warmup_frames = 20

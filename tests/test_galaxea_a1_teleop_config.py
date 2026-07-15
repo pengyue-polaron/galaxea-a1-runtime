@@ -3,6 +3,11 @@ from pathlib import Path
 import pytest
 
 from galaxea_a1_runtime.collection import StateMode
+from galaxea_a1_runtime.gripper import (
+    denormalize_stroke,
+    normalize_source_position,
+    normalize_stroke,
+)
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 from galaxea_a1_runtime.teleop.config_runtime import bash_config
 
@@ -35,9 +40,11 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.bridge.a1_state_timeout_s == 30.0
     assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
-    assert (config.gripper.source_min, config.gripper.source_max) == (0.0, 100.0)
+    assert (config.gripper.source_min, config.gripper.source_max) == (0.0, 53.16)
+    assert config.gripper.saturate_out_of_range is True
     assert config.system.gripper.stroke_min_mm == 0.0
-    assert config.system.gripper.stroke_max_mm == 100.0
+    assert config.system.gripper.stroke_max_mm == 104.0
+    assert config.system.relay.gripper_ignored_error_mask == 8
     assert config.system.topics.gripper_target == "/a1_gripper_target"
     assert config.system.cameras.front.depth is False
     assert config.system.cameras.front.backend == "realsense"
@@ -50,6 +57,7 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.joint_safety.max_feedback_age_s == 0.5
     assert config.system.eef.max_feedback_age_s == 0.5
     assert config.collection.auto_reset_after_save is True
+    assert config.collection.auto_reset_after_discard is True
     assert config.collection.max_joint_action_step_rad == 0.35
     assert config.system.cameras.wrist.backend == "realsense"
     assert config.system.cameras.wrist.serial == "218622276998"
@@ -63,6 +71,34 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.camera_diagnostics.rate_probe_s == 2.0
     assert config.system.camera_diagnostics.jpeg_quality == 95
     assert config.system.startup.tmux_process_grace_s == 4
+
+
+def test_so_leader_open_endpoint_is_the_single_canonical_gripper_action():
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+    gripper = config.gripper
+    physical = config.system.gripper
+
+    action = normalize_source_position(
+        53.16,
+        source_min=gripper.source_min,
+        source_max=gripper.source_max,
+        invert=gripper.invert,
+        saturate_out_of_range=gripper.saturate_out_of_range,
+    )
+    target_mm = denormalize_stroke(
+        action,
+        stroke_min_mm=physical.stroke_min_mm,
+        stroke_max_mm=physical.stroke_max_mm,
+    )
+    measured_state = normalize_stroke(
+        103.833,
+        stroke_min_mm=physical.stroke_min_mm,
+        stroke_max_mm=physical.stroke_max_mm,
+    )
+
+    assert action == pytest.approx(1.0)
+    assert target_mm == pytest.approx(104.0)
+    assert measured_state == pytest.approx(103.833 / 104.0)
 
 
 def test_teleop_shell_contract_renders_lifecycle_values():

@@ -120,6 +120,24 @@ def test_gripper_relay_accepts_idle_status_but_rejects_extra_error_bits():
         actuator_error_block_reason((0, 0, 0, 0, 0, 0, 64), index=6, label="gripper")
         is None
     )
+    assert (
+        actuator_error_block_reason(
+            (0, 0, 0, 0, 0, 0, 72),
+            index=6,
+            label="gripper",
+            ignored_mask=8,
+        )
+        is None
+    )
+    assert (
+        actuator_error_block_reason(
+            (0, 0, 0, 0, 0, 0, 76),
+            index=6,
+            label="gripper",
+            ignored_mask=8,
+        )
+        == "gripper motor error: 76"
+    )
 
 
 def test_relay_vector_validation_rejects_short_and_non_finite_inputs():

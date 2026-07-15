@@ -128,6 +128,8 @@ def write_metadata(request: EpisodeMetadataRequest) -> None:
             "max_eef_feedback_age_s": system.eef.max_feedback_age_s,
             "max_action_age_s": system.joint_safety.max_feedback_age_s,
             "max_gripper_age_s": system.joint_safety.max_feedback_age_s,
+            "leader_gripper_source_min": config.gripper.source_min,
+            "leader_gripper_source_max": config.gripper.source_max,
             "gripper_continuous_stroke_min_mm": system.gripper.stroke_min_mm,
             "gripper_continuous_stroke_max_mm": system.gripper.stroke_max_mm,
         },
