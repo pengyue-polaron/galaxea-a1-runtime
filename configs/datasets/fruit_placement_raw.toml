@@ -1,7 +1,7 @@
 [raw_package]
 repo_id = "pengyue-polaron/nyush-galaxea-a1-fruit-placement-raw-v3"
 output_root = "data/exports/nyush-galaxea-a1-fruit-placement-raw-v3"
-readme_scene_image = "assets/datasets/fruit_placement_agent_view_annotated_v2.png"
+readme_scene_image = "assets/datasets/fruit_placement_agent_view_labeled_v7.png"
 source_roots = [
   "data/raw/put-banana-into-blue-plate",
   "data/raw/put-banana-into-bowl",
