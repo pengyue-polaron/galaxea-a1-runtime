@@ -12,7 +12,7 @@ from galaxea_a1_runtime.apps.eef_bridge import (
     pose_msg_to_xyz_quat,
 )
 from galaxea_a1_runtime.apps.lingbot.actions import (
-    LingBotActionConfig,
+    LingBotActionTransformConfig,
     absolute_action_to_relative,
     clamp_notes,
     gripper_norm_from_stroke,
@@ -31,7 +31,7 @@ class LingBotEpisodeState:
     def __init__(
         self,
         *,
-        action_config: LingBotActionConfig,
+        action_config: LingBotActionTransformConfig,
         pose_mode: str,
         max_feedback_age_s: float,
         initial_action8: Sequence[float] | None,
@@ -57,8 +57,16 @@ class LingBotEpisodeState:
 
     def gripper_callback(self, msg: Any) -> None:
         positions = getattr(msg, "position", ())
-        if positions:
-            self.gripper_feedback.set(float(positions[0]))
+        if not positions:
+            self.gripper_feedback.clear()
+            return
+        try:
+            value = float(positions[0])
+            gripper_norm_from_stroke(value, self.action_config)
+        except (OverflowError, TypeError, ValueError):
+            self.gripper_feedback.clear()
+            return
+        self.gripper_feedback.set(value)
 
     def pose_is_fresh(self) -> bool:
         return self.pose_feedback.get(max_age_s=self.max_feedback_age_s) is not None
@@ -134,7 +142,6 @@ class LingBotEpisodeState:
         return sanitize_policy_action(
             self.model_to_absolute(model8),
             self.action_config,
-            current_xyz=self.current_xyz(),
         )
 
     def prepare(
@@ -143,7 +150,6 @@ class LingBotEpisodeState:
         return prepare_policy_action(
             self.model_to_absolute(model8),
             self.action_config,
-            current_xyz=self.current_xyz(),
             current_quat=self.current_quat(),
             require_current_orientation=require_orientation,
         )
@@ -169,7 +175,6 @@ class LingBotEpisodeState:
         return clamp_notes(
             self.model_to_absolute(model8),
             self.action_config,
-            current_xyz=self.current_xyz(),
         )
 
     def _initial_action(self) -> np.ndarray | None:

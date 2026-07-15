@@ -4,10 +4,10 @@
 
 from __future__ import annotations
 
-import argparse
 import copy
 import os
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -15,10 +15,12 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.console import ArgumentParser, info
+from galaxea_a1_runtime.schema import LINGBOT_EEF_ACTION_CHANNEL_IDS
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--repo-root", type=Path, default=ROOT)
     args = parser.parse_args()
@@ -36,7 +38,9 @@ def main() -> int:
     import wan_va.wan_va_server as server_module
 
     if "galaxea_a1" not in server_module.VA_CONFIGS:
-        raise RuntimeError("External LingBot checkout does not provide the galaxea_a1 base config")
+        raise RuntimeError(
+            "External LingBot checkout does not provide the galaxea_a1 base config"
+        )
 
     job = copy.deepcopy(server_module.VA_CONFIGS["galaxea_a1"])
     job.__name__ = "Config: Galaxea A1 deployment policy server"
@@ -57,7 +61,7 @@ def main() -> int:
     job.action_num_inference_steps = policy.action_inference_steps
     job.snr_shift = policy.snr_shift
     job.action_snr_shift = policy.action_snr_shift
-    job.used_action_channel_ids = list(policy.used_action_channel_ids)
+    job.used_action_channel_ids = list(LINGBOT_EEF_ACTION_CHANNEL_IDS)
 
     inverse = [len(job.used_action_channel_ids)] * job.action_dim
     q01 = [0.0] * job.action_dim
@@ -87,18 +91,17 @@ def main() -> int:
     np.random.seed(policy.seed)
     server_module.VA_CONFIGS["a1_deployment"] = job
 
-    print(f"[LingBot server] checkout={policy.checkout}", flush=True)
-    print(f"[LingBot server] model_root={policy.model_root}", flush=True)
-    print(
-        "[LingBot server] "
+    info(f"LingBot checkout: {policy.checkout}")
+    info(f"LingBot model root: {policy.model_root}")
+    info(
+        "LingBot server: "
         f"image={policy.height}x{policy.width} frame_chunk={policy.frame_chunk_size} "
         f"actions_per_frame={policy.action_per_frame} cameras={job.obs_cam_keys} "
-        f"text_encoder={policy.text_encoder_device} seed={policy.seed}",
-        flush=True,
+        f"text_encoder={policy.text_encoder_device} seed={policy.seed}"
     )
     server_module.init_logger()
     server_module.run(
-        argparse.Namespace(
+        Namespace(
             config_name="a1_deployment",
             port=config.server.port,
             save_root=str(policy.save_root),

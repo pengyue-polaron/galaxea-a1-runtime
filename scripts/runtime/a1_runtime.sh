@@ -2,23 +2,27 @@
 set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SYSTEM_CONFIG_PATH="${A1_SYSTEM_CONFIG_PATH:-${ROOT}/configs/system/a1.toml}"
+source "${ROOT}/scripts/runtime/a1_config.sh"
+SYSTEM_CONFIG_PATH="${A1_SYSTEM_CONFIG_PATH:-}"
 PREFIX="${A1_RUNTIME_PREFIX:-a1-runtime}"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="python3"
 fi
 if [[ "${1:-help}" != "stop" && "${1:-help}" != "logs" ]]; then
-  eval "$(
+  config_args=(--repo-root "${ROOT}" --shell)
+  if [[ -n "${SYSTEM_CONFIG_PATH}" ]]; then
+    config_args+=("${SYSTEM_CONFIG_PATH}")
+  fi
+  a1_load_shell_config env \
     PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.configuration.system \
-      --repo-root "${ROOT}" --shell "${SYSTEM_CONFIG_PATH}"
-  )"
+      "${config_args[@]}"
 fi
 ROSCORE_CONTAINER="${PREFIX}-roscore"
 DRIVER_CONTAINER="${PREFIX}-driver"
 TRACKER_CONTAINER="${PREFIX}-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
-TRACKER_NODE="${A1_TRACKER_NODE:-/eeTracker_demo_node}"
+TRACKER_NODE="${A1_TRACKER_NODE:-${EE_TRACKER_NODE:-}}"
 source "${ROOT}/scripts/runtime/a1_services.sh"
 
 stop_runtime() {
@@ -28,50 +32,48 @@ stop_runtime() {
     "${DRIVER_CONTAINER}" \
     "${ROSCORE_CONTAINER}"
   a1_cleanup_shared_ros_nodes
-  echo "A1 execution runtime stopped."
+  a1_success "A1 execution runtime stopped."
 }
 
 start_services() {
   local startup_complete=0
   cleanup_failed_start() {
     if [[ "${startup_complete}" != "1" ]]; then
-      echo "[CLEANUP] Startup failed; stopping partial A1 runtime." >&2
+      a1_cleanup "Startup failed; stopping partial A1 runtime."
       stop_runtime >/dev/null
     fi
   }
   trap cleanup_failed_start ERR
 
-  if [[ ! -e "${SERIAL}" ]]; then
-    echo "[FAIL] ${SERIAL} is missing. Power on the A1 and reconnect USB first." >&2
-    exit 2
-  fi
-
+  a1_info "Config: ${SYSTEM_CONFIG_PATH}"
+  a1_preflight_container_runtime
   stop_runtime >/dev/null
-  echo "[0/4] Ensuring ROS master..."
+  a1_step "0/4 Ensuring ROS master"
   a1_ensure_roscore "${ROSCORE_CONTAINER}"
 
-  echo "[1/4] Starting A1 driver..."
+  a1_step "1/4 Starting A1 driver"
   a1_start_driver "${DRIVER_CONTAINER}"
   a1_wait_valid_joint_feedback "${DRIVER_CONTAINER}" "${JOINT_STATES_TOPIC}"
 
-  echo "[2/4] Starting isolated EE tracker..."
-  a1_container_run "${TRACKER_CONTAINER}" \
-    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC}"
+  a1_step "2/4 Starting isolated EE tracker"
+  a1_container_run tracker "${TRACKER_CONTAINER}" \
+    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${EEF_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${EE_TRACKER_NODE}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${STAGED_TOPIC}"
 
-  echo "[3/4] Starting fail-closed relay (LOCKED)..."
+  a1_step "3/4 Starting fail-closed relay (LOCKED)"
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  echo "[4/4] Running execution doctor..."
+  a1_step "4/4 Running execution doctor"
   if ! doctor --require-execution; then
-    echo "[FAIL] Execution doctor failed; stopping partial A1 runtime." >&2
+    a1_fail "Execution doctor failed; stopping partial A1 runtime."
     stop_runtime >/dev/null
     exit 1
   fi
   startup_complete=1
   trap - ERR
+  a1_success "A1 execution runtime is ready."
 }
 
 doctor() {
@@ -84,20 +86,20 @@ doctor() {
 }
 
 status() {
-  echo "Runtime containers:"
+  a1_info "Runtime containers"
   docker ps -a --format '{{.Names}}\t{{.Status}}' |
-    grep -E "^${PREFIX}-" || echo "no ${PREFIX}-* containers"
+    grep -E "^${PREFIX}-" || a1_info "No ${PREFIX}-* containers."
   echo
-  echo "Shared ROS containers:"
+  a1_info "Shared ROS containers"
   docker ps --format '{{.Names}}\t{{.Status}}' |
-    grep -E '^(galaxea-a1-runtime|a1-research)-a1-noetic-run-' || echo "no running shared a1-noetic container"
+    grep -E '^galaxea-a1-runtime-a1-noetic-run-' || a1_info "No running shared a1-noetic container."
   echo
-  doctor || true
+  doctor
 }
 
 logs() {
   for name in "${DRIVER_CONTAINER}" "${TRACKER_CONTAINER}" "${RELAY_CONTAINER}" "${ROSCORE_CONTAINER}"; do
-    echo "===== ${name} ====="
+    a1_info "Logs: ${name}"
     docker logs --tail "${A1_LOG_TAIL:-120}" "${name}" 2>&1 || true
   done
 }
@@ -105,14 +107,7 @@ logs() {
 eef_nudge() {
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" \
-      --state-pose-topic "${EEF_POSE_TOPIC}" \
-      --cmd-pose-topic "${EEF_TARGET_TOPIC}" \
-      --cmd-gripper-topic "${GRIPPER_TARGET_TOPIC}" \
-      --motion-enable-topic "${RELAY_ENABLE_TOPIC}" \
-      --relay-status-topic "${RELAY_STATUS_TOPIC}" \
-      --relay-enable-timeout-s "${RELAY_ENABLE_TIMEOUT_S}" \
-      --max-relay-status-age-s "${RELAY_MAX_STATUS_AGE_S}" \
-      --command-frame "${EEF_COMMAND_FRAME}" \
+      --config "${SYSTEM_CONFIG_PATH}" \
       "$@"
 }
 
@@ -138,9 +133,8 @@ case "${1:-help}" in
     eef_nudge "$@"
     ;;
   *)
+    a1_usage "$0 <start|services|stop|doctor|status|logs|eef-nudge>"
     cat <<EOF
-Usage: $0 <start|services|stop|doctor|status|logs|eef-nudge>
-
   start     Start ROS master, A1 driver, isolated tracker, and locked relay
   services  Alias for start
   stop      Stop A1 execution runtime containers
@@ -154,5 +148,9 @@ Environment:
   A1_RUNTIME_PREFIX=${PREFIX}
   A1_TRACKER_NODE=${TRACKER_NODE}
 EOF
+    if [[ "${1:-help}" != "help" && "${1:-}" != "-h" && "${1:-}" != "--help" ]]; then
+      a1_fail "Unknown runtime command: ${1:-}"
+      exit 2
+    fi
     ;;
 esac

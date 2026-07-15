@@ -39,9 +39,13 @@ SUBSYSTEM=="tty", ATTRS{idVendor}=="0483", ATTRS{idProduct}=="5740", ATTRS{seria
 # Secondary USB serial dongle seen on this machine
 SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="55d3", ATTRS{serial}=="5A7A016967", MODE:="0660", GROUP:="dialout", TAG+="uaccess", ENV{ID_MM_DEVICE_IGNORE}="1"
 
-# Global Shutter Camera -> allow OpenCV access without relying on the video group
+# Legacy alternate global-shutter camera -> OpenCV access without the video group
 SUBSYSTEM=="video4linux", ATTRS{idVendor}=="32e4", ATTRS{idProduct}=="2234", ATTRS{serial}=="01.00.00", MODE:="0666", GROUP:="plugdev"
 ```
+
+The tracked default wrist camera is now the D405 RealSense selected by serial
+in `configs/system/a1.toml`; it does not use the legacy global-shutter rule.
+Keep that rule only for an explicitly tracked V4L2 alternate setup.
 
 If you need to reload manually:
 

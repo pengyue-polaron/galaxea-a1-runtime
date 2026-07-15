@@ -44,7 +44,7 @@ just camera-web
 
 Use `http://<robot-lan-ip>:8088` directly. The LAN URL exposes only the
 dashboard, MJPEG/snapshot
-endpoints, and health JSON. Run `just camera-web-stop` before starting Teleop,
+endpoints, and health JSON. Run `just camera-web stop` before starting Teleop,
 ACT, or LingBot because RealSense devices have one owning process; those apps
 serve the same preview themselves on port 8088. Do not configure router port
 forwarding for this HTTP service.
@@ -55,8 +55,10 @@ never written into training images. Change the ROI only in
 `configs/system/a1.toml`, then restart the camera service.
 Do not mix this crop with older 640x480 episodes under one experiment name;
 the collector checks existing metadata and fails before opening ROS/cameras.
-The continuous gripper contract is raw schema `galaxea_a1_teleop_raw_v2` and
-must use a new experiment directory instead of appending to v1 data.
+New collection uses raw schema `galaxea_a1_teleop_raw_v3` and must use a new
+experiment directory instead of appending to v1/v2 data. The v3 CSV records
+per-camera sequence/sample times and enforces the system-level maximum pair
+skew before a staged episode is atomically committed.
 
 3. Test EEF control:
 
@@ -66,6 +68,10 @@ just eef-test
 
 The tool holds the current EEF pose, then waits for Enter before each
 `x+/x-/y+/y-/z+/z-` step. Confirm the EEF moves in the printed direction.
+Step size and settle time come from `configs/system/a1.toml [eef_test]`; ROS
+topic probe and service-start readiness timeouts come from that same file's
+`[doctor]` and `[startup]` tables. The CLI intentionally has no alternate
+motion-size flags.
 
 4. Test SO leader teleop:
 
@@ -86,7 +92,9 @@ just reset
 
 The target pose is tracked in `configs/poses/a1_so100_collection_start.toml`.
 It includes both the A1 joint pose and the SO leader/LeRobot start pose.
-Both grippers are closed as part of this command.
+It does not duplicate device identity, joint names, topics, or safety limits:
+the owning Teleop config injects them from its own leader contract and System
+reference. Both grippers are closed as part of this command.
 
 6. Stop:
 
@@ -116,7 +124,8 @@ just cameras
 Check `cam0_front`, `cam1_wrist`, and `contact_sheet`. If depth is enabled in
 the tracked config, also check `cam0_depth`/`cam0_depth_preview`. The command
 prints `cam0_usb`, `cam0_front_fps`, and `cam1_wrist_fps`. The default config
-is USB2-compatible RGB-only.
+is USB2-compatible RGB-only. Adjust diagnostic output/timing/encoding only in
+`configs/system/a1.toml [camera_diagnostics]`.
 
 3. Restore the collection start pose:
 
@@ -192,9 +201,15 @@ and gripper range).
 The system file is the only physical source of truth. The tracked gripper range
 is `0..100 mm`; Teleop and inference publish `/a1_gripper_target`, and the
 `ACTIVE` relay alone publishes `/gripper_position_control_host`.
+The Teleop file explicitly owns the SO100 source interval and inversion plus
+bridge startup/stop supervision timeouts. Source feedback outside that interval
+fails instead of being silently clipped; the mapped A1 physical interval still
+comes only from the system file.
 The default agent D455 RealSense config records RGB only and accepts USB2.1. Depth
 capture remains supported, but enable it intentionally in the tracked config
-after the RealSense is on USB3 or after lowering FPS/resolution for USB2. The
+after the RealSense is on USB3 or after lowering FPS/resolution for USB2. When
+enabling depth, add its dimensions and alignment mode in the same camera table;
+those fields are intentionally absent while depth is disabled. The
 wrist D405 is also selected by explicit RealSense serial and records RGB.
 
 Recorded state modes:
@@ -210,7 +225,8 @@ Saved episodes contain `frames.csv`, `metadata.json`, `cam0/`, `cam1/`, and
 in millimetres and converts to LeRobot as `observation.images.front_depth`.
 
 The raw frame table contains frame index, wall-clock timestamp, ROS timestamp,
-relative image paths, configured state columns, and configured action columns.
+both camera sequence numbers and monotonic sample times, relative image paths,
+configured state columns, and configured action columns.
 Episode metadata stores task text, experiment name, state/action names, topics,
 camera settings, FPS target, the tracked teleop config path, and the staged
 relay control path.
@@ -272,7 +288,8 @@ The checked-in profile is dry-run and step-gated with empty q01/q99 arrays,
 `deployment_ready = true` until real statistics, prompt, and weight size are
 provided. Its configured
 rollout remains 36 model calls, four latent frames per call, four actions per
-frame, at 30 Hz. Model EEF
+frame, four fresh KV-cache observations per action frame, at 30 Hz. These are
+required deployment fields rather than Python defaults. Model EEF
 poses are episode-relative and are composed onto the measured startup pose
 before the absolute A1 workspace clamp. Continuous gripper values map linearly
 through the shared physical range in `configs/system/a1.toml`. KV-cache action history uses
@@ -283,6 +300,18 @@ signal, not the model's past-action token.
 When the bridge completes, raises an error, or receives `Ctrl-C`, its process
 guard stops the A1 runtime and policy server. `just stop` remains the operator
 emergency-stop command.
+
+To review a saved LingBot latent without adding optional model dependencies to
+the main runtime environment:
+
+```bash
+external/lingbot-va/.env312/bin/python \
+  scripts/apps/lingbot/decode_lingbot_latents.py LATENTS.pt \
+  --output outputs/lingbot/review.mp4
+```
+
+The decoder imports `diffusers` only when decoding starts, so `--help` also
+works in the normal repository environment.
 
 After the tracked LingBot profile is deployment-ready, start only the model
 server for a no-ROS load test with:

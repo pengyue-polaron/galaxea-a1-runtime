@@ -2,55 +2,59 @@
 set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-CONFIG_PATH="${ROOT}/configs/teleop/a1_so100.toml"
+CONFIG_PATH=""
 SESSION="a1-camera-web"
+source "${ROOT}/scripts/runtime/a1_config.sh"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if [[ "${1:-}" == "--config" ]]; then
+  if [[ -z "${2:-}" ]]; then
+    a1_fail "--config requires a path."
+    a1_usage "$0 --config <path> <start|stop|status|logs>" >&2
+    exit 2
+  fi
   CONFIG_PATH="$2"
   shift 2
 fi
 
-eval "$(
-  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" uv run --project "${ROOT}" \
-    python -m galaxea_a1_runtime.teleop.config --repo-root "${ROOT}" --shell "${CONFIG_PATH}"
-)"
-
 start_viewer() {
-  if ss -H -ltn "sport = :${WEB_PREVIEW_PORT}" | grep -q .; then
-    echo "[FAIL] Camera web port ${WEB_PREVIEW_PORT} is already in use. Stop the active Teleop/ACT/LingBot/viewer owner first." >&2
-    exit 2
+  local config_args=(--repo-root "${ROOT}" --shell)
+  if [[ -n "${CONFIG_PATH}" ]]; then
+    config_args+=("${CONFIG_PATH}")
   fi
+  a1_load_shell_config env \
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" uv run --project "${ROOT}" \
+    python -m galaxea_a1_runtime.configuration.system "${config_args[@]}"
   a1_tmux_stop "${SESSION}"
-  local command=(uv run --project "${ROOT}" python "${ROOT}/scripts/apps/cameras/a1_camera_web.py" --config "${CONFIG_PATH}")
+  local command=(uv run --project "${ROOT}" python "${ROOT}/scripts/apps/cameras/a1_camera_web.py")
+  if [[ -n "${CONFIG_PATH}" ]]; then
+    command+=(--config "${CONFIG_PATH}")
+  fi
   local command_q
   printf -v command_q "%q " "${command[@]}"
   a1_tmux_start "${SESSION}" "${ROOT}" \
     "${command_q}; rc=\$?; echo CAMERA_WEB_EXIT=\$rc; exec bash"
-  sleep 4
-  local pane
-  pane="$(a1_tmux_capture "${SESSION}" 80 || true)"
-  printf '%s\n' "${pane}"
-  if grep -q "CAMERA_WEB_EXIT=" <<<"${pane}"; then
-    echo "[FAIL] Camera web viewer exited during startup." >&2
-    exit 2
-  fi
-  echo "Camera viewer started in tmux ${SESSION}."
+  a1_tmux_verify_startup \
+    "${SESSION}" "CAMERA_WEB_EXIT=" "Camera web viewer" "${TMUX_STARTUP_GRACE_S}"
+  a1_success "Camera viewer started in tmux ${SESSION}."
 }
 
 case "${1:-start}" in
   start) start_viewer ;;
   stop)
     a1_tmux_stop "${SESSION}"
-    echo "Camera viewer stopped."
+    a1_success "Camera viewer stopped."
     ;;
   status)
     a1_tmux_status "${SESSION}"
-    ss -H -ltn "sport = :${WEB_PREVIEW_PORT}" || true
     ;;
   logs) a1_tmux_capture "${SESSION}" 160 ;;
+  help|-h|--help)
+    a1_usage "$0 [--config path] <start|stop|status|logs>"
+    ;;
   *)
-    echo "Usage: $0 [--config path] <start|stop|status|logs>" >&2
+    a1_fail "Unknown camera-web command: ${1:-}"
+    a1_usage "$0 [--config path] <start|stop|status|logs>" >&2
     exit 2
     ;;
 esac

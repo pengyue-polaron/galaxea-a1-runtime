@@ -1,21 +1,7 @@
 # Git-tracked A1 + SO leader collection start pose.
 # Recorded from the live hardware on 2026-07-11T18:15:40+08:00.
 
-name = "a1_so100_collection_start"
-description = "User-selected A1 and LeRobot/SO leader start pose for teleop data collection."
-
-[system]
-config = "configs/system/a1.toml"
-
 [joints]
-names = [
-  "arm_joint1",
-  "arm_joint2",
-  "arm_joint3",
-  "arm_joint4",
-  "arm_joint5",
-  "arm_joint6",
-]
 position_rad = [
   0.012999534606933594,
   0.0010004043579101562,
@@ -31,27 +17,9 @@ enabled = true
 closed_stroke_mm = 0.0
 publish_hz = 10.0
 publish_s = 1.0
-reference_position_rad = -0.03299999237060547
-
-[eef]
-frame = "base_link"
-position_m = [
-  0.069480400897547,
-  0.0007805132547516406,
-  0.2197195507536063,
-]
-orientation_xyzw = [
-  -0.024119767255325962,
-  0.7936583066939049,
-  -0.010185626889491256,
-  0.6078001168543663,
-]
 
 [leader]
 enabled = true
-port = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
-id = "my_leader"
-use_degrees = true
 action_keys = [
   "joint0.pos",
   "joint1.pos",

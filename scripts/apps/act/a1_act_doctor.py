@@ -1,68 +1,78 @@
 #!/usr/bin/env python3
-"""Static app checks for ACT joint-state deployment."""
+"""Configuration-driven static checks for ACT joint deployment."""
 
 from __future__ import annotations
 
-import argparse
 import importlib.util
-import json
 import sys
-from dataclasses import asdict, dataclass
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[3]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 
-@dataclass
-class Check:
-    name: str
-    level: str
-    detail: str
-
-
-def add(checks: list[Check], name: str, ok: bool, detail: str, *, required: bool = True) -> None:
-    checks.append(Check(name, "PASS" if ok else ("FAIL" if required else "WARN"), detail))
+from galaxea_a1_runtime.apps.act.config import (  # noqa: E402
+    default_config_path,
+    load_act_config,
+)
+from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
+from galaxea_a1_runtime.hardware.cameras import realsense_device_info  # noqa: E402
+from galaxea_a1_runtime.runtime.health_checks import (  # noqa: E402
+    Check,
+    add_check,
+    finish_checks,
+)
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=default_config_path(ROOT))
     parser.add_argument("--json", action="store_true")
-    parser.add_argument("--checkpoint", required=True)
-    parser.add_argument("--wrist-backend", choices=("realsense", "v4l2"), required=True)
-    parser.add_argument("--wrist-serial", default="")
-    parser.add_argument("--wrist-camera", required=True)
     parser.add_argument("--require-execution", action="store_true")
     args = parser.parse_args()
-
+    config = load_act_config(args.config, repo_root=ROOT)
+    checkpoint = config.policy.checkpoint
     checks: list[Check] = []
-    checkpoint = Path(args.checkpoint)
-    add(checks, "checkpoint", checkpoint.is_dir(), str(checkpoint), required=True)
-    add(checks, "config_json", (checkpoint / "config.json").is_file(), str(checkpoint / "config.json"))
-    add(checks, "model", (checkpoint / "model.safetensors").is_file(), str(checkpoint / "model.safetensors"))
-    add(checks, "torch_import", importlib.util.find_spec("torch") is not None, "torch")
-    add(checks, "lerobot_import", importlib.util.find_spec("lerobot") is not None, "lerobot")
-    add(checks, "cv2_import", importlib.util.find_spec("cv2") is not None, "cv2")
-    add(checks, "rospy_import", importlib.util.find_spec("rospy") is not None, "rospy", required=args.require_execution)
-    if args.wrist_backend == "realsense":
-        from galaxea_a1_runtime.hardware.cameras import realsense_device_info
-
+    add_check(checks, "checkpoint", checkpoint.is_dir(), str(checkpoint))
+    add_check(
+        checks,
+        "config_json",
+        (checkpoint / "config.json").is_file(),
+        str(checkpoint / "config.json"),
+    )
+    add_check(
+        checks,
+        "model",
+        (checkpoint / "model.safetensors").is_file(),
+        str(checkpoint / "model.safetensors"),
+    )
+    for module in ("torch", "lerobot", "cv2"):
+        add_check(
+            checks,
+            f"{module}_import",
+            importlib.util.find_spec(module) is not None,
+            module,
+        )
+    add_check(
+        checks,
+        "rospy_import",
+        importlib.util.find_spec("rospy") is not None,
+        "rospy",
+        required=args.require_execution,
+    )
+    wrist = config.system.cameras.wrist
+    if wrist.backend == "realsense":
         try:
-            info = realsense_device_info(args.wrist_serial)
+            info = realsense_device_info(wrist.serial)
         except Exception as exc:
-            add(checks, "wrist_camera", False, str(exc), required=True)
+            add_check(checks, "wrist_camera", False, str(exc))
         else:
-            add(checks, "wrist_camera", info is not None, str(info), required=True)
-    elif args.wrist_camera == "auto":
-        add(checks, "wrist_camera", True, "auto")
+            add_check(checks, "wrist_camera", info is not None, str(info))
+    elif wrist.device == "auto":
+        add_check(checks, "wrist_camera", True, "auto")
     else:
-        wrist = Path(args.wrist_camera)
-        add(checks, "wrist_camera", wrist.exists(), str(wrist), required=True)
-
-    if args.json:
-        print(json.dumps([asdict(item) for item in checks], indent=2))
-    else:
-        width = max((len(item.name) for item in checks), default=0)
-        for item in checks:
-            print(f"[{item.level:4}] {item.name:<{width}}  {item.detail}")
-    return 1 if any(item.level == "FAIL" for item in checks) else 0
+        add_check(checks, "wrist_camera", Path(wrist.device).exists(), wrist.device)
+    return finish_checks(checks, json_output=args.json)
 
 
 if __name__ == "__main__":

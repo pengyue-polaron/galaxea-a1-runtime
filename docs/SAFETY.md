@@ -39,6 +39,10 @@ apps. They still do not publish host commands directly:
 - Relay starts `LOCKED`.
 - An app must explicitly enable `/a1_arm_motion_enable`.
 - Relay requires fresh joint feedback, staged tracker command, and motor status.
+- Every staged driver vector (`p_des`, `v_des`, `kp`, `kd`, and `t_ff`) must
+  have exactly the configured arm DOF and contain only finite values. Gains
+  must be non-negative, and `mode` must be listed in the tracked
+  `relay.allowed_control_modes` system setting.
 - First staged command must align with current joint feedback within `0.05rad`.
 - After validation, relay forwards staged tracker commands unchanged.
 - Normal gripper commands follow `/a1_gripper_target -> relay ->
@@ -50,8 +54,8 @@ apps. They still do not publish host commands directly:
   error bits still fault.
 - Teleop starts from the current A1 joint pose and maps relative SO leader
   motion onto A1 joint targets before arming the relay.
-- Teleop target joint limits are explicit bridge arguments and are checked by
-  `just check`.
+- Teleop target joint limits come directly from `configs/system/a1.toml` and
+  are checked by `just check`.
 - ACT starts dry-run by default. When execution is enabled, it first commands
   the current joint feedback target through jointTracker and waits for staged
   alignment before arming the relay.
@@ -73,7 +77,8 @@ apps. They still do not publish host commands directly:
 - The LingBot KV cache records tracker commands because its training
   action is a commanded episode-relative EEF target. Measured EEF feedback is
   still used for freshness checks, workspace-relative diagnostics, and camera
-  context.
+  context. The number of fresh KV-cache observations per action frame is an
+  explicit deployment setting and must divide the configured actions per frame.
 - LingBot bridge exit is guarded: normal completion, errors, and `Ctrl-C` stop
   the A1 runtime and policy server.
 - ACT execution settings live in `configs/deployments/act_joint.toml`; the

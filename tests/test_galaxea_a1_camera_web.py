@@ -2,6 +2,7 @@ import http.client
 from pathlib import Path
 import socket
 import time
+import json
 
 import numpy as np
 
@@ -13,7 +14,8 @@ from galaxea_a1_runtime.hardware.web_preview import (
     WebPreviewConfig,
     color_from_bgr,
 )
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image, draw_image_roi
+from galaxea_a1_runtime.hardware.image_geometry import crop_image, draw_image_roi
+from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 
@@ -43,7 +45,7 @@ def test_camera_web_serves_health_without_authentication():
         jpeg_quality=70,
     )
     image = np.full((48, 64, 3), 127, dtype=np.uint8)
-    preview = CameraWebPreview(config)
+    preview = CameraWebPreview(config, max_source_age_s=0.5)
     roi = ImageRoi(x=8, y=0, width=48, height=48)
     preview.register_reader(
         "agent",
@@ -53,7 +55,9 @@ def test_camera_web_serves_health_without_authentication():
         overlay_roi=roi,
         overlay_label="RECORDED 48x48",
     )
-    preview.register_reader("wrist", FakeReader(image), extract=color_from_bgr, source="wrist-test")
+    preview.register_reader(
+        "wrist", FakeReader(image), extract=color_from_bgr, source="wrist-test"
+    )
     preview.start()
     try:
         time.sleep(0.15)
@@ -62,15 +66,45 @@ def test_camera_web_serves_health_without_authentication():
         response = connection.getresponse()
         body = response.read()
         assert response.status == 200
-        assert b'"ok": true' in body
-        assert b'"agent"' in body
-        assert b'"wrist"' in body
-        assert b'"overlay_roi_xywh": [8, 0, 48, 48]' in body
+        health = json.loads(body)
+        assert health["ok"] is True
+        assert health["streams"]["agent"]["overlay_roi_xywh"] == [8, 0, 48, 48]
 
         connection.request("GET", "/")
         response = connection.getresponse()
         assert response.status == 200
         assert b"Galaxea A1" in response.read()
+        connection.close()
+    finally:
+        preview.close()
+
+
+def test_camera_web_health_fails_when_sources_become_stale():
+    config = WebPreviewConfig(
+        enabled=True,
+        bind="127.0.0.1",
+        port=_free_port(),
+        fps=30.0,
+        jpeg_quality=70,
+    )
+    image = np.zeros((16, 16, 3), dtype=np.uint8)
+    preview = CameraWebPreview(config, max_source_age_s=0.05)
+    preview.register_reader(
+        "agent", FakeReader(image), extract=color_from_bgr, source="agent-test"
+    )
+    preview.register_reader(
+        "wrist", FakeReader(image), extract=color_from_bgr, source="wrist-test"
+    )
+    preview.start()
+    try:
+        time.sleep(0.12)
+        connection = http.client.HTTPConnection("127.0.0.1", config.port, timeout=2)
+        connection.request("GET", "/healthz")
+        response = connection.getresponse()
+        health = json.loads(response.read())
+        assert response.status == 503
+        assert health["ok"] is False
+        assert health["streams"]["agent"]["fresh"] is False
         connection.close()
     finally:
         preview.close()
@@ -91,12 +125,8 @@ def test_image_roi_crops_exact_pixels_and_draws_non_destructively():
 
 
 def test_agentview_roi_is_identical_across_collection_and_inference_configs():
-    teleop = load_teleop_config(
-        REPO / "configs/teleop/a1_so100.toml", repo_root=REPO
-    )
-    act = load_act_config(
-        REPO / "configs/deployments/act_joint.toml", repo_root=REPO
-    )
+    teleop = load_teleop_config(REPO / "configs/teleop/a1_so100.toml", repo_root=REPO)
+    act = load_act_config(REPO / "configs/deployments/act_joint.toml", repo_root=REPO)
     lingbot = load_lingbot_config(
         REPO / "configs/deployments/lingbot_va.toml", repo_root=REPO
     )

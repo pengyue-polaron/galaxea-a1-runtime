@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from galaxea_a1_runtime.kinematics import (
     SerialChainFK,
@@ -9,11 +10,13 @@ from galaxea_a1_runtime.kinematics import (
 )
 from galaxea_a1_runtime.lerobot.lingbot_pack import (
     ACTION_NAMES,
-    USED_ACTION_CHANNEL_IDS,
-    load_pack_config,
 )
-from galaxea_a1_runtime.lerobot.joint_pack import JOINT_ACTION_NAMES
+from galaxea_a1_runtime.lerobot.lingbot_pack_config import load_pack_config
 from galaxea_a1_runtime.lerobot.dataset_package import json_value
+from galaxea_a1_runtime.schema import (
+    JOINT_ACTION_NAMES_RAD,
+    LINGBOT_EEF_ACTION_CHANNEL_IDS,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 URDF = (
@@ -54,8 +57,8 @@ def test_relative_pose_round_trip():
 
 def test_lingbot_a1_action_contract():
     assert len(ACTION_NAMES) == 8
-    assert USED_ACTION_CHANNEL_IDS == (0, 1, 2, 3, 4, 5, 6, 28)
-    assert JOINT_ACTION_NAMES == (
+    assert LINGBOT_EEF_ACTION_CHANNEL_IDS == (0, 1, 2, 3, 4, 5, 6, 28)
+    assert JOINT_ACTION_NAMES_RAD == (
         "joint_1_rad",
         "joint_2_rad",
         "joint_3_rad",
@@ -77,6 +80,15 @@ def test_tracked_lingbot_pack_config():
     assert config.urdf_path == URDF
     assert config.gripper_stroke_min_mm == 0.0
     assert config.gripper_stroke_max_mm == 100.0
+
+
+def test_lingbot_pack_config_rejects_unknown_keys(tmp_path):
+    source = REPO_ROOT / "configs/datasets/banana_in_the_plate.toml"
+    path = tmp_path / "dataset.toml"
+    path.write_text(source.read_text() + "\nunexpected = true\n")
+
+    with pytest.raises(ValueError):
+        load_pack_config(path)
 
 
 def test_v21_json_conversion_handles_nested_numpy_values():

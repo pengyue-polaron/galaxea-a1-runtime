@@ -38,8 +38,16 @@ def __getattr__(name: str):
             "plan_raw_episodes_to_v30": plan_raw_episodes_to_v30,
             "plan_v21_to_v30": plan_v21_to_v30,
         }[name]
-    if name in {"GalaxeaA1Robot", "GalaxeaA1RobotConfig", "dataset_contract_from_robot_config"}:
-        from .robot import GalaxeaA1Robot, GalaxeaA1RobotConfig, dataset_contract_from_robot_config
+    if name in {
+        "GalaxeaA1Robot",
+        "GalaxeaA1RobotConfig",
+        "dataset_contract_from_robot_config",
+    }:
+        from .robot import (
+            GalaxeaA1Robot,
+            GalaxeaA1RobotConfig,
+            dataset_contract_from_robot_config,
+        )
 
         return {
             "GalaxeaA1Robot": GalaxeaA1Robot,

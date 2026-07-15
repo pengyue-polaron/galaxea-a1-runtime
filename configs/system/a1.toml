@@ -20,10 +20,24 @@ eef_pose = "/end_effector_pose"
 eef_target = "/a1_ee_target"
 
 [relay]
+rate_hz = 100.0
+status_rate_hz = 5.0
 enable_timeout_s = 2.0
 max_status_age_s = 1.0
 max_input_age_s = 0.25
 arming_timeout_s = 1.0
+# The vendored A1 driver documents mode 0 as MIT control. The relay rejects
+# every other mode unless this tracked system safety contract is changed.
+allowed_control_modes = [0]
+
+[doctor]
+ros_topic_timeout_s = 1.5
+
+[startup]
+ros_master_timeout_s = 10.0
+joint_feedback_timeout_s = 20.0
+topic_timeout_s = 15.0
+tmux_process_grace_s = 4
 
 [joint_safety]
 names = ["arm_joint1", "arm_joint2", "arm_joint3", "arm_joint4", "arm_joint5", "arm_joint6"]
@@ -46,6 +60,10 @@ min_quat_norm = 0.25
 max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
 
+[eef_test]
+step_m = 0.03
+settle_s = 1.0
+
 [gripper]
 # Shared continuous contract: every new dataset and policy uses normalized 0..1,
 # mapped linearly onto this physical A1 stroke range.
@@ -55,24 +73,22 @@ stroke_max_mm = 100.0
 [cameras]
 warmup_frames = 20
 max_age_s = 0.5
+# Reject a policy/collection observation when AgentView and wrist frames are
+# farther apart than this, even if each frame is individually fresh.
+max_pair_skew_s = 0.1
 
 [cameras.front]
 backend = "realsense"
 serial = "341522300456"
-device = ""
 width = 640
 height = 480
 fps = 30
 require_usb3 = false
+# When enabling depth, add depth_width, depth_height, and align_depth_to_color.
 depth = false
-depth_width = 640
-depth_height = 480
-align_depth_to_color = true
+# Manual exposure/gain and white_balance keys are valid only when auto is false.
 auto_exposure = true
-exposure = 140
-gain = 32
 auto_white_balance = true
-white_balance = 4600
 crop_enabled = true
 crop_x = 103
 crop_y = 0
@@ -82,12 +98,20 @@ crop_height = 480
 [cameras.wrist]
 backend = "realsense"
 serial = "218622276998"
-device = ""
 width = 640
 height = 480
 fps = 30
-backend_api = "v4l2"
-pixel_format = ""
+require_usb3 = false
+auto_exposure = true
+auto_white_balance = true
+# Disabled crop means full-frame wrist output; omit crop coordinates.
+crop_enabled = false
+
+[camera_diagnostics]
+output_root = "data/diagnostics/camera_snapshots"
+frame_timeout_s = 5.0
+rate_probe_s = 2.0
+jpeg_quality = 95
 
 [web_preview]
 enabled = true

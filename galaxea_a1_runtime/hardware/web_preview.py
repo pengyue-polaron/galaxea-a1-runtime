@@ -16,73 +16,10 @@ from urllib.parse import urlsplit
 import cv2
 import numpy as np
 
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, draw_image_roi
-
-
-@dataclass(frozen=True)
-class WebPreviewConfig:
-    enabled: bool = False
-    bind: str = "0.0.0.0"
-    port: int = 8088
-    fps: float = 10.0
-    jpeg_quality: int = 75
-
-    def validate(self) -> None:
-        if not self.bind:
-            raise ValueError("web_preview.bind must not be empty")
-        if not 1 <= self.port <= 65535:
-            raise ValueError("web_preview.port must be in [1, 65535]")
-        if self.fps <= 0:
-            raise ValueError("web_preview.fps must be positive")
-        if not 1 <= self.jpeg_quality <= 100:
-            raise ValueError("web_preview.jpeg_quality must be in [1, 100]")
-
-
-def parse_web_preview_config(data: dict[str, Any], *, repo_root: Path) -> WebPreviewConfig:
-    del repo_root
-    config = WebPreviewConfig(
-        enabled=bool(data.get("enabled", False)),
-        bind=str(data.get("bind", "0.0.0.0")),
-        port=int(data.get("port", 8088)),
-        fps=float(data.get("fps", 10.0)),
-        jpeg_quality=int(data.get("jpeg_quality", 75)),
-    )
-    config.validate()
-    return config
-
-
-def web_preview_argv(config: WebPreviewConfig) -> list[str]:
-    return [
-        "--web-preview" if config.enabled else "--no-web-preview",
-        "--web-preview-bind",
-        config.bind,
-        "--web-preview-port",
-        str(config.port),
-        "--web-preview-fps",
-        f"{config.fps:g}",
-        "--web-preview-jpeg-quality",
-        str(config.jpeg_quality),
-    ]
-
-
-def add_web_preview_arguments(parser: Any) -> None:
-    parser.add_argument("--web-preview", action=__import__("argparse").BooleanOptionalAction, default=False)
-    parser.add_argument("--web-preview-bind", default="0.0.0.0")
-    parser.add_argument("--web-preview-port", type=int, default=8088)
-    parser.add_argument("--web-preview-fps", type=float, default=10.0)
-    parser.add_argument("--web-preview-jpeg-quality", type=int, default=75)
-
-
-def web_preview_config_from_args(args: Any) -> WebPreviewConfig:
-    config = WebPreviewConfig(
-        enabled=bool(args.web_preview),
-        bind=str(args.web_preview_bind),
-        port=int(args.web_preview_port),
-        fps=float(args.web_preview_fps),
-        jpeg_quality=int(args.web_preview_jpeg_quality),
-    )
-    config.validate()
-    return config
+from galaxea_a1_runtime.console import info
+from galaxea_a1_runtime.hardware.image_geometry import draw_image_roi
+from galaxea_a1_runtime.configuration.image import ImageRoi
+from galaxea_a1_runtime.configuration.web_preview import WebPreviewConfig
 
 
 @dataclass
@@ -98,14 +35,19 @@ class _StreamState:
     source_monotonic_s: float | None = None
     encoded_monotonic_s: float | None = None
     encode_times: deque[float] = field(default_factory=lambda: deque(maxlen=30))
+    last_error: str | None = None
+    error_monotonic_s: float | None = None
 
 
 class CameraWebPreview:
     """Serve latest frames without opening cameras or touching ROS."""
 
-    def __init__(self, config: WebPreviewConfig):
+    def __init__(self, config: WebPreviewConfig, *, max_source_age_s: float):
         config.validate()
+        if max_source_age_s <= 0:
+            raise ValueError("max_source_age_s must be positive")
         self.config = config
+        self.max_source_age_s = max_source_age_s
         self._streams: dict[str, _StreamState] = {}
         self._condition = threading.Condition()
         self._stop = threading.Event()
@@ -124,7 +66,9 @@ class CameraWebPreview:
         overlay_label: str = "",
     ) -> None:
         if self._server is not None:
-            raise RuntimeError("cannot register camera streams after web preview starts")
+            raise RuntimeError(
+                "cannot register camera streams after web preview starts"
+            )
         if name not in {"agent", "wrist"}:
             raise ValueError(f"unsupported preview stream {name!r}")
         self._streams[name] = _StreamState(
@@ -139,9 +83,13 @@ class CameraWebPreview:
         if not self.config.enabled:
             return
         if set(self._streams) != {"agent", "wrist"}:
-            raise RuntimeError("web preview requires registered 'agent' and 'wrist' readers")
+            raise RuntimeError(
+                "web preview requires registered 'agent' and 'wrist' readers"
+            )
         handler = self._handler_type()
-        self._server = ThreadingHTTPServer((self.config.bind, self.config.port), handler)
+        self._server = ThreadingHTTPServer(
+            (self.config.bind, self.config.port), handler
+        )
         self._server.daemon_threads = True
         self._server_thread = threading.Thread(
             target=self._server.serve_forever,
@@ -155,11 +103,7 @@ class CameraWebPreview:
         )
         self._encoder_thread.start()
         self._server_thread.start()
-        print(
-            "[Camera Web] listening on "
-            f"http://{self.config.bind}:{self.config.port}",
-            flush=True,
-        )
+        info(f"Camera Web listening on http://{self.config.bind}:{self.config.port}")
 
     def close(self) -> None:
         self._stop.set()
@@ -172,7 +116,16 @@ class CameraWebPreview:
             self._server_thread.join(timeout=2.0)
         if self._encoder_thread is not None:
             self._encoder_thread.join(timeout=2.0)
+        alive = [
+            thread.name
+            for thread in (self._server_thread, self._encoder_thread)
+            if thread is not None and thread.is_alive()
+        ]
         self._server = None
+        self._server_thread = None
+        self._encoder_thread = None
+        if alive:
+            raise RuntimeError(f"web preview threads did not stop: {alive}")
 
     def _encode_loop(self) -> None:
         interval = 1.0 / self.config.fps
@@ -181,13 +134,24 @@ class CameraWebPreview:
             started = time.perf_counter()
             updates: list[tuple[str, int, float, bytes, float]] = []
             for name, state in self._streams.items():
+                reader_error = _reader_exception(state.reader)
+                if reader_error is not None:
+                    self._set_stream_error(name, reader_error)
+                    continue
                 sample = state.reader.latest()
                 if sample is None or sample.seq == state.last_source_seq:
                     continue
                 try:
                     image = state.extract(sample.value)
-                    if not isinstance(image, np.ndarray) or image.ndim != 3 or image.shape[2] != 3:
-                        continue
+                    if (
+                        not isinstance(image, np.ndarray)
+                        or image.ndim != 3
+                        or image.shape[2] != 3
+                    ):
+                        raise ValueError(
+                            "preview image must be a HxWx3 numpy array, got "
+                            f"{type(image).__name__} shape={getattr(image, 'shape', None)}"
+                        )
                     if state.overlay_roi is not None:
                         image = draw_image_roi(
                             image,
@@ -195,12 +159,20 @@ class CameraWebPreview:
                             label=state.overlay_label,
                         )
                     ok, encoded = cv2.imencode(".jpg", image, jpeg_params)
-                except Exception:
+                except Exception as exc:
+                    self._set_stream_error(name, exc, source_seq=sample.seq)
                     continue
                 if not ok:
+                    self._set_stream_error(
+                        name,
+                        RuntimeError("OpenCV JPEG encoder returned failure"),
+                        source_seq=sample.seq,
+                    )
                     continue
                 now = time.perf_counter()
-                updates.append((name, sample.seq, sample.monotonic_s, encoded.tobytes(), now))
+                updates.append(
+                    (name, sample.seq, sample.monotonic_s, encoded.tobytes(), now)
+                )
             if updates:
                 with self._condition:
                     for name, source_seq, source_time, jpeg, now in updates:
@@ -211,9 +183,22 @@ class CameraWebPreview:
                         state.encoded_seq += 1
                         state.encoded_monotonic_s = now
                         state.encode_times.append(now)
+                        state.last_error = None
+                        state.error_monotonic_s = None
                     self._condition.notify_all()
             remaining = interval - (time.perf_counter() - started)
             self._stop.wait(max(0.001, remaining))
+
+    def _set_stream_error(
+        self, name: str, error: BaseException, *, source_seq: int | None = None
+    ) -> None:
+        with self._condition:
+            state = self._streams[name]
+            if source_seq is not None:
+                state.last_source_seq = source_seq
+            state.last_error = f"{type(error).__name__}: {error}"
+            state.error_monotonic_s = time.perf_counter()
+            self._condition.notify_all()
 
     def _handler_type(self) -> type[BaseHTTPRequestHandler]:
         preview = self
@@ -259,7 +244,11 @@ class CameraWebPreview:
         streams: dict[str, Any] = {}
         with self._condition:
             for name, state in self._streams.items():
-                age = None if state.source_monotonic_s is None else max(0.0, now - state.source_monotonic_s)
+                age = (
+                    None
+                    if state.source_monotonic_s is None
+                    else max(0.0, now - state.source_monotonic_s)
+                )
                 times = list(state.encode_times)
                 fps = 0.0
                 if len(times) >= 2 and times[-1] > times[0]:
@@ -267,15 +256,23 @@ class CameraWebPreview:
                 streams[name] = {
                     "source": state.source,
                     "ready": state.jpeg is not None,
+                    "fresh": age is not None and age <= self.max_source_age_s,
                     "age_s": None if age is None else round(age, 3),
                     "preview_fps": round(fps, 2),
                     "source_seq": state.last_source_seq,
+                    "error": state.last_error,
                     "overlay_roi_xywh": (
-                        None if state.overlay_roi is None else list(state.overlay_roi.xywh)
+                        None
+                        if state.overlay_roi is None
+                        else list(state.overlay_roi.xywh)
                     ),
                 }
-        body = json.dumps({"ok": all(item["ready"] for item in streams.values()), "streams": streams}).encode()
-        handler.send_response(HTTPStatus.OK)
+        ok = all(
+            item["ready"] and item["fresh"] and item["error"] is None
+            for item in streams.values()
+        )
+        body = json.dumps({"ok": ok, "streams": streams}).encode()
+        handler.send_response(HTTPStatus.OK if ok else HTTPStatus.SERVICE_UNAVAILABLE)
         handler.send_header("Content-Type", "application/json")
         handler.send_header("Content-Length", str(len(body)))
         handler.send_header("Cache-Control", "no-store")
@@ -308,10 +305,19 @@ class CameraWebPreview:
                 with self._condition:
                     state = self._streams[name]
                     self._condition.wait_for(
-                        lambda: self._stop.is_set() or (state.jpeg is not None and state.encoded_seq != last_seq),
+                        lambda: (
+                            self._stop.is_set()
+                            or (
+                                state.jpeg is not None and state.encoded_seq != last_seq
+                            )
+                        ),
                         timeout=2.0,
                     )
-                    if self._stop.is_set() or state.jpeg is None or state.encoded_seq == last_seq:
+                    if (
+                        self._stop.is_set()
+                        or state.jpeg is None
+                        or state.encoded_seq == last_seq
+                    ):
                         continue
                     jpeg = state.jpeg
                     last_seq = state.encoded_seq
@@ -330,6 +336,11 @@ def color_from_frameset(value: Any) -> np.ndarray:
 
 def color_from_bgr(value: Any) -> np.ndarray:
     return value
+
+
+def _reader_exception(reader: Any) -> BaseException | None:
+    getter = getattr(reader, "exception", None)
+    return getter() if callable(getter) else None
 
 
 _DASHBOARD_HTML = """<!doctype html>

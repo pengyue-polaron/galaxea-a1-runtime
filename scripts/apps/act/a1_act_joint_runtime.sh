@@ -2,13 +2,15 @@
 set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+source "${ROOT}/scripts/runtime/a1_config.sh"
 JOINT_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
-CONFIG_PATH="${ROOT}/configs/deployments/act_joint.toml"
+CONFIG_PATH=""
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
-    echo "Usage: $0 --config <path> <start|services|tmux|stop|doctor|status|logs>" >&2
+    a1_fail "--config requires a path."
+    a1_usage "$0 --config <path> <start|services|tmux|stop|doctor|status|logs>" >&2
     exit 2
   fi
   CONFIG_PATH="$2"
@@ -20,25 +22,26 @@ if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="python3"
 fi
 
-eval "$(
+config_args=(--repo-root "${ROOT}" --shell)
+if [[ -n "${CONFIG_PATH}" ]]; then
+  config_args+=("${CONFIG_PATH}")
+fi
+a1_load_shell_config env \
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.apps.act.config \
-    --repo-root "${ROOT}" \
-    --shell \
-    "${CONFIG_PATH}"
-)"
+    "${config_args[@]}"
 export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 
 check_act_app() {
   if [[ "${DEPLOYMENT_READY}" != "1" ]]; then
-    echo "[FAIL] ACT deployment_ready=false; register and review the new square-AgentView checkpoint first." >&2
+    a1_fail "ACT deployment_ready=false; register and review the new square-AgentView checkpoint first."
     exit 2
   fi
   if [[ ! -d "${CHECKPOINT}" ]]; then
-    echo "[FAIL] ACT checkpoint not found: ${CHECKPOINT}" >&2
+    a1_fail "ACT checkpoint not found: ${CHECKPOINT}"
     exit 2
   fi
   if [[ "${WRIST_BACKEND}" == "v4l2" && "${WRIST_CAMERA}" != "auto" && ! -e "${WRIST_CAMERA}" ]]; then
-    echo "[FAIL] Wrist camera not found: ${WRIST_CAMERA}" >&2
+    a1_fail "Wrist camera not found: ${WRIST_CAMERA}"
     exit 2
   fi
 }
@@ -46,38 +49,28 @@ check_act_app() {
 joint_runtime_env() {
   env \
     A1_RUNTIME_PREFIX="${PREFIX}" \
-    A1_TRACKER_NODE="/jointTracker_demo_node" \
+    A1_TRACKER_NODE="${JOINT_TRACKER_NODE}" \
     "$@"
 }
 
 start_services() {
-  echo "Using ACT config: ${CONFIG_PATH}"
+  a1_info "Config: ${CONFIG_PATH}"
   joint_runtime_env "${JOINT_RUNTIME}" services
 }
 
 start_tmux() {
   check_act_app
-  echo "Using ACT config: ${CONFIG_PATH}"
+  a1_info "Config: ${CONFIG_PATH}"
   local bridge_command=(
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/act/act_joint_policy_bridge.py"
-    "${BRIDGE_ARGS[@]}"
+    --config "${CONFIG_PATH}"
   )
   local bridge_command_q
   printf -v bridge_command_q "%q " "${bridge_command[@]}"
   a1_tmux_start "${SESSION}" "${ROOT}" \
     "export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo ACT_BRIDGE_EXIT=\$rc; exec bash"
-  sleep 4
-  if ! a1_tmux_has_session "${SESSION}"; then
-    echo "[FAIL] tmux session exited during startup." >&2
-    exit 2
-  fi
-  local pane
-  pane="$(a1_tmux_capture "${SESSION}" 80 || true)"
-  printf "%s\n" "${pane}"
-  if grep -q "ACT_BRIDGE_EXIT=" <<<"${pane}"; then
-    echo "[FAIL] ACT bridge exited during startup." >&2
-    exit 2
-  fi
+  a1_tmux_verify_startup \
+    "${SESSION}" "ACT_BRIDGE_EXIT=" "ACT bridge" "${TMUX_STARTUP_GRACE_S}"
 }
 
 doctor() {
@@ -85,24 +78,23 @@ doctor() {
   joint_runtime_env "${JOINT_RUNTIME}" doctor "${args[@]}"
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/act/a1_act_doctor.py" \
-      --checkpoint "${CHECKPOINT}" \
-      --wrist-backend "${WRIST_BACKEND}" \
-      --wrist-serial "${WRIST_SERIAL}" \
-      --wrist-camera "${WRIST_CAMERA}" \
+      --config "${CONFIG_PATH}" \
       "${args[@]}"
 }
 
 stop_runtime() {
   a1_tmux_stop "${SESSION}"
   joint_runtime_env "${JOINT_RUNTIME}" stop
-  echo "ACT A1 joint bridge stopped."
+  a1_success "ACT A1 joint bridge stopped."
 }
 
 status() {
-  joint_runtime_env "${JOINT_RUNTIME}" status
+  local rc=0
+  joint_runtime_env "${JOINT_RUNTIME}" status || rc=$?
   echo
-  echo "tmux:"
-  a1_tmux_status "${SESSION}"
+  a1_info "ACT tmux sessions"
+  a1_tmux_status "${SESSION}" || rc=$?
+  return "${rc}"
 }
 
 case "${1:-help}" in
@@ -111,7 +103,8 @@ case "${1:-help}" in
     start_services
     start_tmux
     echo
-    echo "Attach with: tmux attach -t ${SESSION}"
+    a1_success "ACT runtime started."
+    a1_info "Attach with: tmux attach -t ${SESSION}"
     ;;
   services)
     start_services
@@ -135,9 +128,8 @@ case "${1:-help}" in
     a1_tmux_capture "${SESSION}" "${A1_LOG_TAIL:-120}" 2>&1 || true
     ;;
   *)
+    a1_usage "$0 [--config PATH] <start|services|tmux|stop|doctor|status|logs>"
     cat <<EOF
-Usage: $0 [--config configs/deployments/act_joint.toml] <start|services|tmux|stop|doctor|status|logs>
-
   start     Start A1 joint runtime, then open the interactive ACT bridge tmux
   services  Start only ROS, A1 driver, jointTracker, and locked relay
   tmux      Start only the interactive ACT bridge
@@ -149,5 +141,9 @@ Usage: $0 [--config configs/deployments/act_joint.toml] <start|services|tmux|sto
 Config:
   ${CONFIG_PATH}
 EOF
+    if [[ "${1:-help}" != "help" && "${1:-}" != "-h" && "${1:-}" != "--help" ]]; then
+      a1_fail "Unknown ACT command: ${1:-}"
+      exit 2
+    fi
     ;;
 esac

@@ -10,18 +10,17 @@ from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopCon
 
 
 def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
-    if home.leader is None or not home.leader.enabled:
+    if not home.leader.enabled:
         progress.update("Leader", 100)
         return
-    if home.leader_motion is None:
-        raise RuntimeError("leader_motion is required when leader reset is enabled")
     leader_home = home.leader
     motion = home.leader_motion
+    leader_config = leader_home.config
     leader = A1SOLeader(
         SOLeaderTeleopConfig(
-            id=leader_home.id,
-            port=leader_home.port,
-            use_degrees=leader_home.use_degrees,
+            id=leader_config.id,
+            port=leader_config.port,
+            use_degrees=leader_config.use_degrees,
         )
     )
     leader.connect(calibrate=False)

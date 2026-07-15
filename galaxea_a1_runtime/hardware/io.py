@@ -24,28 +24,25 @@ class A1Observation:
 
 class A1HardwareIO(Protocol):
     @property
-    def is_connected(self) -> bool:
-        ...
+    def is_connected(self) -> bool: ...
 
-    def connect(self) -> None:
-        ...
+    def connect(self) -> None: ...
 
-    def disconnect(self) -> None:
-        ...
+    def disconnect(self) -> None: ...
 
-    def get_observation(self) -> A1Observation:
-        ...
+    def get_observation(self) -> A1Observation: ...
 
-    def send_runtime_action(self, action: RuntimeAction) -> RuntimeAction:
-        ...
+    def send_runtime_action(self, action: RuntimeAction) -> RuntimeAction: ...
 
 
-class NullA1HardwareIO:
+class InMemoryA1HardwareIO:
     """In-memory IO adapter for static tests and dry runs."""
 
     def __init__(self, observation: A1Observation | None = None):
         self._connected = False
-        self._observation = observation or A1Observation(state=(0.0,) * len(DEFAULT_STATE_NAMES))
+        self._observation = observation or A1Observation(
+            state=(0.0,) * len(DEFAULT_STATE_NAMES)
+        )
         self.last_action: RuntimeAction | None = None
 
     @property

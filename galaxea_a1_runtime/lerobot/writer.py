@@ -59,7 +59,9 @@ class LeRobotV3DatasetWriter:
     def open(self) -> None:
         if self.dataset is not None:
             return
-        self.dataset = create_lerobot_dataset(config=self.config, contract=self.contract)
+        self.dataset = create_lerobot_dataset(
+            config=self.config, contract=self.contract
+        )
 
     def add_frame(
         self,

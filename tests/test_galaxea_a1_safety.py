@@ -28,7 +28,8 @@ def test_relay_accepts_idle_timeout_code_for_arm_joints():
     decision = validate_relay_inputs(
         healthy_inputs(motor_error_codes=(IDLE_TIMEOUT_CODE,) * 7),
         arm_joints=6,
-        max_age=0.25,
+        max_input_age=0.25,
+        max_status_age=1.0,
     )
 
     assert decision.allowed is True
@@ -39,7 +40,8 @@ def test_relay_blocks_extra_motor_error_bits():
     decision = validate_relay_inputs(
         healthy_inputs(motor_error_codes=(0, 0, 68, 0, 0, 0, 0)),
         arm_joints=6,
-        max_age=0.25,
+        max_input_age=0.25,
+        max_status_age=1.0,
     )
 
     assert decision.allowed is False
@@ -47,7 +49,9 @@ def test_relay_blocks_extra_motor_error_bits():
 
 
 def test_relay_locked_is_fail_closed_state():
-    decision = validate_relay_inputs(healthy_inputs(enabled=False), max_age=0.25)
+    decision = validate_relay_inputs(
+        healthy_inputs(enabled=False), max_input_age=0.25, max_status_age=1.0
+    )
 
     assert decision.allowed is False
     assert decision.reason == "locked"

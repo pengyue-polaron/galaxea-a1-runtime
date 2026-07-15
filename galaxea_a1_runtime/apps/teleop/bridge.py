@@ -4,7 +4,6 @@
 
 from __future__ import annotations
 
-import argparse
 import signal
 import sys
 import threading
@@ -25,45 +24,29 @@ from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
-from galaxea_a1_runtime.gripper import denormalize_stroke
+from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_source_position
+from galaxea_a1_runtime.console import info
 from galaxea_a1_runtime.runtime.relay import RelayMonitor
 from galaxea_a1_runtime.runtime.ros_feedback import (
     A1JointStateCache,
     StagedCommandMonitor,
 )
-from galaxea_a1_runtime.teleop import (
-    JointMappingConfig,
-    detect_leader_joint_keys,
-    map_leader_joints_to_a1,
-    parse_csv_floats,
-    parse_csv_strings,
-)
+from galaxea_a1_runtime.teleop import detect_leader_joint_keys, map_leader_joints_to_a1
 from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
+from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
 def log(message: str) -> None:
-    print(message, flush=True)
+    info(message.removeprefix("[teleop bridge] "))
 
 
-def main() -> int:
-    args = parse_args()
-    if args.hz <= 0:
-        raise ValueError("--hz must be positive")
-
-    dof = args.dof
-    target_names = parse_csv_strings(
-        args.target_joint_names, dof, "--target-joint-names"
-    )
-    mapping = JointMappingConfig(
-        relative=args.relative,
-        input_degrees=args.input_degrees,
-        scale=parse_csv_floats(args.scale, dof, "--scale"),
-        sign=parse_csv_floats(args.sign, dof, "--sign"),
-        bias_rad=parse_csv_floats(args.bias_rad, dof, "--bias-rad"),
-        lower_limits=parse_csv_floats(args.lower_limits, dof, "--lower-limits"),
-        upper_limits=parse_csv_floats(args.upper_limits, dof, "--upper-limits"),
-    )
-    mapping.validate(dof)
+def run(config: TeleopConfig) -> int:
+    system = config.system
+    topics = system.topics
+    bridge = config.bridge
+    dof = bridge.dof
+    target_names = system.joint_safety.names
+    mapping = bridge.mapping
 
     rospy.init_node("a1_so100_joint_bridge", anonymous=False, disable_signals=True)
     stop_requested = threading.Event()
@@ -74,45 +57,45 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
     a1_state = A1JointStateCache(target_names)
-    relay = RelayMonitor(args.max_relay_status_age)
+    relay = RelayMonitor(system.relay.max_status_age_s)
     staged = StagedCommandMonitor()
-    rospy.Subscriber(
-        args.joint_states_topic, JointState, a1_state.callback, queue_size=10
-    )
-    rospy.Subscriber(args.relay_status_topic, String, relay.callback, queue_size=10)
-    rospy.Subscriber(
-        args.staged_command_topic, arm_control, staged.callback, queue_size=10
-    )
-    target_pub = rospy.Publisher(args.target_topic, JointState, queue_size=10)
+    rospy.Subscriber(topics.joint_states, JointState, a1_state.callback, queue_size=10)
+    rospy.Subscriber(topics.relay_status, String, relay.callback, queue_size=10)
+    rospy.Subscriber(topics.staged_command, arm_control, staged.callback, queue_size=10)
+    target_pub = rospy.Publisher(topics.joint_target, JointState, queue_size=10)
     motion_enable_pub = rospy.Publisher(
-        args.motion_enable_topic, Bool, queue_size=1, latch=True
+        topics.motion_enable, Bool, queue_size=1, latch=True
     )
     gripper_pub = rospy.Publisher(
-        args.gripper_topic, gripper_position_control, queue_size=10
+        topics.gripper_target, gripper_position_control, queue_size=10
     )
 
     leader = A1SOLeader(
         SOLeaderTeleopConfig(
-            id=args.leader_id,
-            port=args.leader_port,
-            use_degrees=args.leader_use_degrees,
+            id=config.leader.id,
+            port=config.leader.port,
+            use_degrees=config.leader.use_degrees,
         )
     )
     leader.connect(calibrate=False)
 
     try:
-        rate = rospy.Rate(args.hz)
+        rate = rospy.Rate(bridge.hz)
         log("[teleop bridge] waiting for leader and A1 joint feedback ...")
         leader_action0 = leader.get_action()
         leader_keys = detect_leader_joint_keys(leader_action0, dof)
-        if args.gripper_enabled and args.gripper_source_key not in leader_action0:
+        if config.gripper.enabled and config.gripper.source_key not in leader_action0:
             raise RuntimeError(
-                f"gripper key {args.gripper_source_key!r} not in leader action keys: "
+                f"gripper key {config.gripper.source_key!r} not in leader action keys: "
                 f"{sorted(leader_action0)}"
             )
         leader_start = tuple(float(leader_action0[key]) for key in leader_keys)
         log(f"[teleop bridge] leader_keys={list(leader_keys)}")
-        a1_start = wait_for_a1_start(a1_state, timeout_s=args.a1_state_timeout)
+        a1_start = wait_for_a1_start(
+            a1_state,
+            timeout_s=bridge.a1_state_timeout_s,
+            topic=topics.joint_states,
+        )
         log(f"[teleop bridge] target_names={list(target_names)}")
         log(f"[teleop bridge] a1_start={[round(value, 4) for value in a1_start]}")
         log("[teleop bridge] publishing first target while relay is locked")
@@ -129,12 +112,16 @@ def main() -> int:
             first_target,
             staged,
             dof=dof,
-            timeout_s=args.a1_state_timeout,
-            hz=min(args.hz, 30.0),
-            tolerance_rad=args.initial_alignment_tolerance,
+            timeout_s=bridge.a1_state_timeout_s,
+            hz=bridge.hz,
+            tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
         )
         log("[teleop bridge] tracker staged output aligned with first target")
-        arm_relay(motion_enable_pub, relay, timeout_s=args.relay_enable_timeout)
+        arm_relay(
+            motion_enable_pub,
+            relay,
+            timeout_s=system.relay.enable_timeout_s,
+        )
         log("[teleop bridge] relay ACTIVE; teleop is live")
 
         last_loop_log = time.monotonic()
@@ -157,8 +144,8 @@ def main() -> int:
                 config=mapping,
             )
             stamp = publish_target(target_pub, target_names, target)
-            if args.gripper_enabled:
-                publish_gripper(gripper_pub, action, args, stamp)
+            if config.gripper.enabled:
+                publish_gripper(gripper_pub, action, config, stamp)
             loop_count += 1
             now = time.monotonic()
             if now - last_loop_log >= 2.0:
@@ -177,7 +164,7 @@ def main() -> int:
 
 
 def wait_for_a1_start(
-    cache: A1JointStateCache, *, timeout_s: float
+    cache: A1JointStateCache, *, timeout_s: float, topic: str
 ) -> tuple[float, ...]:
     deadline = time.monotonic() + timeout_s
     while not rospy.is_shutdown() and time.monotonic() < deadline:
@@ -185,7 +172,7 @@ def wait_for_a1_start(
         if positions is not None:
             return positions
         time.sleep(0.05)
-    raise RuntimeError(f"No usable /joint_states_host within {timeout_s:.1f}s")
+    raise RuntimeError(f"No usable {topic} within {timeout_s:.1f}s")
 
 
 def publish_target(pub: Any, names: tuple[str, ...], target: tuple[float, ...]) -> Any:
@@ -245,74 +232,20 @@ def arm_relay(pub: Any, relay: RelayMonitor, *, timeout_s: float) -> None:
 
 
 def publish_gripper(
-    pub: Any, leader_action: dict[str, float], args: argparse.Namespace, stamp: Any
+    pub: Any, leader_action: dict[str, float], config: TeleopConfig, stamp: Any
 ) -> None:
-    pct = max(0.0, min(100.0, float(leader_action[args.gripper_source_key])))
-    if args.gripper_invert:
-        pct = 100.0 - pct
-    normalized = pct / 100.0
+    normalized = normalize_source_position(
+        leader_action[config.gripper.source_key],
+        source_min=config.gripper.source_min,
+        source_max=config.gripper.source_max,
+        invert=config.gripper.invert,
+    )
     stroke = denormalize_stroke(
         normalized,
-        stroke_min_mm=args.gripper_min_stroke_mm,
-        stroke_max_mm=args.gripper_max_stroke_mm,
+        stroke_min_mm=config.system.gripper.stroke_min_mm,
+        stroke_max_mm=config.system.gripper.stroke_max_mm,
     )
     msg = gripper_position_control()
     msg.header.stamp = stamp
     msg.gripper_stroke = float(stroke)
     pub.publish(msg)
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="SO leader -> staged A1 joint teleoperation bridge"
-    )
-    parser.add_argument("--leader-port", required=True)
-    parser.add_argument("--leader-id", default="my_leader")
-    parser.add_argument(
-        "--leader-use-degrees", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument("--hz", type=float, default=60.0)
-    parser.add_argument("--dof", type=int, default=6)
-    parser.add_argument("--joint-states-topic", default="/joint_states_host")
-    parser.add_argument("--target-topic", default="/arm_joint_target_position")
-    parser.add_argument(
-        "--staged-command-topic", default="/arm_joint_command_a1_staged"
-    )
-    parser.add_argument(
-        "--target-joint-names",
-        default="arm_joint1,arm_joint2,arm_joint3,arm_joint4,arm_joint5,arm_joint6",
-    )
-    parser.add_argument(
-        "--relative", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument(
-        "--input-degrees", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument("--scale", default="1,1,1,1,1,1")
-    parser.add_argument("--sign", default="-1,1,1,-1,1,-1")
-    parser.add_argument("--bias-rad", default="0,0,0,0,0,0")
-    parser.add_argument(
-        "--lower-limits", default="-2.8798,0,-3.3161,-2.8798,-1.6581,-2.8798"
-    )
-    parser.add_argument(
-        "--upper-limits", default="2.8798,3.2289,0,2.8798,1.6581,2.8798"
-    )
-    parser.add_argument("--motion-enable-topic", default="/a1_arm_motion_enable")
-    parser.add_argument("--relay-status-topic", default="/a1_arm_relay_status")
-    parser.add_argument("--relay-enable-timeout", type=float, default=2.0)
-    parser.add_argument("--max-relay-status-age", type=float, default=1.0)
-    parser.add_argument("--a1-state-timeout", type=float, default=10.0)
-    parser.add_argument("--initial-alignment-tolerance", type=float, default=0.05)
-    parser.add_argument(
-        "--gripper-enabled", action=argparse.BooleanOptionalAction, default=True
-    )
-    parser.add_argument("--gripper-source-key", default="gripper.pos")
-    parser.add_argument("--gripper-topic", required=True)
-    parser.add_argument("--gripper-min-stroke-mm", type=float, required=True)
-    parser.add_argument("--gripper-max-stroke-mm", type=float, required=True)
-    parser.add_argument("--gripper-invert", action="store_true", default=False)
-    return parser.parse_args()
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

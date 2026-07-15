@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Sequence
@@ -13,33 +12,43 @@ import torch
 from lerobot.configs import PreTrainedConfig
 from lerobot.policies import get_policy_class, make_pre_post_processors
 
+from galaxea_a1_runtime.apps.act.config_schema import ActConfig
+from galaxea_a1_runtime.console import info, warning
+from galaxea_a1_runtime.configuration.cameras import required_front_roi
+from galaxea_a1_runtime.schema import (
+    FRONT_IMAGE_KEY,
+    JOINT_ACTION_NAMES,
+    WRIST_IMAGE_KEY,
+)
+
 
 def log(message: str) -> None:
-    print(message, flush=True)
+    if message.startswith("[ACT safety]"):
+        warning(message.removeprefix("[ACT safety] "))
+    else:
+        info(message.removeprefix("[ACT] "))
 
 
 class ActPolicyRunner:
-    def __init__(self, args: argparse.Namespace):
-        checkpoint = Path(args.checkpoint).expanduser().resolve()
+    def __init__(self, config: ActConfig):
+        checkpoint = Path(config.policy.checkpoint).expanduser().resolve()
         if not checkpoint.is_dir():
             raise FileNotFoundError(f"ACT checkpoint not found: {checkpoint}")
         log(f"[ACT] Loading checkpoint: {checkpoint}")
         cfg = PreTrainedConfig.from_pretrained(
             checkpoint,
-            cli_overrides=[f"--device={args.device}"],
+            cli_overrides=[f"--device={config.policy.device}"],
         )
-        if args.disable_backbone_download and hasattr(
+        if config.policy.disable_backbone_download and hasattr(
             cfg, "pretrained_backbone_weights"
         ):
             cfg.pretrained_backbone_weights = None
-        self.front_width, self.front_height = policy_image_hw(
-            cfg, "observation.images.front"
-        )
-        self.wrist_width, self.wrist_height = policy_image_hw(
-            cfg, "observation.images.wrist"
-        )
-        configured_front = (args.cam0_crop_width, args.cam0_crop_height)
-        configured_wrist = (args.cam_width, args.cam_height)
+        self.front_width, self.front_height = policy_image_hw(cfg, FRONT_IMAGE_KEY)
+        self.wrist_width, self.wrist_height = policy_image_hw(cfg, WRIST_IMAGE_KEY)
+        wrist = config.system.cameras.wrist
+        front_roi = required_front_roi(config.system.cameras)
+        configured_front = (front_roi.width, front_roi.height)
+        configured_wrist = (wrist.width, wrist.height)
         if (self.front_width, self.front_height) != configured_front:
             raise RuntimeError(
                 "ACT checkpoint front image contract is "
@@ -77,17 +86,17 @@ class ActPolicyRunner:
         *,
         front_bgr: np.ndarray,
         wrist_bgr: np.ndarray,
-        state7: Sequence[float],
+        state: Sequence[float],
     ) -> np.ndarray:
         obs = {
-            "observation.images.front": bgr_to_chw_tensor(
+            FRONT_IMAGE_KEY: bgr_to_chw_tensor(
                 front_bgr, width=self.front_width, height=self.front_height
             ),
-            "observation.images.wrist": bgr_to_chw_tensor(
+            WRIST_IMAGE_KEY: bgr_to_chw_tensor(
                 wrist_bgr, width=self.wrist_width, height=self.wrist_height
             ),
             "observation.state": torch.tensor(
-                tuple(float(v) for v in state7), dtype=torch.float32
+                tuple(float(v) for v in state), dtype=torch.float32
             ),
         }
         batch = self.preprocessor(obs)
@@ -99,7 +108,11 @@ class ActPolicyRunner:
         with torch.inference_mode(), amp_context:
             chunk = self.policy.predict_action_chunk(batch)
             chunk = self.postprocessor(chunk)
-        if chunk.ndim != 3 or chunk.shape[0] != 1 or chunk.shape[-1] != 7:
+        if (
+            chunk.ndim != 3
+            or chunk.shape[0] != 1
+            or chunk.shape[-1] != len(JOINT_ACTION_NAMES)
+        ):
             raise RuntimeError(
                 f"ACT returned unexpected action shape: {tuple(chunk.shape)}"
             )

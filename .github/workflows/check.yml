@@ -1,0 +1,23 @@
+name: check
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  static:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+      - uses: extractions/setup-just@v3
+      - name: Install Python
+        run: uv python install 3.12
+      - name: Install project
+        env:
+          UV_TORCH_BACKEND: cpu
+        run: uv sync --frozen --python 3.12
+      - name: Check
+        run: just check

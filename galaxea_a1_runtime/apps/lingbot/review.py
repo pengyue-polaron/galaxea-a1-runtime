@@ -6,10 +6,11 @@ import numpy as np
 
 from galaxea_a1_runtime.apps.eef_bridge import format_xyz_direction
 from galaxea_a1_runtime.apps.lingbot.actions import (
-    LingBotActionConfig,
+    LingBotActionTransformConfig,
     gripper_stroke_from_norm,
 )
 from galaxea_a1_runtime.apps.lingbot.episode_state import LingBotEpisodeState
+from galaxea_a1_runtime.console import info, step
 
 
 class LingBotActionReviewer:
@@ -17,7 +18,7 @@ class LingBotActionReviewer:
         self,
         *,
         state: LingBotEpisodeState,
-        action_config: LingBotActionConfig,
+        action_config: LingBotActionTransformConfig,
         review_deadband_m: float,
         servo_gain: float,
         orientation_mode: str,
@@ -50,15 +51,16 @@ class LingBotActionReviewer:
         raw_delta = None if current is None else raw_xyz - current
         gripper_mm = gripper_stroke_from_norm(float(safe_action[7]), self.action_config)
         notes = self.state.clamp_notes(model_action)
-        print(
-            f"[Next] call={call_index + 1} frame={frame_index} step={step_index} "
+        step(
+            f"LingBot action call={call_index + 1} frame={frame_index} "
+            f"step={step_index} "
             f"model={np.round(model_action, 4).tolist()} "
             f"absolute={np.round(absolute, 4).tolist()} "
             f"safe={np.round(safe_action, 4).tolist()}"
         )
         if current is not None:
-            print(
-                "       current_xyz="
+            info(
+                "current_xyz="
                 f"{np.round(current, 4).tolist()} "
                 f"raw_delta_cm={np.round(raw_delta * 100.0, 2).tolist()} "
                 f"safe_delta_cm={np.round(safe_delta * 100.0, 2).tolist()} "
@@ -69,14 +71,14 @@ class LingBotActionReviewer:
             tracker_command = self.state.tracker_command(safe_action)
             if not np.allclose(tracker_command[:3], safe_action[:3], atol=1e-5):
                 tracker_delta = tracker_command[:3] - current
-                print(
-                    "       tracker_cmd_xyz="
+                info(
+                    "tracker_cmd_xyz="
                     f"{np.round(tracker_command[:3], 4).tolist()} "
                     f"tracker_cmd_delta_cm={np.round(tracker_delta * 100.0, 2).tolist()} "
                     f"servo_gain={self.servo_gain:.2f}"
                 )
-        print(
-            f"       gripper_norm={safe_action[7]:.3f} "
+        info(
+            f"gripper_norm={safe_action[7]:.3f} "
             f"gripper_mm={gripper_mm:.1f} "
             f"orientation_mode={self.orientation_mode} execute={self.execute} "
             f"clamp={','.join(notes) if notes else 'none'}"

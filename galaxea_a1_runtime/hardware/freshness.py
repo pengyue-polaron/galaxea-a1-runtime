@@ -27,6 +27,11 @@ class LatestMessageCache(Generic[MessageT]):
 
     callback = set
 
+    def clear(self) -> None:
+        with self._lock:
+            self._msg = None
+            self._updated_monotonic = None
+
     def snapshot(self) -> tuple[MessageT | None, float | None]:
         """Return the value and its monotonic update time atomically."""
         with self._lock:

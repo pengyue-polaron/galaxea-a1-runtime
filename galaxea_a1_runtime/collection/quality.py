@@ -31,7 +31,9 @@ def find_joint_action_step_violation(
 ) -> ActionStepViolation | None:
     if max_step_rad <= 0:
         raise ValueError("max_step_rad must be positive")
-    joint_indices = tuple(index for index, name in enumerate(action_names) if name.startswith("joint_"))
+    joint_indices = tuple(
+        index for index, name in enumerate(action_names) if name.startswith("joint_")
+    )
     if not joint_indices:
         raise ValueError("action_names must contain at least one joint_* action")
 

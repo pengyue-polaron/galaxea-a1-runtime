@@ -59,4 +59,6 @@ def create_lerobot_dataset(
 
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
 
-    return LeRobotDataset.create(**build_dataset_create_kwargs(config=config, contract=contract))
+    return LeRobotDataset.create(
+        **build_dataset_create_kwargs(config=config, contract=contract)
+    )

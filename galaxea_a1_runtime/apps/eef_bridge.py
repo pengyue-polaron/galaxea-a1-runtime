@@ -19,16 +19,24 @@ __all__ = [
 def pose_msg_to_xyz_quat(
     msg: Any, *, min_quat_norm: float = 1e-9
 ) -> tuple[np.ndarray, np.ndarray] | None:
+    if not np.isfinite(min_quat_norm) or min_quat_norm <= 0:
+        raise ValueError("min_quat_norm must be finite and positive")
     if msg is None:
         return None
-    position = msg.pose.position
-    orientation = msg.pose.orientation
-    xyz = np.array([position.x, position.y, position.z], dtype=np.float64)
-    quat = np.array(
-        [orientation.x, orientation.y, orientation.z, orientation.w], dtype=np.float64
-    )
-    norm = np.linalg.norm(quat)
-    if norm < min_quat_norm:
+    try:
+        position = msg.pose.position
+        orientation = msg.pose.orientation
+        xyz = np.array([position.x, position.y, position.z], dtype=np.float64)
+        quat = np.array(
+            [orientation.x, orientation.y, orientation.z, orientation.w],
+            dtype=np.float64,
+        )
+    except (AttributeError, TypeError, ValueError, OverflowError):
+        return None
+    if not np.all(np.isfinite(xyz)) or not np.all(np.isfinite(quat)):
+        return None
+    norm = float(np.linalg.norm(quat))
+    if not np.isfinite(norm) or norm < min_quat_norm:
         return None
     return xyz, quat / norm
 
@@ -40,6 +48,10 @@ def condition_state_from_action8(
     action_per_frame: int,
 ) -> np.ndarray:
     action = np.asarray(action8, dtype=np.float64).reshape(8)
+    if not np.all(np.isfinite(action)):
+        raise ValueError("condition action must contain only finite values")
+    if frame_chunk_size <= 0 or action_per_frame <= 0:
+        raise ValueError("condition dimensions must be positive")
     return (
         np.broadcast_to(
             action[:, None, None],
@@ -72,7 +84,7 @@ class EefCommandPublisher:
     gripper_msg_type: Any
     command_frame: str
     gripper_to_stroke: Callable[[float], float]
-    execute: bool = True
+    execute: bool
     active_pose_target: Any | None = None
     active_pose_lock: threading.Lock = field(default_factory=threading.Lock)
 

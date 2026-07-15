@@ -1,35 +1,38 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
-import argparse
-import os
 from pathlib import Path
 import subprocess
 import sys
-import tomllib
 
+from galaxea_a1_runtime.apps.act.config import load_act_config
+from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.configuration.paths import ACT_CONFIG, LINGBOT_CONFIG
+from galaxea_a1_runtime.console import ArgumentParser, emit, failure, info, success
 
-SLOTS = {
-    "lingbot-base": Path("base/lingbot-va-base"),
-    "lingbot-a1-agentview-square": Path(
-        "checkpoints/lingbot/a1_agentview_square/latest"
-    ),
-    "act-a1-agentview-square": Path(
-        "checkpoints/act/a1_agentview_square/latest"
-    ),
-}
 MAX_TRACKED_BYTES = 100 * 1024 * 1024
 
 
-def _toml(path: Path) -> dict:
-    return tomllib.loads(path.read_text())
+def configured_slots(repo: Path) -> dict[str, Path]:
+    """Resolve registry destinations from deployment configs, the only path source."""
 
-
-def _configured_path(repo: Path, raw: str) -> Path:
-    path = Path(raw).expanduser()
-    if path.is_absolute():
-        return path
-    return Path(os.path.abspath(repo / path))
+    lingbot = load_lingbot_config(repo / LINGBOT_CONFIG, repo_root=repo)
+    act = load_act_config(repo / ACT_CONFIG, repo_root=repo)
+    model_root = (repo / "models").resolve()
+    configured = {
+        "lingbot-base": lingbot.policy_server.base_model,
+        "lingbot-a1-agentview-square": lingbot.policy_server.checkpoint,
+        "act-a1-agentview-square": act.policy.checkpoint,
+    }
+    slots: dict[str, Path] = {}
+    for name, path in configured.items():
+        try:
+            slots[name] = path.relative_to(model_root)
+        except ValueError as exc:
+            raise ValueError(
+                f"model slot {name} must be configured under models/: {path}"
+            ) from exc
+    return slots
 
 
 def _human_bytes(size: int) -> str:
@@ -46,25 +49,24 @@ class Reporter:
         self.failures = 0
 
     def pass_(self, name: str, detail: str) -> None:
-        print(f"[PASS] {name:<24} {detail}")
+        emit("PASS", f"{name:<24} {detail}")
 
     def info(self, name: str, detail: str) -> None:
-        print(f"[INFO] {name:<24} {detail}")
+        emit("INFO", f"{name:<24} {detail}")
 
     def fail(self, name: str, detail: str) -> None:
         self.failures += 1
-        print(f"[FAIL] {name:<24} {detail}")
+        emit("FAIL", f"{name:<24} {detail}", stream=sys.stderr)
 
 
 def _require_registry_path(
-    reporter: Reporter, repo: Path, name: str, raw: str
+    reporter: Reporter, repo: Path, name: str, path: Path
 ) -> Path:
-    model_root = Path(os.path.abspath(repo / "models"))
-    path = _configured_path(repo, raw)
+    model_root = (repo / "models").resolve()
     try:
         path.relative_to(model_root)
     except ValueError:
-        reporter.fail(name, f"tracked config must use models/: {raw}")
+        reporter.fail(name, f"tracked config must use models/: {path}")
     else:
         reporter.pass_(f"{name}_path", str(path.relative_to(repo)))
     return path
@@ -136,7 +138,10 @@ def _check_extra_lingbot_checkpoints(
             reporter,
             name,
             checkpoint,
-            ("transformer/config.json", "transformer/diffusion_pytorch_model.safetensors"),
+            (
+                "transformer/config.json",
+                "transformer/diffusion_pytorch_model.safetensors",
+            ),
         )
         weight = checkpoint / "transformer/diffusion_pytorch_model.safetensors"
         if weight.is_file() and weight.stat().st_size != expected_size:
@@ -148,21 +153,24 @@ def _check_extra_lingbot_checkpoints(
 
 def doctor(repo: Path) -> int:
     reporter = Reporter()
-    lingbot = _toml(repo / "configs/deployments/lingbot_va.toml")["policy_server"]
-    act = _toml(repo / "configs/deployments/act_joint.toml")["policy"]
+    lingbot = load_lingbot_config(repo / LINGBOT_CONFIG, repo_root=repo)
+    act = load_act_config(repo / ACT_CONFIG, repo_root=repo)
+    policy = lingbot.policy_server
 
-    base = _require_registry_path(reporter, repo, "lingbot_base", lingbot["base_model"])
+    base = _require_registry_path(reporter, repo, "lingbot_base", policy.base_model)
     checkpoint = _require_registry_path(
-        reporter, repo, "lingbot_checkpoint", lingbot["checkpoint"]
+        reporter, repo, "lingbot_checkpoint", policy.checkpoint
     )
     runtime = _require_registry_path(
-        reporter, repo, "lingbot_runtime", lingbot["model_root"]
+        reporter, repo, "lingbot_runtime", policy.model_root
     )
     act_checkpoint = _require_registry_path(
-        reporter, repo, "act_checkpoint", act["checkpoint"]
+        reporter, repo, "act_checkpoint", act.policy.checkpoint
     )
 
-    _require_directory(reporter, "lingbot_base", base, ("vae", "text_encoder", "tokenizer"))
+    _require_directory(
+        reporter, "lingbot_base", base, ("vae", "text_encoder", "tokenizer")
+    )
     _require_directory(
         reporter,
         "lingbot_checkpoint",
@@ -170,7 +178,7 @@ def doctor(repo: Path) -> int:
         ("transformer/config.json", "transformer/diffusion_pytorch_model.safetensors"),
     )
     weight = checkpoint / "transformer/diffusion_pytorch_model.safetensors"
-    expected_size = int(lingbot["expected_weight_size_bytes"])
+    expected_size = policy.expected_weight_size_bytes
     if weight.is_file() and weight.stat().st_size == expected_size:
         reporter.pass_("lingbot_weight_size", _human_bytes(expected_size))
     elif weight.is_file():
@@ -190,9 +198,9 @@ def doctor(repo: Path) -> int:
 
     _check_git_storage(reporter, repo)
     if reporter.failures:
-        print(f"Model storage doctor failed with {reporter.failures} error(s).")
+        failure(f"Model storage doctor failed with {reporter.failures} error(s).")
         return 1
-    print("Model storage is ready.")
+    success("Model storage is ready.")
     return 0
 
 
@@ -200,28 +208,33 @@ def register(repo: Path, slot: str, source_arg: str) -> int:
     source = Path(source_arg).expanduser().resolve(strict=True)
     if not source.is_dir():
         raise ValueError(f"model source must be a directory: {source}")
-    destination = repo / "models" / SLOTS[slot]
+    slots = configured_slots(repo)
+    if slot not in slots:
+        raise ValueError(
+            f"unknown model slot {slot!r}; expected one of {sorted(slots)}"
+        )
+    destination = repo / "models" / slots[slot]
     destination.parent.mkdir(parents=True, exist_ok=True)
     if destination.is_symlink():
         if destination.resolve(strict=True) != source:
             raise FileExistsError(f"slot already points elsewhere: {destination}")
-        print(f"Model slot already registered: {destination} -> {source}")
+        info(f"Model slot already registered: {destination} -> {source}")
         return 0
     if destination.exists():
         raise FileExistsError(f"refusing to replace existing model slot: {destination}")
     destination.symlink_to(source, target_is_directory=True)
-    print(f"Registered model slot: {destination} -> {source}")
+    success(f"Registered model slot: {destination} -> {source}")
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Manage the ignored local A1 model registry.")
+    parser = ArgumentParser(description="Manage the ignored local A1 model registry.")
     subparsers = parser.add_subparsers(dest="command", required=True)
     doctor_parser = subparsers.add_parser("doctor")
     doctor_parser.add_argument("--repo-root", type=Path, required=True)
     register_parser = subparsers.add_parser("register")
     register_parser.add_argument("--repo-root", type=Path, required=True)
-    register_parser.add_argument("slot", choices=tuple(SLOTS))
+    register_parser.add_argument("slot")
     register_parser.add_argument("source")
     args = parser.parse_args()
     repo = args.repo_root.resolve()
@@ -234,5 +247,5 @@ if __name__ == "__main__":
     try:
         sys.exit(main())
     except (FileExistsError, FileNotFoundError, ValueError) as error:
-        print(f"[FAIL] {error}", file=sys.stderr)
+        failure(str(error))
         sys.exit(2)

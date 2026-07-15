@@ -2,24 +2,27 @@
 set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-SYSTEM_CONFIG_PATH="${A1_SYSTEM_CONFIG_PATH:-${ROOT}/configs/system/a1.toml}"
+source "${ROOT}/scripts/runtime/a1_config.sh"
+SYSTEM_CONFIG_PATH="${A1_SYSTEM_CONFIG_PATH:-}"
 PREFIX="${A1_RUNTIME_PREFIX:-a1-joint-runtime}"
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 if [[ ! -x "${PYTHON_BIN}" ]]; then
   PYTHON_BIN="python3"
 fi
 if [[ "${1:-help}" != "stop" && "${1:-help}" != "logs" ]]; then
-  eval "$(
+  config_args=(--repo-root "${ROOT}" --shell)
+  if [[ -n "${SYSTEM_CONFIG_PATH}" ]]; then
+    config_args+=("${SYSTEM_CONFIG_PATH}")
+  fi
+  a1_load_shell_config env \
     PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.configuration.system \
-      --repo-root "${ROOT}" --shell "${SYSTEM_CONFIG_PATH}"
-  )"
+      "${config_args[@]}"
 fi
 ROSCORE_CONTAINER="${PREFIX}-roscore"
 DRIVER_CONTAINER="${PREFIX}-driver"
 TRACKER_CONTAINER="${PREFIX}-joint-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
-TARGET_TOPIC="${JOINT_TARGET_TOPIC}"
-TRACKER_NODE="${A1_TRACKER_NODE:-/jointTracker_demo_node}"
+TRACKER_NODE="${A1_TRACKER_NODE:-${JOINT_TRACKER_NODE:-}}"
 source "${ROOT}/scripts/runtime/a1_services.sh"
 
 stop_runtime() {
@@ -29,42 +32,39 @@ stop_runtime() {
     "${DRIVER_CONTAINER}" \
     "${ROSCORE_CONTAINER}"
   a1_cleanup_shared_ros_nodes
-  echo "A1 joint execution runtime stopped."
+  a1_success "A1 joint execution runtime stopped."
 }
 
 start_services() {
   local startup_complete=0
   cleanup_failed_start() {
     if [[ "${startup_complete}" != "1" ]]; then
-      echo "[CLEANUP] Startup failed; stopping partial A1 joint runtime." >&2
+      a1_cleanup "Startup failed; stopping partial A1 joint runtime."
       stop_runtime >/dev/null
     fi
   }
   trap cleanup_failed_start ERR
 
-  if [[ ! -e "${SERIAL}" ]]; then
-    echo "[FAIL] ${SERIAL} is missing. Power on the A1 and reconnect USB first." >&2
-    exit 2
-  fi
-
+  a1_info "Config: ${SYSTEM_CONFIG_PATH}"
+  a1_preflight_container_runtime
   stop_runtime >/dev/null
-  echo "[0/4] Ensuring ROS master..."
+  a1_step "0/4 Ensuring ROS master"
   a1_ensure_roscore "${ROSCORE_CONTAINER}"
 
-  echo "[1/4] Starting A1 driver..."
+  a1_step "1/4 Starting A1 driver"
   a1_start_driver "${DRIVER_CONTAINER}"
   a1_wait_valid_joint_feedback "${DRIVER_CONTAINER}" "${JOINT_STATES_TOPIC}"
 
-  echo "[2/4] Starting isolated joint tracker..."
-  a1_container_run "${TRACKER_CONTAINER}" \
-    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} target_topic:=${TARGET_TOPIC}"
+  a1_step "2/4 Starting isolated joint tracker"
+  a1_container_run tracker "${TRACKER_CONTAINER}" \
+    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${JOINT_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${JOINT_TRACKER_NODE}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
 
-  echo "[3/4] Starting fail-closed relay (LOCKED)..."
+  a1_step "3/4 Starting fail-closed relay (LOCKED)"
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  echo "[4/4] Joint runtime services ready."
+  a1_success "4/4 Joint runtime services ready"
   startup_complete=1
   trap - ERR
 }
@@ -79,16 +79,16 @@ doctor() {
 }
 
 status() {
-  echo "Joint runtime containers:"
+  a1_info "Joint runtime containers"
   docker ps -a --format '{{.Names}}\t{{.Status}}' |
-    grep -E "^${PREFIX}-" || echo "no ${PREFIX}-* containers"
+    grep -E "^${PREFIX}-" || a1_info "No ${PREFIX}-* containers."
   echo
-  doctor || true
+  doctor
 }
 
 logs() {
   for name in "${DRIVER_CONTAINER}" "${TRACKER_CONTAINER}" "${RELAY_CONTAINER}" "${ROSCORE_CONTAINER}"; do
-    echo "===== ${name} ====="
+    a1_info "Logs: ${name}"
     docker logs --tail "${A1_LOG_TAIL:-120}" "${name}" 2>&1 || true
   done
 }
@@ -111,9 +111,8 @@ case "${1:-help}" in
     logs
     ;;
   *)
+    a1_usage "$0 <start|services|stop|doctor|status|logs>"
     cat <<EOF
-Usage: $0 <start|services|stop|doctor|status|logs>
-
   start     Start ROS master, A1 driver, isolated joint tracker, and locked relay
   services  Alias for start
   stop      Stop A1 joint execution runtime containers
@@ -126,5 +125,9 @@ Environment:
   A1_RUNTIME_PREFIX=${PREFIX}
   A1_TRACKER_NODE=${TRACKER_NODE}
 EOF
+    if [[ "${1:-help}" != "help" && "${1:-}" != "-h" && "${1:-}" != "--help" ]]; then
+      a1_fail "Unknown joint-runtime command: ${1:-}"
+      exit 2
+    fi
     ;;
 esac

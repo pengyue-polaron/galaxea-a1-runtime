@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from galaxea_a1_runtime.apps.act.config import bridge_argv, load_act_config
+from galaxea_a1_runtime.apps.act.config import load_act_config
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -48,27 +48,3 @@ def test_act_config_locks_safe_runtime_defaults(tmp_path):
     assert config.system.topics.gripper_target == "/a1_gripper_target"
     assert config.system.cameras.front.crop is not None
     assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
-
-
-def test_act_bridge_args_include_safe_topics_and_dry_run_flag(tmp_path):
-    args = bridge_argv(_load_config_with_temp_checkpoint(tmp_path))
-
-    assert args[args.index("--target-topic") + 1] == "/arm_joint_target_position"
-    assert args[args.index("--staged-command-topic") + 1] == "/arm_joint_command_a1_staged"
-    assert args[args.index("--motion-enable-topic") + 1] == "/a1_arm_motion_enable"
-    assert "--no-execute" in args
-    assert "--no-action-step-guard-enabled" in args
-    assert "--step-mode" in args
-    assert args[args.index("--execute-steps-per-inference") + 1] == "100"
-    assert args[args.index("--max-model-calls") + 1] == "0"
-    assert args[args.index("--gripper-stroke-max") + 1] == "100"
-    assert args[args.index("--gripper-target-topic") + 1] == "/a1_gripper_target"
-    assert "--gripper-command-mode" not in args
-    assert "--disable-backbone-download" in args
-    assert args[args.index("--cam0-serial") + 1] == "341522300456"
-    assert args[args.index("--cam1-backend") + 1] == "realsense"
-    assert args[args.index("--cam1-serial") + 1] == "218622276998"
-    assert "--cam0-crop-enabled" in args
-    assert args[args.index("--cam0-crop-x") + 1] == "103"
-    assert args[args.index("--cam0-crop-width") + 1] == "480"
-    assert "--web-preview" in args

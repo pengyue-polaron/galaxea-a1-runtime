@@ -2,7 +2,7 @@ import numpy as np
 import pytest
 
 from galaxea_a1_runtime.apps.lingbot.actions import (
-    LingBotActionConfig,
+    LingBotActionTransformConfig,
     absolute_action_to_relative,
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
@@ -14,7 +14,7 @@ from galaxea_a1_runtime.apps.lingbot.actions import (
 )
 
 
-def action_config(**overrides) -> LingBotActionConfig:
+def action_config(**overrides) -> LingBotActionTransformConfig:
     values = {
         "xyz_min": (0.06, -0.27, 0.06),
         "xyz_max": (0.44, 0.14, 0.50),
@@ -22,9 +22,11 @@ def action_config(**overrides) -> LingBotActionConfig:
         "orientation_mode": "hold-current",
         "gripper_stroke_min": 0.0,
         "gripper_stroke_max": 100.0,
+        "eef_servo_gain": 1.0,
+        "eef_servo_max_extra": 0.04,
     }
     values.update(overrides)
-    return LingBotActionConfig(**values)
+    return LingBotActionTransformConfig(**values)
 
 
 def test_condition_action_preserves_feedback_xyz_outside_workspace():
@@ -46,7 +48,6 @@ def test_policy_action_applies_workspace_without_per_step_delta_clamp():
     action = sanitize_policy_action(
         [0.3, -0.2, 2.0, 0.0, 0.0, 0.0, 1.0, -0.5],
         cfg,
-        current_xyz=(0.1, 0.1, 0.1),
     )
 
     assert action[:3] == pytest.approx((0.3, 0.0, 1.0))
@@ -59,7 +60,6 @@ def test_hold_current_orientation_replaces_model_quaternion():
     action = prepare_policy_action(
         [0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 1.0, 0.5],
         cfg,
-        current_xyz=None,
         current_quat=(0.0, 1.0, 0.0, 0.0),
         require_current_orientation=True,
     )
@@ -70,7 +70,9 @@ def test_hold_current_orientation_replaces_model_quaternion():
 def test_servo_compensation_is_off_by_default_and_explicit_when_enabled():
     policy_action = np.array([0.20, 0.10, 0.10, 0.0, 0.0, 0.0, 1.0, 0.5])
 
-    off = tracker_command_action(policy_action, action_config(), current_xyz=(0.10, 0.10, 0.10))
+    off = tracker_command_action(
+        policy_action, action_config(), current_xyz=(0.10, 0.10, 0.10)
+    )
     on = tracker_command_action(
         policy_action,
         action_config(eef_servo_gain=1.5, eef_servo_max_extra=1.0),
@@ -99,12 +101,12 @@ def test_gripper_mapping_clips_to_configured_stroke():
     action = sanitize_policy_action(
         [0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 1.0, 0.25],
         cfg,
-        current_xyz=None,
     )
 
     assert action[7] == pytest.approx(0.25)
     assert gripper_stroke_from_norm(action[7], cfg) == pytest.approx(20.0)
-    assert gripper_stroke_from_norm(2.0, cfg) == pytest.approx(80.0)
+    with pytest.raises(ValueError, match=r"\[0, 1\]"):
+        gripper_stroke_from_norm(2.0, cfg)
 
 
 def test_episode_relative_action_roundtrips_xyz_and_quaternion():

@@ -4,13 +4,12 @@
 
 from __future__ import annotations
 
-import argparse
 import copy
 import json
-import math
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -27,13 +26,43 @@ from galaxea_a1_runtime.safety import (  # noqa: E402
     actuator_error_block_reason,
     gripper_stroke_block_reason,
     relay_block_reason,
+    require_finite_vector,
+    validate_arm_control_command,
     validate_initial_alignment,
+)
+from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
+from galaxea_a1_runtime.constants import SAFE_RELAY_NODE  # noqa: E402
+from galaxea_a1_runtime.configuration.system import (  # noqa: E402
+    DEFAULT_SYSTEM_CONFIG,
+    load_system_config,
 )
 
 
+@dataclass(frozen=True)
+class RelayRuntimeConfig:
+    input_topic: str
+    output_topic: str
+    joint_topic: str
+    motor_status_topic: str
+    enable_topic: str
+    relay_status_topic: str
+    gripper_input_topic: str
+    gripper_output_topic: str
+    gripper_min_stroke_mm: float
+    gripper_max_stroke_mm: float
+    arm_joints: int
+    rate: float
+    status_rate: float
+    max_input_age: float
+    max_status_age: float
+    arming_timeout: float
+    max_initial_error: float
+    allowed_control_modes: tuple[int, ...]
+
+
 class SafeArmCommandRelay:
-    def __init__(self, args):
-        self.args = args
+    def __init__(self, config: RelayRuntimeConfig):
+        self.config = config
         self.lock = threading.Lock()
         self.joints = []
         self.joint_time = 0.0
@@ -47,23 +76,31 @@ class SafeArmCommandRelay:
         self.fault_reason = ""
         self.initial_alignment_checked = False
 
-        self.command_pub = rospy.Publisher(args.output_topic, arm_control, queue_size=1)
+        self.command_pub = rospy.Publisher(
+            config.output_topic, arm_control, queue_size=1
+        )
         self.gripper_pub = rospy.Publisher(
-            args.gripper_output_topic,
+            config.gripper_output_topic,
             gripper_position_control,
             queue_size=1,
         )
-        self.status_pub = rospy.Publisher(args.relay_status_topic, String, queue_size=1, latch=True)
-        rospy.Subscriber(args.joint_topic, JointState, self._joint_cb, queue_size=1)
-        rospy.Subscriber(args.input_topic, arm_control, self._command_cb, queue_size=1)
+        self.status_pub = rospy.Publisher(
+            config.relay_status_topic, String, queue_size=1, latch=True
+        )
+        rospy.Subscriber(config.joint_topic, JointState, self._joint_cb, queue_size=1)
         rospy.Subscriber(
-            args.gripper_input_topic,
+            config.input_topic, arm_control, self._command_cb, queue_size=1
+        )
+        rospy.Subscriber(
+            config.gripper_input_topic,
             gripper_position_control,
             self._gripper_command_cb,
             queue_size=1,
         )
-        rospy.Subscriber(args.motor_status_topic, status_stamped, self._status_cb, queue_size=1)
-        rospy.Subscriber(args.enable_topic, Bool, self._enable_cb, queue_size=1)
+        rospy.Subscriber(
+            config.motor_status_topic, status_stamped, self._status_cb, queue_size=1
+        )
+        rospy.Subscriber(config.enable_topic, Bool, self._enable_cb, queue_size=1)
 
     def _enable_cb(self, msg):
         with self.lock:
@@ -74,32 +111,80 @@ class SafeArmCommandRelay:
             self.requested_enabled = requested
 
     def _joint_cb(self, msg):
-        values = [float(v) for v in msg.position[: self.args.arm_joints]]
-        if values and all(math.isfinite(v) for v in values):
+        try:
+            values = require_finite_vector(
+                msg.position,
+                count=self.config.arm_joints,
+                label="joint feedback",
+            )
+        except (AttributeError, OverflowError, TypeError, ValueError) as exc:
             with self.lock:
-                self.joints = values
-                self.joint_time = time.monotonic()
+                self.joints = []
+                self.joint_time = 0.0
+            self._latch_fault(str(exc))
+            return
+        with self.lock:
+            self.joints = list(values)
+            self.joint_time = time.monotonic()
 
     def _command_cb(self, msg):
-        values = [float(v) for v in msg.p_des[: self.args.arm_joints]]
-        if values and all(math.isfinite(v) for v in values):
+        try:
+            validate_arm_control_command(
+                p_des=msg.p_des,
+                v_des=msg.v_des,
+                kp=msg.kp,
+                kd=msg.kd,
+                t_ff=msg.t_ff,
+                mode=msg.mode,
+                arm_joints=self.config.arm_joints,
+                allowed_modes=self.config.allowed_control_modes,
+            )
+        except (AttributeError, OverflowError, TypeError, ValueError) as exc:
             with self.lock:
-                self.command = copy.deepcopy(msg)
-                self.command_time = time.monotonic()
+                self.command = None
+                self.command_time = 0.0
+            self._latch_fault(str(exc))
+            return
+        with self.lock:
+            self.command = copy.deepcopy(msg)
+            self.command_time = time.monotonic()
 
     def _status_cb(self, msg):
+        try:
+            errors = tuple(int(item.error_code) for item in msg.data.motor_errors)
+            if len(errors) < self.config.arm_joints + 1:
+                raise ValueError(
+                    f"motor status has {len(errors)} entries, "
+                    f"need {self.config.arm_joints + 1}"
+                )
+        except (AttributeError, OverflowError, TypeError, ValueError) as exc:
+            with self.lock:
+                self.motor_errors = ()
+                self.status_time = 0.0
+            self._latch_fault(str(exc))
+            return
         with self.lock:
-            self.motor_errors = tuple(int(item.error_code) for item in msg.data.motor_errors)
+            self.motor_errors = errors
             self.status_time = time.monotonic()
 
     def _gripper_command_cb(self, msg):
-        stroke = float(msg.gripper_stroke)
+        try:
+            stroke = float(msg.gripper_stroke)
+        except (AttributeError, OverflowError, TypeError, ValueError) as exc:
+            with self.lock:
+                self.gripper_command = None
+                self.gripper_command_time = 0.0
+            self._latch_fault(f"invalid gripper target: {exc}")
+            return
         reason = gripper_stroke_block_reason(
             stroke,
-            minimum_mm=self.args.gripper_min_stroke_mm,
-            maximum_mm=self.args.gripper_max_stroke_mm,
+            minimum_mm=self.config.gripper_min_stroke_mm,
+            maximum_mm=self.config.gripper_max_stroke_mm,
         )
         if reason is not None:
+            with self.lock:
+                self.gripper_command = None
+                self.gripper_command_time = 0.0
             self._latch_fault(reason)
             return
         with self.lock:
@@ -112,7 +197,9 @@ class SafeArmCommandRelay:
             joints = list(self.joints)
             command = None if self.command is None else copy.deepcopy(self.command)
             gripper_command = (
-                None if self.gripper_command is None else copy.deepcopy(self.gripper_command)
+                None
+                if self.gripper_command is None
+                else copy.deepcopy(self.gripper_command)
             )
             gripper_age = now - self.gripper_command_time
             inputs = RelayInputs(
@@ -138,25 +225,36 @@ class SafeArmCommandRelay:
             "joint_count": inputs.joint_count,
             "source_count": inputs.source_count,
             "motor_error_codes": list(inputs.motor_error_codes),
-            "gripper_age_s": None if gripper_age == float("inf") else round(gripper_age, 3),
+            "gripper_age_s": None
+            if gripper_age == float("inf")
+            else round(gripper_age, 3),
             "gripper_forwarding": gripper_forwarding,
         }
         self.status_pub.publish(String(data=json.dumps(payload, sort_keys=True)))
 
     def _latch_fault(self, reason):
         with self.lock:
+            newly_latched = not self.fault_reason
             if not self.fault_reason:
                 self.fault_reason = reason
                 self.requested_enabled = False
-        rospy.logerr("A1 relay FAULT: %s", reason)
+        if newly_latched:
+            rospy.logerr("A1 relay FAULT: %s", reason)
 
     def run(self):
-        rate = rospy.Rate(self.args.rate)
-        status_period = 1.0 / self.args.status_rate
+        rate = rospy.Rate(self.config.rate)
+        status_period = 1.0 / self.config.status_rate
         last_status_time = 0.0
         while not rospy.is_shutdown():
-            now, joints, command, gripper_command, gripper_age, inputs, fault_reason = self._snapshot()
-            reason = relay_block_reason(inputs, arm_joints=self.args.arm_joints, max_age=self.args.max_input_age)
+            now, joints, command, gripper_command, gripper_age, inputs, fault_reason = (
+                self._snapshot()
+            )
+            reason = relay_block_reason(
+                inputs,
+                arm_joints=self.config.arm_joints,
+                max_input_age=self.config.max_input_age,
+                max_status_age=self.config.max_status_age,
+            )
             gripper_forwarding = False
 
             if fault_reason:
@@ -167,27 +265,32 @@ class SafeArmCommandRelay:
                 state = "ARMING"
             else:
                 state = "ACTIVE"
-                raw = [float(v) for v in command.p_des[: self.args.arm_joints]]
+                raw = [float(v) for v in command.p_des[: self.config.arm_joints]]
                 try:
                     if not self.initial_alignment_checked:
                         validate_initial_alignment(
                             joints,
                             raw,
-                            max_abs_error=self.args.max_initial_error,
+                            max_abs_error=self.config.max_initial_error,
                         )
                         self.initial_alignment_checked = True
-                        rospy.logwarn("A1 relay ACTIVE; pass-through joint commands enabled")
+                        rospy.logwarn(
+                            "A1 relay ACTIVE; pass-through joint commands enabled"
+                        )
                     output = list(raw)
                 except ValueError as exc:
                     self._latch_fault(str(exc))
                     rate.sleep()
                     continue
 
-                gripper_ready = gripper_command is not None and gripper_age <= self.args.max_input_age
+                gripper_ready = (
+                    gripper_command is not None
+                    and gripper_age <= self.config.max_input_age
+                )
                 if gripper_ready:
                     gripper_reason = actuator_error_block_reason(
                         inputs.motor_error_codes,
-                        index=self.args.arm_joints,
+                        index=self.config.arm_joints,
                         label="gripper",
                     )
                     if gripper_reason is not None:
@@ -197,7 +300,7 @@ class SafeArmCommandRelay:
 
                 command.header.stamp = rospy.Time.now()
                 p_des = list(command.p_des)
-                p_des[: self.args.arm_joints] = output
+                p_des[: self.config.arm_joints] = output
                 command.p_des = p_des
                 self.command_pub.publish(command)
                 if gripper_ready:
@@ -207,7 +310,7 @@ class SafeArmCommandRelay:
 
             if inputs.enabled and state == "ARMING" and reason:
                 oldest = max(inputs.joint_age, inputs.source_age, inputs.status_age)
-                if oldest > self.args.arming_timeout:
+                if oldest > self.config.arming_timeout:
                     self._latch_fault(reason)
 
             if now - last_status_time >= status_period:
@@ -222,37 +325,40 @@ class SafeArmCommandRelay:
             rate.sleep()
 
 
-def parse_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--input-topic", required=True)
-    parser.add_argument("--output-topic", required=True)
-    parser.add_argument("--joint-topic", required=True)
-    parser.add_argument("--motor-status-topic", required=True)
-    parser.add_argument("--enable-topic", required=True)
-    parser.add_argument("--relay-status-topic", required=True)
-    parser.add_argument("--gripper-input-topic", required=True)
-    parser.add_argument("--gripper-output-topic", required=True)
-    parser.add_argument("--gripper-min-stroke-mm", type=float, required=True)
-    parser.add_argument("--gripper-max-stroke-mm", type=float, required=True)
-    parser.add_argument("--arm-joints", type=int, default=6)
-    parser.add_argument("--rate", type=float, default=100.0)
-    parser.add_argument("--status-rate", type=float, default=5.0)
-    parser.add_argument("--max-input-age", type=float, required=True)
-    parser.add_argument("--arming-timeout", type=float, required=True)
-    parser.add_argument("--max-initial-error", type=float, required=True)
-    args = parser.parse_args()
-    if min(args.rate, args.status_rate, args.max_input_age, args.arming_timeout) <= 0:
-        parser.error("relay rates and timeouts must be positive")
-    if args.max_initial_error < 0:
-        parser.error("--max-initial-error must be non-negative")
-    if args.gripper_min_stroke_mm >= args.gripper_max_stroke_mm:
-        parser.error("gripper minimum must be below maximum")
-    return args
+def parse_args() -> RelayRuntimeConfig:
+    parser = ArgumentParser(
+        description="Fail-closed relay configured from the shared system TOML"
+    )
+    parser.add_argument("--config", type=Path, default=ROOT / DEFAULT_SYSTEM_CONFIG)
+    cli = parser.parse_args()
+    config = load_system_config(cli.config, repo_root=ROOT)
+    topics = config.topics
+    return RelayRuntimeConfig(
+        input_topic=topics.staged_command,
+        output_topic=topics.host_command,
+        joint_topic=topics.joint_states,
+        motor_status_topic=topics.motor_status,
+        enable_topic=topics.motion_enable,
+        relay_status_topic=topics.relay_status,
+        gripper_input_topic=topics.gripper_target,
+        gripper_output_topic=topics.gripper_command,
+        gripper_min_stroke_mm=config.gripper.stroke_min_mm,
+        gripper_max_stroke_mm=config.gripper.stroke_max_mm,
+        arm_joints=len(config.joint_safety.names),
+        rate=config.relay.rate_hz,
+        status_rate=config.relay.status_rate_hz,
+        max_input_age=config.relay.max_input_age_s,
+        max_status_age=config.relay.max_status_age_s,
+        arming_timeout=config.relay.arming_timeout_s,
+        max_initial_error=config.joint_safety.initial_alignment_tolerance_rad,
+        allowed_control_modes=config.relay.allowed_control_modes,
+    )
 
 
 def main():
-    rospy.init_node("safe_arm_command_relay", anonymous=False)
-    SafeArmCommandRelay(parse_args()).run()
+    config = parse_args()
+    rospy.init_node(SAFE_RELAY_NODE.removeprefix("/"), anonymous=False)
+    SafeArmCommandRelay(config).run()
 
 
 if __name__ == "__main__":

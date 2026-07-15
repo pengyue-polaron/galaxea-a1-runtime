@@ -11,10 +11,10 @@ LeRobotDataset v3.0.
    - `collection/`: teleop raw state/action schema and episode helpers.
    - `teleop/`: pure SO leader to A1 joint mapping helpers.
    - `hardware/`: IO protocol, EEF helpers, shared camera IO, and web preview.
-   - `policies/`: normalized action contract and policy profile metadata.
+   - `policies/`: normalized runtime action contract.
    - `apps/`: managed implementations split by app and responsibility.
    - `lerobot/`: explicit-IO `GalaxeaA1Robot`, writer helpers, passive recorder,
-     migration, atomic output, and shared deterministic package primitives.
+     migration, and shared deterministic package primitives.
    - `runtime/`: doctor, safety report, shared relay/feedback caches, and the
      ROS1 Python-path bootstrap.
 
@@ -122,15 +122,15 @@ The reusable parts now live in package modules:
   fresh episode coordinates, validated action-tensor indexing, and operator
   previews without ROS process ownership.
 - `galaxea_a1_runtime.apps.lingbot.bridge` and `.cli`: ROS/camera rollout
-  orchestration and the operator-facing argument contract, respectively.
+  orchestration and the config-file entrypoint, respectively.
 - `galaxea_a1_runtime.apps.lingbot.config_schema`, `.config`, and
   `.config_runtime`: typed deployment schema, TOML loading/validation, and
-  conversion into process arguments used by `just lingbot`.
+  lifecycle values used by `just lingbot`.
 - `galaxea_a1_runtime.apps.act.config_schema`, `.config`, and `.config_runtime`:
-  typed ACT schema, TOML loading/validation, and process-argument translation.
+  typed ACT schema, TOML loading/validation, and shell lifecycle values.
 - `galaxea_a1_runtime.apps.act.actions`, `.policy`, `.bridge`, and `.cli`: pure
   model-action validation, checkpoint inference, guarded execution, and
-  argument parsing; feedback caches come directly from the shared runtime
+  config loading; feedback caches come directly from the shared runtime
   layer.
 - `galaxea_a1_runtime.lerobot.dataset_package`: one implementation of dataset
   tree copying, hard-link fallback, vector statistics, digesting, JSON, and
@@ -142,10 +142,12 @@ The reusable parts now live in package modules:
   encoding and HTTP service. It consumes existing latest-frame readers and
   never opens cameras or imports ROS. Teleop, ACT, and LingBot therefore expose
   preview without creating a second RealSense owner.
+- `galaxea_a1_runtime.filesystem`: process-safe staging and atomic install
+  primitives shared by raw collection and offline dataset packaging.
 
-Future FastWAM/GR00T implementations should reuse `apps.eef_bridge`, keep their
-operator scripts thin, and provide only model IO plus conversion into the
-normalized A1 EEF contract.
+Future policy integrations should reuse `apps.eef_bridge`, keep their operator
+scripts thin, and add a tracked deployment only when an executable integration
+exists; this repository does not keep speculative profile registries.
 
 ACT is the built-in joint-state policy deployment path. It loads a local
 LeRobot ACT checkpoint, reads front/wrist RGB plus six A1 joints and continuous
@@ -171,14 +173,17 @@ Teleop is the built-in demonstration collection mode.
   collector orchestration, reset config, A1 reset, and leader reset. The
   collector does not command the robot. Background
   readers prevent a blocking camera read from silently stopping state/action
-  recording; stale required streams abort and delete the partial episode.
-  Enter=save runs quality checks before metadata is committed.
+  recording; stale required streams abort and remove the staged episode.
+  Enter=save runs quality and file-count checks before an atomic commit.
   Metadata includes the tracked teleop config path along with topics, cameras,
   freshness thresholds, and the staged relay path.
 - `scripts/apps/cameras/a1_camera_diagnostics.py`: captures front/wrist snapshots from
-  the same tracked config without starting ROS or moving the robot, and probes
-  sustained camera FPS plus the RealSense USB link type.
-- `scripts/apps/cameras/a1_camera_web.py`: standalone owner for the tracked D455
+  `configs/system/a1.toml` without starting ROS or moving the robot, and probes
+  sustained camera FPS plus the RealSense USB link type. Its output root,
+  timeouts, probe duration, and encoding quality are system-config values, not
+  CLI defaults.
+- `scripts/apps/cameras/a1_camera_web.py`: standalone owner using the same system
+  config for the tracked D455
   agent camera and D405 wrist camera when no Teleop/inference app is running.
   It serves the same shared preview module used inside all three app chains
   and draws the configured AgentView collection ROI on the full frame. Teleop
@@ -187,25 +192,55 @@ Teleop is the built-in demonstration collection mode.
   joint tracker, relay, bridge, and recorder. It also owns the post-episode
   sequence that pauses the bridge, homes both devices, and resumes the bridge.
 - `configs/system/a1.toml`: shared physical contract for cameras, topics,
-  relay timing, workspaces, joint limits, and gripper stroke.
+  relay/doctor/startup timing, EEF acceptance steps, workspaces, joint limits,
+  and gripper stroke.
+- First-party tracker launch files deliberately have no topic defaults. Runtime
+  entrypoints pass every endpoint rendered from the system contract, so a topic
+  change cannot silently leave a stale launch fallback behind.
 - `configs/teleop/a1_so100.toml`: teleop-only leader, joint mapping, and
   collection contract.
 - `configs/deployments/`: checkpoint-specific model and rollout contracts.
 
 `SystemConfig` is the only typed physical configuration. ACT, LingBot, and
 teleop config objects retain a direct `system: SystemConfig` reference and only
-define model/app semantics; their CLI arguments read topics, relay thresholds,
-cameras, EEF bounds, joint limits, and gripper range directly from that object.
+define model/app semantics. App processes load their TOML directly and do not
+serialize topics, relay thresholds, cameras, EEF bounds, joint limits, or
+gripper range through a second CLI contract.
+The shared tmux supervisor receives its startup observation grace explicitly
+from `SystemConfig.startup`; it contains no independent timing default.
+Camera tables are strict tagged schemas: RealSense entries contain serial,
+sensor, and optional depth settings, while V4L2 entries contain device/backend
+and pixel-format settings. Inapplicable backend keys are rejected instead of
+being retained as empty or ignored values; wrist depth fields are absent
+because that path is unsupported.
+Crop coordinates, manual exposure/gain/white-balance values, and depth stream
+dimensions are likewise valid only when their enabling flag selects that mode;
+disabled features must not carry inert fallback numbers.
 The former parallel `RuntimeConfig/TopicConfig/SafetyConfig` stack and app-level
 physical mirror dataclasses have been removed. Dataset writer settings remain a
 data-layer `DatasetConfig`; they contain no hardware topics, limits, or gripper
 range.
 
+Repository-owned Docker containers and tmux sessions receive a managed marker.
+`just stop` first uses each app's precise lifecycle command and then invokes the
+configuration-independent marked-resource fallback, so a temporarily invalid
+TOML file cannot prevent shutdown and unrelated user resources remain untouched.
+The final fallback is authoritative: `just stop` exits nonzero instead of
+claiming success when marked containers or tmux sessions cannot be removed.
+
 Each app config follows the same three-part shape: `config_schema.py` contains
 immutable typed values, `config.py` loads and validates TOML, and
-`config_runtime.py` translates validated values into shell/CLI arguments. This
-keeps process syntax out of the configuration contract without adding another
-parallel configuration hierarchy.
+`config_runtime.py` exposes only shell-owned lifecycle values such as tmux
+names and model paths. Python bridges, cameras, collectors, and doctors receive
+the typed config directly.
+
+Operator presentation is also shared rather than app-specific.
+`galaxea_a1_runtime.console` owns Python argument errors, help styling, and the
+`INFO/STEP/PASS/WARN/FAIL` vocabulary; `scripts/runtime/a1_console.sh` mirrors
+that contract for shell. `a1_tmux.sh` owns early-process-exit detection, so app
+scripts provide an exit marker instead of copying startup sleeps and pane
+inspection. Structured JSON, shell exports, and diagnostic `key=value` output
+remain uncolored.
 
 The episode interaction is:
 
@@ -242,7 +277,10 @@ workflow; it does not implement or publish reset commands itself.
 
 The shared reset implementation uses
 `configs/poses/a1_so100_collection_start.toml` to restore the A1 and SO leader
-concurrently and close both grippers. Its orchestrator delegates A1 relay and
+concurrently and close both grippers. The pose config contains targets and
+motion semantics only; the owning Teleop config injects leader identity and
+mapping, while its System reference supplies joint names, limits, topics, and
+relay timings. Its orchestrator delegates A1 relay and
 joint monitoring to `reset_a1.py`, leader IO to `reset_leader.py`, and display
 state to `reset_progress.py`. `just reset` starts the required services, runs
 that implementation, and stops the runtime. The post-save path reuses it while
@@ -294,7 +332,6 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 
 ## Intentionally Not Done Yet
 
-- FastWAM and GR00T have profiles but not dedicated A1 app scripts yet.
 - LingBot's ROS publishing and interactive rollout orchestration intentionally
   remain together; protocol, shared policy-camera ownership, episode state,
   tensor indexing, review output, configuration, and CLI are independent

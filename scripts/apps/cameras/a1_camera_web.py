@@ -1,37 +1,48 @@
 #!/usr/bin/env python3
-"""Standalone dual-RealSense owner for the shared LAN web preview."""
+"""Standalone config-driven camera owner for the shared LAN web preview."""
 
 from __future__ import annotations
 
-import argparse
 import signal
 import threading
+from argparse import Namespace
 from dataclasses import replace
 from pathlib import Path
 
-from galaxea_a1_runtime.hardware.cameras import LatestCameraReader, RealSenseColorCamera, open_color_camera
+from galaxea_a1_runtime.configuration.system import (
+    DEFAULT_SYSTEM_CONFIG,
+    load_system_config,
+)
+from galaxea_a1_runtime.console import ArgumentParser, info, success
+from galaxea_a1_runtime.hardware.cameras import (
+    LatestCameraReader,
+    RealSenseColorCamera,
+    open_configured_camera,
+    close_camera_resources,
+)
 from galaxea_a1_runtime.hardware.web_preview import (
     CameraWebPreview,
     color_from_bgr,
     color_from_frameset,
 )
-from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
-
 
 ROOT = Path(__file__).resolve().parents[3]
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Serve the tracked A1 agent/wrist cameras over LAN MJPEG.")
-    parser.add_argument("--config", type=Path, default=default_config_path(ROOT))
+def parse_args() -> Namespace:
+    parser = ArgumentParser(
+        description="Serve the tracked A1 agent/wrist cameras over LAN MJPEG."
+    )
+    parser.add_argument("--config", type=Path, default=ROOT / DEFAULT_SYSTEM_CONFIG)
     return parser.parse_args()
 
 
 def main() -> int:
     args = parse_args()
-    config = load_teleop_config(args.config, repo_root=ROOT)
-    front_config = config.system.cameras.front
-    wrist_config = config.system.cameras.wrist
+    system = load_system_config(args.config, repo_root=ROOT)
+    info(f"Config: {system.path}")
+    front_config = system.cameras.front
+    wrist_config = system.cameras.wrist
     front = None
     wrist = None
     front_reader = None
@@ -45,38 +56,37 @@ def main() -> int:
     signal.signal(signal.SIGINT, request_stop)
     signal.signal(signal.SIGTERM, request_stop)
     try:
-        front = RealSenseColorCamera(
-            front_config.serial,
-            front_config.width,
-            front_config.height,
-            front_config.fps,
-            warmup_frames=20,
-            require_usb3=front_config.require_usb3,
+        opened_front = open_configured_camera(
+            front_config,
+            warmup_frames=system.cameras.warmup_frames,
+            enable_depth=False,
         )
-        wrist = open_color_camera(
-            wrist_config.backend,
-            serial=wrist_config.serial,
-            device=wrist_config.device,
-            width=wrist_config.width,
-            height=wrist_config.height,
-            fps=wrist_config.fps,
-            pixel_format=wrist_config.pixel_format,
-            warmup_frames=20,
+        front = opened_front
+        wrist = open_configured_camera(
+            wrist_config,
+            warmup_frames=system.cameras.warmup_frames,
+            enable_depth=False,
         )
-        front_reader = LatestCameraReader("front", front.read_frameset)
+        front_is_realsense = isinstance(front, RealSenseColorCamera)
+        front_reader = LatestCameraReader(
+            "front", front.read_frameset if front_is_realsense else front.read_bgr
+        )
         wrist_reader = LatestCameraReader("wrist", wrist.read_bgr)
         front_reader.start()
         wrist_reader.start()
         preview_config = (
-            config.system.web_preview
-            if config.system.web_preview.enabled
-            else replace(config.system.web_preview, enabled=True)
+            system.web_preview
+            if system.web_preview.enabled
+            else replace(system.web_preview, enabled=True)
         )
-        preview = CameraWebPreview(preview_config)
+        preview = CameraWebPreview(
+            preview_config,
+            max_source_age_s=system.cameras.max_age_s,
+        )
         preview.register_reader(
             "agent",
             front_reader,
-            extract=color_from_frameset,
+            extract=color_from_frameset if front_is_realsense else color_from_bgr,
             source=front.label,
             overlay_roi=front_config.crop,
             overlay_label=(
@@ -85,23 +95,32 @@ def main() -> int:
                 else ""
             ),
         )
-        preview.register_reader("wrist", wrist_reader, extract=color_from_bgr, source=wrist.label)
+        preview.register_reader(
+            "wrist", wrist_reader, extract=color_from_bgr, source=wrist.label
+        )
         preview.start()
-        print("[Camera Web] standalone camera owner is ready; Ctrl+C to stop", flush=True)
+        success("Standalone camera owner is ready; Ctrl+C to stop.")
         while not stop.wait(0.5):
             for reader in (front_reader, wrist_reader):
                 error = reader.exception()
                 if error is not None:
                     raise RuntimeError(f"{reader.name} camera reader failed") from error
     finally:
+        cleanup_errors: list[BaseException] = []
         if preview is not None:
-            preview.close()
-        for reader in (wrist_reader, front_reader):
-            if reader is not None:
-                reader.stop()
-        for camera in (wrist, front):
-            if camera is not None:
-                camera.close()
+            try:
+                preview.close()
+            except BaseException as exc:  # Cleanup must continue to camera close.
+                cleanup_errors.append(exc)
+        try:
+            close_camera_resources(
+                (wrist_reader, front_reader),
+                (wrist, front),
+            )
+        except BaseException as exc:  # Report all cleanup failures together.
+            cleanup_errors.append(exc)
+        if cleanup_errors:
+            raise BaseExceptionGroup("camera web cleanup failed", cleanup_errors)
     return 0
 
 

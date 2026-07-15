@@ -4,14 +4,15 @@ from galaxea_a1_runtime.teleop import (
     JointMappingConfig,
     detect_leader_joint_keys,
     map_leader_joints_to_a1,
-    parse_csv_floats,
 )
 
 
 def test_detect_leader_joint_keys_supports_current_so_leader_names():
     action = {f"joint{i}.pos": float(i) for i in range(6)}
 
-    assert detect_leader_joint_keys(action, 6) == tuple(f"joint{i}.pos" for i in range(6))
+    assert detect_leader_joint_keys(action, 6) == tuple(
+        f"joint{i}.pos" for i in range(6)
+    )
 
 
 def test_detect_leader_joint_keys_rejects_upstream_so_names():
@@ -37,6 +38,8 @@ def test_detect_leader_joint_keys_rejects_unknown_order_instead_of_sorting():
 
 def test_relative_mapping_starts_at_current_a1_pose_and_applies_signs():
     config = JointMappingConfig(
+        relative=True,
+        input_degrees=True,
         sign=(-1.0, 1.0),
         scale=(1.0, 2.0),
         bias_rad=(0.0, 0.0),
@@ -53,8 +56,3 @@ def test_relative_mapping_starts_at_current_a1_pose_and_applies_signs():
 
     assert target[0] == pytest.approx(1.0 - 0.1745329)
     assert target[1] == pytest.approx(2.0 + 2.0 * 0.1745329)
-
-
-def test_parse_csv_floats_validates_length():
-    with pytest.raises(ValueError, match="expects 3"):
-        parse_csv_floats("1,2", 3, "values")

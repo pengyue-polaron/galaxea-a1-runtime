@@ -9,8 +9,7 @@ This repository is being rebuilt around:
 - LeRobotDataset v3.0,
 - SO leader teleoperation collection,
 - ACT joint-state policy deployment,
-- managed ACT and LingBot deployments plus design profiles for future FastWAM
-  and GR00T N1.7 integrations,
+- managed ACT and LingBot deployments,
 - clean module boundaries for safety, hardware IO, datasets, and policies.
 
 SO-100 leader printable parts are kept under
@@ -84,7 +83,7 @@ just camera-web
 ```
 
 Open `http://<robot-lan-ip>:8088` directly. Stop the standalone camera owner
-with `just camera-web-stop`; the same preview endpoint is embedded in Teleop,
+with `just camera-web stop`; the same preview endpoint is embedded in Teleop,
 ACT, and LingBot, so the LAN URL remains useful while one of those apps owns
 the cameras.
 
@@ -124,6 +123,8 @@ checkpoint, server, prompt, rollout cadence, or action normalization changes.
 Physical topics, cameras, joint limits, EEF workspace/quaternion behavior, and
 the physical gripper contract live once in
 [configs/system/a1.toml](configs/system/a1.toml).
+That file also owns runtime readiness/doctor timeouts and the tracked EEF
+acceptance-test step; live command CLIs do not override those values.
 
 Deployment weights are registered under the ignored local `models/` directory;
 see [models/README.md](models/README.md). `just models` validates every configured
@@ -142,6 +143,17 @@ ACT runtime parameters live in
 It starts dry-run and step-gated by default. Set `execution.execute = true` in
 that tracked file only after static checks, camera checks, and a clear robot
 workspace.
+
+ACT, LingBot, and teleop processes load their tracked TOML directly. Their CLI
+entrypoints accept only the config path plus operator-run identity such as the
+teleop experiment name; physical settings are not duplicated as flags.
+Human-facing commands share one semantic console (`INFO`, `STEP`, `PASS`,
+`WARN`, `FAIL`) across Python and shell. Colors are emitted only to terminals;
+set `NO_COLOR=1` for plain output, while JSON and `key=value` diagnostics always
+remain machine-readable.
+Shared tmux process-start observation time is tracked under
+`configs/system/a1.toml [startup]`, so ACT, LingBot, and camera Web lifecycle
+commands do not carry separate hidden sleep defaults.
 
 Collection, ACT, and LingBot share the same AgentView contract: the D455 is
 captured at 640x480 and only `(x=103, y=0, width=480, height=480)` is recorded
@@ -171,7 +183,7 @@ galaxea_a1_runtime/
   collection/         # teleop state/action schema and episode helpers
   teleop/             # SO leader to A1 joint mapping helpers
   lerobot/            # Robot adapter, conversion, deterministic packaging
-  policies/           # action normalization and policy profiles
+  policies/           # shared runtime action normalization
   apps/               # managed app implementations split by protocol/IO/CLI
   runtime/            # doctor, relay/feedback primitives, ROS1 bootstrap
 assets/cad/            # versioned robot/leader mechanical assets
@@ -182,7 +194,8 @@ scripts/               # operator entrypoints grouped by runtime/app responsibil
 
 The runtime entrypoints share app-agnostic service primitives in
 `scripts/runtime/a1_services.sh` and tmux lifecycle primitives in
-`scripts/runtime/a1_tmux.sh`. Tracker selection and app startup policy stay in
+`scripts/runtime/a1_tmux.sh`; both Python and shell entrypoints also share the
+same semantic console. Tracker selection and app startup policy stay in
 their owning scripts. ACT, LingBot, and teleop configurations reference the
 same typed `SystemConfig` directly instead of copying physical fields into
 parallel app-specific config objects.
@@ -194,11 +207,6 @@ Managed deployment paths currently cover:
 - ACT joint-state through `configs/deployments/act_joint.toml`
 - LingBot-VA through `configs/deployments/lingbot_va.toml`
 
-The lightweight future-integration profile registry additionally describes:
-
-- FastWAM: `policy.type=fastwam`
-- GR00T N1.7: `policy.type=groot`
-
 All policy outputs are normalized into the same A1 runtime action contract
 before execution.
 
@@ -206,7 +214,7 @@ before execution.
 
 `GalaxeaA1Robot` exposes a LeRobot-style schema and IO composition interface.
 It requires an explicit `A1HardwareIO`; it has no default ROS publisher or
-fallback `NullA1HardwareIO`. Live Teleop, ACT, and LingBot execution remains in
+automatically selected in-memory adapter. Live Teleop, ACT, and LingBot execution remains in
 the managed app runtimes so there is only one implementation of each ROS
 control path.
 
@@ -239,7 +247,10 @@ just teleop pick_cube
 `just reset` moves the A1 and the SO leader to the tracked collection start pose
 in [configs/poses/a1_so100_collection_start.toml](configs/poses/a1_so100_collection_start.toml), closes both
 grippers, resets both devices concurrently, disables leader torque, and stops
-the runtime. `just teleop <experiment>` then starts the staged joint teleop
+the runtime. That pose file owns only target values and reset motion behavior;
+the Teleop config references it and injects leader identity/mapping plus the
+System-derived joint names, limits, topics, and relay timings into the reset
+loader. `just teleop <experiment>` then starts the staged joint teleop
 runtime, records front RGB,
 wrist RGB, and A1 state/action data, and keeps the old episode loop:
 Enter starts recording, Enter saves, `d` discards, and `q` exits.
@@ -284,7 +295,8 @@ be recovered later.
 The default tracked teleop config is USB2-compatible RGB-only. Depth capture is
 still supported, but it should be enabled intentionally in
 `configs/system/a1.toml` after the RealSense is on a stable USB3 link or
-after lowering the camera FPS/resolution for USB2. During recording, every
+after lowering the camera FPS/resolution for USB2; add depth dimensions and
+alignment mode when enabling it. During recording, every
 frame requires fresh camera, joint, EEF, joint-target action, and gripper
 samples. Any required stream becoming stale aborts the episode and deletes the
 partial folder instead of saving repeated old data. The exact freshness limits
@@ -297,14 +309,18 @@ saved. Wrist frames remain uncropped.
 The collector rejects appending 480x480 AgentView frames to an older raw
 experiment containing 640x480 frames; use a new experiment name or migrate the
 whole existing experiment first.
-Continuous gripper episodes use raw schema `galaxea_a1_teleop_raw_v2`; the
-collector also rejects appending them to a v1/binary experiment directory.
+New continuous-gripper episodes use raw schema `galaxea_a1_teleop_raw_v3`.
+The collector records both camera sequence numbers and monotonic sample times,
+rejects camera pairs beyond `cameras.max_pair_skew_s`, and refuses to append to
+older schema directories. The converter retains read-only v2 compatibility.
 
 Enter requests a save; it does not make the episode durable immediately. The
-collector first checks joint-action continuity using the tracked
+collector records into a hidden sibling staging directory, then checks
+joint-action continuity using the tracked
 `collection.max_joint_action_step_rad` threshold. A failed check prints the
-frame, joint, values, and limit, deletes the episode, reuses its index, and
-homes both devices before the next attempt.
+frame, joint, values, and limit, removes the staging output, reuses its index,
+and homes both devices before the next attempt. Metadata and frame counts are
+validated before one atomic rename makes the final episode visible.
 
 Raw episodes are written under `data/raw/<experiment>/episode_NNN_timestamp/`.
 Convert a selected source dataset to its tracked training package with
@@ -316,7 +332,9 @@ The tracked rig binds the agent D455 and wrist D405 by explicit RealSense
 serial number. `just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
 `cam0_depth_preview.jpg`, `cam1_wrist.jpg`, and a contact sheet from the same
 tracked camera config without moving the arm. It also runs a short sustained
-FPS probe and prints the RealSense USB link type.
+FPS probe and prints the RealSense USB link type. Snapshot destination, frame
+timeout, probe duration, and JPEG quality live in `[camera_diagnostics]` in the
+same system config rather than in per-run CLI flags.
 
 The shared web preview listens on the host's LAN interfaces at port `8088` and
 has no ROS or robot-control endpoints. It has no login, so do not port-forward

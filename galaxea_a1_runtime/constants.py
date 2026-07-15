@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 ARM_JOINT_COUNT = 6
-GRIPPER_JOINT_COUNT = 1
-TOTAL_JOINT_COUNT = ARM_JOINT_COUNT + GRIPPER_JOINT_COUNT
 
 IDLE_TIMEOUT_CODE = 1 << 6
 
-DEFAULT_MAX_EEF_DELTA_M = 0.03
-DEFAULT_MAX_ROT_DELTA_RAD = 0.15
-
-LEROBOT_BASELINE = "0.6.x"
 LEROBOT_DATASET_FORMAT = "v3.0"
+
+EE_TRACKER_NODE = "/eeTracker_demo_node"
+JOINT_TRACKER_NODE = "/jointTracker_demo_node"
+SAFE_RELAY_NODE = "/safe_arm_command_relay"
+SAFE_RELAY_SCRIPT = "safe_arm_command_relay.py"

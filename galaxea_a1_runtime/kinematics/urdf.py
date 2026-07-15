@@ -23,7 +23,9 @@ class RevoluteJoint:
 class SerialChainFK:
     """Forward kinematics for the unique URDF chain between two links."""
 
-    def __init__(self, joints: Sequence[RevoluteJoint], *, base_link: str, tip_link: str) -> None:
+    def __init__(
+        self, joints: Sequence[RevoluteJoint], *, base_link: str, tip_link: str
+    ) -> None:
         if not joints:
             raise ValueError("serial chain must contain at least one movable joint")
         self.joints = tuple(joints)
@@ -48,7 +50,9 @@ class SerialChainFK:
             elements.append(joint)
             parent = joint.find("parent")
             if parent is None:
-                raise ValueError(f"joint {_required_attr(joint, 'name')!r} has no parent")
+                raise ValueError(
+                    f"joint {_required_attr(joint, 'name')!r} has no parent"
+                )
             current = _required_attr(parent, "link")
         elements.reverse()
 
@@ -58,13 +62,17 @@ class SerialChainFK:
             if joint_type == "fixed":
                 continue
             if joint_type not in {"revolute", "continuous"}:
-                raise ValueError(f"unsupported joint type in serial chain: {joint_type!r}")
+                raise ValueError(
+                    f"unsupported joint type in serial chain: {joint_type!r}"
+                )
             origin = element.find("origin")
             axis = element.find("axis")
             parent = element.find("parent")
             child = element.find("child")
             if parent is None or child is None:
-                raise ValueError(f"incomplete URDF joint {_required_attr(element, 'name')!r}")
+                raise ValueError(
+                    f"incomplete URDF joint {_required_attr(element, 'name')!r}"
+                )
             joints.append(
                 RevoluteJoint(
                     name=_required_attr(element, "name"),
@@ -84,7 +92,9 @@ class SerialChainFK:
     def pose(self, positions: Sequence[float]) -> np.ndarray:
         values = np.asarray(positions, dtype=np.float64)
         if values.shape != (len(self.joints),):
-            raise ValueError(f"expected {len(self.joints)} joints, got shape {values.shape}")
+            raise ValueError(
+                f"expected {len(self.joints)} joints, got shape {values.shape}"
+            )
         if not np.all(np.isfinite(values)):
             raise ValueError("joint positions contain non-finite values")
 
@@ -96,25 +106,39 @@ class SerialChainFK:
             motion = np.eye(4, dtype=np.float64)
             motion[:3, :3] = _rotation_from_axis_angle(joint.axis, float(position))
             transform = transform @ origin @ motion
-        return np.concatenate((transform[:3, 3], _quaternion_from_rotation(transform[:3, :3])))
+        return np.concatenate(
+            (transform[:3, 3], _quaternion_from_rotation(transform[:3, :3]))
+        )
 
 
-def relative_pose(target_pose: Sequence[float], initial_pose: Sequence[float]) -> np.ndarray:
+def relative_pose(
+    target_pose: Sequence[float], initial_pose: Sequence[float]
+) -> np.ndarray:
     """Return RoboTwin-style pose delta: world translation and local rotation."""
 
     target = _pose7(target_pose, "target_pose")
     initial = _pose7(initial_pose, "initial_pose")
-    delta_rotation = _rotation_from_quaternion(initial[3:7]).T @ _rotation_from_quaternion(target[3:7])
-    return np.concatenate((target[:3] - initial[:3], _quaternion_from_rotation(delta_rotation)))
+    delta_rotation = _rotation_from_quaternion(
+        initial[3:7]
+    ).T @ _rotation_from_quaternion(target[3:7])
+    return np.concatenate(
+        (target[:3] - initial[:3], _quaternion_from_rotation(delta_rotation))
+    )
 
 
-def compose_relative_pose(delta_pose: Sequence[float], initial_pose: Sequence[float]) -> np.ndarray:
+def compose_relative_pose(
+    delta_pose: Sequence[float], initial_pose: Sequence[float]
+) -> np.ndarray:
     """Compose a RoboTwin-style pose delta onto an episode initial pose."""
 
     delta = _pose7(delta_pose, "delta_pose")
     initial = _pose7(initial_pose, "initial_pose")
-    rotation = _rotation_from_quaternion(initial[3:7]) @ _rotation_from_quaternion(delta[3:7])
-    return np.concatenate((initial[:3] + delta[:3], _quaternion_from_rotation(rotation)))
+    rotation = _rotation_from_quaternion(initial[3:7]) @ _rotation_from_quaternion(
+        delta[3:7]
+    )
+    return np.concatenate(
+        (initial[:3] + delta[:3], _quaternion_from_rotation(rotation))
+    )
 
 
 def _pose7(values: Sequence[float], label: str) -> np.ndarray:
@@ -185,15 +209,33 @@ def _rotation_from_quaternion(quaternion: Sequence[float]) -> np.ndarray:
 def _quaternion_from_rotation(rotation: np.ndarray) -> np.ndarray:
     # Symmetric eigensystem conversion is stable near 180-degree rotations.
     r = np.asarray(rotation, dtype=np.float64)
-    k = np.array(
-        [
-            [r[0, 0] - r[1, 1] - r[2, 2], r[1, 0] + r[0, 1], r[2, 0] + r[0, 2], r[2, 1] - r[1, 2]],
-            [r[1, 0] + r[0, 1], r[1, 1] - r[0, 0] - r[2, 2], r[2, 1] + r[1, 2], r[0, 2] - r[2, 0]],
-            [r[2, 0] + r[0, 2], r[2, 1] + r[1, 2], r[2, 2] - r[0, 0] - r[1, 1], r[1, 0] - r[0, 1]],
-            [r[2, 1] - r[1, 2], r[0, 2] - r[2, 0], r[1, 0] - r[0, 1], np.trace(r)],
-        ],
-        dtype=np.float64,
-    ) / 3.0
+    k = (
+        np.array(
+            [
+                [
+                    r[0, 0] - r[1, 1] - r[2, 2],
+                    r[1, 0] + r[0, 1],
+                    r[2, 0] + r[0, 2],
+                    r[2, 1] - r[1, 2],
+                ],
+                [
+                    r[1, 0] + r[0, 1],
+                    r[1, 1] - r[0, 0] - r[2, 2],
+                    r[2, 1] + r[1, 2],
+                    r[0, 2] - r[2, 0],
+                ],
+                [
+                    r[2, 0] + r[0, 2],
+                    r[2, 1] + r[1, 2],
+                    r[2, 2] - r[0, 0] - r[1, 1],
+                    r[1, 0] - r[0, 1],
+                ],
+                [r[2, 1] - r[1, 2], r[0, 2] - r[2, 0], r[1, 0] - r[0, 1], np.trace(r)],
+            ],
+            dtype=np.float64,
+        )
+        / 3.0
+    )
     _, vectors = np.linalg.eigh(k)
     quaternion = vectors[:, -1]
     if quaternion[3] < 0:

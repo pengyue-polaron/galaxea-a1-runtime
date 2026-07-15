@@ -10,7 +10,10 @@ tmux = "lingbot-a1"
 [server]
 host = "127.0.0.1"
 port = 1106
-prompt = "REPLACE_WITH_NEW_TASK_PROMPT"
+connect_timeout_s = 2.0
+close_timeout_s = 10.0
+# Empty means intentionally unconfigured until a new deployment is registered.
+prompt = ""
 
 [policy_server]
 tmux = "lingbot-va-server"
@@ -37,7 +40,6 @@ video_inference_steps = 5
 action_inference_steps = 10
 snr_shift = 5.0
 action_snr_shift = 1.0
-used_action_channel_ids = [0, 1, 2, 3, 4, 5, 6, 28]
 # Empty means explicitly unavailable. Fill both arrays from the same new
 # checkpoint before setting deployment_ready=true.
 q01_source = []
@@ -54,9 +56,11 @@ step_actions = false
 no_kv_update = false
 max_model_calls = 36
 execute_frames = 4
+# Fresh camera observations collected across each model action frame for KV sync.
+kv_observations_per_frame = 4
 condition_on_ee_state = true
-lingbot_frame_chunk_size = 4
-lingbot_action_per_frame = 4
+# Empty means: derive the initial condition from fresh measured EEF feedback.
+initial_ee_pose = []
 exec_rate = 30.0
 print_actions = true
 review_deadband_m = 0.001

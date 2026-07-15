@@ -50,7 +50,10 @@ def test_discover_raw_dataset(tmp_path):
     assert summary.task == "pick cube"
     assert summary.total_frames == 2
     assert summary.episodes[0].joint_names == ("joint_1", "joint_2", "gripper")
-    assert [camera.name for camera in summary.episodes[0].camera_specs] == ["front", "wrist"]
+    assert [camera.name for camera in summary.episodes[0].camera_specs] == [
+        "front",
+        "wrist",
+    ]
 
 
 def test_failed_overwrite_preserves_previous_converted_dataset(tmp_path, monkeypatch):
@@ -94,7 +97,9 @@ def test_iter_episode_frames_uses_next_state_as_action(tmp_path):
         camera_specs=episode.camera_specs,
     )
 
-    frames = list(iter_episode_frames(episode=episode, task=summary.task, contract=contract))
+    frames = list(
+        iter_episode_frames(episode=episode, task=summary.task, contract=contract)
+    )
 
     assert frames[0]["observation.state"] == pytest.approx((0.1, 0.3, 0.0))
     assert frames[0]["action"] == pytest.approx((0.2, 0.4, 1.0))
@@ -128,7 +133,15 @@ def make_teleop_raw_episode(root: Path) -> None:
         "joint_6",
         "gripper",
     ]
-    action_names = ["joint_1", "joint_2", "joint_3", "joint_4", "joint_5", "joint_6", "gripper"]
+    action_names = [
+        "joint_1",
+        "joint_2",
+        "joint_3",
+        "joint_4",
+        "joint_5",
+        "joint_6",
+        "gripper",
+    ]
     (episode / "metadata.json").write_text(
         json.dumps(
             {
@@ -146,8 +159,12 @@ def make_teleop_raw_episode(root: Path) -> None:
         "cam1_relpath": "cam1/000000.jpg",
         "cam0_depth_relpath": "cam0_depth/000000.png",
     }
-    row.update({f"state.{name}": float(index) for index, name in enumerate(state_names)})
-    row.update({f"action.{name}": float(index + 10) for index, name in enumerate(action_names)})
+    row.update(
+        {f"state.{name}": float(index) for index, name in enumerate(state_names)}
+    )
+    row.update(
+        {f"action.{name}": float(index + 10) for index, name in enumerate(action_names)}
+    )
     pd.DataFrame([row]).to_csv(episode / "frames.csv", index=False)
     for camera in ("cam0", "cam1"):
         image = Image.fromarray(np.full((4, 5, 3), 7, dtype=np.uint8))
@@ -166,15 +183,23 @@ def test_iter_episode_frames_preserves_new_teleop_state_and_action(tmp_path):
         camera_specs=episode.camera_specs,
     )
 
-    frames = list(iter_episode_frames(episode=episode, task=summary.task, contract=contract))
+    frames = list(
+        iter_episode_frames(episode=episode, task=summary.task, contract=contract)
+    )
 
     assert episode.schema_version == "galaxea_a1_teleop_raw_v2"
-    assert frames[0]["observation.state"] == pytest.approx(tuple(float(i) for i in range(14)))
+    assert frames[0]["observation.state"] == pytest.approx(
+        tuple(float(i) for i in range(14))
+    )
     assert frames[0]["action"] == pytest.approx(tuple(float(i + 10) for i in range(7)))
     assert frames[0]["observation.state"].dtype == np.float32
     assert frames[0]["action"].dtype == np.float32
     assert "timestamp" not in frames[0]
-    assert [camera.name for camera in episode.camera_specs] == ["front", "wrist", "front_depth"]
+    assert [camera.name for camera in episode.camera_specs] == [
+        "front",
+        "wrist",
+        "front_depth",
+    ]
     assert episode.camera_specs[2].is_depth_map is True
     assert frames[0]["observation.images.front_depth"].shape == (4, 5, 1)
     assert frames[0]["observation.images.front_depth"].dtype == np.uint16

@@ -3,13 +3,23 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum
 from pathlib import Path
 
-from galaxea_a1_runtime.schema import ActionMode, DEFAULT_STATE_NAMES, JOINT_ACTION_NAMES
+from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
+from galaxea_a1_runtime.schema import (
+    ActionMode,
+    DEFAULT_STATE_NAMES,
+    JOINT_ACTION_NAMES,
+)
 
-TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v2"
+TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v3"
+TELEOP_STRUCTURED_SCHEMA_VERSIONS = frozenset(
+    {"galaxea_a1_teleop_raw_v2", TELEOP_RAW_SCHEMA_VERSION}
+)
+EXPERIMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 EEF_STATE_NAMES = DEFAULT_STATE_NAMES[:7]
 JOINT_STATE_NAMES = DEFAULT_STATE_NAMES[7:]
@@ -26,6 +36,15 @@ class EpisodeDecision(StrEnum):
     SAVE = "save"
     DISCARD = "discard"
     QUIT = "quit"
+
+
+def validate_experiment_name(value: str) -> str:
+    if value in {".", ".."} or EXPERIMENT_NAME.fullmatch(value) is None:
+        raise ValueError(
+            "experiment must be 1-128 characters using letters, digits, '.', '_', "
+            "or '-', must start with a letter/digit, and cannot be '.' or '..'"
+        )
+    return value
 
 
 @dataclass(frozen=True)
@@ -78,7 +97,9 @@ def state_names_for_mode(mode: StateMode | str) -> tuple[str, ...]:
 def action_names_for_teleop(mode: ActionMode | str) -> tuple[str, ...]:
     mode = ActionMode(mode)
     if mode != ActionMode.JOINT_ABSOLUTE:
-        raise ValueError(f"teleop collection currently records joint_absolute actions, got {mode}")
+        raise ValueError(
+            f"teleop collection currently records joint_absolute actions, got {mode}"
+        )
     return JOINT_ACTION_NAMES
 
 
@@ -101,6 +122,10 @@ def teleop_frame_header(
         "frame_index",
         "wall_time_ns",
         "ros_stamp_s",
+        "cam0_seq",
+        "cam0_monotonic_s",
+        "cam1_seq",
+        "cam1_monotonic_s",
         *camera_columns,
         *state_columns(state_names),
         *action_columns(action_names),
@@ -131,6 +156,50 @@ def next_episode_index(experiment_dir: Path) -> int:
     return max(indices, default=-1) + 1
 
 
+def validate_episode_layout(experiment_dir: Path) -> None:
+    """Refuse collection beside crash leftovers or incomplete final episodes."""
+
+    if not experiment_dir.exists():
+        return
+    staging = sorted(
+        path.name
+        for path in experiment_dir.iterdir()
+        if path.name.startswith(".episode_") and ".staging-" in path.name
+    )
+    incomplete: list[str] = []
+    for path in sorted(experiment_dir.glob("episode_*")):
+        if not path.is_dir():
+            continue
+        try:
+            metadata = json.loads((path / "metadata.json").read_text())
+            frame_count = metadata.get("frame_count")
+            if isinstance(frame_count, bool) or not isinstance(frame_count, int):
+                raise RuntimeError(f"invalid metadata frame_count: {frame_count!r}")
+            cameras = metadata.get("cameras")
+            if not isinstance(cameras, list):
+                raise RuntimeError("metadata cameras must be a list")
+            depth_enabled = any(
+                isinstance(camera, dict) and camera.get("directory") == "cam0_depth"
+                for camera in cameras
+            )
+            validate_staged_episode(
+                path,
+                frame_count=frame_count,
+                depth_enabled=depth_enabled,
+            )
+        except (OSError, json.JSONDecodeError, RuntimeError, TypeError) as exc:
+            incomplete.append(f"{path.name}({exc})")
+    if staging or incomplete:
+        details = [
+            *(f"staging:{name}" for name in staging),
+            *(f"incomplete:{name}" for name in incomplete),
+        ]
+        raise ValueError(
+            "raw experiment contains uncommitted episode output; inspect and remove or "
+            f"quarantine it before collecting: {details}"
+        )
+
+
 def metadata_to_json_dict(metadata: TeleopRawEpisodeMetadata) -> dict:
     data = asdict(metadata)
     data["state_mode"] = metadata.state_mode.value
@@ -155,19 +224,31 @@ def validate_existing_camera_shape(
         try:
             payload = json.loads(metadata_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"cannot read existing episode metadata: {metadata_path}: {exc}") from exc
+            raise ValueError(
+                f"cannot read existing episode metadata: {metadata_path}: {exc}"
+            ) from exc
         cameras = payload.get("cameras")
         if not isinstance(cameras, list):
-            raise ValueError(f"existing episode metadata has no camera list: {metadata_path}")
+            raise ValueError(
+                f"existing episode metadata has no camera list: {metadata_path}"
+            )
         camera = next(
-            (item for item in cameras if isinstance(item, dict) and item.get("name") == camera_name),
+            (
+                item
+                for item in cameras
+                if isinstance(item, dict) and item.get("name") == camera_name
+            ),
             None,
         )
         if camera is None:
-            raise ValueError(f"existing episode metadata has no {camera_name!r} camera: {metadata_path}")
+            raise ValueError(
+                f"existing episode metadata has no {camera_name!r} camera: {metadata_path}"
+            )
         existing = (int(camera.get("width", 0)), int(camera.get("height", 0)))
         if existing != (width, height):
-            mismatches.append(f"{metadata_path.parent.name}={existing[0]}x{existing[1]}")
+            mismatches.append(
+                f"{metadata_path.parent.name}={existing[0]}x{existing[1]}"
+            )
     if mismatches:
         preview = ", ".join(mismatches[:3])
         suffix = " ..." if len(mismatches) > 3 else ""
@@ -186,7 +267,9 @@ def validate_existing_schema(experiment_dir: Path, *, expected: str) -> None:
         try:
             payload = json.loads(metadata_path.read_text())
         except (OSError, json.JSONDecodeError) as exc:
-            raise ValueError(f"cannot read existing episode metadata: {metadata_path}: {exc}") from exc
+            raise ValueError(
+                f"cannot read existing episode metadata: {metadata_path}: {exc}"
+            ) from exc
         actual = str(payload.get("schema_version", "missing"))
         if actual != expected:
             mismatches.append(f"{metadata_path.parent.name}={actual}")

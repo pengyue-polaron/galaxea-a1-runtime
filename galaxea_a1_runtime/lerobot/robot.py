@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,7 +19,7 @@ from galaxea_a1_runtime.schema import (
 try:  # Keep core importable even when LeRobot is not installed.
     from lerobot.robots.config import RobotConfig as _LeRobotRobotConfig
     from lerobot.robots.robot import Robot as _LeRobotRobot
-except Exception:  # pragma: no cover - exercised only in minimal environments.
+except (ImportError, ModuleNotFoundError):  # pragma: no cover - minimal environments.
     _LeRobotRobotConfig = None
 
     class _LeRobotRobot:  # type: ignore[no-redef]
@@ -44,16 +44,13 @@ class GalaxeaA1RobotConfig(_RobotConfigBase):
     id: str | None = "galaxea_a1"
     calibration_dir: Path | None = None
     action_mode: ActionMode = ActionMode.EEF_DELTA
-    camera_specs: tuple[CameraSpec, ...] = field(
-        default_factory=lambda: (
-            CameraSpec("front", height=480, width=480),
-            CameraSpec("wrist", height=480, width=640),
-        )
-    )
+    camera_specs: tuple[CameraSpec, ...]
 
 
 if _LeRobotRobotConfig is not None:
-    GalaxeaA1RobotConfig = _LeRobotRobotConfig.register_subclass("galaxea_a1")(GalaxeaA1RobotConfig)
+    GalaxeaA1RobotConfig = _LeRobotRobotConfig.register_subclass("galaxea_a1")(
+        GalaxeaA1RobotConfig
+    )
 
 
 class GalaxeaA1Robot(_LeRobotRobot):
@@ -77,7 +74,11 @@ class GalaxeaA1Robot(_LeRobotRobot):
             "observation.state": (len(DEFAULT_STATE_NAMES),)
         }
         for camera in self.config.camera_specs:
-            features[camera.feature_key()] = (camera.height, camera.width, camera.channels)
+            features[camera.feature_key()] = (
+                camera.height,
+                camera.width,
+                camera.channels,
+            )
         return features
 
     @property
@@ -126,4 +127,6 @@ class GalaxeaA1Robot(_LeRobotRobot):
 
 
 def dataset_contract_from_robot_config(config: GalaxeaA1RobotConfig) -> DatasetContract:
-    return default_dataset_contract(action_mode=config.action_mode, cameras=config.camera_specs)
+    return default_dataset_contract(
+        action_mode=config.action_mode, cameras=config.camera_specs
+    )

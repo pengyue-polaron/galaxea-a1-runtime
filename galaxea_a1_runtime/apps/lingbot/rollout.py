@@ -23,7 +23,7 @@ class LingBotActionChunk:
         *,
         first: bool,
         execute_frames: int,
-        observations_per_frame: int = 4,
+        observations_per_frame: int,
     ) -> "LingBotActionChunk":
         values = np.asarray(action, dtype=np.float32)
         if values.ndim != 3 or values.shape[0] != 8:

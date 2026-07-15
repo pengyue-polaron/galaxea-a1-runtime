@@ -11,6 +11,8 @@ from lerobot.teleoperators.so_leader.config_so_leader import SOLeaderTeleopConfi
 from lerobot.teleoperators.teleoperator import Teleoperator
 from lerobot.utils.decorators import check_if_already_connected, check_if_not_connected
 
+from galaxea_a1_runtime.console import Tone, info, style, success
+
 logger = logging.getLogger(__name__)
 
 # Feetech writes expect a status packet from each motor. A single missed packet
@@ -32,7 +34,11 @@ class A1SOLeader(Teleoperator):
     def __init__(self, config: SOLeaderTeleopConfig):
         super().__init__(config)
         self.config = config
-        norm_mode_body = MotorNormMode.DEGREES if config.use_degrees else MotorNormMode.RANGE_M100_100
+        norm_mode_body = (
+            MotorNormMode.DEGREES
+            if config.use_degrees
+            else MotorNormMode.RANGE_M100_100
+        )
         self.bus = FeetechMotorsBus(
             port=self.config.port,
             motors={
@@ -77,11 +83,16 @@ class A1SOLeader(Teleoperator):
     def calibrate(self) -> None:
         if self.calibration:
             user_input = input(
-                f"Press ENTER to use provided calibration file associated with the id {self.id}, "
-                "or type 'c' and press ENTER to run calibration: "
+                style(
+                    f"Use calibration for {self.id}: Enter=accept, c=recalibrate > ",
+                    Tone.STEP,
+                )
             )
             if user_input.strip().lower() != "c":
-                logger.info("Writing calibration file associated with the id %s to the motors", self.id)
+                logger.info(
+                    "Writing calibration file associated with the id %s to the motors",
+                    self.id,
+                )
                 self.bus.write_calibration(self.calibration)
                 return
 
@@ -90,13 +101,20 @@ class A1SOLeader(Teleoperator):
         for motor in self.bus.motors:
             self.bus.write("Operating_Mode", motor, OperatingMode.POSITION.value)
 
-        input(f"Move {self} to the middle of its range of motion and press ENTER....")
+        input(
+            style(
+                f"Move {self} to the middle of its range, then press Enter > ",
+                Tone.STEP,
+            )
+        )
         homing_offsets = self.bus.set_half_turn_homings()
-        print(
+        info(
             "Move all joints sequentially through their entire ranges of motion.\n"
             "Recording positions. Press ENTER to stop..."
         )
-        range_mins, range_maxes = self.bus.record_ranges_of_motion(list(self.bus.motors))
+        range_mins, range_maxes = self.bus.record_ranges_of_motion(
+            list(self.bus.motors)
+        )
 
         self.calibration = {}
         for motor, m in self.bus.motors.items():
@@ -110,7 +128,7 @@ class A1SOLeader(Teleoperator):
 
         self.bus.write_calibration(self.calibration)
         self._save_calibration()
-        print(f"Calibration saved to {self.calibration_fpath}")
+        success(f"Calibration saved: {self.calibration_fpath}")
 
     def configure(self) -> None:
         self.bus.disable_torque(num_retry=MOTOR_WRITE_NUM_RETRY)
@@ -131,9 +149,9 @@ class A1SOLeader(Teleoperator):
 
     def setup_motors(self) -> None:
         for motor in reversed(self.bus.motors):
-            input(f"Connect the controller board to the '{motor}' motor only and press enter.")
+            input(style(f"Connect only motor {motor}, then press Enter > ", Tone.STEP))
             self.bus.setup_motor(motor)
-            print(f"'{motor}' motor id set to {self.bus.motors[motor].id}")
+            success(f"Motor {motor} ID set to {self.bus.motors[motor].id}.")
 
     @check_if_not_connected
     def get_action(self) -> dict[str, float]:
@@ -146,7 +164,11 @@ class A1SOLeader(Teleoperator):
 
     @check_if_not_connected
     def send_feedback(self, feedback: dict[str, float]) -> None:
-        goals = {key.removesuffix(".pos"): value for key, value in feedback.items() if key.endswith(".pos")}
+        goals = {
+            key.removesuffix(".pos"): value
+            for key, value in feedback.items()
+            if key.endswith(".pos")
+        }
         if goals:
             self.bus.sync_write("Goal_Position", goals)
 

@@ -4,9 +4,9 @@
 
 from __future__ import annotations
 
-import argparse
 import concurrent.futures
 import sys
+from argparse import Namespace
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -19,30 +19,37 @@ configure_ros1_python(ROOT_DIR)
 
 from galaxea_a1_runtime.apps.teleop.reset_a1 import A1HomeRunner
 from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose
+from galaxea_a1_runtime.configuration.paths import TELEOP_CONFIG
+from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.apps.teleop.reset_leader import reset_leader_home
 from galaxea_a1_runtime.apps.teleop.reset_progress import ResetProgress
+from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 
-DEFAULT_CONFIG = ROOT_DIR / "configs" / "poses" / "a1_so100_collection_start.toml"
+DEFAULT_CONFIG = ROOT_DIR / TELEOP_CONFIG
 
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
+def parse_args() -> Namespace:
+    parser = ArgumentParser(
         description="Reset A1 and leader to the tracked start pose."
     )
-    parser.add_argument("--config", type=Path, default=DEFAULT_CONFIG)
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=DEFAULT_CONFIG,
+        help="Tracked Teleop config that owns the reset pose reference.",
+    )
     return parser.parse_args()
 
 
 def main() -> int:
-    pose = load_home_pose(parse_args().config)
-    devices = (
-        ("A1", "Leader") if pose.leader is not None and pose.leader.enabled else ("A1",)
-    )
+    teleop = load_teleop_config(parse_args().config, repo_root=ROOT_DIR)
+    pose = load_home_pose(teleop.reset.config, teleop=teleop)
+    devices = ("A1", "Leader") if pose.leader.enabled else ("A1",)
     progress = ResetProgress(devices)
     a1 = A1HomeRunner(pose, progress)
     jobs = {"A1": a1.run}
-    if pose.leader is not None and pose.leader.enabled:
+    if pose.leader.enabled:
         jobs["leader"] = lambda: reset_leader_home(pose, progress)
 
     errors: list[tuple[str, BaseException]] = []

@@ -6,7 +6,6 @@ data collection should record the richer EEF runtime contract directly.
 
 from __future__ import annotations
 
-import argparse
 import json
 import re
 import sys
@@ -18,15 +17,27 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
-from galaxea_a1_runtime.lerobot.atomic_output import atomic_output_directory
+from galaxea_a1_runtime.collection.schema import (
+    TELEOP_STRUCTURED_SCHEMA_VERSIONS,
+)
+from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.filesystem import atomic_output_directory
 from galaxea_a1_runtime.lerobot.dataset import DatasetConfig, create_lerobot_dataset
-from galaxea_a1_runtime.schema import ActionMode, CameraSpec, DatasetContract, validate_frame_keys
+from galaxea_a1_runtime.schema import (
+    ActionMode,
+    CameraSpec,
+    DatasetContract,
+    validate_frame_keys,
+)
 
 NON_JOINT_COLS = {
     "frame_index",
     "wall_time_ns",
     "ros_stamp_s",
+    "cam0_seq",
+    "cam0_monotonic_s",
+    "cam1_seq",
+    "cam1_monotonic_s",
     "cam0_relpath",
     "cam1_relpath",
     "cam0_depth_relpath",
@@ -83,9 +94,11 @@ def resolve_joint_names(df: pd.DataFrame, metadata: dict) -> tuple[str, ...]:
     return tuple(column for column in df.columns if column not in NON_JOINT_COLS)
 
 
-def resolve_state_action_names(df: pd.DataFrame, metadata: dict) -> tuple[tuple[str, ...], tuple[str, ...], str]:
+def resolve_state_action_names(
+    df: pd.DataFrame, metadata: dict
+) -> tuple[tuple[str, ...], tuple[str, ...], str]:
     schema_version = str(metadata.get("schema_version", "legacy_joint_raw"))
-    if schema_version == TELEOP_RAW_SCHEMA_VERSION:
+    if schema_version in TELEOP_STRUCTURED_SCHEMA_VERSIONS:
         state_names = _metadata_names(metadata, "state_names")
         action_names = _metadata_names(metadata, "action_names")
         _require_columns(df, [f"state.{name}" for name in state_names])
@@ -126,7 +139,9 @@ def discover_raw_dataset(
         df = pd.read_csv(csv_path)
         if df.empty:
             continue
-        state_names, action_names, schema_version = resolve_state_action_names(df, metadata)
+        state_names, action_names, schema_version = resolve_state_action_names(
+            df, metadata
+        )
         if not state_names or not action_names:
             raise ValueError(f"no joint columns found in {csv_path}")
         camera_specs = infer_camera_specs(episode_dir, df, disable_wrist=disable_wrist)
@@ -143,7 +158,9 @@ def discover_raw_dataset(
         )
     if not episodes:
         raise RuntimeError(f"no usable episode_* folders under {source_root}")
-    return RawDatasetSummary(source_root=source_root, task=task, episodes=tuple(episodes))
+    return RawDatasetSummary(
+        source_root=source_root, task=task, episodes=tuple(episodes)
+    )
 
 
 def infer_camera_specs(
@@ -156,7 +173,9 @@ def infer_camera_specs(
     row0 = df.iloc[0]
     cameras = [("front", episode_dir / "cam0" / f"{frame_index:06d}.jpg", False)]
     if not disable_wrist:
-        cameras.append(("wrist", episode_dir / "cam1" / f"{frame_index:06d}.jpg", False))
+        cameras.append(
+            ("wrist", episode_dir / "cam1" / f"{frame_index:06d}.jpg", False)
+        )
     depth_relpath = row0.get("cam0_depth_relpath")
     if isinstance(depth_relpath, str) and depth_relpath:
         cameras.append(("front_depth", episode_dir / depth_relpath, True))
@@ -179,7 +198,9 @@ def infer_camera_specs(
             )
         else:
             height, width, channels = infer_image_shape(path)
-            specs.append(CameraSpec(name=name, height=height, width=width, channels=channels))
+            specs.append(
+                CameraSpec(name=name, height=height, width=width, channels=channels)
+            )
     return tuple(specs)
 
 
@@ -267,9 +288,13 @@ def iter_episode_frames(
     contract: DatasetContract,
 ) -> Iterable[dict]:
     df = pd.read_csv(episode.path / "frames.csv")
-    if episode.schema_version == TELEOP_RAW_SCHEMA_VERSION:
-        state = df[[f"state.{name}" for name in episode.state_names]].to_numpy(dtype=np.float32)
-        action = df[[f"action.{name}" for name in episode.action_names]].to_numpy(dtype=np.float32)
+    if episode.schema_version in TELEOP_STRUCTURED_SCHEMA_VERSIONS:
+        state = df[[f"state.{name}" for name in episode.state_names]].to_numpy(
+            dtype=np.float32
+        )
+        action = df[[f"action.{name}" for name in episode.action_names]].to_numpy(
+            dtype=np.float32
+        )
     else:
         state = df[list(episode.joint_names)].to_numpy(dtype=np.float32)
         action = np.empty_like(state)
@@ -307,7 +332,9 @@ def load_camera_frame(
     if camera.is_depth_map:
         relpath = df_row.get("cam0_depth_relpath")
         if not isinstance(relpath, str) or not relpath:
-            raise ValueError(f"missing cam0_depth_relpath for {episode.path} frame {frame_index}")
+            raise ValueError(
+                f"missing cam0_depth_relpath for {episode.path} frame {frame_index}"
+            )
         return load_depth_image(episode.path / relpath)
     src_dir = "cam0" if camera.name == "front" else "cam1"
     return load_rgb_image(episode.path / src_dir / f"{frame_index:06d}.jpg")
@@ -350,7 +377,7 @@ def load_depth_image(path: Path) -> np.ndarray:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument("--source-root", type=Path, required=True)
     parser.add_argument("--target-root", type=Path, required=True)
     parser.add_argument("--repo-id", required=True)

@@ -3,11 +3,37 @@
 from __future__ import annotations
 
 import os
-import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Callable, Literal
+from typing import Any
+
+from galaxea_a1_runtime.configuration.system import (
+    SystemCameraDeviceConfig,
+    SystemRealSenseCameraConfig,
+    SystemV4l2CameraConfig,
+)
+from galaxea_a1_runtime.hardware.camera_reader import (
+    CameraSample,
+    LatestCameraReader,
+    close_camera_resources,
+)
+
+__all__ = [
+    "CameraSample",
+    "ColorCamera",
+    "LatestCameraReader",
+    "OpenCVColorCamera",
+    "RealSenseColorCamera",
+    "RealSenseDeviceInfo",
+    "RealSenseFrameSet",
+    "close_camera_resources",
+    "open_configured_camera",
+    "realsense_device_info",
+    "realsense_usb_is_superspeed",
+    "resolve_video_source",
+    "video_device_name",
+]
 
 os.environ.setdefault("OPENCV_LOG_LEVEL", "SILENT")
 
@@ -19,76 +45,14 @@ try:
 except ImportError:
     rs = None
 
+REALSENSE_FRAME_TIMEOUT_MS = 1000
+REALSENSE_WARMUP_MARGIN_S = 5.0
+
 
 @dataclass(frozen=True)
 class RealSenseFrameSet:
     color_bgr: np.ndarray
     depth_mm: np.ndarray | None = None
-
-
-@dataclass(frozen=True)
-class CameraSample:
-    seq: int
-    monotonic_s: float
-    value: Any
-
-
-class LatestCameraReader:
-    """Continuously read one camera and expose the newest successful sample."""
-
-    def __init__(
-        self,
-        name: str,
-        read_fn: Callable[[], Any | None],
-        *,
-        idle_sleep_s: float = 0.002,
-    ):
-        self.name = name
-        self._read_fn = read_fn
-        self._idle_sleep_s = idle_sleep_s
-        self._lock = threading.Lock()
-        self._latest: CameraSample | None = None
-        self._exception: BaseException | None = None
-        self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name=f"{name}-camera-reader", daemon=True)
-
-    def start(self) -> None:
-        self._thread.start()
-
-    def stop(self) -> None:
-        self._stop.set()
-        self._thread.join(timeout=1.0)
-
-    def latest(self) -> CameraSample | None:
-        with self._lock:
-            return self._latest
-
-    def latest_seq(self) -> int:
-        latest = self.latest()
-        return -1 if latest is None else latest.seq
-
-    def frame_count(self) -> int:
-        return self.latest_seq() + 1
-
-    def exception(self) -> BaseException | None:
-        with self._lock:
-            return self._exception
-
-    def _run(self) -> None:
-        seq = 0
-        while not self._stop.is_set():
-            try:
-                value = self._read_fn()
-            except BaseException as exc:  # noqa: BLE001 - cross-thread surfacing.
-                with self._lock:
-                    self._exception = exc
-                return
-            if value is None:
-                time.sleep(self._idle_sleep_s)
-                continue
-            with self._lock:
-                self._latest = CameraSample(seq=seq, monotonic_s=time.perf_counter(), value=value)
-            seq += 1
 
 
 @dataclass(frozen=True)
@@ -108,20 +72,32 @@ class RealSenseColorCamera:
         height: int,
         fps: int,
         *,
-        auto_exposure: bool = True,
-        exposure: int = 140,
-        gain: int = 32,
-        auto_white_balance: bool = True,
-        white_balance: int = 4600,
-        enable_depth: bool = False,
-        depth_width: int | None = None,
-        depth_height: int | None = None,
-        align_depth_to_color: bool = True,
-        warmup_frames: int = 30,
-        require_usb3: bool = False,
+        auto_exposure: bool,
+        exposure: int | None,
+        gain: int | None,
+        auto_white_balance: bool,
+        white_balance: int | None,
+        enable_depth: bool,
+        depth_width: int | None,
+        depth_height: int | None,
+        align_depth_to_color: bool | None,
+        warmup_frames: int,
+        require_usb3: bool,
     ):
         if rs is None:
             raise RuntimeError("pyrealsense2 is not installed")
+        if min(width, height, fps) <= 0:
+            raise ValueError("RealSense color dimensions and fps must be positive")
+        if warmup_frames < 0:
+            raise ValueError("RealSense warmup_frames must be non-negative")
+        if not auto_exposure and (exposure is None or gain is None):
+            raise ValueError("manual RealSense exposure and gain are required")
+        if not auto_white_balance and white_balance is None:
+            raise ValueError("manual RealSense white balance is required")
+        if enable_depth and (
+            depth_width is None or depth_height is None or align_depth_to_color is None
+        ):
+            raise ValueError("enabled RealSense depth settings are incomplete")
         info = realsense_device_info(serial)
         if info is None:
             raise RuntimeError("No RealSense device found")
@@ -142,16 +118,21 @@ class RealSenseColorCamera:
             cfg.enable_device(info.serial)
         cfg.enable_stream(rs.stream.color, width, height, rs.format.bgr8, fps)
         if enable_depth:
+            assert depth_width is not None and depth_height is not None
             cfg.enable_stream(
                 rs.stream.depth,
-                depth_width or width,
-                depth_height or height,
+                depth_width,
+                depth_height,
                 rs.format.z16,
                 fps,
             )
         try:
             profile = self.pipeline.start(cfg)
-            self._align = rs.align(rs.stream.color) if enable_depth and align_depth_to_color else None
+            self._align = (
+                rs.align(rs.stream.color)
+                if enable_depth and align_depth_to_color
+                else None
+            )
             _configure_realsense_color_sensor(
                 profile,
                 auto_exposure=auto_exposure,
@@ -160,8 +141,11 @@ class RealSenseColorCamera:
                 auto_white_balance=auto_white_balance,
                 white_balance=white_balance,
             )
-            warmup_timeout_s = max(5.0, float(warmup_frames) / max(float(fps), 1.0) + 5.0)
-            self._warmup(max(0, warmup_frames), timeout_s=warmup_timeout_s)
+            warmup_timeout_s = max(
+                REALSENSE_WARMUP_MARGIN_S,
+                float(warmup_frames) / float(fps) + REALSENSE_WARMUP_MARGIN_S,
+            )
+            self._warmup(warmup_frames, timeout_s=warmup_timeout_s)
         except BaseException:
             try:
                 self.pipeline.stop()
@@ -173,7 +157,9 @@ class RealSenseColorCamera:
         frames = self.pipeline.poll_for_frames()
         return self._decode_frames(frames) if frames else None
 
-    def wait_frameset(self, *, timeout_ms: int = 1000) -> RealSenseFrameSet | None:
+    def wait_frameset(
+        self, *, timeout_ms: int = REALSENSE_FRAME_TIMEOUT_MS
+    ) -> RealSenseFrameSet | None:
         try:
             frames = self.pipeline.wait_for_frames(timeout_ms)
         except RuntimeError:
@@ -193,7 +179,9 @@ class RealSenseColorCamera:
             depth_frame = frames.get_depth_frame()
             if not depth_frame:
                 return None
-            depth_mm = np.asanyarray(depth_frame.get_data()).astype(np.uint16, copy=False)
+            depth_mm = np.asanyarray(depth_frame.get_data()).astype(
+                np.uint16, copy=False
+            )
         return RealSenseFrameSet(
             color_bgr=np.asanyarray(color_frame.get_data()),
             depth_mm=depth_mm,
@@ -222,7 +210,7 @@ class RealSenseColorCamera:
         timeouts = 0
         while frames < warmup_frames and time.monotonic() < deadline:
             try:
-                frame = self.pipeline.wait_for_frames(1000)
+                frame = self.pipeline.wait_for_frames(REALSENSE_FRAME_TIMEOUT_MS)
             except RuntimeError:
                 timeouts += 1
                 continue
@@ -247,10 +235,14 @@ class OpenCVColorCamera:
         height: int,
         fps: int,
         *,
-        backend_api: str = "v4l2",
-        pixel_format: str = "",
-        warmup_frames: int = 10,
+        backend_api: str,
+        pixel_format: str,
+        warmup_frames: int,
     ):
+        if min(width, height, fps) <= 0:
+            raise ValueError("V4L2 camera dimensions and fps must be positive")
+        if warmup_frames < 0:
+            raise ValueError("V4L2 warmup_frames must be non-negative")
         source, label = resolve_video_source(device)
         self.label = label
         api = cv2.CAP_V4L2 if backend_api == "v4l2" else 0
@@ -259,12 +251,14 @@ class OpenCVColorCamera:
             raise RuntimeError(f"Cannot open camera device={device}")
         if pixel_format:
             if len(pixel_format) != 4:
-                raise ValueError(f"pixel_format must be a four-character code, got {pixel_format!r}")
+                raise ValueError(
+                    f"pixel_format must be a four-character code, got {pixel_format!r}"
+                )
             self.cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*pixel_format))
         self.cap.set(cv2.CAP_PROP_FRAME_WIDTH, width)
         self.cap.set(cv2.CAP_PROP_FRAME_HEIGHT, height)
         self.cap.set(cv2.CAP_PROP_FPS, fps)
-        for _ in range(max(0, warmup_frames)):
+        for _ in range(warmup_frames):
             self.cap.read()
 
     def read_bgr(self) -> np.ndarray | None:
@@ -279,58 +273,52 @@ class OpenCVColorCamera:
         self.cap.release()
 
 
-CameraBackend = Literal["realsense", "v4l2"]
 ColorCamera = RealSenseColorCamera | OpenCVColorCamera
 
 
-def open_color_camera(
-    backend: str,
+def open_configured_camera(
+    config: SystemCameraDeviceConfig,
     *,
-    serial: str = "",
-    device: str = "",
-    width: int,
-    height: int,
-    fps: int,
-    backend_api: str = "v4l2",
-    pixel_format: str = "",
-    auto_exposure: bool = True,
-    exposure: int = 140,
-    gain: int = 32,
-    auto_white_balance: bool = True,
-    white_balance: int = 4600,
-    warmup_frames: int = 10,
+    warmup_frames: int,
+    enable_depth: bool,
 ) -> ColorCamera:
-    """Open a color camera from an explicit tracked backend contract."""
+    """Open one camera with every physical setting from the system config."""
 
-    normalized = backend.strip().lower()
-    if normalized == "realsense":
-        if not serial:
-            raise ValueError("RealSense camera backend requires an explicit serial")
+    if isinstance(config, SystemRealSenseCameraConfig):
+        if enable_depth and not config.depth:
+            raise ValueError("depth was requested but is disabled in system config")
         return RealSenseColorCamera(
-            serial,
-            width,
-            height,
-            fps,
-            auto_exposure=auto_exposure,
-            exposure=exposure,
-            gain=gain,
-            auto_white_balance=auto_white_balance,
-            white_balance=white_balance,
+            config.serial,
+            config.width,
+            config.height,
+            config.fps,
+            auto_exposure=config.auto_exposure,
+            exposure=config.exposure,
+            gain=config.gain,
+            auto_white_balance=config.auto_white_balance,
+            white_balance=config.white_balance,
             warmup_frames=warmup_frames,
+            require_usb3=config.require_usb3,
+            enable_depth=enable_depth,
+            depth_width=config.depth_width if enable_depth else None,
+            depth_height=config.depth_height if enable_depth else None,
+            align_depth_to_color=(
+                config.align_depth_to_color if enable_depth else None
+            ),
         )
-    if normalized == "v4l2":
-        if not device:
-            raise ValueError("V4L2 camera backend requires a device or 'auto'")
+    if enable_depth:
+        raise ValueError("V4L2 camera config does not support depth")
+    if isinstance(config, SystemV4l2CameraConfig):
         return OpenCVColorCamera(
-            device,
-            width,
-            height,
-            fps,
-            backend_api=backend_api,
-            pixel_format=pixel_format,
+            config.device,
+            config.width,
+            config.height,
+            config.fps,
+            backend_api=config.backend_api,
+            pixel_format=config.pixel_format,
             warmup_frames=warmup_frames,
         )
-    raise ValueError(f"unsupported camera backend {backend!r}; expected 'realsense' or 'v4l2'")
+    raise TypeError(f"unsupported camera config type: {type(config).__name__}")
 
 
 def resolve_video_source(device: str) -> tuple[int | str, str]:
@@ -375,7 +363,9 @@ def realsense_device_info(serial: str | None = None) -> RealSenseDeviceInfo | No
         for device in devices:
             if _rs_device_info(device, rs.camera_info.serial_number) == serial:
                 return _realsense_device_info_from_device(device)
-        found = ", ".join(_rs_device_info(device, rs.camera_info.serial_number) for device in devices)
+        found = ", ".join(
+            _rs_device_info(device, rs.camera_info.serial_number) for device in devices
+        )
         raise RuntimeError(f"RealSense serial {serial!r} not found; found [{found}]")
     if not devices:
         return None
@@ -408,10 +398,10 @@ def _configure_realsense_color_sensor(
     profile: Any,
     *,
     auto_exposure: bool,
-    exposure: int,
-    gain: int,
+    exposure: int | None,
+    gain: int | None,
     auto_white_balance: bool,
-    white_balance: int,
+    white_balance: int | None,
 ) -> None:
     sensors = profile.get_device().query_sensors()
     color_sensor = _find_realsense_color_sensor(sensors)
@@ -419,11 +409,15 @@ def _configure_realsense_color_sensor(
         return
     color_sensor.set_option(rs.option.enable_auto_exposure, 1 if auto_exposure else 0)
     if not auto_exposure:
+        assert exposure is not None and gain is not None
         color_sensor.set_option(rs.option.exposure, float(exposure))
         color_sensor.set_option(rs.option.gain, float(gain))
     if color_sensor.supports(rs.option.enable_auto_white_balance):
-        color_sensor.set_option(rs.option.enable_auto_white_balance, 1 if auto_white_balance else 0)
+        color_sensor.set_option(
+            rs.option.enable_auto_white_balance, 1 if auto_white_balance else 0
+        )
     if not auto_white_balance and color_sensor.supports(rs.option.white_balance):
+        assert white_balance is not None
         color_sensor.set_option(rs.option.white_balance, float(white_balance))
 
 

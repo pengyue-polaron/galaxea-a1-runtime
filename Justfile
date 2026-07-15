@@ -17,7 +17,8 @@ setup:
     export UV_TORCH_BACKEND="${UV_TORCH_BACKEND:-cu128}"
     {{uv}} python install 3.12
     {{uv}} sync --frozen --python 3.12
-    echo "main env ready: {{repo}}/.venv"
+    source {{repo}}/scripts/runtime/a1_console.sh
+    a1_success "Main environment ready: {{repo}}/.venv"
 
 udev:
     scripts/runtime/install_a1_udev.sh
@@ -26,7 +27,14 @@ udev:
 
 check:
     {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
+    find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
+    {{vpy}} {{repo}}/scripts/apps/act/act_joint_policy_bridge.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/decode_lingbot_latents.py --help >/dev/null
     {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
+    {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     just test
 
 test:
@@ -45,16 +53,10 @@ hardware *args:
     {{vpy}} {{repo}}/scripts/runtime/a1_hardware_check.py {{args}}
 
 cameras *args:
-    scripts/apps/teleop/a1_teleop_runtime.sh cameras {{args}}
+    {{vpy}} scripts/apps/cameras/a1_camera_diagnostics.py {{args}}
 
 camera-web *args:
     scripts/apps/cameras/a1_camera_web_runtime.sh {{args}}
-
-camera-web-stop:
-    scripts/apps/cameras/a1_camera_web_runtime.sh stop
-
-camera-web-status:
-    scripts/apps/cameras/a1_camera_web_runtime.sh status
 
 eef-test:
     scripts/runtime/a1_runtime.sh services
@@ -65,7 +67,8 @@ teleop experiment:
 
 teleop-test:
     scripts/apps/teleop/a1_teleop_runtime.sh start
-    @echo "Teleop is live. Check leader keys with: just logs"
+    source {{repo}}/scripts/runtime/a1_console.sh
+    a1_info "Teleop is live. Check leader keys with: just logs"
 
 reset:
     scripts/apps/teleop/a1_teleop_runtime.sh reset
@@ -83,7 +86,7 @@ stop:
     scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_runtime.sh stop >/dev/null 2>&1 || true
-    @echo "A1 runtime stopped."
+    scripts/runtime/a1_stop_managed.sh
 
 logs:
     scripts/apps/act/a1_act_joint_runtime.sh logs || true

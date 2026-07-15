@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from .actions import (
-    LingBotActionConfig,
+    LingBotActionTransformConfig,
     absolute_action_to_relative,
     apply_orientation_mode,
+    build_action_transform_config,
     clamp_notes,
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
@@ -17,9 +18,10 @@ from .actions import (
 )
 
 __all__ = [
-    "LingBotActionConfig",
+    "LingBotActionTransformConfig",
     "absolute_action_to_relative",
     "apply_orientation_mode",
+    "build_action_transform_config",
     "clamp_notes",
     "gripper_norm_from_stroke",
     "gripper_stroke_from_norm",

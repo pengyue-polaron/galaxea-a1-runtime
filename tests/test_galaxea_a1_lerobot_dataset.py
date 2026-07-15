@@ -23,7 +23,9 @@ def test_build_dataset_create_kwargs_for_lerobot_v3():
 
 
 def test_dataset_config_requires_namespaced_repo_id():
-    contract = default_dataset_contract()
+    contract = default_dataset_contract(
+        cameras=(CameraSpec("front", height=480, width=640),)
+    )
     config = DatasetConfig(repo_id="a1_test", root=Path("/tmp/a1"), fps=20)
 
     with pytest.raises(ValueError, match="repo_id"):

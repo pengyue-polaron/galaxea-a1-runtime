@@ -5,7 +5,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if (( $# < 4 )) || [[ "$3" != "--" ]]; then
-  echo "Usage: $0 <base-runtime> <model-session> -- <bridge-command> [args...]" >&2
+  a1_usage "$0 <base-runtime> <model-session> -- <bridge-command> [args...]" >&2
   exit 2
 fi
 
@@ -19,9 +19,9 @@ cleanup() {
     return
   fi
   CLEANED_UP=true
-  echo "[CLEANUP] LingBot bridge ended; locking and stopping the A1 runtime and policy server."
+  a1_cleanup "LingBot bridge ended; locking and stopping the A1 runtime and policy server."
   if ! "${BASE_RUNTIME}" stop >/dev/null 2>&1; then
-    echo "[CLEANUP ERROR] Failed to stop the A1 runtime: ${BASE_RUNTIME}" >&2
+    a1_fail "Cleanup failed to stop the A1 runtime: ${BASE_RUNTIME}"
   fi
   a1_tmux_stop "${MODEL_SESSION}"
 }

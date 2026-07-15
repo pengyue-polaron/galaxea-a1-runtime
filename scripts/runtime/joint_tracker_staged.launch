@@ -1,14 +1,16 @@
 <launch>
-  <arg name="staged_command_topic" default="/arm_joint_command_a1_staged" />
-  <arg name="joint_states_topic" default="/joint_states_host" />
-  <arg name="target_topic" default="/arm_joint_target_position" />
-  <arg name="ee_pose_topic" default="/end_effector_pose" />
+  <!-- Required: the owning system config must supply every ROS endpoint. -->
+  <arg name="staged_command_topic" />
+  <arg name="joint_states_topic" />
+  <arg name="target_topic" />
+  <arg name="ee_pose_topic" />
+  <arg name="tracker_node" />
 
   <param
     name="robot_description"
     textfile="$(find mobiman)/urdf/A1/urdf/A1_URDF_0607_0028.urdf" />
 
-  <node pkg="mobiman" type="jointTracker_demo_node" name="jointTracker_demo_node" output="screen">
+  <node pkg="mobiman" type="jointTracker_demo_node" name="$(arg tracker_node)" output="screen">
     <param name="joint_states_sub_topic" value="$(arg joint_states_topic)" />
     <param name="arm_joint_command_topic" value="$(arg staged_command_topic)" />
     <param name="arm_joint_target_position" value="$(arg target_topic)" />

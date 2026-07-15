@@ -1,5 +1,7 @@
 from pathlib import Path
 
+import pytest
+
 from galaxea_a1_runtime.collection import (
     CameraMetadata,
     EpisodeDecision,
@@ -14,10 +16,23 @@ from galaxea_a1_runtime.collection import (
     state_names_for_mode,
     teleop_frame_header,
     validate_existing_camera_shape,
+    validate_episode_layout,
     validate_existing_schema,
+    validate_experiment_name,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
+from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE, SAFE_RELAY_SCRIPT
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
+
+
+@pytest.mark.parametrize("name", ["../escape", "nested/name", "", ".", ".."])
+def test_experiment_name_rejects_path_traversal_and_empty_names(name):
+    with pytest.raises(ValueError):
+        validate_experiment_name(name)
+
+
+def test_experiment_name_accepts_operator_run_identity():
+    assert validate_experiment_name("pick_cube.v2-01") == "pick_cube.v2-01"
 
 
 def test_state_names_for_modes_are_explicit():
@@ -54,6 +69,10 @@ def test_teleop_frame_header_prefixes_state_and_action_columns():
         "frame_index",
         "wall_time_ns",
         "ros_stamp_s",
+        "cam0_seq",
+        "cam0_monotonic_s",
+        "cam1_seq",
+        "cam1_monotonic_s",
         "cam0_relpath",
         "cam0_depth_relpath",
         "state.eef_x",
@@ -104,6 +123,22 @@ def test_next_episode_index_uses_existing_episode_prefix(tmp_path):
     assert next_episode_index(Path(tmp_path)) == 3
 
 
+def test_episode_layout_rejects_crash_leftovers(tmp_path):
+    (tmp_path / ".episode_000.staging-deadbeef").mkdir()
+    incomplete = tmp_path / "episode_001_20260708_120000"
+    incomplete.mkdir()
+    (incomplete / "frames.csv").write_text("frame_index\n")
+
+    try:
+        validate_episode_layout(tmp_path)
+    except ValueError as exc:
+        message = str(exc)
+        assert "staging:" in message
+        assert "incomplete:" in message
+    else:
+        raise AssertionError("crash leftovers must block collection")
+
+
 def test_metadata_json_explains_topics_and_control_path():
     metadata = TeleopRawEpisodeMetadata(
         schema_version=TELEOP_RAW_SCHEMA_VERSION,
@@ -121,9 +156,9 @@ def test_metadata_json_explains_topics_and_control_path():
         action_topics={"joint_target": "/arm_joint_target_position"},
         control_path=(
             "/arm_joint_target_position",
-            "jointTracker_demo_node",
+            JOINT_TRACKER_NODE.removeprefix("/"),
             "/arm_joint_command_a1_staged",
-            "safe_arm_command_relay.py",
+            SAFE_RELAY_SCRIPT,
             "/arm_joint_command_host",
         ),
         cameras=(CameraMetadata("front", "cam0", 640, 480),),
@@ -150,7 +185,9 @@ def test_existing_experiment_rejects_mixed_camera_shapes(tmp_path: Path):
     )
 
     try:
-        validate_existing_camera_shape(tmp_path, camera_name="front", width=480, height=480)
+        validate_existing_camera_shape(
+            tmp_path, camera_name="front", width=480, height=480
+        )
     except ValueError as exc:
         assert "cannot append front 480x480" in str(exc)
     else:
@@ -160,7 +197,9 @@ def test_existing_experiment_rejects_mixed_camera_shapes(tmp_path: Path):
 def test_existing_experiment_rejects_old_gripper_schema(tmp_path: Path):
     episode = tmp_path / "episode_000_20260714_000000"
     episode.mkdir()
-    (episode / "metadata.json").write_text('{"schema_version": "galaxea_a1_teleop_raw_v1"}')
+    (episode / "metadata.json").write_text(
+        '{"schema_version": "galaxea_a1_teleop_raw_v1"}'
+    )
 
     try:
         validate_existing_schema(tmp_path, expected=TELEOP_RAW_SCHEMA_VERSION)

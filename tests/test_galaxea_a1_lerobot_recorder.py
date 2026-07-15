@@ -3,7 +3,7 @@ from pathlib import Path
 import pytest
 
 from galaxea_a1_runtime.lerobot.dataset import DatasetConfig
-from galaxea_a1_runtime.hardware.io import A1Observation, NullA1HardwareIO
+from galaxea_a1_runtime.hardware.io import A1Observation, InMemoryA1HardwareIO
 from galaxea_a1_runtime.lerobot.recorder import LeRobotEpisodeRecorder
 from galaxea_a1_runtime.lerobot.writer import LeRobotV3DatasetWriter
 from galaxea_a1_runtime.policies.actions import normalize_action
@@ -37,7 +37,7 @@ def build_recorder():
         contract=contract,
         dataset=dataset,
     )
-    io = NullA1HardwareIO(
+    io = InMemoryA1HardwareIO(
         A1Observation(
             state=(0.0,) * 14,
             images={"front": "image"},
@@ -87,7 +87,7 @@ def test_episode_recorder_validates_before_execution():
         contract=contract,
         dataset=FakeDataset(),
     )
-    io = NullA1HardwareIO(A1Observation(state=(0.0,) * 14, images={}))
+    io = InMemoryA1HardwareIO(A1Observation(state=(0.0,) * 14, images={}))
     recorder = LeRobotEpisodeRecorder(io=io, writer=writer, task="pick cube")
     action = normalize_action([0.01, 0.0, 0.0, 0.5], mode=ActionMode.EEF_TRANSLATION)
 

@@ -6,11 +6,24 @@ import pure modules, but it must not start ROS, Docker, cameras, or serial IO.
 
 from __future__ import annotations
 
-import json
 import sys
 import tomllib
-from dataclasses import asdict, dataclass
 from pathlib import Path
+
+from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.configuration.paths import (
+    ACT_CONFIG,
+    LINGBOT_CONFIG,
+    SYSTEM_CONFIG,
+    TELEOP_CONFIG,
+)
+from galaxea_a1_runtime.constants import SAFE_RELAY_SCRIPT
+from galaxea_a1_runtime.runtime.health_checks import (
+    Check,
+    checks_exit_code,
+    checks_to_json,
+    print_checks,
+)
 
 EXPECTED_LEROBOT_V060_COMMIT = "30da8e687a6dfc617fcd94afc367ac7071c376ce"
 EXPECTED_VENDOR_NAMES = ("A1_SDK", "lerobot")
@@ -24,13 +37,6 @@ REMOVED_MAINLINE_PATHS = (
     "third_party/TFP_pro",
     "troubleshooting.md",
 )
-
-
-@dataclass(frozen=True)
-class Check:
-    name: str
-    level: str
-    detail: str
 
 
 def run_static_doctor(repo_root: Path) -> list[Check]:
@@ -56,23 +62,34 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("runtime_package", package_dir.is_dir(), str(package_dir))
 
     try:
-        from galaxea_a1_runtime.schema import default_dataset_contract
+        from galaxea_a1_runtime.schema import (
+            camera_specs_from_system,
+            default_dataset_contract,
+        )
         from galaxea_a1_runtime.safety import RelayInputs, validate_relay_inputs
         from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
         from galaxea_a1_runtime.collection import state_names_for_mode
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
-        from galaxea_a1_runtime.teleop import JointMappingConfig
+        from galaxea_a1_runtime.apps.act.config import load_act_config
         from galaxea_a1_runtime.teleop.config import load_teleop_config
 
-        contract = default_dataset_contract()
-        settings = build_safety_settings(repo_root / "configs" / "system" / "a1.toml")
+        settings = build_safety_settings(
+            repo_root / SYSTEM_CONFIG,
+            repo_root=repo_root,
+        )
         teleop_state_names = state_names_for_mode("eef_joint")
-        teleop_mapping = JointMappingConfig()
         teleop_config = load_teleop_config(
-            repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root
+            repo_root / TELEOP_CONFIG, repo_root=repo_root
+        )
+        contract = default_dataset_contract(
+            cameras=camera_specs_from_system(teleop_config.system)
         )
         lingbot_config = load_lingbot_config(
-            repo_root / "configs" / "deployments" / "lingbot_va.toml",
+            repo_root / LINGBOT_CONFIG,
+            repo_root=repo_root,
+        )
+        act_config = load_act_config(
+            repo_root / ACT_CONFIG,
             repo_root=repo_root,
         )
         decision = validate_relay_inputs(
@@ -85,29 +102,42 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
                 source_count=0,
                 motor_error_codes=(),
             ),
-            max_age=teleop_config.system.relay.max_input_age_s,
+            max_input_age=teleop_config.system.relay.max_input_age_s,
+            max_status_age=teleop_config.system.relay.max_status_age_s,
         )
         add(
             "pure_imports",
             contract.dataset_format == "v3.0"
             and not decision.allowed
             and len(settings) > 0
-            and len(teleop_state_names) == 14
-            and len(teleop_mapping.sign) == 6,
+            and len(teleop_state_names) == len(contract.state_names)
+            and len(teleop_config.bridge.mapping.sign)
+            == len(teleop_config.system.joint_safety.names),
             "schema, safety, collection, teleop, and safety report imported without ROS",
         )
         add(
             "teleop_config",
             teleop_config.collection.state_mode.value == "eef_joint"
-            and teleop_config.system.gripper.stroke_max_mm == 100.0,
+            and teleop_config.system.gripper.stroke_max_mm
+            > teleop_config.system.gripper.stroke_min_mm,
             str(teleop_config.path),
         )
         add(
             "lingbot_config",
-            lingbot_config.server.port == 1106
-            and lingbot_config.system.eef.orientation_mode == "hold-current"
-            and lingbot_config.system.topics.eef_target == "/a1_ee_target",
+            lingbot_config.system.path == teleop_config.system.path
+            and 1 <= lingbot_config.server.port <= 65535
+            and lingbot_config.system.eef.orientation_mode
+            in {"hold-current", "model-quat"},
             str(lingbot_config.path),
+        )
+        crop = act_config.system.cameras.front.crop
+        add(
+            "act_config",
+            act_config.system.path == teleop_config.system.path
+            and crop is not None
+            and crop.width == crop.height
+            and not act_config.execution.execute,
+            str(act_config.path),
         )
     except Exception as exc:
         add("pure_imports", False, repr(exc))
@@ -226,7 +256,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     except Exception as exc:
         add("vendored_so_leader_unpatched", False, repr(exc), required=False)
 
-    relay_script = repo_root / "scripts" / "runtime" / "safe_arm_command_relay.py"
+    relay_script = repo_root / "scripts" / "runtime" / SAFE_RELAY_SCRIPT
     add("safe_relay_script", relay_script.is_file(), str(relay_script))
     runtime_services = repo_root / "scripts" / "runtime" / "a1_services.sh"
     add("runtime_services_lib", runtime_services.is_file(), str(runtime_services))
@@ -276,10 +306,6 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     return checks
 
 
-def checks_to_json(checks: list[Check]) -> str:
-    return json.dumps([asdict(check) for check in checks], indent=2, sort_keys=True)
-
-
 def _vendor_entries(data: dict) -> tuple[dict, ...]:
     if int(data.get("schema_version", 0)) != 1:
         raise ValueError("third_party/vendors.toml schema_version must be 1")
@@ -302,20 +328,8 @@ def _vendor_entries(data: dict) -> tuple[dict, ...]:
     return tuple(out)
 
 
-def checks_exit_code(checks: list[Check]) -> int:
-    return 1 if any(check.level == "FAIL" for check in checks) else 0
-
-
-def print_checks(checks: list[Check]) -> None:
-    width = max((len(check.name) for check in checks), default=0)
-    for check in checks:
-        print(f"[{check.level:4}] {check.name:<{width}}  {check.detail}")
-
-
 def main(argv: list[str] | None = None) -> int:
-    import argparse
-
-    parser = argparse.ArgumentParser()
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, default=Path.cwd())
     parser.add_argument("--json", action="store_true")
     args = parser.parse_args(argv)

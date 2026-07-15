@@ -2,25 +2,72 @@
 
 from __future__ import annotations
 
-import argparse
+import re
 import sys
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from galaxea_a1_runtime.configuration.base import (
+    boolean,
     float_tuple,
+    floating,
+    integer,
+    integer_tuple,
     load_toml,
     number,
+    require_exact_keys,
     required_table,
     shell_assign,
     string,
     string_tuple,
 )
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, parse_optional_image_roi
-from galaxea_a1_runtime.hardware.web_preview import WebPreviewConfig, parse_web_preview_config
+from galaxea_a1_runtime.configuration.cameras import (
+    SystemCameraDeviceConfig,
+    SystemCamerasConfig,
+    SystemRealSenseCameraConfig,
+    SystemV4l2CameraConfig,
+    parse_system_cameras,
+)
+from galaxea_a1_runtime.configuration.camera_diagnostics import (
+    CameraDiagnosticsConfig,
+    parse_camera_diagnostics_config,
+)
+from galaxea_a1_runtime.configuration.cli import run_config_renderer
+from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
+from galaxea_a1_runtime.configuration.web_preview import (
+    WebPreviewConfig,
+    parse_web_preview_config,
+)
+from galaxea_a1_runtime.constants import EE_TRACKER_NODE, JOINT_TRACKER_NODE
+from galaxea_a1_runtime.constants import ARM_JOINT_COUNT
 
-DEFAULT_SYSTEM_CONFIG = Path("configs/system/a1.toml")
+__all__ = [
+    "DEFAULT_SYSTEM_CONFIG",
+    "SystemCameraDeviceConfig",
+    "CameraDiagnosticsConfig",
+    "SystemCamerasConfig",
+    "SystemConfig",
+    "SystemDoctorConfig",
+    "SystemEefConfig",
+    "SystemEefTestConfig",
+    "SystemGripperConfig",
+    "SystemHostConfig",
+    "SystemJointSafetyConfig",
+    "SystemRealSenseCameraConfig",
+    "SystemRelayConfig",
+    "SystemStartupConfig",
+    "SystemTopicsConfig",
+    "SystemV4l2CameraConfig",
+    "bash_config",
+    "load_system_config",
+    "render_shell_values",
+]
+
+DEFAULT_SYSTEM_CONFIG = SYSTEM_CONFIG
+ROS_ABSOLUTE_NAME = re.compile(
+    r"^/(?:[A-Za-z_][A-Za-z0-9_]*)(?:/[A-Za-z_][A-Za-z0-9_]*)*$"
+)
 
 
 @dataclass(frozen=True)
@@ -47,10 +94,26 @@ class SystemTopicsConfig:
 
 @dataclass(frozen=True)
 class SystemRelayConfig:
+    rate_hz: float
+    status_rate_hz: float
     enable_timeout_s: float
     max_status_age_s: float
     max_input_age_s: float
     arming_timeout_s: float
+    allowed_control_modes: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class SystemDoctorConfig:
+    ros_topic_timeout_s: float
+
+
+@dataclass(frozen=True)
+class SystemStartupConfig:
+    ros_master_timeout_s: float
+    joint_feedback_timeout_s: float
+    topic_timeout_s: float
+    tmux_process_grace_s: int
 
 
 @dataclass(frozen=True)
@@ -78,40 +141,15 @@ class SystemEefConfig:
 
 
 @dataclass(frozen=True)
+class SystemEefTestConfig:
+    step_m: float
+    settle_s: float
+
+
+@dataclass(frozen=True)
 class SystemGripperConfig:
     stroke_min_mm: float
     stroke_max_mm: float
-
-
-@dataclass(frozen=True)
-class SystemCameraDeviceConfig:
-    backend: str
-    serial: str
-    device: str
-    width: int
-    height: int
-    fps: int
-    backend_api: str
-    pixel_format: str
-    require_usb3: bool
-    depth: bool
-    depth_width: int
-    depth_height: int
-    align_depth_to_color: bool
-    auto_exposure: bool
-    exposure: int
-    gain: int
-    auto_white_balance: bool
-    white_balance: int
-    crop: ImageRoi | None
-
-
-@dataclass(frozen=True)
-class SystemCamerasConfig:
-    warmup_frames: int
-    max_age_s: float
-    front: SystemCameraDeviceConfig
-    wrist: SystemCameraDeviceConfig
 
 
 @dataclass(frozen=True)
@@ -120,30 +158,77 @@ class SystemConfig:
     host: SystemHostConfig
     topics: SystemTopicsConfig
     relay: SystemRelayConfig
+    doctor: SystemDoctorConfig
+    startup: SystemStartupConfig
     joint_safety: SystemJointSafetyConfig
     eef: SystemEefConfig
+    eef_test: SystemEefTestConfig
     gripper: SystemGripperConfig
     cameras: SystemCamerasConfig
+    camera_diagnostics: CameraDiagnosticsConfig
     web_preview: WebPreviewConfig
 
 
 def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemConfig:
     path, repo_root, data = load_toml(path, repo_root=repo_root)
+    require_exact_keys(
+        data,
+        required={
+            "host",
+            "topics",
+            "relay",
+            "doctor",
+            "startup",
+            "joint_safety",
+            "eef",
+            "eef_test",
+            "gripper",
+            "cameras",
+            "camera_diagnostics",
+            "web_preview",
+        },
+        label="system config",
+    )
     host = required_table(data, "host")
     topics = required_table(data, "topics")
     relay = required_table(data, "relay")
+    doctor = required_table(data, "doctor")
+    startup = required_table(data, "startup")
     joint = required_table(data, "joint_safety")
     eef = required_table(data, "eef")
+    eef_test = required_table(data, "eef_test")
     gripper = required_table(data, "gripper")
     cameras = required_table(data, "cameras")
-    front = required_table(cameras, "front")
-    wrist = required_table(cameras, "wrist")
-    front_width, front_height = int(front.get("width", 640)), int(front.get("height", 480))
-    wrist_width, wrist_height = int(wrist.get("width", 640)), int(wrist.get("height", 480))
-
+    require_exact_keys(host, required={"image", "a1_serial"}, label="host")
+    require_exact_keys(
+        topics, required=set(SystemTopicsConfig.__annotations__), label="topics"
+    )
+    require_exact_keys(
+        relay, required=set(SystemRelayConfig.__annotations__), label="relay"
+    )
+    require_exact_keys(
+        doctor, required=set(SystemDoctorConfig.__annotations__), label="doctor"
+    )
+    require_exact_keys(
+        startup, required=set(SystemStartupConfig.__annotations__), label="startup"
+    )
+    require_exact_keys(
+        joint,
+        required=set(SystemJointSafetyConfig.__annotations__),
+        label="joint_safety",
+    )
+    require_exact_keys(eef, required=set(SystemEefConfig.__annotations__), label="eef")
+    require_exact_keys(
+        eef_test, required=set(SystemEefTestConfig.__annotations__), label="eef_test"
+    )
+    require_exact_keys(
+        gripper, required=set(SystemGripperConfig.__annotations__), label="gripper"
+    )
     config = SystemConfig(
         path=path,
-        host=SystemHostConfig(image=string(host, "image"), a1_serial=string(host, "a1_serial")),
+        host=SystemHostConfig(
+            image=string(host, "image"), a1_serial=string(host, "a1_serial")
+        ),
         topics=SystemTopicsConfig(
             joint_states=string(topics, "joint_states"),
             joint_target=string(topics, "joint_target"),
@@ -159,96 +244,99 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             eef_target=string(topics, "eef_target"),
         ),
         relay=SystemRelayConfig(
-            enable_timeout_s=float(relay["enable_timeout_s"]),
-            max_status_age_s=float(relay["max_status_age_s"]),
-            max_input_age_s=float(relay["max_input_age_s"]),
-            arming_timeout_s=float(relay["arming_timeout_s"]),
+            rate_hz=floating(relay, "rate_hz"),
+            status_rate_hz=floating(relay, "status_rate_hz"),
+            enable_timeout_s=floating(relay, "enable_timeout_s"),
+            max_status_age_s=floating(relay, "max_status_age_s"),
+            max_input_age_s=floating(relay, "max_input_age_s"),
+            arming_timeout_s=floating(relay, "arming_timeout_s"),
+            allowed_control_modes=integer_tuple(relay, "allowed_control_modes"),
+        ),
+        doctor=SystemDoctorConfig(
+            ros_topic_timeout_s=floating(doctor, "ros_topic_timeout_s"),
+        ),
+        startup=SystemStartupConfig(
+            ros_master_timeout_s=floating(startup, "ros_master_timeout_s"),
+            joint_feedback_timeout_s=floating(startup, "joint_feedback_timeout_s"),
+            topic_timeout_s=floating(startup, "topic_timeout_s"),
+            tmux_process_grace_s=integer(startup, "tmux_process_grace_s"),
         ),
         joint_safety=SystemJointSafetyConfig(
-            names=string_tuple(joint, "names", 6),
-            lower_limits=float_tuple(joint, "lower_limits", 6),
-            upper_limits=float_tuple(joint, "upper_limits", 6),
-            action_step_guard_enabled=bool(joint.get("action_step_guard_enabled", False)),
-            max_action_step_rad=float(joint.get("max_action_step_rad", 0.25)),
-            max_first_target_delta_rad=float(joint.get("max_first_target_delta_rad", 0.25)),
-            initial_alignment_tolerance_rad=float(joint.get("initial_alignment_tolerance_rad", 0.05)),
-            state_timeout_s=float(joint.get("state_timeout_s", 10.0)),
-            max_feedback_age_s=float(joint.get("max_feedback_age_s", 0.5)),
+            names=string_tuple(joint, "names", ARM_JOINT_COUNT),
+            lower_limits=float_tuple(joint, "lower_limits", ARM_JOINT_COUNT),
+            upper_limits=float_tuple(joint, "upper_limits", ARM_JOINT_COUNT),
+            action_step_guard_enabled=boolean(joint, "action_step_guard_enabled"),
+            max_action_step_rad=floating(joint, "max_action_step_rad"),
+            max_first_target_delta_rad=floating(joint, "max_first_target_delta_rad"),
+            initial_alignment_tolerance_rad=floating(
+                joint, "initial_alignment_tolerance_rad"
+            ),
+            state_timeout_s=floating(joint, "state_timeout_s"),
+            max_feedback_age_s=floating(joint, "max_feedback_age_s"),
         ),
         eef=SystemEefConfig(
             command_frame=string(eef, "command_frame"),
             orientation_mode=string(eef, "orientation_mode"),
             xyz_min=float_tuple(eef, "xyz_min", 3),
             xyz_max=float_tuple(eef, "xyz_max", 3),
-            min_quat_norm=float(eef.get("min_quat_norm", 0.25)),
-            max_feedback_age_s=float(eef.get("max_feedback_age_s", 0.5)),
-            feedback_wait_timeout_s=float(eef.get("feedback_wait_timeout_s", 5.0)),
+            min_quat_norm=floating(eef, "min_quat_norm"),
+            max_feedback_age_s=floating(eef, "max_feedback_age_s"),
+            feedback_wait_timeout_s=floating(eef, "feedback_wait_timeout_s"),
+        ),
+        eef_test=SystemEefTestConfig(
+            step_m=floating(eef_test, "step_m"),
+            settle_s=floating(eef_test, "settle_s"),
         ),
         gripper=SystemGripperConfig(
-            stroke_min_mm=float(gripper["stroke_min_mm"]),
-            stroke_max_mm=float(gripper["stroke_max_mm"]),
+            stroke_min_mm=floating(gripper, "stroke_min_mm"),
+            stroke_max_mm=floating(gripper, "stroke_max_mm"),
         ),
-        cameras=SystemCamerasConfig(
-            warmup_frames=int(cameras.get("warmup_frames", 20)),
-            max_age_s=float(cameras.get("max_age_s", 0.5)),
-            front=_camera(front, front_width, front_height, require_square_crop=True),
-            wrist=_camera(wrist, wrist_width, wrist_height, require_square_crop=False),
+        cameras=parse_system_cameras(cameras),
+        camera_diagnostics=parse_camera_diagnostics_config(
+            required_table(data, "camera_diagnostics"), repo_root=repo_root
         ),
         web_preview=parse_web_preview_config(
-            data.get("web_preview", {}) if isinstance(data.get("web_preview", {}), dict) else {},
-            repo_root=repo_root,
+            required_table(data, "web_preview"), repo_root=repo_root
         ),
     )
     validate_system_config(config)
     return config
 
 
-def _camera(data: dict[str, Any], width: int, height: int, *, require_square_crop: bool) -> SystemCameraDeviceConfig:
-    return SystemCameraDeviceConfig(
-        backend=str(data.get("backend", "realsense")),
-        serial=str(data.get("serial", "")),
-        device=str(data.get("device", "")),
-        width=width,
-        height=height,
-        fps=int(data.get("fps", 30)),
-        backend_api=str(data.get("backend_api", "v4l2")),
-        pixel_format=str(data.get("pixel_format", "")),
-        require_usb3=bool(data.get("require_usb3", False)),
-        depth=bool(data.get("depth", False)),
-        depth_width=int(data.get("depth_width", width)),
-        depth_height=int(data.get("depth_height", height)),
-        align_depth_to_color=bool(data.get("align_depth_to_color", True)),
-        auto_exposure=bool(data.get("auto_exposure", True)),
-        exposure=int(data.get("exposure", 140)),
-        gain=int(data.get("gain", 32)),
-        auto_white_balance=bool(data.get("auto_white_balance", True)),
-        white_balance=int(data.get("white_balance", 4600)),
-        crop=parse_optional_image_roi(
-            data,
-            image_width=width,
-            image_height=height,
-            label="system camera crop",
-            require_square=require_square_crop,
-        ),
-    )
-
-
 def validate_system_config(config: SystemConfig) -> None:
+    if not config.host.a1_serial.startswith("/dev/") or any(
+        character.isspace() for character in config.host.a1_serial
+    ):
+        raise ValueError("host.a1_serial must be a whitespace-free path under /dev")
     for name, value in config.topics.__dict__.items():
-        if not value.startswith("/"):
-            raise ValueError(f"topics.{name} must be absolute: {value!r}")
+        if ROS_ABSOLUTE_NAME.fullmatch(value) is None:
+            raise ValueError(
+                f"topics.{name} must be a valid absolute ROS name: {value!r}"
+            )
     if config.topics.staged_command == config.topics.host_command:
         raise ValueError("topics.staged_command must differ from topics.host_command")
     if config.topics.gripper_target == config.topics.gripper_command:
-        raise ValueError("topics.gripper_target must differ from topics.gripper_command")
-    if any(lo >= hi for lo, hi in zip(config.joint_safety.lower_limits, config.joint_safety.upper_limits, strict=True)):
+        raise ValueError(
+            "topics.gripper_target must differ from topics.gripper_command"
+        )
+    if any(
+        lo >= hi
+        for lo, hi in zip(
+            config.joint_safety.lower_limits,
+            config.joint_safety.upper_limits,
+            strict=True,
+        )
+    ):
         raise ValueError("joint_safety lower_limits must be below upper_limits")
     if len(set(config.joint_safety.names)) != len(config.joint_safety.names):
         raise ValueError("joint_safety.names must not contain duplicates")
     for name, value in (
         ("max_action_step_rad", config.joint_safety.max_action_step_rad),
         ("max_first_target_delta_rad", config.joint_safety.max_first_target_delta_rad),
-        ("initial_alignment_tolerance_rad", config.joint_safety.initial_alignment_tolerance_rad),
+        (
+            "initial_alignment_tolerance_rad",
+            config.joint_safety.initial_alignment_tolerance_rad,
+        ),
         ("state_timeout_s", config.joint_safety.state_timeout_s),
         ("max_feedback_age_s", config.joint_safety.max_feedback_age_s),
     ):
@@ -256,84 +344,129 @@ def validate_system_config(config: SystemConfig) -> None:
             raise ValueError(f"joint_safety.{name} must be positive")
     if config.eef.orientation_mode not in {"hold-current", "model-quat"}:
         raise ValueError("eef.orientation_mode must be hold-current or model-quat")
-    if any(lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)):
+    if any(
+        lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)
+    ):
         raise ValueError("eef.xyz_min must be below xyz_max")
-    if min(
-        config.eef.min_quat_norm,
-        config.eef.max_feedback_age_s,
-        config.eef.feedback_wait_timeout_s,
-    ) <= 0:
+    if (
+        min(
+            config.eef.min_quat_norm,
+            config.eef.max_feedback_age_s,
+            config.eef.feedback_wait_timeout_s,
+        )
+        <= 0
+    ):
         raise ValueError("eef quaternion and feedback limits must be positive")
+    if config.eef_test.step_m <= 0 or config.eef_test.settle_s < 0:
+        raise ValueError("eef_test step must be positive and settle time non-negative")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke range is invalid")
-    if min(
-        config.relay.enable_timeout_s,
-        config.relay.max_status_age_s,
-        config.relay.max_input_age_s,
-        config.relay.arming_timeout_s,
-    ) <= 0:
+    if (
+        min(
+            config.relay.enable_timeout_s,
+            config.relay.rate_hz,
+            config.relay.status_rate_hz,
+            config.relay.max_status_age_s,
+            config.relay.max_input_age_s,
+            config.relay.arming_timeout_s,
+        )
+        <= 0
+    ):
         raise ValueError("relay timeouts must be positive")
-    if config.cameras.warmup_frames < 0:
-        raise ValueError("cameras.warmup_frames must be non-negative")
-    if config.cameras.max_age_s <= 0:
-        raise ValueError("cameras.max_age_s must be positive")
-    if config.cameras.front.crop is None:
-        raise ValueError("system AgentView crop must be enabled")
-    for name, camera in (("front", config.cameras.front), ("wrist", config.cameras.wrist)):
-        if min(camera.width, camera.height, camera.fps) <= 0:
-            raise ValueError(f"cameras.{name} dimensions/fps must be positive")
-        if camera.depth and min(camera.depth_width, camera.depth_height) <= 0:
-            raise ValueError(f"cameras.{name} depth dimensions must be positive")
-        if camera.backend not in {"realsense", "v4l2"}:
-            raise ValueError(f"cameras.{name}.backend must be realsense or v4l2")
-        if camera.backend == "realsense" and not camera.serial:
-            raise ValueError(f"cameras.{name}.serial is required")
-        if camera.backend == "v4l2" and not camera.device:
-            raise ValueError(f"cameras.{name}.device is required")
+    if not config.relay.allowed_control_modes:
+        raise ValueError("relay.allowed_control_modes must not be empty")
+    if len(set(config.relay.allowed_control_modes)) != len(
+        config.relay.allowed_control_modes
+    ) or any(mode < 0 or mode > 255 for mode in config.relay.allowed_control_modes):
+        raise ValueError("relay.allowed_control_modes must contain unique uint8 values")
+    if config.doctor.ros_topic_timeout_s <= 0:
+        raise ValueError("doctor.ros_topic_timeout_s must be positive")
+    if (
+        min(
+            config.startup.ros_master_timeout_s,
+            config.startup.joint_feedback_timeout_s,
+            config.startup.topic_timeout_s,
+            config.startup.tmux_process_grace_s,
+        )
+        < 1
+    ):
+        raise ValueError("startup timeouts must be at least one second")
 
 
-def bash_config(config: SystemConfig) -> str:
-    """Emit the physical runtime contract for the boring shell entrypoints."""
+def shell_values(config: SystemConfig) -> dict[str, str]:
+    """Return the canonical system-to-shell lifecycle mapping."""
 
-    values = {
+    return {
         "SYSTEM_CONFIG_PATH": str(config.path),
         "IMAGE": config.host.image,
         "SERIAL": config.host.a1_serial,
         "JOINT_STATES_TOPIC": config.topics.joint_states,
         "JOINT_TARGET_TOPIC": config.topics.joint_target,
         "STAGED_TOPIC": config.topics.staged_command,
-        "HOST_COMMAND_TOPIC": config.topics.host_command,
-        "MOTOR_STATUS_TOPIC": config.topics.motor_status,
-        "RELAY_ENABLE_TOPIC": config.topics.motion_enable,
         "RELAY_STATUS_TOPIC": config.topics.relay_status,
-        "GRIPPER_TARGET_TOPIC": config.topics.gripper_target,
-        "GRIPPER_COMMAND_TOPIC": config.topics.gripper_command,
-        "GRIPPER_FEEDBACK_TOPIC": config.topics.gripper_feedback,
         "EEF_POSE_TOPIC": config.topics.eef_pose,
         "EEF_TARGET_TOPIC": config.topics.eef_target,
-        "RELAY_MAX_INPUT_AGE_S": number(config.relay.max_input_age_s),
-        "RELAY_ARMING_TIMEOUT_S": number(config.relay.arming_timeout_s),
-        "RELAY_ENABLE_TIMEOUT_S": number(config.relay.enable_timeout_s),
-        "RELAY_MAX_STATUS_AGE_S": number(config.relay.max_status_age_s),
-        "RELAY_MAX_INITIAL_ERROR_RAD": number(
-            config.joint_safety.initial_alignment_tolerance_rad
+        "EE_TRACKER_NODE": EE_TRACKER_NODE,
+        "JOINT_TRACKER_NODE": JOINT_TRACKER_NODE,
+        "WRIST_BACKEND": config.cameras.wrist.backend,
+        "WRIST_CAMERA": (
+            config.cameras.wrist.device
+            if isinstance(config.cameras.wrist, SystemV4l2CameraConfig)
+            else ""
         ),
         "GRIPPER_MIN_STROKE_MM": number(config.gripper.stroke_min_mm),
         "GRIPPER_MAX_STROKE_MM": number(config.gripper.stroke_max_mm),
-        "EEF_COMMAND_FRAME": config.eef.command_frame,
+        "ROS_MASTER_STARTUP_TIMEOUT_S": number(config.startup.ros_master_timeout_s),
+        "JOINT_FEEDBACK_STARTUP_TIMEOUT_S": number(
+            config.startup.joint_feedback_timeout_s
+        ),
+        "TOPIC_STARTUP_TIMEOUT_S": number(config.startup.topic_timeout_s),
+        "TMUX_STARTUP_GRACE_S": str(config.startup.tmux_process_grace_s),
     }
-    return "\n".join(shell_assign(name, value) for name, value in values.items())
+
+
+def render_shell_values(config: SystemConfig, names: Iterable[str]) -> str:
+    values = shell_values(config)
+    requested = tuple(names)
+    unknown = tuple(name for name in requested if name not in values)
+    if unknown:
+        raise ValueError(f"unknown system shell value(s): {list(unknown)}")
+    return "\n".join(shell_assign(name, values[name]) for name in requested)
+
+
+def bash_config(config: SystemConfig) -> str:
+    """Emit the physical runtime contract for the boring shell entrypoints."""
+
+    return render_shell_values(
+        config,
+        (
+            "SYSTEM_CONFIG_PATH",
+            "IMAGE",
+            "SERIAL",
+            "JOINT_STATES_TOPIC",
+            "JOINT_TARGET_TOPIC",
+            "STAGED_TOPIC",
+            "RELAY_STATUS_TOPIC",
+            "EEF_POSE_TOPIC",
+            "EEF_TARGET_TOPIC",
+            "EE_TRACKER_NODE",
+            "JOINT_TRACKER_NODE",
+            "ROS_MASTER_STARTUP_TIMEOUT_S",
+            "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
+            "TOPIC_STARTUP_TIMEOUT_S",
+            "TMUX_STARTUP_GRACE_S",
+        ),
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description="Read the unique A1 physical system config.")
-    parser.add_argument("config", nargs="?", type=Path, default=DEFAULT_SYSTEM_CONFIG)
-    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
-    parser.add_argument("--shell", action="store_true")
-    args = parser.parse_args(argv)
-    config = load_system_config(args.config, repo_root=args.repo_root)
-    print(bash_config(config) if args.shell else config.path)
-    return 0
+    return run_config_renderer(
+        argv,
+        description="Read the unique A1 physical system config.",
+        default_config=DEFAULT_SYSTEM_CONFIG,
+        load_config=load_system_config,
+        render_shell=bash_config,
+    )
 
 
 if __name__ == "__main__":

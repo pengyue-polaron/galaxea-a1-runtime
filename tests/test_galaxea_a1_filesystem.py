@@ -2,7 +2,8 @@ from pathlib import Path
 
 import pytest
 
-from galaxea_a1_runtime.lerobot.atomic_output import (
+from galaxea_a1_runtime.filesystem import (
+    OutputDirectoryTransaction,
     atomic_output_directory,
     atomic_output_file,
 )
@@ -47,6 +48,29 @@ def test_atomic_directory_rejects_existing_output_without_overwrite(tmp_path):
     with pytest.raises(FileExistsError, match="target root exists"):
         with atomic_output_directory(target, overwrite=False):
             raise AssertionError("must not enter")
+
+
+def test_explicit_directory_transaction_only_installs_after_commit(tmp_path):
+    target = tmp_path / "episode_000"
+
+    with OutputDirectoryTransaction(target) as transaction:
+        assert transaction.path is not None
+        (transaction.path / "frames.csv").write_text("frame_index\n")
+        assert not target.exists()
+        transaction.commit()
+
+    assert (target / "frames.csv").is_file()
+
+
+def test_uncommitted_directory_transaction_removes_staging(tmp_path):
+    target = tmp_path / "episode_000"
+
+    with OutputDirectoryTransaction(target) as transaction:
+        assert transaction.path is not None
+        (transaction.path / "partial.jpg").write_bytes(b"partial")
+
+    assert not target.exists()
+    assert _temporary_outputs(tmp_path) == []
 
 
 def test_atomic_file_failure_preserves_existing_output(tmp_path):

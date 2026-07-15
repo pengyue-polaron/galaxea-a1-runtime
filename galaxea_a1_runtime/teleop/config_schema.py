@@ -14,6 +14,13 @@ from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
 class TeleopRuntimeConfig:
     prefix: str
     run_dir: str
+    bridge_startup_timeout_s: float
+    bridge_stop_timeout_s: float
+
+
+@dataclass(frozen=True)
+class TeleopResetConfig:
+    config: Path
 
 
 @dataclass(frozen=True)
@@ -35,6 +42,8 @@ class TeleopBridgeConfig:
 class TeleopGripperConfig:
     enabled: bool
     source_key: str
+    source_min: float
+    source_max: float
     invert: bool
 
 
@@ -55,6 +64,7 @@ class TeleopConfig:
     path: Path
     system: SystemConfig
     runtime: TeleopRuntimeConfig
+    reset: TeleopResetConfig
     leader: TeleopLeaderConfig
     bridge: TeleopBridgeConfig
     gripper: TeleopGripperConfig

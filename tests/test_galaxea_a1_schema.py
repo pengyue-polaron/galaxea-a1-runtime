@@ -1,16 +1,21 @@
 import pytest
+from pathlib import Path
 
+from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.schema import (
     ActionMode,
     CameraSpec,
+    camera_specs_from_system,
     default_dataset_contract,
     validate_frame_keys,
 )
 
 
 def test_default_contract_targets_lerobot_v3():
-    contract = default_dataset_contract()
+    repo = Path(__file__).resolve().parents[1]
+    system = load_system_config(repo / "configs/system/a1.toml", repo_root=repo)
+    contract = default_dataset_contract(cameras=camera_specs_from_system(system))
 
     assert contract.dataset_format == LEROBOT_DATASET_FORMAT
     assert contract.dataset_format == "v3.0"
@@ -34,7 +39,14 @@ def test_default_contract_exposes_expected_feature_keys():
 
 
 def test_depth_camera_spec_marks_lerobot_depth_feature():
-    spec = CameraSpec("front_depth", height=480, width=640, channels=1, is_depth_map=True, depth_unit="mm")
+    spec = CameraSpec(
+        "front_depth",
+        height=480,
+        width=640,
+        channels=1,
+        is_depth_map=True,
+        depth_unit="mm",
+    )
     feature = spec.feature()
 
     assert feature["dtype"] == "video"
@@ -43,7 +55,10 @@ def test_depth_camera_spec_marks_lerobot_depth_feature():
 
 
 def test_translation_action_contract_uses_four_actions():
-    contract = default_dataset_contract(action_mode=ActionMode.EEF_TRANSLATION)
+    contract = default_dataset_contract(
+        action_mode=ActionMode.EEF_TRANSLATION,
+        cameras=(CameraSpec("front", height=10, width=10),),
+    )
 
     assert contract.action_names == ("delta_x", "delta_y", "delta_z", "gripper")
     assert contract.features()["action"]["shape"] == (4,)

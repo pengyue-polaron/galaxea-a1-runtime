@@ -54,7 +54,7 @@ class A1HomeRunner:
         motion = self.pose.motion
         rate = rospy.Rate(motion.hz)
         self.enable_pub.publish(Bool(data=False))
-        current = self.wait_for_joints()
+        current = self.wait_for_joints(timeout_s=motion.tracker_alignment_timeout_s)
         self.progress.update("A1", 0)
         self.wait_for_staged_alignment(
             current,
@@ -80,7 +80,7 @@ class A1HomeRunner:
             self.enable_pub.publish(Bool(data=False))
             time.sleep(0.2)
 
-    def wait_for_joints(self, timeout_s: float = 10.0) -> tuple[float, ...]:
+    def wait_for_joints(self, *, timeout_s: float) -> tuple[float, ...]:
         deadline = time.monotonic() + timeout_s
         while not rospy.is_shutdown() and time.monotonic() < deadline:
             positions = self.joints.positions()
@@ -170,7 +170,6 @@ class A1HomeRunner:
     def publish_target(self, target: tuple[float, ...]) -> None:
         msg = JointState()
         msg.header.stamp = rospy.Time.now()
-        msg.header.frame_id = "world"
         msg.name = list(self.pose.names)
         msg.position = list(target)
         self.target_pub.publish(msg)

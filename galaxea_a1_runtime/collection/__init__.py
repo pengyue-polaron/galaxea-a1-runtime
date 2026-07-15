@@ -14,7 +14,9 @@ from .schema import (
     state_names_for_mode,
     teleop_frame_header,
     validate_existing_camera_shape,
+    validate_episode_layout,
     validate_existing_schema,
+    validate_experiment_name,
 )
 
 __all__ = [
@@ -32,5 +34,7 @@ __all__ = [
     "state_names_for_mode",
     "teleop_frame_header",
     "validate_existing_camera_shape",
+    "validate_episode_layout",
     "validate_existing_schema",
+    "validate_experiment_name",
 ]

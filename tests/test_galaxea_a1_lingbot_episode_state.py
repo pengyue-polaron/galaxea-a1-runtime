@@ -3,18 +3,20 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from galaxea_a1_runtime.apps.lingbot.actions import LingBotActionConfig
+from galaxea_a1_runtime.apps.lingbot.actions import LingBotActionTransformConfig
 from galaxea_a1_runtime.apps.lingbot.episode_state import LingBotEpisodeState
 
 
-def _config() -> LingBotActionConfig:
-    return LingBotActionConfig(
+def _config() -> LingBotActionTransformConfig:
+    return LingBotActionTransformConfig(
         xyz_min=(0.0, -1.0, 0.0),
         xyz_max=(1.0, 1.0, 1.0),
         min_quat_norm=0.25,
         orientation_mode="hold-current",
         gripper_stroke_min=0.0,
         gripper_stroke_max=100.0,
+        eef_servo_gain=1.0,
+        eef_servo_max_extra=0.04,
     )
 
 
@@ -77,3 +79,13 @@ def test_episode_state_falls_back_to_explicit_initial_action():
     assert state.current_absolute_action() == pytest.approx(
         (0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, 0.75)
     )
+
+
+def test_invalid_gripper_feedback_clears_the_previous_sample():
+    state = _state()
+    state.gripper_callback(SimpleNamespace(position=[25.0]))
+    assert state.gripper_is_fresh()
+
+    state.gripper_callback(SimpleNamespace(position=[float("nan")]))
+
+    assert not state.gripper_is_fresh()

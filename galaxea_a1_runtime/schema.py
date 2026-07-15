@@ -4,9 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from galaxea_a1_runtime.configuration.cameras import SystemRealSenseCameraConfig
 
 from .constants import LEROBOT_DATASET_FORMAT
+
+if TYPE_CHECKING:
+    from galaxea_a1_runtime.configuration.system import SystemConfig
 
 DEFAULT_STATE_NAMES = (
     "eef_x",
@@ -52,6 +57,21 @@ JOINT_ACTION_NAMES = (
     "gripper",
 )
 
+JOINT_ACTION_NAMES_RAD = (
+    "joint_1_rad",
+    "joint_2_rad",
+    "joint_3_rad",
+    "joint_4_rad",
+    "joint_5_rad",
+    "joint_6_rad",
+    "gripper_normalized",
+)
+
+FRONT_IMAGE_KEY = "observation.images.front"
+WRIST_IMAGE_KEY = "observation.images.wrist"
+LINGBOT_EEF_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)
+DEFAULT_RGB_IMAGE_KEYS = (FRONT_IMAGE_KEY, WRIST_IMAGE_KEY)
+
 
 class ActionMode(StrEnum):
     EEF_DELTA = "eef_delta"
@@ -74,7 +94,9 @@ class CameraSpec:
     def feature(self) -> dict[str, Any]:
         _validate_identifier(self.name, "camera name")
         if self.height <= 0 or self.width <= 0:
-            raise ValueError(f"invalid camera shape for {self.name}: {self.height}x{self.width}")
+            raise ValueError(
+                f"invalid camera shape for {self.name}: {self.height}x{self.width}"
+            )
         if self.channels not in (1, 3, 4):
             raise ValueError(f"invalid channel count for {self.name}: {self.channels}")
         feature = {
@@ -110,11 +132,8 @@ class DatasetContract:
 
 def default_dataset_contract(
     *,
+    cameras: tuple[CameraSpec, ...],
     action_mode: ActionMode = ActionMode.EEF_DELTA,
-    cameras: tuple[CameraSpec, ...] = (
-        CameraSpec("front", height=480, width=480),
-        CameraSpec("wrist", height=480, width=640),
-    ),
 ) -> DatasetContract:
     return DatasetContract(
         dataset_format=LEROBOT_DATASET_FORMAT,
@@ -123,6 +142,48 @@ def default_dataset_contract(
         action_names=action_names_for_mode(action_mode),
         camera_specs=cameras,
     )
+
+
+def camera_specs_from_system(
+    system: SystemConfig, *, include_depth: bool | None = None
+) -> tuple[CameraSpec, ...]:
+    """Derive dataset image shapes from the unique physical camera config."""
+
+    front = system.cameras.front
+    wrist = system.cameras.wrist
+    front_width = front.crop.width if front.crop is not None else front.width
+    front_height = front.crop.height if front.crop is not None else front.height
+    specs = [
+        CameraSpec("front", height=front_height, width=front_width),
+        CameraSpec("wrist", height=wrist.height, width=wrist.width),
+    ]
+    depth_enabled = (
+        isinstance(front, SystemRealSenseCameraConfig) and front.depth
+        if include_depth is None
+        else include_depth
+    )
+    if depth_enabled:
+        if not isinstance(front, SystemRealSenseCameraConfig) or not front.depth:
+            raise ValueError("front depth camera spec requested but depth is disabled")
+        if front.crop is not None:
+            depth_width, depth_height = front.crop.width, front.crop.height
+        elif front.align_depth_to_color:
+            depth_width, depth_height = front.width, front.height
+        else:
+            if front.depth_width is None or front.depth_height is None:
+                raise ValueError("front depth dimensions are missing")
+            depth_width, depth_height = front.depth_width, front.depth_height
+        specs.append(
+            CameraSpec(
+                "front_depth",
+                height=depth_height,
+                width=depth_width,
+                channels=1,
+                is_depth_map=True,
+                depth_unit="millimeter",
+            )
+        )
+    return tuple(specs)
 
 
 def action_names_for_mode(action_mode: ActionMode) -> tuple[str, ...]:

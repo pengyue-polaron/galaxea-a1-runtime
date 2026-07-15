@@ -4,9 +4,9 @@
 
 from __future__ import annotations
 
-import argparse
 import sys
 import time
+from argparse import Namespace
 from datetime import datetime
 from pathlib import Path
 
@@ -14,15 +14,20 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
+from galaxea_a1_runtime.console import ArgumentParser, failure
+from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
 
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Capture configured A1 teleop camera snapshots.")
-    parser.add_argument("--config", type=Path, help="Teleop TOML config. Defaults to configs/teleop/a1_so100.toml")
-    parser.add_argument("--out-dir", type=Path, help="Directory for captured images.")
-    parser.add_argument("--timeout-s", type=float, default=5.0)
-    parser.add_argument("--warmup-frames", type=int, default=20)
-    parser.add_argument("--probe-s", type=float, default=2.0)
-    parser.add_argument("--jpeg-quality", type=int, default=95)
+
+def parse_args() -> Namespace:
+    parser = ArgumentParser(
+        description="Capture snapshots from the tracked A1 system cameras."
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=ROOT_DIR / SYSTEM_CONFIG,
+        help="Tracked physical system TOML config.",
+    )
     return parser.parse_args()
 
 
@@ -32,101 +37,119 @@ if any(arg in {"-h", "--help"} for arg in sys.argv[1:]):
 import cv2
 import numpy as np
 
+from galaxea_a1_runtime.configuration.system import (
+    SystemRealSenseCameraConfig,
+    load_system_config,
+)
 from galaxea_a1_runtime.hardware.cameras import (
+    CameraSample,
     ColorCamera,
     LatestCameraReader,
     RealSenseColorCamera,
     RealSenseFrameSet,
-    open_color_camera,
+    close_camera_resources,
+    open_configured_camera,
 )
-from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
 
 
 def main() -> int:
     args = parse_args()
-    config_path = args.config or default_config_path(ROOT_DIR)
-    config = load_teleop_config(config_path, repo_root=ROOT_DIR)
-    front_config = config.system.cameras.front
-    wrist_config = config.system.cameras.wrist
-    out_dir = args.out_dir or (
-        ROOT_DIR
-        / "data"
-        / "diagnostics"
-        / "camera_snapshots"
-        / datetime.now().strftime("%Y%m%d_%H%M%S")
-    )
+    system = load_system_config(args.config, repo_root=ROOT_DIR)
+    front_config = system.cameras.front
+    wrist_config = system.cameras.wrist
+    diagnostic = system.camera_diagnostics
+    out_dir = diagnostic.output_root / datetime.now().strftime("%Y%m%d_%H%M%S")
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    front: RealSenseColorCamera | None = None
+    front: ColorCamera | None = None
     wrist: ColorCamera | None = None
+    front_reader: LatestCameraReader | None = None
+    wrist_reader: LatestCameraReader | None = None
     try:
-        front = RealSenseColorCamera(
-            front_config.serial,
-            front_config.width,
-            front_config.height,
-            front_config.fps,
-            enable_depth=front_config.depth,
-            depth_width=front_config.depth_width,
-            depth_height=front_config.depth_height,
-            align_depth_to_color=front_config.align_depth_to_color,
-            warmup_frames=args.warmup_frames,
-            require_usb3=front_config.require_usb3,
+        opened_front = open_configured_camera(
+            front_config,
+            warmup_frames=system.cameras.warmup_frames,
+            enable_depth=(
+                front_config.depth
+                if isinstance(front_config, SystemRealSenseCameraConfig)
+                else False
+            ),
         )
-        wrist = open_color_camera(
-            wrist_config.backend,
-            serial=wrist_config.serial,
-            device=wrist_config.device,
-            width=wrist_config.width,
-            height=wrist_config.height,
-            fps=wrist_config.fps,
-            pixel_format=wrist_config.pixel_format,
-            warmup_frames=args.warmup_frames,
+        front = opened_front
+        wrist = open_configured_camera(
+            wrist_config,
+            warmup_frames=system.cameras.warmup_frames,
+            enable_depth=False,
         )
-
+        front_reader = LatestCameraReader(
+            "front",
+            front.read_frameset
+            if isinstance(front, RealSenseColorCamera)
+            else front.read_bgr,
+        )
+        wrist_reader = LatestCameraReader("wrist", wrist.read_bgr)
+        front_reader.start()
+        wrist_reader.start()
+        readers = (front_reader, wrist_reader)
+        _wait_for_latest_samples(readers, timeout_s=diagnostic.frame_timeout_s)
         rates = probe_camera_rates(
-            front,
-            wrist,
-            duration_s=args.probe_s,
+            readers,
+            duration_s=diagnostic.rate_probe_s,
             front_target_fps=front_config.fps,
             wrist_target_fps=wrist_config.fps,
         )
-        front_frameset = wait_realsense_frameset(front, timeout_s=args.timeout_s, label="front")
-        front_img = front_frameset.color_bgr
-        wrist_img = wait_frame(wrist, timeout_s=args.timeout_s, label="wrist")
+        front_sample, wrist_sample = _latest_samples(readers)
+        front_frameset = front_sample.value
+        if isinstance(front_frameset, RealSenseFrameSet):
+            front_img = front_frameset.color_bgr
+        elif isinstance(front_frameset, np.ndarray):
+            front_img = front_frameset
+        else:
+            raise RuntimeError("front camera returned an invalid image")
+        wrist_img = wrist_sample.value
+        if not isinstance(wrist_img, np.ndarray):
+            raise RuntimeError("wrist camera returned an invalid image")
         front_path = out_dir / "cam0_front.jpg"
         wrist_path = out_dir / "cam1_wrist.jpg"
         sheet_path = out_dir / "contact_sheet.jpg"
         depth_path: Path | None = None
         depth_preview_path: Path | None = None
-        jpeg_params = [int(cv2.IMWRITE_JPEG_QUALITY), args.jpeg_quality]
-        cv2.imwrite(str(front_path), front_img, jpeg_params)
-        cv2.imwrite(str(wrist_path), wrist_img, jpeg_params)
+        jpeg_params = [int(cv2.IMWRITE_JPEG_QUALITY), diagnostic.jpeg_quality]
+        _write_image(front_path, front_img, jpeg_params)
+        _write_image(wrist_path, wrist_img, jpeg_params)
         sheet_images: list[tuple[str, np.ndarray]] = [
             ("cam0 front", front_img),
             (f"cam1 wrist {wrist.label}", wrist_img),
         ]
-        if front_config.depth:
+        if isinstance(front_config, SystemRealSenseCameraConfig) and front_config.depth:
+            if not isinstance(front_frameset, RealSenseFrameSet):
+                raise RuntimeError("depth-enabled front camera returned no frameset")
             if front_frameset.depth_mm is None:
-                raise RuntimeError("RealSense depth is enabled but no depth frame was captured")
+                raise RuntimeError(
+                    "RealSense depth is enabled but no depth frame was captured"
+                )
             depth_path = out_dir / "cam0_depth.png"
             depth_preview_path = out_dir / "cam0_depth_preview.jpg"
             preview = depth_preview(front_frameset.depth_mm)
-            cv2.imwrite(str(depth_path), front_frameset.depth_mm)
-            cv2.imwrite(str(depth_preview_path), preview, jpeg_params)
+            _write_image(depth_path, front_frameset.depth_mm)
+            _write_image(depth_preview_path, preview, jpeg_params)
             sheet_images.append(("cam0 depth", preview))
-        cv2.imwrite(
-            str(sheet_path),
+        _write_image(
+            sheet_path,
             contact_sheet(tuple(sheet_images)),
             jpeg_params,
         )
     finally:
-        if wrist is not None:
-            wrist.close()
-        if front is not None:
-            front.close()
+        close_camera_resources(
+            (wrist_reader, front_reader),
+            (wrist, front),
+        )
 
-    print(f"cam0_usb={front.usb_type if front is not None else 'unknown'}")
-    if args.probe_s > 0:
+    print(
+        f"cam0_usb={front.usb_type if isinstance(front, RealSenseColorCamera) else 'n/a'}"
+    )
+    print(f"config={system.path}")
+    if diagnostic.rate_probe_s > 0:
         print(f"cam0_front_fps={rates['front']:.2f}")
         print(f"cam1_wrist_fps={rates['wrist']:.2f}")
     print(f"cam0_front={front_path}")
@@ -140,8 +163,7 @@ def main() -> int:
 
 
 def probe_camera_rates(
-    front: RealSenseColorCamera,
-    wrist: ColorCamera,
+    readers: tuple[LatestCameraReader, LatestCameraReader],
     *,
     duration_s: float,
     front_target_fps: float,
@@ -149,21 +171,18 @@ def probe_camera_rates(
 ) -> dict[str, float]:
     if duration_s <= 0:
         return {"front": 0.0, "wrist": 0.0}
-    readers = (
-        LatestCameraReader("front", front.read_frameset),
-        LatestCameraReader("wrist", wrist.read_bgr),
-    )
-    for reader in readers:
-        reader.start()
+    initial_counts = {reader.name: reader.frame_count() for reader in readers}
     start = time.perf_counter()
     time.sleep(duration_s)
     elapsed = max(time.perf_counter() - start, 1e-6)
     for reader in readers:
-        reader.stop()
         exc = reader.exception()
         if exc is not None:
             raise RuntimeError(f"{reader.name} camera probe failed") from exc
-    rates = {reader.name: reader.frame_count() / elapsed for reader in readers}
+    rates = {
+        reader.name: (reader.frame_count() - initial_counts[reader.name]) / elapsed
+        for reader in readers
+    }
     too_slow = []
     for name, target_fps in (("front", front_target_fps), ("wrist", wrist_target_fps)):
         if rates[name] < 0.8 * target_fps:
@@ -173,24 +192,38 @@ def probe_camera_rates(
     return rates
 
 
-def wait_realsense_frameset(camera: RealSenseColorCamera, *, timeout_s: float, label: str) -> RealSenseFrameSet:
+def _wait_for_latest_samples(
+    readers: tuple[LatestCameraReader, LatestCameraReader], *, timeout_s: float
+) -> None:
     deadline = time.monotonic() + timeout_s
     while time.monotonic() < deadline:
-        frameset = camera.read_frameset()
-        if frameset is not None:
-            return frameset
-        time.sleep(0.03)
-    raise RuntimeError(f"No frame from {label} camera within {timeout_s:.1f}s")
+        for reader in readers:
+            exc = reader.exception()
+            if exc is not None:
+                raise RuntimeError(f"{reader.name} camera reader failed") from exc
+        if all(reader.latest() is not None for reader in readers):
+            return
+        time.sleep(0.01)
+    details = ", ".join(
+        f"{reader.name}:seq={reader.latest_seq()}" for reader in readers
+    )
+    raise RuntimeError(f"No frame from all cameras within {timeout_s:.1f}s ({details})")
 
 
-def wait_frame(camera, *, timeout_s: float, label: str) -> np.ndarray:
-    deadline = time.monotonic() + timeout_s
-    while time.monotonic() < deadline:
-        frame = camera.read_bgr()
-        if frame is not None:
-            return frame
-        time.sleep(0.03)
-    raise RuntimeError(f"No frame from {label} camera within {timeout_s:.1f}s")
+def _latest_samples(
+    readers: tuple[LatestCameraReader, LatestCameraReader],
+) -> tuple[CameraSample, CameraSample]:
+    samples = tuple(reader.latest() for reader in readers)
+    if samples[0] is None or samples[1] is None:
+        raise RuntimeError("camera samples disappeared after readiness")
+    return samples
+
+
+def _write_image(
+    path: Path, image: np.ndarray, params: list[int] | None = None
+) -> None:
+    if not cv2.imwrite(str(path), image, params or []):
+        raise RuntimeError(f"failed to write diagnostic image: {path}")
 
 
 def depth_preview(depth_mm: np.ndarray) -> np.ndarray:
@@ -200,7 +233,9 @@ def depth_preview(depth_mm: np.ndarray) -> np.ndarray:
     near, far = np.percentile(valid, (2, 98))
     if far <= near:
         far = near + 1
-    normalized = np.clip((depth_mm.astype(np.float32) - near) * (255.0 / (far - near)), 0, 255)
+    normalized = np.clip(
+        (depth_mm.astype(np.float32) - near) * (255.0 / (far - near)), 0, 255
+    )
     preview = cv2.applyColorMap(normalized.astype(np.uint8), cv2.COLORMAP_TURBO)
     preview[depth_mm == 0] = (0, 0, 0)
     return preview
@@ -242,5 +277,5 @@ if __name__ == "__main__":
     try:
         raise SystemExit(main())
     except RuntimeError as exc:
-        print(f"error: {exc}", file=sys.stderr)
+        failure(str(exc))
         raise SystemExit(1)

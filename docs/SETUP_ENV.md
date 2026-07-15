@@ -30,8 +30,10 @@ locked project environment.
   `30da8e687a6dfc617fcd94afc367ac7071c376ce`
 - Dataset target: LeRobotDataset v3.0
 
-The old OpenPI/TFP, ZMQ, DataCoach, and LeRobot v2.1 paths have been removed
-from the main runtime.
+The old OpenPI/TFP, ZMQ, and DataCoach paths have been removed from the main
+runtime. LeRobot v3.0 is the training/runtime baseline; the dataset packer keeps
+one deliberate offline v2.1 export for LingBot compatibility, isolated from the
+live runtime.
 
 ## Hardware Setup
 

@@ -23,6 +23,8 @@ class LingBotSessionConfig:
 class LingBotServerConfig:
     host: str
     port: int
+    connect_timeout_s: float
+    close_timeout_s: float
     prompt: str
 
 
@@ -51,7 +53,6 @@ class LingBotPolicyServerConfig:
     action_inference_steps: int
     snr_shift: float
     action_snr_shift: float
-    used_action_channel_ids: tuple[int, ...]
     q01_source: tuple[float, ...]
     q99_source: tuple[float, ...]
     deployment_ready: bool
@@ -65,10 +66,9 @@ class LingBotExecutionConfig:
     no_kv_update: bool
     max_model_calls: int
     execute_frames: int
+    kv_observations_per_frame: int
     condition_on_ee_state: bool
     initial_ee_pose: tuple[float, ...] | None
-    lingbot_frame_chunk_size: int
-    lingbot_action_per_frame: int
     exec_rate: float
     print_actions: bool
     review_deadband_m: float
@@ -81,7 +81,7 @@ class LingBotObservationConfig:
 
 
 @dataclass(frozen=True)
-class LingBotActionConfig:
+class LingBotActionModeConfig:
     pose_mode: PoseMode
 
 
@@ -104,5 +104,5 @@ class LingBotConfig:
     policy_server: LingBotPolicyServerConfig
     execution: LingBotExecutionConfig
     observations: LingBotObservationConfig
-    action: LingBotActionConfig
+    action: LingBotActionModeConfig
     servo: LingBotServoConfig

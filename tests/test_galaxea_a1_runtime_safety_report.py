@@ -17,10 +17,23 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "lingbot_orientation_mode" in settings
     assert "lingbot_eef_servo_compensation" in settings
     assert "lingbot_cache_actual_feedback" in settings
-    assert settings["lingbot_cache_actual_feedback"].default == "off; cache tracker command"
+    assert settings["lingbot_cache_actual_feedback"].default
     assert "lingbot_relay_status_guard" in settings
-    assert settings["gripper_scale_mapping"].default == "continuous 0..1 -> system stroke range"
-    assert "does not modify commands" in settings["initial_command_alignment"].operator_note
+    assert settings["joint_action_step_guard"].default.startswith("enabled=false")
+    assert settings["act_execution_gate"].default.startswith("execute=false")
+    assert settings["lingbot_execution_gate"].default.startswith("execute=false")
+    assert settings["teleop_gripper_mapping"].default == (
+        "leader=[0,100], invert=false"
+    )
+    assert settings["lingbot_eef_servo_compensation"].default == (
+        "gain=1, max_extra=0.04m"
+    )
+    assert settings["lingbot_cache_actual_feedback"].default == "false"
+    assert settings["gripper_scale_mapping"].default.startswith("continuous 0..1")
+    assert (
+        "does not modify commands"
+        in settings["initial_command_alignment"].operator_note
+    )
 
 
 def test_safety_report_has_text_and_json_forms():

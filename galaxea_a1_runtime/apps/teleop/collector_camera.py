@@ -2,27 +2,26 @@
 
 from __future__ import annotations
 
-from typing import Any
-
 from galaxea_a1_runtime.apps.teleop.recording import wait_for_new_camera_samples
 from galaxea_a1_runtime.hardware.cameras import (
     ColorCamera,
     LatestCameraReader,
     RealSenseColorCamera,
-    open_color_camera,
+    open_configured_camera,
+    close_camera_resources,
 )
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi
+from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.hardware.web_preview import (
     CameraWebPreview,
     color_from_bgr,
     color_from_frameset,
-    web_preview_config_from_args,
 )
+from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
 class TeleopCameraSession:
-    def __init__(self, args: Any, front_crop: ImageRoi | None):
-        self.args = args
+    def __init__(self, config: TeleopConfig, front_crop: ImageRoi | None):
+        self.config = config
         self.front_crop = front_crop
         self.front: RealSenseColorCamera | None = None
         self.wrist: ColorCamera | None = None
@@ -31,28 +30,22 @@ class TeleopCameraSession:
         self.preview: CameraWebPreview | None = None
 
     def start(self) -> str:
+        cameras = self.config.system.cameras
+        front = cameras.front
+        wrist = cameras.wrist
         try:
-            self.front = RealSenseColorCamera(
-                self.args.cam0_serial,
-                self.args.cam0_width,
-                self.args.cam0_height,
-                self.args.cam0_fps,
-                enable_depth=self.args.cam0_depth_enabled,
-                depth_width=self.args.cam0_depth_width,
-                depth_height=self.args.cam0_depth_height,
-                align_depth_to_color=self.args.cam0_align_depth_to_color,
-                warmup_frames=20,
-                require_usb3=self.args.cam0_require_usb3,
+            opened_front = open_configured_camera(
+                front,
+                warmup_frames=cameras.warmup_frames,
+                enable_depth=front.depth,
             )
-            self.wrist = open_color_camera(
-                self.args.cam1_backend,
-                serial=self.args.cam1_serial,
-                device=self.args.cam1_device,
-                width=self.args.cam1_width,
-                height=self.args.cam1_height,
-                fps=self.args.cam1_fps,
-                pixel_format=self.args.cam1_pixel_format,
-                warmup_frames=10,
+            if not isinstance(opened_front, RealSenseColorCamera):
+                raise RuntimeError("teleop AgentView must open as a RealSense camera")
+            self.front = opened_front
+            self.wrist = open_configured_camera(
+                wrist,
+                warmup_frames=cameras.warmup_frames,
+                enable_depth=False,
             )
             self.front_reader = LatestCameraReader("front", self.front.read_frameset)
             self.wrist_reader = LatestCameraReader("wrist", self.wrist.read_bgr)
@@ -62,12 +55,12 @@ class TeleopCameraSession:
             wait_for_new_camera_samples(
                 self.readers,
                 min_seq={"front": -1, "wrist": -1},
-                timeout_s=self.args.ready_timeout_s,
+                timeout_s=self.config.collection.ready_timeout_s,
             )
         except BaseException:
             self.close()
             raise
-        depth = "on" if self.args.cam0_depth_enabled else "off"
+        depth = "on" if front.depth else "off"
         return (
             f"wrist={self.wrist.label}, realsense_usb={self.front.usb_type}, "
             f"depth={depth}"
@@ -86,28 +79,41 @@ class TeleopCameraSession:
         return self.wrist.label
 
     def close(self) -> None:
+        preview_error: BaseException | None = None
         if self.preview is not None:
-            self.preview.close()
+            try:
+                self.preview.close()
+            except BaseException as exc:  # noqa: BLE001 - finish camera cleanup.
+                preview_error = exc
             self.preview = None
-        for reader in (self.wrist_reader, self.front_reader):
-            if reader is not None:
-                reader.stop()
+        cleanup_error: BaseException | None = None
+        try:
+            close_camera_resources(
+                (self.wrist_reader, self.front_reader),
+                (self.wrist, self.front),
+            )
+        except BaseException as exc:  # noqa: BLE001 - clear owned references.
+            cleanup_error = exc
         self.wrist_reader = None
         self.front_reader = None
-        for camera in (self.wrist, self.front):
-            if camera is not None:
-                camera.close()
         self.wrist = None
         self.front = None
+        if preview_error is not None:
+            raise RuntimeError("camera web preview cleanup failed") from preview_error
+        if cleanup_error is not None:
+            raise cleanup_error
 
     def _start_preview(self) -> None:
-        preview_config = web_preview_config_from_args(self.args)
+        preview_config = self.config.system.web_preview
         if not preview_config.enabled:
             return
         if self.front is None or self.wrist is None:
             raise RuntimeError("cannot start preview before cameras")
         front_reader, wrist_reader = self.readers
-        self.preview = CameraWebPreview(preview_config)
+        self.preview = CameraWebPreview(
+            preview_config,
+            max_source_age_s=self.config.system.cameras.max_age_s,
+        )
         self.preview.register_reader(
             "agent",
             front_reader,

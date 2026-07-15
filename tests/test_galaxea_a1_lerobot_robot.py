@@ -1,12 +1,12 @@
 import pytest
 
-from galaxea_a1_runtime.hardware.io import A1Observation, NullA1HardwareIO
+from galaxea_a1_runtime.hardware.io import A1Observation, InMemoryA1HardwareIO
 from galaxea_a1_runtime.lerobot.robot import GalaxeaA1Robot, GalaxeaA1RobotConfig
 from galaxea_a1_runtime.schema import ActionMode, CameraSpec
 
 
 def test_galaxea_a1_robot_composes_an_explicit_io_adapter():
-    io = NullA1HardwareIO(
+    io = InMemoryA1HardwareIO(
         A1Observation(
             state=(0.0,) * 14,
             images={"front": "front-image"},
@@ -39,8 +39,10 @@ def test_galaxea_a1_robot_composes_an_explicit_io_adapter():
 
 
 def test_galaxea_a1_robot_features_match_contract():
-    config = GalaxeaA1RobotConfig()
-    robot = GalaxeaA1Robot(config, io=NullA1HardwareIO())
+    config = GalaxeaA1RobotConfig(
+        camera_specs=(CameraSpec("front", height=480, width=480),)
+    )
+    robot = GalaxeaA1Robot(config, io=InMemoryA1HardwareIO())
 
     assert config.camera_specs[0] == CameraSpec("front", height=480, width=480)
     assert robot.observation_features["observation.state"] == (14,)

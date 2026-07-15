@@ -3,9 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Mapping, Sequence
 
-from galaxea_a1_runtime.safety import clamp_eef_delta, clamp_float
+from galaxea_a1_runtime.safety import clamp_eef_delta
 from galaxea_a1_runtime.schema import ActionMode, action_names_for_mode
 
 
@@ -35,23 +36,32 @@ def normalize_action(
 
     names = action_names_for_mode(mode)
     values = _ordered_values(action, names)
+    if len(values) != len(names):
+        raise ValueError(
+            f"action length mismatch for {mode}: {len(values)} != {len(names)}"
+        )
+    if not all(isfinite(value) for value in values):
+        raise ValueError("action contains non-finite values")
 
     if mode in (ActionMode.EEF_DELTA, ActionMode.EEF_TRANSLATION):
-        kwargs = {}
-        if max_translation is not None:
-            kwargs["max_translation"] = max_translation
-        if max_rotation is not None:
-            kwargs["max_rotation"] = max_rotation
-        values = clamp_eef_delta(values, **kwargs) if kwargs else tuple(float(v) for v in values)
+        limits_requested = max_translation is not None or max_rotation is not None
+        if limits_requested:
+            if max_translation is None:
+                raise ValueError("max_translation is required when EEF limits are used")
+            values = clamp_eef_delta(
+                values,
+                max_translation=max_translation,
+                max_rotation=max_rotation,
+            )
+        elif not 0.0 <= values[-1] <= 1.0:
+            raise ValueError("gripper action is outside [0, 1]")
     elif mode == ActionMode.JOINT_ABSOLUTE:
         values = tuple(float(v) for v in values)
-        if len(values) == len(names):
-            values = values[:-1] + (clamp_float(values[-1], 0.0, 1.0),)
+        if not 0.0 <= values[-1] <= 1.0:
+            raise ValueError("gripper action is outside [0, 1]")
     else:
         raise ValueError(f"unsupported action mode: {mode}")
 
-    if len(values) != len(names):
-        raise ValueError(f"action length mismatch for {mode}: {len(values)} != {len(names)}")
     return RuntimeAction(mode=mode, values=values, names=names, source=source)
 
 

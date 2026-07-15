@@ -26,16 +26,31 @@ def test_normalize_eef_delta_from_mapping_clamps_values_when_limits_are_explicit
 
 
 def test_normalize_translation_action_from_sequence():
-    action = normalize_action([0.01, 0.02, 0.03, -1.0], mode=ActionMode.EEF_TRANSLATION)
+    action = normalize_action([0.01, 0.02, 0.03, 0.4], mode=ActionMode.EEF_TRANSLATION)
 
     assert action.as_dict() == {
         "delta_x": 0.01,
         "delta_y": 0.02,
         "delta_z": 0.03,
-        "gripper": -1.0,
+        "gripper": 0.4,
     }
 
 
 def test_normalize_action_requires_mapping_keys():
     with pytest.raises(ValueError, match="delta_y"):
         normalize_action({"delta_x": 0.0}, mode=ActionMode.EEF_TRANSLATION)
+
+
+def test_normalize_action_rejects_implicit_rewrites_and_partial_limits():
+    with pytest.raises(ValueError):
+        normalize_action([0.01, 0.02, 0.03, -1.0], mode=ActionMode.EEF_TRANSLATION)
+    with pytest.raises(ValueError):
+        normalize_action(
+            [0.01, 0.02, float("nan"), 0.5], mode=ActionMode.EEF_TRANSLATION
+        )
+    with pytest.raises(ValueError):
+        normalize_action(
+            [0.0] * 6 + [0.5],
+            mode=ActionMode.EEF_DELTA,
+            max_translation=0.03,
+        )

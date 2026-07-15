@@ -20,16 +20,25 @@ class ActActionValidator:
     def validate(
         self, chunk: np.ndarray, current_joints: tuple[float, ...]
     ) -> np.ndarray:
-        if chunk.ndim != 2 or chunk.shape[1] != 7:
+        dof = len(self.joint_names)
+        if chunk.ndim != 2 or chunk.shape[1] != dof + 1:
             raise RuntimeError(f"invalid chunk shape: {chunk.shape}")
         if not np.all(np.isfinite(chunk)):
             raise RuntimeError("ACT chunk contains non-finite values")
+        if len(current_joints) != dof or not np.all(np.isfinite(current_joints)):
+            raise RuntimeError(
+                f"current joint feedback must contain {dof} finite values"
+            )
         steps = chunk[: min(self.execute_steps, len(chunk))].copy()
         if not len(steps):
             raise RuntimeError("ACT chunk contains no executable steps")
         previous = np.asarray(current_joints, dtype=np.float64)
         for index, row in enumerate(steps):
-            joints = row[:6]
+            joints = row[:dof]
+            if row[dof] < 0.0 or row[dof] > 1.0:
+                raise RuntimeError(
+                    f"ACT target {index} gripper={row[dof]:.4f} is outside [0, 1]"
+                )
             violations = self._joint_limit_violations(joints)
             if violations:
                 raise RuntimeError(

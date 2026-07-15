@@ -14,17 +14,34 @@ from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 class RelayStatus:
     state: str
     reason: str = ""
+    valid: bool = True
+
+
+RELAY_STATES = frozenset({"LOCKED", "ARMING", "ACTIVE", "FAULT"})
 
 
 def decode_relay_status(data: str) -> RelayStatus:
     try:
         payload = json.loads(data)
-    except json.JSONDecodeError:
-        return RelayStatus(state="FAULT", reason=f"invalid relay status: {data!r}")
-    return RelayStatus(
-        state=str(payload.get("state", "UNKNOWN")),
-        reason=str(payload.get("reason", "")),
-    )
+    except (json.JSONDecodeError, TypeError):
+        return RelayStatus(
+            state="FAULT", reason=f"invalid relay status JSON: {data!r}", valid=False
+        )
+    if not isinstance(payload, dict):
+        return RelayStatus(
+            state="FAULT", reason="relay status payload must be an object", valid=False
+        )
+    state = payload.get("state")
+    reason = payload.get("reason", "")
+    if not isinstance(state, str) or state not in RELAY_STATES:
+        return RelayStatus(
+            state="FAULT", reason=f"invalid relay state: {state!r}", valid=False
+        )
+    if not isinstance(reason, str):
+        return RelayStatus(
+            state="FAULT", reason="relay status reason must be a string", valid=False
+        )
+    return RelayStatus(state=state, reason=reason)
 
 
 def relay_status_is_fresh(

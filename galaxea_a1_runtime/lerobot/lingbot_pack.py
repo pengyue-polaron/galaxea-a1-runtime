@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import hashlib
 import json
 import sys
@@ -13,14 +12,14 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.configuration.base import load_toml, referenced_config
-from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.console import ArgumentParser
+
 from galaxea_a1_runtime.kinematics import (
     SerialChainFK,
     compose_relative_pose,
     relative_pose,
 )
-from galaxea_a1_runtime.lerobot.atomic_output import (
+from galaxea_a1_runtime.filesystem import (
     atomic_output_directory,
 )
 from galaxea_a1_runtime.lerobot.dataset_package import (
@@ -34,7 +33,14 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_tar_archive,
 )
 from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
+from galaxea_a1_runtime.lerobot.lingbot_pack_config import load_pack_config
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
+from galaxea_a1_runtime.schema import (
+    DEFAULT_RGB_IMAGE_KEYS,
+    DEFAULT_STATE_NAMES,
+    JOINT_ACTION_NAMES,
+    LINGBOT_EEF_ACTION_CHANNEL_IDS,
+)
 
 ACTION_NAMES = (
     "eef_delta_x_from_episode_start",
@@ -46,79 +52,19 @@ ACTION_NAMES = (
     "eef_delta_qw_from_episode_start",
     "gripper_normalized",
 )
-USED_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)
-SOURCE_ACTION_NAMES = (
-    "joint_1",
-    "joint_2",
-    "joint_3",
-    "joint_4",
-    "joint_5",
-    "joint_6",
-    "gripper",
-)
-SOURCE_STATE_NAMES = (
-    "eef_x",
-    "eef_y",
-    "eef_z",
-    "eef_qx",
-    "eef_qy",
-    "eef_qz",
-    "eef_qw",
-    "joint_1",
-    "joint_2",
-    "joint_3",
-    "joint_4",
-    "joint_5",
-    "joint_6",
-    "gripper",
-)
+SOURCE_ACTION_NAMES = JOINT_ACTION_NAMES
+SOURCE_STATE_NAMES = DEFAULT_STATE_NAMES
 
 
-@dataclass(frozen=True)
-class LingBotPackConfig:
-    source_root: Path
-    v3_target_root: Path
-    v3_archive_path: Path
-    v3_repo_id: str
-    v21_target_root: Path
-    v21_archive_path: Path
-    v21_repo_id: str
-    joint_v3_target_root: Path
-    joint_v3_archive_path: Path
-    joint_v3_repo_id: str
-    urdf_path: Path
-    base_link: str
-    tip_link: str
-    gripper_stroke_min_mm: float
-    gripper_stroke_max_mm: float
-
-
-def load_pack_config(path: Path) -> LingBotPackConfig:
-    config_path, repo_root, raw = load_toml(path)
-    system = load_system_config(referenced_config(raw, repo_root), repo_root=repo_root)
-    dataset = raw["dataset"]
-    outputs = raw["outputs"]
-    v3 = outputs["v3"]
-    v21 = outputs["v21"]
-    joint_v3 = outputs["joint_v3"]
-    kinematics = raw["kinematics"]
-    return LingBotPackConfig(
-        source_root=_repo_path(repo_root, dataset["source_root"]),
-        v3_target_root=_repo_path(repo_root, v3["target_root"]),
-        v3_archive_path=_repo_path(repo_root, v3["archive_path"]),
-        v3_repo_id=str(v3["repo_id"]),
-        v21_target_root=_repo_path(repo_root, v21["target_root"]),
-        v21_archive_path=_repo_path(repo_root, v21["archive_path"]),
-        v21_repo_id=str(v21["repo_id"]),
-        joint_v3_target_root=_repo_path(repo_root, joint_v3["target_root"]),
-        joint_v3_archive_path=_repo_path(repo_root, joint_v3["archive_path"]),
-        joint_v3_repo_id=str(joint_v3["repo_id"]),
-        urdf_path=_repo_path(repo_root, kinematics["urdf"]),
-        base_link=str(kinematics["base_link"]),
-        tip_link=str(kinematics["tip_link"]),
-        gripper_stroke_min_mm=system.gripper.stroke_min_mm,
-        gripper_stroke_max_mm=system.gripper.stroke_max_mm,
-    )
+@dataclass
+class _ConversionResult:
+    episode_actions: dict[int, np.ndarray]
+    episode_states: dict[int, np.ndarray]
+    source_data_sha256: str
+    fk_position_errors: list[np.ndarray]
+    fk_quaternion_dots: list[np.ndarray]
+    roundtrip_position_errors: list[np.ndarray]
+    roundtrip_quaternion_dots: list[np.ndarray]
 
 
 def pack_lingbot_dataset(
@@ -127,10 +73,10 @@ def pack_lingbot_dataset(
     target_root: Path,
     urdf_path: Path,
     repo_id: str,
-    gripper_stroke_min_mm: float = 0.0,
+    gripper_stroke_min_mm: float,
     gripper_stroke_max_mm: float,
-    base_link: str = "base_link",
-    tip_link: str = "arm_seg6",
+    base_link: str,
+    tip_link: str,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -181,90 +127,14 @@ def _build_lingbot_dataset(
     if not data_files:
         raise FileNotFoundError(f"no LeRobot parquet data under {source_root}")
 
-    episode_actions: dict[int, np.ndarray] = {}
-    episode_state_values: dict[int, np.ndarray] = {}
-    source_hash = hashlib.sha256()
-    fk_feedback_position_errors: list[np.ndarray] = []
-    fk_feedback_quat_dots: list[np.ndarray] = []
-    reconstructed_position_errors: list[np.ndarray] = []
-    reconstructed_quat_dots: list[np.ndarray] = []
-
-    for path in data_files:
-        frame = pd.read_parquet(path)
-        source_hash.update((source_root / path.relative_to(target_root)).read_bytes())
-        states = np.stack(frame["observation.state"].to_numpy()).astype(np.float64)
-        joint_actions = np.stack(frame["action"].to_numpy()).astype(np.float64)
-        converted = np.empty((len(frame), 8), dtype=np.float32)
-        converted_states = states.copy().astype(np.float32)
-
-        for episode_index in frame["episode_index"].drop_duplicates().tolist():
-            mask = frame["episode_index"].to_numpy() == episode_index
-            episode_observations = states[mask]
-            episode_joint_actions = joint_actions[mask]
-            initial_pose = episode_observations[0, :7]
-            feedback_fk = np.stack(
-                [chain.pose(values) for values in episode_observations[:, 7:13]]
-            )
-            target_fk = np.stack(
-                [chain.pose(values) for values in episode_joint_actions[:, :6]]
-            )
-            _align_quaternion_signs(feedback_fk[:, 3:7], episode_observations[:, 3:7])
-            fk_feedback_position_errors.append(
-                np.linalg.norm(feedback_fk[:, :3] - episode_observations[:, :3], axis=1)
-            )
-            fk_feedback_quat_dots.append(
-                np.abs(
-                    np.sum(feedback_fk[:, 3:7] * episode_observations[:, 3:7], axis=1)
-                )
-            )
-
-            episode_converted = np.empty(
-                (len(episode_observations), 8), dtype=np.float64
-            )
-            for row, target_pose in enumerate(target_fk):
-                episode_converted[row, :7] = relative_pose(target_pose, initial_pose)
-            _make_quaternions_continuous(episode_converted[:, 3:7])
-            source_gripper = episode_joint_actions[:, 6]
-            if np.any(source_gripper < -1e-6) or np.any(source_gripper > 1.0 + 1e-6):
-                raise ValueError(
-                    f"episode {episode_index} gripper action is outside normalized [0, 1]"
-                )
-            episode_converted[:, 7] = np.clip(source_gripper, 0.0, 1.0)
-            if int(episode_index) in episode_state_values:
-                raise ValueError(
-                    f"episode {episode_index} appears in more than one data file"
-                )
-            source_state_gripper = episode_observations[:, -1]
-            if np.any(source_state_gripper < -1e-6) or np.any(
-                source_state_gripper > 1.0 + 1e-6
-            ):
-                raise ValueError(
-                    f"episode {episode_index} gripper state is outside normalized [0, 1]"
-                )
-            continuous_state = episode_observations.astype(np.float32, copy=True)
-            continuous_state[:, -1] = np.clip(source_state_gripper, 0.0, 1.0)
-            converted_states[mask] = continuous_state
-
-            reconstructed = np.stack(
-                [
-                    compose_relative_pose(values[:7], initial_pose)
-                    for values in episode_converted
-                ]
-            )
-            _align_quaternion_signs(reconstructed[:, 3:7], target_fk[:, 3:7])
-            reconstructed_position_errors.append(
-                np.linalg.norm(reconstructed[:, :3] - target_fk[:, :3], axis=1)
-            )
-            reconstructed_quat_dots.append(
-                np.abs(np.sum(reconstructed[:, 3:7] * target_fk[:, 3:7], axis=1))
-            )
-            converted[mask] = episode_converted.astype(np.float32)
-            episode_actions[int(episode_index)] = episode_converted.astype(np.float32)
-            episode_state_values[int(episode_index)] = continuous_state
-
-        frame["observation.state"] = list(converted_states)
-        frame["action"] = list(converted)
-        frame.to_parquet(path, index=False)
+    converted = _convert_data_files(
+        data_files=data_files,
+        source_root=source_root,
+        target_root=target_root,
+        chain=chain,
+    )
+    episode_actions = converted.episode_actions
+    episode_state_values = converted.episode_states
 
     all_actions = np.concatenate(
         [episode_actions[index] for index in sorted(episode_actions)]
@@ -284,16 +154,16 @@ def _build_lingbot_dataset(
 
     validation = {
         "fk_feedback_position_error_m": _error_summary(
-            np.concatenate(fk_feedback_position_errors)
+            np.concatenate(converted.fk_position_errors)
         ),
         "fk_feedback_min_abs_quaternion_dot": float(
-            np.min(np.concatenate(fk_feedback_quat_dots))
+            np.min(np.concatenate(converted.fk_quaternion_dots))
         ),
         "roundtrip_position_error_m": _error_summary(
-            np.concatenate(reconstructed_position_errors)
+            np.concatenate(converted.roundtrip_position_errors)
         ),
         "roundtrip_min_abs_quaternion_dot": float(
-            np.min(np.concatenate(reconstructed_quat_dots))
+            np.min(np.concatenate(converted.roundtrip_quaternion_dots))
         ),
         "continuous_gripper": {
             "action_min": float(np.min(all_actions[:, -1])),
@@ -311,7 +181,7 @@ def _build_lingbot_dataset(
         "format": "lerobot_v3_lingbot_va_a1_eef_continuous_v1",
         "repo_id": repo_id,
         "source_dataset": str(source_root),
-        "source_data_sha256": source_hash.hexdigest(),
+        "source_data_sha256": converted.source_data_sha256,
         "episodes": int(info["total_episodes"]),
         "frames": int(info["total_frames"]),
         "fps": int(info["fps"]),
@@ -324,7 +194,7 @@ def _build_lingbot_dataset(
             "joint_names": list(chain.joint_names),
         },
         "action": {
-            "shape": [8],
+            "shape": [len(ACTION_NAMES)],
             "names": list(ACTION_NAMES),
             "semantics": "RoboTwin-style EEF target relative to episode initial feedback pose",
             "translation": "target_xyz_base_link - initial_xyz_base_link",
@@ -336,23 +206,21 @@ def _build_lingbot_dataset(
             ),
             "gripper_stroke_min_mm": gripper_stroke_min_mm,
             "gripper_stroke_max_mm": gripper_stroke_max_mm,
-            "lingbot_used_action_channel_ids": list(USED_ACTION_CHANNEL_IDS),
+            "lingbot_used_action_channel_ids": list(LINGBOT_EEF_ACTION_CHANNEL_IDS),
         },
         "cameras": {
-            "ordered_keys": ["observation.images.front", "observation.images.wrist"],
+            "ordered_keys": list(DEFAULT_RGB_IMAGE_KEYS),
             "layout": "width_concat",
         },
         "recommended_policy": {
             "checkpoint": "lerobot/lingbot_va_robotwin",
             "use_peft": True,
             "attn_mode": "flex",
-            "obs_cam_keys": ["observation.images.front", "observation.images.wrist"],
+            "obs_cam_keys": list(DEFAULT_RGB_IMAGE_KEYS),
             "camera_layout": "width_concat",
-            "used_action_channel_ids": list(USED_ACTION_CHANNEL_IDS),
+            "used_action_channel_ids": list(LINGBOT_EEF_ACTION_CHANNEL_IDS),
             "runtime_gripper_stroke_min_mm": gripper_stroke_min_mm,
             "runtime_gripper_stroke_max_mm": gripper_stroke_max_mm,
-            "action_per_frame": 4,
-            "frame_chunk_size": 4,
         },
         "validation": validation,
     }
@@ -375,6 +243,132 @@ def _build_lingbot_dataset(
     return manifest
 
 
+def _convert_data_files(
+    *,
+    data_files: list[Path],
+    source_root: Path,
+    target_root: Path,
+    chain: SerialChainFK,
+) -> _ConversionResult:
+    actions: dict[int, np.ndarray] = {}
+    states: dict[int, np.ndarray] = {}
+    source_hash = hashlib.sha256()
+    fk_position_errors: list[np.ndarray] = []
+    fk_quaternion_dots: list[np.ndarray] = []
+    roundtrip_position_errors: list[np.ndarray] = []
+    roundtrip_quaternion_dots: list[np.ndarray] = []
+
+    for path in data_files:
+        frame = pd.read_parquet(path)
+        source_hash.update((source_root / path.relative_to(target_root)).read_bytes())
+        source_states = np.stack(frame["observation.state"].to_numpy()).astype(
+            np.float64
+        )
+        source_actions = np.stack(frame["action"].to_numpy()).astype(np.float64)
+        output_actions = np.empty((len(frame), len(ACTION_NAMES)), dtype=np.float32)
+        output_states = source_states.astype(np.float32, copy=True)
+        episode_indices = frame["episode_index"].to_numpy()
+
+        for raw_index in frame["episode_index"].drop_duplicates().tolist():
+            episode_index = int(raw_index)
+            if episode_index in states:
+                raise ValueError(
+                    f"episode {episode_index} appears in more than one data file"
+                )
+            mask = episode_indices == raw_index
+            episode = _convert_episode(
+                episode_index=episode_index,
+                observations=source_states[mask],
+                joint_actions=source_actions[mask],
+                chain=chain,
+            )
+            output_actions[mask] = episode["actions"]
+            output_states[mask] = episode["states"]
+            actions[episode_index] = episode["actions"]
+            states[episode_index] = episode["states"]
+            fk_position_errors.append(episode["fk_position_error"])
+            fk_quaternion_dots.append(episode["fk_quaternion_dot"])
+            roundtrip_position_errors.append(episode["roundtrip_position_error"])
+            roundtrip_quaternion_dots.append(episode["roundtrip_quaternion_dot"])
+
+        frame["observation.state"] = list(output_states)
+        frame["action"] = list(output_actions)
+        frame.to_parquet(path, index=False)
+
+    return _ConversionResult(
+        episode_actions=actions,
+        episode_states=states,
+        source_data_sha256=source_hash.hexdigest(),
+        fk_position_errors=fk_position_errors,
+        fk_quaternion_dots=fk_quaternion_dots,
+        roundtrip_position_errors=roundtrip_position_errors,
+        roundtrip_quaternion_dots=roundtrip_quaternion_dots,
+    )
+
+
+def _convert_episode(
+    *,
+    episode_index: int,
+    observations: np.ndarray,
+    joint_actions: np.ndarray,
+    chain: SerialChainFK,
+) -> dict[str, np.ndarray]:
+    arm_dof = len(JOINT_ACTION_NAMES) - 1
+    eef_pose_dof = len(ACTION_NAMES) - 1
+    initial_pose = observations[0, :eef_pose_dof]
+    feedback_fk = np.stack(
+        [
+            chain.pose(values)
+            for values in observations[:, eef_pose_dof : eef_pose_dof + arm_dof]
+        ]
+    )
+    target_fk = np.stack([chain.pose(values) for values in joint_actions[:, :arm_dof]])
+    _align_quaternion_signs(feedback_fk[:, 3:7], observations[:, 3:7])
+
+    actions = np.empty((len(observations), len(ACTION_NAMES)), dtype=np.float64)
+    for row, target_pose in enumerate(target_fk):
+        actions[row, :7] = relative_pose(target_pose, initial_pose)
+    _make_quaternions_continuous(actions[:, 3:7])
+    actions[:, 7] = _normalized_gripper(
+        joint_actions[:, arm_dof], episode_index=episode_index, label="action"
+    )
+    continuous_states = observations.astype(np.float32, copy=True)
+    continuous_states[:, -1] = _normalized_gripper(
+        observations[:, -1], episode_index=episode_index, label="state"
+    )
+
+    reconstructed = np.stack(
+        [compose_relative_pose(values[:7], initial_pose) for values in actions]
+    )
+    _align_quaternion_signs(reconstructed[:, 3:7], target_fk[:, 3:7])
+    return {
+        "actions": actions.astype(np.float32),
+        "states": continuous_states,
+        "fk_position_error": np.linalg.norm(
+            feedback_fk[:, :3] - observations[:, :3], axis=1
+        ),
+        "fk_quaternion_dot": np.abs(
+            np.sum(feedback_fk[:, 3:7] * observations[:, 3:7], axis=1)
+        ),
+        "roundtrip_position_error": np.linalg.norm(
+            reconstructed[:, :3] - target_fk[:, :3], axis=1
+        ),
+        "roundtrip_quaternion_dot": np.abs(
+            np.sum(reconstructed[:, 3:7] * target_fk[:, 3:7], axis=1)
+        ),
+    }
+
+
+def _normalized_gripper(
+    values: np.ndarray, *, episode_index: int, label: str
+) -> np.ndarray:
+    if np.any(values < -1e-6) or np.any(values > 1.0 + 1e-6):
+        raise ValueError(
+            f"episode {episode_index} gripper {label} is outside normalized [0, 1]"
+        )
+    return np.clip(values, 0.0, 1.0)
+
+
 def _validate_source(info: dict[str, Any]) -> None:
     if info.get("codebase_version") != "v3.0":
         raise ValueError("source must be a LeRobot v3.0 dataset")
@@ -385,7 +379,7 @@ def _validate_source(info: dict[str, Any]) -> None:
         raise ValueError(
             "source observation.state does not contain the expected A1 EEF and joints"
         )
-    for key in ("observation.images.front", "observation.images.wrist"):
+    for key in DEFAULT_RGB_IMAGE_KEYS:
         if key not in features:
             raise ValueError(f"source is missing required camera feature {key!r}")
 
@@ -395,7 +389,7 @@ def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
     info["robot_type"] = "galaxea_a1_lingbot_eef"
     info["features"]["action"] = {
         "dtype": "float32",
-        "shape": [8],
+        "shape": [len(ACTION_NAMES)],
         "names": list(ACTION_NAMES),
     }
     info["features"]["observation.state"]["names"][-1] = "gripper_normalized"
@@ -435,11 +429,6 @@ def _error_summary(values: np.ndarray) -> dict[str, float]:
     }
 
 
-def _repo_path(repo_root: Path, value: str) -> Path:
-    path = Path(value).expanduser()
-    return path.resolve() if path.is_absolute() else (repo_root / path).resolve()
-
-
 def _training_doc(gripper_stroke_min_mm: float, gripper_stroke_max_mm: float) -> str:
     return f"""# A1 LingBot-VA Dataset
 
@@ -456,7 +445,7 @@ maps 0 to {gripper_stroke_min_mm:g} mm and 1 to {gripper_stroke_max_mm:g} mm lin
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = ArgumentParser(description=__doc__)
     parser.add_argument(
         "--config",
         type=Path,

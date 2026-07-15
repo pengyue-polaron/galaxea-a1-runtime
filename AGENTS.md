@@ -153,7 +153,11 @@ arm is disconnected.
 
   ```bash
   roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch \
-    staged_command_topic:=/arm_joint_command_host
+    staged_command_topic:=/arm_joint_command_host \
+    joint_states_topic:=/joint_states_host \
+    target_topic:=/a1_ee_target \
+    ee_pose_topic:=/end_effector_pose \
+    tracker_node:=/eeTracker_demo_node
   ```
 
   This preserves the original topic semantics without starting the safe relay.
@@ -265,8 +269,9 @@ leader mapping and collection semantics are configured in
 The default teleop config is RGB-only and binds both RealSense cameras by
 serial: D455 agent view `341522300456` and D405 wrist `218622276998`.
 Depth capture remains supported, but enable it intentionally in the tracked
-system config after the agent RealSense is on USB3 or after lowering FPS/resolution
-for USB2. The shared read-only LAN web preview is configured under
+system config and add its dimensions/alignment mode after the agent RealSense
+is on USB3 or after lowering FPS/resolution for USB2. The shared read-only LAN
+web preview is configured under
 `[web_preview]` and must reuse the owning app's camera readers rather than
 opening the same RealSense from a second process.
 
@@ -278,6 +283,9 @@ torque, and stops the runtime. Successful teleop saves reuse the same concurrent
 reset implementation before the next episode when
 `collection.auto_reset_after_save` is enabled. Update and commit that file when
 the operator intentionally changes the collection start pose or reset speed.
+The pose file owns only targets and reset motion behavior; leader identity and
+mapping are injected by the owning Teleop config, while physical topics,
+limits, names, and relay timings derive from that config's System reference.
 
 LingBot inference semantics are configured in
 `configs/deployments/lingbot_va.toml`. Edit and commit that file when the
@@ -330,6 +338,9 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   visible in config, docs, and tests.
 - Do not add new hidden clamps, scaling, or policy-output rewrites. If a limit
   is needed, make it explicit in a tracked config or named safety module.
+- First-party ROS launch files must require their topic arguments. Runtime
+  entrypoints render those values from the system config; launch-file fallback
+  topics would create a second, unsafe source of truth.
 - Normal data collection should write enough metadata to reproduce the run:
   config path, state/action topics, control path, state/action names, FPS, and
   camera settings. Optional RealSense depth is recorded as raw aligned 16-bit
@@ -341,6 +352,18 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
 - Dataset converters must build into sibling staging paths. An overwrite may
   replace an existing dataset or archive only after the new output is complete;
   failures must preserve the previous complete output.
+- Raw collection must also write into a hidden sibling staging directory. Only
+  atomically install the final `episode_*` directory after frames, metadata,
+  quality checks, and expected file counts pass. Crash leftovers must block the
+  next collection run until an operator inspects and removes or quarantines
+  them; never ignore deletion failures.
+- Decode every named ROS joint vector against `joint_safety.names`, reject
+  duplicate/missing names and non-finite values, and reorder explicitly. A
+  positional fallback is allowed only for a truly unnamed compatibility
+  message; command messages must carry names.
+- Record both camera sequence numbers and monotonic sample times. Reject a
+  collection or policy observation when either frame is stale or their skew
+  exceeds `cameras.max_pair_skew_s`.
 - Enter=save is a validation boundary. Reject and delete an episode when a
   joint action step exceeds the tracked
   `collection.max_joint_action_step_rad`; print the exact frame and joint,
@@ -349,3 +372,172 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   not patch it for A1-specific app behavior; put A1 integration code under
   `galaxea_a1_runtime/` or `scripts/apps/`. The A1 SO leader motor layout lives
   in `galaxea_a1_runtime.teleop.a1_so_leader`.
+
+### Configuration Ownership And Propagation
+
+- Every runtime value must have exactly one tracked owner:
+  - `configs/system/` owns physical hardware, ROS topics, camera devices and
+    acquisition settings, physical gripper stroke, workspace limits, and relay
+    safety settings.
+  - `configs/teleop/` owns leader identity and mapping plus collection
+    semantics. It references a system config; it must not restate system-owned
+    values.
+  - `configs/deployments/` owns model locations and inference/execution
+    semantics. It references a system config; it must not restate hardware
+    limits or camera acquisition settings.
+  - `configs/poses/` owns target pose values and reset motion behavior only. It
+    is referenced by the relevant app config, whose typed config is injected
+    into the pose loader; never copy device identity, topic, or mapping fields
+    into the pose file.
+  - `configs/datasets/` owns source/output dataset packaging and conversion
+    semantics only.
+- Do not mirror fields from a typed owner config into another app-specific
+  dataclass merely for convenience. Pass the owning typed config through, or
+  derive a smaller runtime object in one pure, named mapping function with an
+  exhaustive unit test.
+- Every tracked TOML key must be loaded, validated, and consumed. An unused,
+  ignored, or silently defaulted tracked key is a defect; remove it or wire it
+  through in the same change.
+- Tracked config schemas are strict. Loaders must reject unknown tables and
+  unknown keys so misspellings fail closed. Do not use `.get(key, default)` for
+  live hardware, safety, camera, collection, or deployment behavior that the
+  tracked config is expected to own; require the key and keep the value
+  explicit in TOML.
+- Defaults belong in one place. Prefer required tracked values for behavior
+  that affects hardware, datasets, or model compatibility. Library fallbacks
+  must not disagree with tracked config defaults.
+- Do not store the same semantic value in two config sections and then validate
+  that they are equal. Keep it once at the owning layer and pass the typed value
+  to every consumer.
+- Shell-export helpers must compose the canonical system export instead of
+  independently serializing the same fields for Teleop, ACT, and LingBot.
+- Shell-export helpers are narrow process-lifecycle APIs, not alternate config
+  objects. Export only variables consumed by the corresponding shell script;
+  Python/ROS processes must load the typed config directly.
+- Normal app entrypoints may accept a tracked config path and lifecycle command
+  only. Do not add CLI flags or environment overrides for camera parameters,
+  safety limits, action mapping, model execution behavior, or collection
+  semantics. Diagnostic output flags and offline data-conversion arguments are
+  allowed when they do not alter live control behavior.
+
+### Operator CLI And Terminal Semantics
+
+- Python entrypoints must use `galaxea_a1_runtime.console.ArgumentParser` and
+  the shared `info`/`step`/`success`/`warning`/`failure` helpers. Shell
+  entrypoints must source `scripts/runtime/a1_console.sh`; do not add local ANSI
+  constants, ad hoc `[app]` status prefixes, or a second color vocabulary.
+- Semantic labels are fixed: blue `[INFO]` for context, cyan `[STEP]` for an
+  in-progress operator action, green `[PASS]` for completed work, yellow
+  `[WARN]` for recoverable attention, and red `[FAIL]` for a failed command.
+  Cleanup notices use yellow and must not imply successful shutdown.
+- Color only interactive terminal output. Honor `NO_COLOR`, suppress ANSI when
+  stdout/stderr is redirected, and keep JSON, shell assignments, CSV, and
+  `key=value` diagnostic output machine-readable.
+- Keep lifecycle CLIs verb-oriented and small: one entrypoint plus
+  `start|stop|status|logs|doctor`-style subcommands. Do not create a second
+  top-level alias for a subcommand such as `foo-stop`; use `foo stop`.
+- Shared process supervision belongs in `a1_tmux.sh` or `a1_services.sh`.
+  App scripts provide session names, commands, and readiness/exit markers;
+  the shared tmux observation grace comes from
+  `configs/system/a1.toml [startup]`, and behavior-specific timeouts remain in
+  the owning tracked config. They must not copy sleep-then-grep startup loops
+  or add fallback timeout constants to the shared library.
+- Unknown commands and invalid arguments print a concise colored usage/error
+  and exit 2. Help and dry/static diagnostics must not open hardware or start
+  ROS, Docker, tmux, cameras, or serial devices.
+
+### Hardware And Side-Effect Boundaries
+
+- Parse and fully validate tracked configuration before `rospy.init_node`,
+  opening cameras or serial ports, creating Docker/tmux processes, or
+  publishing any ROS message. Configuration errors must fail without touching
+  hardware or starting partial runtimes.
+- Emergency shutdown must not depend exclusively on successfully parsing app
+  configuration. Mark every repository-owned Docker container and tmux session,
+  and keep a configuration-independent fallback that stops only those marked
+  resources. Never broaden that fallback to unrelated user containers or tmux
+  sessions.
+- A hardware family must have one config-driven construction path. Collection,
+  inference, diagnostics, and standalone web preview must use the same camera
+  factory and pass every applicable setting, including backend, serial/device,
+  resolution, FPS, USB requirement, exposure, gain, white balance, pixel
+  format, crop, depth, warmup, and freshness limits.
+- A standalone system-level service, such as camera diagnostics or camera web
+  preview, must load `configs/system/` directly. It must not depend on a Teleop
+  or model deployment config solely to discover hardware settings.
+- Camera diagnostic output, timeout, FPS-probe, and encoding settings belong to
+  `[camera_diagnostics]` in the system config. Do not reintroduce per-run flags
+  or hidden Python defaults for them.
+- Owning apps may share an already-open hardware reader, but two processes must
+  not open the same camera, serial bus, tracker, or command publisher
+  concurrently. Make ownership and shutdown ordering explicit.
+- Keep configuration mapping, validation, clamps, status decoding, and safety
+  decisions in ROS-free pure modules. Hardware scripts should only adapt those
+  decisions to ROS/Docker/tmux APIs. Every safety-critical config-to-runtime
+  mapping needs a hardware-free unit test.
+- Configuration and schema modules must not import hardware modules or eagerly
+  load OpenCV, NumPy, RealSense, Torch, ROS, or LeRobot. Put pure value objects
+  such as ROI and web-preview settings under configuration/schema, then let the
+  hardware layer depend on them.
+- Host command topic literals may appear only in the system config, explicit
+  direct-debug tooling, and documentation. Normal app code and reports must
+  read them from `SystemConfig`.
+
+### Module And API Design
+
+- Give one concept one name. Do not define different public classes with the
+  same name in separate modules; use names that distinguish schema,
+  transformation, limits, and runtime state.
+- Split modules by responsibility when they combine configuration parsing,
+  process lifecycle, hardware IO, policy logic, serialization, and UI. Avoid
+  large `main()`/`run()` functions and nested copies of doctor or lifecycle
+  helpers; extract cohesive pure helpers rather than adding forwarding layers.
+- Do not create a shared abstraction until at least two real callers have the
+  same semantic contract. Once shared, delete the duplicate implementations
+  and make the shared path authoritative.
+- Prefer typed result dataclasses for records passed across stages. Do not use
+  heterogeneous positional tuples or recover semantic fields by slicing a CSV
+  row, list tail, or dictionary insertion order.
+- Dataset feature keys, state/action names, camera ordering, and protocol channel
+  names must come from one schema module. Do not repeat literals such as
+  `observation.images.front`, `observation.images.wrist`, or the seven joint
+  action names across collectors, policies, and packers.
+- Dependency direction is `scripts -> apps -> runtime/hardware/policies ->
+  pure configuration/schema/safety`. Core modules must not import app scripts,
+  and system/runtime layers must not import Teleop, ACT, or LingBot configs.
+- Keep optional heavy dependencies lazy at module boundaries so static doctor,
+  config validation, and pure tests do not require cameras, ROS, Torch, or a
+  model checkout. Add a top-level dependency only when tracked production code
+  imports it directly; transitive-only packages belong to the owning
+  dependency.
+- Before retaining compatibility code, placeholders, adapters, or an apparently
+  unused module, use `rg` to identify a current caller and document the
+  supported compatibility contract. Delete dead branches, dead config fields,
+  and superseded wrappers instead of preserving them indefinitely.
+
+### Tests, Documentation, And Change Hygiene
+
+- Test behavior and typed contracts, not source layout. Do not add tests that
+  merely search Python, shell, TOML, or Markdown text for strings. String
+  assertions are appropriate only when the string itself is a public protocol,
+  serialized schema, operator-facing safety diagnostic, or command contract.
+- Doctors and generated reports validate structure and derive displayed values
+  from the loaded config. They must not hardcode the currently selected camera
+  crop, stroke range, topic, port, workspace, model cadence, or prompt as a
+  second expected value.
+- A bug fix must include the smallest regression test at the purest boundary.
+  Hardware behavior additionally needs a safe static/dry check; never make CI
+  require powered hardware, ROS master, camera access, Docker, or serial ports.
+- When a tracked config contract changes, update its loader, validation,
+  consumers, metadata, behavioral tests, `AGENTS.md`, and affected docs in the
+  same change. Examples must reference current entrypoints and current topic
+  paths.
+- Run `just check` and `git diff --check` before handing off a change. For
+  hardware-adjacent changes, also state explicitly which checks were static and
+  which, if any, touched real hardware.
+- Keep changes reviewable and reversible. Do not mix repository-wide formatting
+  with behavior changes. Separate mechanical formatting, configuration
+  migration, safety behavior, and module refactors into intentional commits.
+- Respect existing dirty changes. Inspect `git diff` before editing, avoid
+  unrelated rewrites, and never delete generated data, datasets, checkpoints,
+  or user files unless the user explicitly authorizes that deletion.

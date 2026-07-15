@@ -2,29 +2,37 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import sys
 from pathlib import Path
 
-from galaxea_a1_runtime.runtime.doctor import (
+from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.runtime.doctor import run_static_doctor
+from galaxea_a1_runtime.runtime.health_checks import (
     checks_exit_code,
     checks_to_json,
     print_checks,
-    run_static_doctor,
 )
-from galaxea_a1_runtime.runtime.safety_report import format_safety_report, safety_report_as_dict
+from galaxea_a1_runtime.runtime.safety_report import (
+    format_safety_report,
+    safety_report_as_dict,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = argparse.ArgumentParser(prog="galaxea-a1-runtime")
+    parser = ArgumentParser(
+        prog="galaxea-a1-runtime",
+        description="Static checks and reports for the Galaxea A1 runtime.",
+    )
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    doctor = subparsers.add_parser("doctor")
+    doctor = subparsers.add_parser("doctor", help="run hardware-free repository checks")
     doctor.add_argument("--repo-root", type=Path, default=Path.cwd())
     doctor.add_argument("--json", action="store_true")
 
-    safety = subparsers.add_parser("safety-report")
+    safety = subparsers.add_parser(
+        "safety-report", help="show the effective tracked safety contract"
+    )
     safety.add_argument("--json", action="store_true")
 
     args = parser.parse_args(argv)

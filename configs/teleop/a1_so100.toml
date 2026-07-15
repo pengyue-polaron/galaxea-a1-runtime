@@ -7,6 +7,11 @@ config = "configs/system/a1.toml"
 [runtime]
 prefix = "a1-teleop"
 run_dir = "/tmp/a1-teleop"
+bridge_startup_timeout_s = 15.0
+bridge_stop_timeout_s = 5.0
+
+[reset]
+config = "configs/poses/a1_so100_collection_start.toml"
 
 [leader]
 port = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
@@ -17,7 +22,6 @@ use_degrees = true
 hz = 60.0
 dof = 6
 relative = true
-input_degrees = true
 scale = [1, 1, 1, 1, 1, 1]
 sign = [-1, 1, 1, -1, 1, -1]
 bias_rad = [0, 0, 0, 0, 0, 0]
@@ -27,8 +31,10 @@ a1_state_timeout_s = 30.0
 [gripper]
 enabled = true
 source_key = "gripper.pos"
+source_min = 0.0
+source_max = 100.0
 invert = false
-# Leader 0..100 maps continuously onto the shared system stroke range.
+# This tracked leader range maps continuously onto the shared system stroke range.
 
 [collection]
 data_root = "data/raw"

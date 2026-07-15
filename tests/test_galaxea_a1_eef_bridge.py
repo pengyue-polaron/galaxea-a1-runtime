@@ -115,6 +115,7 @@ def test_eef_command_publisher_publishes_pose_enable_and_gripper():
         gripper_msg_type=FakeGripper,
         command_frame="world",
         gripper_to_stroke=lambda value: value * 100.0,
+        execute=True,
     )
 
     publisher.publish_motion_enable(True)
@@ -145,3 +146,25 @@ def test_eef_command_publisher_dry_run_keeps_active_target_without_publishing():
 
     assert publisher.active_pose_target is not None
     assert pose_pub.published == []
+
+
+def test_eef_feedback_decoder_rejects_non_finite_pose():
+    msg = FakePoseStamped()
+    msg.pose.position.x = float("nan")
+
+    assert pose_msg_to_xyz_quat(msg) is None
+
+
+def test_condition_state_rejects_non_finite_values_and_invalid_shape():
+    with pytest.raises(ValueError):
+        condition_state_from_action8(
+            [0.1, 0.2, float("nan"), 0, 0, 0, 1, 0.5],
+            frame_chunk_size=4,
+            action_per_frame=20,
+        )
+    with pytest.raises(ValueError):
+        condition_state_from_action8(
+            [0.1, 0.2, 0.3, 0, 0, 0, 1, 0.5],
+            frame_chunk_size=0,
+            action_per_frame=20,
+        )

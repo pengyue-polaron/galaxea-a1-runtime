@@ -9,7 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.lerobot.atomic_output import (
+from galaxea_a1_runtime.filesystem import (
     atomic_output_directory,
 )
 from galaxea_a1_runtime.lerobot.dataset_package import (
@@ -21,15 +21,11 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_json,
     write_tar_archive,
 )
-
-JOINT_ACTION_NAMES = (
-    "joint_1_rad",
-    "joint_2_rad",
-    "joint_3_rad",
-    "joint_4_rad",
-    "joint_5_rad",
-    "joint_6_rad",
-    "gripper_normalized",
+from galaxea_a1_runtime.schema import (
+    DEFAULT_RGB_IMAGE_KEYS,
+    DEFAULT_STATE_NAMES,
+    JOINT_ACTION_NAMES as SOURCE_ACTION_NAMES,
+    JOINT_ACTION_NAMES_RAD as TARGET_ACTION_NAMES,
 )
 
 
@@ -108,19 +104,19 @@ def _build_joint_v3_dataset(
         "frames": int(info["total_frames"]),
         "fps": int(info["fps"]),
         "observation": {
-            "shape": [14],
+            "shape": [len(DEFAULT_STATE_NAMES)],
             "semantics": "EEF pose (xyz+quaternion), six measured joints, continuous normalized gripper",
             "joint_unit": "radian",
         },
         "action": {
-            "shape": [7],
-            "names": list(JOINT_ACTION_NAMES),
+            "shape": [len(TARGET_ACTION_NAMES)],
+            "names": list(TARGET_ACTION_NAMES),
             "semantics": "six absolute A1 joint targets plus continuous normalized gripper target",
             "joint_unit": "radian",
             "gripper": "continuous normalized target: 0=minimum stroke, 1=maximum stroke",
         },
         "cameras": {
-            "ordered_keys": ["observation.images.front", "observation.images.wrist"],
+            "ordered_keys": list(DEFAULT_RGB_IMAGE_KEYS),
         },
         "validation": {
             "action_gripper_min": float(np.min(all_actions[:, -1])),
@@ -161,15 +157,7 @@ def _validate_source(info: dict[str, Any]) -> None:
     if info.get("codebase_version") != "v3.0":
         raise ValueError("joint package source must be a LeRobot v3.0 dataset")
     action = info.get("features", {}).get("action", {})
-    if action.get("names") != [
-        "joint_1",
-        "joint_2",
-        "joint_3",
-        "joint_4",
-        "joint_5",
-        "joint_6",
-        "gripper",
-    ]:
+    if action.get("names") != list(SOURCE_ACTION_NAMES):
         raise ValueError(
             "joint package source must contain six A1 joint actions and gripper"
         )
@@ -178,9 +166,13 @@ def _validate_source(info: dict[str, Any]) -> None:
 def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
     info = json.loads(json.dumps(source_info))
     info["robot_type"] = "galaxea_a1_joint"
-    info["features"]["action"]["names"] = list(JOINT_ACTION_NAMES)
+    info["features"]["action"]["names"] = list(TARGET_ACTION_NAMES)
     state_names = info["features"]["observation.state"]["names"]
-    state_names[7:13] = [f"joint_{index}_rad" for index in range(1, 7)]
+    eef_state_dof = len(DEFAULT_STATE_NAMES) - len(SOURCE_ACTION_NAMES)
+    arm_dof = len(SOURCE_ACTION_NAMES) - 1
+    state_names[eef_state_dof : eef_state_dof + arm_dof] = list(
+        TARGET_ACTION_NAMES[:-1]
+    )
     state_names[-1] = "gripper_normalized"
     write_json(target_root / "meta/info.json", info)
 

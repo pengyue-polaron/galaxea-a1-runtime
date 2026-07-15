@@ -1,0 +1,25 @@
+exclude: ^(third_party|external)/
+
+repos:
+  - repo: local
+    hooks:
+      - id: ruff
+        name: ruff
+        entry: .venv/bin/python -m ruff check
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: .venv/bin/python -m ruff format --check
+        language: system
+        types: [python]
+      - id: shell-syntax
+        name: shell syntax
+        entry: bash -n
+        language: system
+        types: [shell]
+      - id: runtime-tests
+        name: runtime tests
+        entry: .venv/bin/python -m pytest -q tests
+        language: system
+        pass_filenames: false

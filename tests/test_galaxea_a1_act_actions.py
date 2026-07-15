@@ -39,3 +39,18 @@ def test_act_action_validator_rejects_joint_limit_and_step_violations():
     jump_chunk = np.array([[0.3, 0, 0, 0, 0, 0, 0.5]], dtype=np.float64)
     with pytest.raises(RuntimeError, match="exceeds"):
         _validator().validate(jump_chunk, (0.0,) * 6)
+
+
+def test_act_action_validator_rejects_gripper_outside_continuous_contract():
+    chunk = np.array([[0, 0, 0, 0, 0, 0, 1.01]], dtype=np.float64)
+
+    with pytest.raises(RuntimeError, match="gripper"):
+        _validator().validate(chunk, (0.0,) * 6)
+
+
+def test_act_action_validator_rejects_malformed_current_feedback():
+    chunk = np.array([[0, 0, 0, 0, 0, 0, 0.5]], dtype=np.float64)
+
+    for feedback in ((0.0,) * 5, (0.0,) * 5 + (float("nan"),)):
+        with pytest.raises(RuntimeError):
+            _validator().validate(chunk, feedback)

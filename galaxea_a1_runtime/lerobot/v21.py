@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.lerobot.atomic_output import atomic_output_directory
+from galaxea_a1_runtime.filesystem import atomic_output_directory
 from galaxea_a1_runtime.lerobot.dataset_package import (
     dataset_digest,
     json_value,
@@ -85,83 +85,27 @@ def _build_v21_dataset(
     tasks = _task_records(task_frame)
     write_jsonl(target_root / "meta/tasks.jsonl", tasks)
     task_by_index = {record["task_index"]: record["task"] for record in tasks}
-    episode_records: list[dict[str, Any]] = []
-    episode_stats_records: list[dict[str, Any]] = []
-    video_frame_counts: dict[str, dict[int, int]] = {key: {} for key in video_keys}
     metadata_by_episode = {
         int(row["episode_index"]): row for _, row in episode_meta.iterrows()
     }
-
-    for _, metadata in episode_meta.iterrows():
-        episode_index = int(metadata["episode_index"])
-        episode_frames = frames[frames["episode_index"] == episode_index].copy()
-        if episode_frames.empty:
-            raise ValueError(f"v3 metadata references empty episode {episode_index}")
-        episode_frames = episode_frames.sort_values("frame_index")
-        expected_indices = np.arange(len(episode_frames), dtype=np.int64)
-        if not np.array_equal(
-            episode_frames["frame_index"].to_numpy(), expected_indices
-        ):
-            raise ValueError(f"episode {episode_index} has non-contiguous frame_index")
-        chunk_index = episode_index // CHUNK_SIZE
-        data_path = target_root / V21_DATA_PATH.format(
-            episode_chunk=chunk_index, episode_index=episode_index
-        )
-        data_path.parent.mkdir(parents=True, exist_ok=True)
-        episode_frames.to_parquet(data_path, index=False)
-
-        task_indices = sorted(set(int(value) for value in episode_frames["task_index"]))
-        episode_tasks = [task_by_index[index] for index in task_indices]
-        episode_records.append(
-            {
-                "episode_index": episode_index,
-                "tasks": episode_tasks,
-                "length": len(episode_frames),
-            }
-        )
-        episode_stats_records.append(
-            {
-                "episode_index": episode_index,
-                "stats": _episode_stats_from_row(metadata),
-            }
-        )
+    episode_records, episode_stats_records = _write_episode_data(
+        frames=frames,
+        episode_meta=episode_meta,
+        task_by_index=task_by_index,
+        target_root=target_root,
+    )
 
     write_jsonl(target_root / "meta/episodes.jsonl", episode_records)
     write_jsonl(target_root / "meta/episodes_stats.jsonl", episode_stats_records)
 
-    for video_key in video_keys:
-        for record in episode_records:
-            episode_index = record["episode_index"]
-            metadata = metadata_by_episode[episode_index]
-            source_video = source_root / info["video_path"].format(
-                video_key=video_key,
-                chunk_index=int(metadata[f"videos/{video_key}/chunk_index"]),
-                file_index=int(metadata[f"videos/{video_key}/file_index"]),
-            )
-            start_frame = round(
-                float(metadata[f"videos/{video_key}/from_timestamp"]) * int(info["fps"])
-            )
-            length = int(record["length"])
-            target_video = target_root / V21_VIDEO_PATH.format(
-                episode_chunk=episode_index // CHUNK_SIZE,
-                video_key=video_key,
-                episode_index=episode_index,
-            )
-            target_video.parent.mkdir(parents=True, exist_ok=True)
-            _slice_video(
-                source_video=source_video,
-                target_video=target_video,
-                start_frame=start_frame,
-                frame_count=length,
-                fps=int(info["fps"]),
-            )
-            actual_frames = _probe_video_frames(target_video)
-            if actual_frames != length:
-                raise RuntimeError(
-                    f"video frame mismatch for {video_key} episode {episode_index}: "
-                    f"expected {length}, got {actual_frames}"
-                )
-            video_frame_counts[video_key][episode_index] = actual_frames
+    video_count = _write_episode_videos(
+        source_root=source_root,
+        target_root=target_root,
+        info=info,
+        video_keys=video_keys,
+        episode_records=episode_records,
+        metadata_by_episode=metadata_by_episode,
+    )
 
     v21_info = _v21_info(info, video_keys=video_keys)
     write_json(target_root / "meta/info.json", v21_info)
@@ -189,7 +133,7 @@ def _build_v21_dataset(
         "root": str(final_target_root),
         "episodes": len(episode_records),
         "frames": len(frames),
-        "videos": sum(len(values) for values in video_frame_counts.values()),
+        "videos": video_count,
         "camera_keys": video_keys,
         "sha256": dataset_digest(target_root),
     }
@@ -202,6 +146,94 @@ def _build_v21_dataset(
         result["archive"] = str(archive_path)
         result["archive_sha256"] = archive_sha256
     return result
+
+
+def _write_episode_data(
+    *,
+    frames: pd.DataFrame,
+    episode_meta: pd.DataFrame,
+    task_by_index: dict[int, str],
+    target_root: Path,
+) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    records: list[dict[str, Any]] = []
+    stats_records: list[dict[str, Any]] = []
+    for _, metadata in episode_meta.iterrows():
+        episode_index = int(metadata["episode_index"])
+        episode_frames = frames[frames["episode_index"] == episode_index].copy()
+        if episode_frames.empty:
+            raise ValueError(f"v3 metadata references empty episode {episode_index}")
+        episode_frames = episode_frames.sort_values("frame_index")
+        expected = np.arange(len(episode_frames), dtype=np.int64)
+        if not np.array_equal(episode_frames["frame_index"].to_numpy(), expected):
+            raise ValueError(f"episode {episode_index} has non-contiguous frame_index")
+        data_path = target_root / V21_DATA_PATH.format(
+            episode_chunk=episode_index // CHUNK_SIZE,
+            episode_index=episode_index,
+        )
+        data_path.parent.mkdir(parents=True, exist_ok=True)
+        episode_frames.to_parquet(data_path, index=False)
+        task_indices = sorted(set(int(value) for value in episode_frames["task_index"]))
+        records.append(
+            {
+                "episode_index": episode_index,
+                "tasks": [task_by_index[index] for index in task_indices],
+                "length": len(episode_frames),
+            }
+        )
+        stats_records.append(
+            {
+                "episode_index": episode_index,
+                "stats": _episode_stats_from_row(metadata),
+            }
+        )
+    return records, stats_records
+
+
+def _write_episode_videos(
+    *,
+    source_root: Path,
+    target_root: Path,
+    info: dict[str, Any],
+    video_keys: list[str],
+    episode_records: list[dict[str, Any]],
+    metadata_by_episode: dict[int, pd.Series],
+) -> int:
+    count = 0
+    fps = int(info["fps"])
+    for video_key in video_keys:
+        for record in episode_records:
+            episode_index = int(record["episode_index"])
+            metadata = metadata_by_episode[episode_index]
+            source_video = source_root / info["video_path"].format(
+                video_key=video_key,
+                chunk_index=int(metadata[f"videos/{video_key}/chunk_index"]),
+                file_index=int(metadata[f"videos/{video_key}/file_index"]),
+            )
+            start_frame = round(
+                float(metadata[f"videos/{video_key}/from_timestamp"]) * fps
+            )
+            length = int(record["length"])
+            target_video = target_root / V21_VIDEO_PATH.format(
+                episode_chunk=episode_index // CHUNK_SIZE,
+                video_key=video_key,
+                episode_index=episode_index,
+            )
+            target_video.parent.mkdir(parents=True, exist_ok=True)
+            _slice_video(
+                source_video=source_video,
+                target_video=target_video,
+                start_frame=start_frame,
+                frame_count=length,
+                fps=fps,
+            )
+            actual_frames = _probe_video_frames(target_video)
+            if actual_frames != length:
+                raise RuntimeError(
+                    f"video frame mismatch for {video_key} episode {episode_index}: "
+                    f"expected {length}, got {actual_frames}"
+                )
+            count += 1
+    return count
 
 
 def _v21_info(source_info: dict[str, Any], *, video_keys: list[str]) -> dict[str, Any]:

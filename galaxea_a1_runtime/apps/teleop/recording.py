@@ -22,7 +22,8 @@ from galaxea_a1_runtime.collection import (
     teleop_frame_header,
 )
 from galaxea_a1_runtime.hardware.cameras import CameraSample, LatestCameraReader
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image
+from galaxea_a1_runtime.hardware.image_geometry import crop_image
+from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES
 
 
@@ -31,6 +32,110 @@ class RecordedEpisode:
     frame_count: int
     decision: EpisodeDecision
     actions: tuple[tuple[float, ...], ...]
+
+
+@dataclass(frozen=True)
+class CapturedFrame:
+    row: tuple[Any, ...]
+    action: tuple[float, ...]
+    camera_seq: dict[str, int]
+
+
+@dataclass(frozen=True)
+class _FrameRecorder:
+    episode_dir: Path
+    front_reader: LatestCameraReader
+    wrist_reader: LatestCameraReader
+    ros_state: RosTeleopState
+    state_mode: StateMode
+    depth_enabled: bool
+    front_crop: ImageRoi | None
+    max_camera_age_s: float
+    max_camera_pair_skew_s: float
+    jpeg_params: list[int]
+
+    def capture(
+        self, frame_index: int, last_camera_seq: dict[str, int]
+    ) -> CapturedFrame | None:
+        readers = (self.front_reader, self.wrist_reader)
+        _raise_camera_reader_errors(readers)
+        wait_for_new_camera_samples(
+            readers,
+            min_seq=last_camera_seq,
+            timeout_s=self.max_camera_age_s,
+        )
+        now = time.perf_counter()
+        front_sample = _fresh_camera_sample(
+            self.front_reader, now_s=now, max_age_s=self.max_camera_age_s
+        )
+        wrist_sample = _fresh_camera_sample(
+            self.wrist_reader, now_s=now, max_age_s=self.max_camera_age_s
+        )
+        camera_skew_s = abs(front_sample.monotonic_s - wrist_sample.monotonic_s)
+        if camera_skew_s > self.max_camera_pair_skew_s:
+            raise RuntimeError(
+                "camera pair is not synchronized: "
+                f"skew={camera_skew_s:.3f}s, max={self.max_camera_pair_skew_s:.3f}s, "
+                f"front_seq={front_sample.seq}, wrist_seq={wrist_sample.seq}"
+            )
+        frameset = front_sample.value
+        wrist_image = wrist_sample.value
+        state_sample = self.ros_state.state_sample(self.state_mode)
+        action = self.ros_state.action_values()
+        if frameset is None or wrist_image is None:
+            raise RuntimeError("camera reader returned an empty frame")
+        if state_sample is None or action is None:
+            raise RuntimeError(
+                "ROS joint/EEF/action/gripper data became stale or invalid while recording"
+            )
+        if self.depth_enabled and frameset.depth_mm is None:
+            return None
+
+        filename = f"{frame_index:06d}.jpg"
+        front_image = _crop_if_needed(
+            frameset.color_bgr, self.front_crop, label="AgentView color"
+        )
+        if not cv2.imwrite(
+            str(self.episode_dir / "cam0" / filename),
+            front_image,
+            self.jpeg_params,
+        ) or not cv2.imwrite(
+            str(self.episode_dir / "cam1" / filename),
+            wrist_image,
+            self.jpeg_params,
+        ):
+            raise RuntimeError(f"failed to write camera frame {filename}")
+        row: list[Any] = [
+            frame_index,
+            time.time_ns(),
+            f"{state_sample.ros_stamp_s:.9f}",
+            front_sample.seq,
+            f"{front_sample.monotonic_s:.9f}",
+            wrist_sample.seq,
+            f"{wrist_sample.monotonic_s:.9f}",
+            f"cam0/{filename}",
+            f"cam1/{filename}",
+        ]
+        if self.depth_enabled:
+            depth_filename = f"{frame_index:06d}.png"
+            depth = _crop_if_needed(
+                frameset.depth_mm,
+                self.front_crop,
+                label="AgentView aligned depth",
+            )
+            if not cv2.imwrite(
+                str(self.episode_dir / "cam0_depth" / depth_filename), depth
+            ):
+                raise RuntimeError(f"failed to write depth frame {depth_filename}")
+            row.append(f"cam0_depth/{depth_filename}")
+        return CapturedFrame(
+            row=(*row, *state_sample.values, *action),
+            action=tuple(float(value) for value in action),
+            camera_seq={
+                self.front_reader.name: front_sample.seq,
+                self.wrist_reader.name: wrist_sample.seq,
+            },
+        )
 
 
 def record_episode(
@@ -47,6 +152,7 @@ def record_episode(
     front_crop: ImageRoi | None,
     camera_ready_timeout_s: float,
     max_camera_age_s: float,
+    max_camera_pair_skew_s: float,
 ) -> RecordedEpisode:
     (episode_dir / "cam0").mkdir(parents=True)
     (episode_dir / "cam1").mkdir(parents=True)
@@ -73,7 +179,18 @@ def record_episode(
     t0 = time.perf_counter()
     next_frame_t = t0
     period = 1.0 / fps
-    jpeg_params = [int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)]
+    recorder = _FrameRecorder(
+        episode_dir=episode_dir,
+        front_reader=front_reader,
+        wrist_reader=wrist_reader,
+        ros_state=ros_state,
+        state_mode=state_mode,
+        depth_enabled=depth_enabled,
+        front_crop=front_crop,
+        max_camera_age_s=max_camera_age_s,
+        max_camera_pair_skew_s=max_camera_pair_skew_s,
+        jpeg_params=[int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)],
+    )
     user_input: str | None = None
     last_camera_seq = {front_reader.name: -1, wrist_reader.name: -1}
     actions: list[tuple[float, ...]] = []
@@ -89,78 +206,13 @@ def record_episode(
             if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
                 break
 
-            _raise_camera_reader_errors((front_reader, wrist_reader))
-            wait_for_new_camera_samples(
-                (front_reader, wrist_reader),
-                min_seq=last_camera_seq,
-                timeout_s=max_camera_age_s,
-            )
-            sample_t = time.perf_counter()
-            front_sample = _fresh_camera_sample(
-                front_reader, now_s=sample_t, max_age_s=max_camera_age_s
-            )
-            wrist_sample = _fresh_camera_sample(
-                wrist_reader, now_s=sample_t, max_age_s=max_camera_age_s
-            )
-
-            frameset0 = front_sample.value
-            img1 = wrist_sample.value
-            state = ros_state.state_values(state_mode)
-            action = ros_state.action_values()
-            if frameset0 is None or img1 is None:
-                raise RuntimeError("camera reader returned an empty frame")
-            if state is None or action is None:
-                raise RuntimeError(
-                    "ROS joint/EEF/action/gripper data became stale or invalid while recording"
-                )
-            if depth_enabled and frameset0.depth_mm is None:
+            captured = recorder.capture(frame_index, last_camera_seq)
+            if captured is None:
                 time.sleep(0.005)
                 continue
-            last_camera_seq = {
-                front_reader.name: front_sample.seq,
-                wrist_reader.name: wrist_sample.seq,
-            }
-
-            color_filename = f"{frame_index:06d}.jpg"
-            front_color = (
-                frameset0.color_bgr
-                if front_crop is None
-                else crop_image(
-                    frameset0.color_bgr, front_crop, label="AgentView color"
-                )
-            )
-            ok0 = cv2.imwrite(
-                str(episode_dir / "cam0" / color_filename), front_color, jpeg_params
-            )
-            ok1 = cv2.imwrite(
-                str(episode_dir / "cam1" / color_filename), img1, jpeg_params
-            )
-            if not ok0 or not ok1:
-                raise RuntimeError(f"failed to write camera frame {color_filename}")
-            row: list[Any] = [
-                frame_index,
-                time.time_ns(),
-                f"{ros_state.ros_stamp():.9f}",
-                f"cam0/{color_filename}",
-                f"cam1/{color_filename}",
-            ]
-            if depth_enabled:
-                depth_filename = f"{frame_index:06d}.png"
-                front_depth = (
-                    frameset0.depth_mm
-                    if front_crop is None
-                    else crop_image(
-                        frameset0.depth_mm, front_crop, label="AgentView aligned depth"
-                    )
-                )
-                ok_depth = cv2.imwrite(
-                    str(episode_dir / "cam0_depth" / depth_filename), front_depth
-                )
-                if not ok_depth:
-                    raise RuntimeError(f"failed to write depth frame {depth_filename}")
-                row.append(f"cam0_depth/{depth_filename}")
-            writer.writerow([*row, *state, *action])
-            actions.append(tuple(action))
+            writer.writerow(captured.row)
+            last_camera_seq = captured.camera_seq
+            actions.append(captured.action)
             if frame_index % 30 == 0:
                 handle.flush()
             frame_index += 1
@@ -175,6 +227,10 @@ def record_episode(
         decision=normalize_episode_decision(user_input),
         actions=tuple(actions),
     )
+
+
+def _crop_if_needed(image: Any, roi: ImageRoi | None, *, label: str) -> Any:
+    return image if roi is None else crop_image(image, roi, label=label)
 
 
 def wait_for_new_camera_samples(

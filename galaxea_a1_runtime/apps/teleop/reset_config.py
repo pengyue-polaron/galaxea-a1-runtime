@@ -1,14 +1,20 @@
-"""Tracked dual-device reset configuration."""
+"""Strict tracked dual-device reset configuration."""
 
 from __future__ import annotations
 
-import math
-import tomllib
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
-from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.configuration.base import (
+    boolean,
+    float_tuple,
+    floating,
+    load_toml,
+    require_exact_keys,
+    required_table,
+    string_tuple,
+)
+from galaxea_a1_runtime.teleop.config_schema import TeleopConfig, TeleopLeaderConfig
 
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -48,9 +54,7 @@ class A1GripperHome:
 @dataclass(frozen=True)
 class LeaderHome:
     enabled: bool
-    port: str
-    id: str
-    use_degrees: bool
+    config: TeleopLeaderConfig
     action: dict[str, float]
 
 
@@ -72,167 +76,186 @@ class HomePose:
     topics: HomeTopics
     motion: HomeMotion
     gripper: A1GripperHome
-    leader: LeaderHome | None
-    leader_motion: LeaderMotion | None
+    leader: LeaderHome
+    leader_motion: LeaderMotion
 
 
-def load_home_pose(path: Path) -> HomePose:
-    path = path.expanduser()
-    if not path.is_absolute():
-        path = (ROOT_DIR / path).resolve()
-    data = tomllib.loads(path.read_text())
-    names = tuple(_required_list(data["joints"], "names", str))
-    positions = tuple(
-        float(value) for value in _required_list(data["joints"], "position_rad", float)
+def load_home_pose(path: Path, *, teleop: TeleopConfig) -> HomePose:
+    path, _, data = load_toml(path, repo_root=ROOT_DIR)
+    require_exact_keys(
+        data,
+        required={
+            "joints",
+            "gripper",
+            "leader",
+            "leader_motion",
+            "motion",
+        },
+        label="reset pose",
     )
-    if len(names) != len(positions):
-        raise ValueError(
-            "joints.names and joints.position_rad must have the same length"
-        )
-    system_path = ROOT_DIR / str(data["system"]["config"])
-    system = load_system_config(system_path, repo_root=ROOT_DIR)
-    if names != system.joint_safety.names:
-        raise ValueError("reset joint names must match configs/system/a1.toml")
-    a1_gripper = _load_a1_gripper_home(data)
-    if (
-        not system.gripper.stroke_min_mm
-        <= a1_gripper.closed_stroke_mm
+    system = teleop.system
+
+    joints = required_table(data, "joints")
+    require_exact_keys(joints, required={"position_rad"}, label="reset joints")
+    names = system.joint_safety.names
+    positions = float_tuple(joints, "position_rad", len(names))
+    _validate_joint_targets(
+        names,
+        positions,
+        system.joint_safety.lower_limits,
+        system.joint_safety.upper_limits,
+    )
+
+    gripper = _load_a1_gripper_home(required_table(data, "gripper"))
+    if not (
+        system.gripper.stroke_min_mm
+        <= gripper.closed_stroke_mm
         <= system.gripper.stroke_max_mm
     ):
-        raise ValueError("reset gripper target is outside configs/system/a1.toml range")
-    motion = data["motion"]
-    leader = _load_leader_home(data)
+        raise ValueError("reset gripper target is outside the system stroke range")
+
+    leader = _load_leader_home(
+        required_table(data, "leader"),
+        teleop.leader,
+        dof=teleop.bridge.dof,
+        gripper_key=teleop.gripper.source_key,
+    )
+    leader_motion = _load_leader_motion(required_table(data, "leader_motion"))
+    motion_data = required_table(data, "motion")
+    require_exact_keys(
+        motion_data,
+        required={
+            "hz",
+            "min_duration_s",
+            "max_velocity_rad_s",
+            "tracker_alignment_timeout_s",
+            "hold_s",
+            "goal_tolerance_rad",
+        },
+        label="reset motion",
+    )
+    topics = system.topics
     home = HomePose(
         path=path,
         names=names,
         positions=positions,
         topics=HomeTopics(
-            joint_states=system.topics.joint_states,
-            target=system.topics.joint_target,
-            staged_command=system.topics.staged_command,
-            relay_enable=system.topics.motion_enable,
-            relay_status=system.topics.relay_status,
-            gripper_target=system.topics.gripper_target,
+            joint_states=topics.joint_states,
+            target=topics.joint_target,
+            staged_command=topics.staged_command,
+            relay_enable=topics.motion_enable,
+            relay_status=topics.relay_status,
+            gripper_target=topics.gripper_target,
         ),
         motion=HomeMotion(
-            hz=float(motion["hz"]),
-            min_duration_s=float(motion["min_duration_s"]),
-            max_velocity_rad_s=float(motion["max_velocity_rad_s"]),
-            tracker_alignment_timeout_s=float(motion["tracker_alignment_timeout_s"]),
-            tracker_alignment_tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
+            hz=floating(motion_data, "hz"),
+            min_duration_s=floating(motion_data, "min_duration_s"),
+            max_velocity_rad_s=floating(motion_data, "max_velocity_rad_s"),
+            tracker_alignment_timeout_s=floating(
+                motion_data, "tracker_alignment_timeout_s"
+            ),
+            tracker_alignment_tolerance_rad=(
+                system.joint_safety.initial_alignment_tolerance_rad
+            ),
             relay_enable_timeout_s=system.relay.enable_timeout_s,
             max_relay_status_age_s=system.relay.max_status_age_s,
-            hold_s=float(motion["hold_s"]),
-            goal_tolerance_rad=float(motion["goal_tolerance_rad"]),
+            hold_s=floating(motion_data, "hold_s"),
+            goal_tolerance_rad=floating(motion_data, "goal_tolerance_rad"),
         ),
-        gripper=a1_gripper,
-        leader=leader[0],
-        leader_motion=leader[1],
+        gripper=gripper,
+        leader=leader,
+        leader_motion=leader_motion,
     )
     validate_home_pose(home)
     return home
 
 
 def validate_home_pose(home: HomePose) -> None:
-    if not home.names:
-        raise ValueError("home pose must contain at least one joint")
-    if any(not name for name in home.names):
-        raise ValueError("joint names must be non-empty")
-    if any(not math.isfinite(value) for value in home.positions):
-        raise ValueError("joint positions must be finite")
     for field, value in home.motion.__dict__.items():
         if value <= 0:
             raise ValueError(f"motion.{field} must be positive")
-    if home.gripper.closed_stroke_mm < 0:
-        raise ValueError("gripper.closed_stroke_mm must be non-negative")
     if home.gripper.publish_hz <= 0 or home.gripper.publish_s <= 0:
         raise ValueError("gripper publish_hz/publish_s must be positive")
-    if home.leader is not None:
-        if not home.leader.port:
-            raise ValueError("leader.port must be non-empty")
-        if not home.leader.action:
-            raise ValueError("leader.action must contain at least one target")
-    if home.leader_motion is not None:
-        for field, value in home.leader_motion.__dict__.items():
-            if value <= 0:
-                raise ValueError(f"leader_motion.{field} must be positive")
+    for field, value in home.leader_motion.__dict__.items():
+        if value <= 0:
+            raise ValueError(f"leader_motion.{field} must be positive")
+
+
+def _load_a1_gripper_home(data: dict) -> A1GripperHome:
+    require_exact_keys(
+        data,
+        required={"enabled", "closed_stroke_mm", "publish_hz", "publish_s"},
+        label="reset gripper",
+    )
+    return A1GripperHome(
+        enabled=boolean(data, "enabled"),
+        closed_stroke_mm=floating(data, "closed_stroke_mm"),
+        publish_hz=floating(data, "publish_hz"),
+        publish_s=floating(data, "publish_s"),
+    )
 
 
 def _load_leader_home(
-    data: dict[str, Any],
-) -> tuple[LeaderHome | None, LeaderMotion | None]:
-    leader_data = data.get("leader")
-    if leader_data is None:
-        return None, None
-    if not isinstance(leader_data, dict):
-        raise ValueError("leader must be a table")
-    enabled = bool(leader_data.get("enabled", True))
-    keys = _required_list(leader_data, "action_keys", str)
-    values = _required_number_list(leader_data, "action_values")
-    if len(keys) != len(values):
+    data: dict,
+    config: TeleopLeaderConfig,
+    *,
+    dof: int,
+    gripper_key: str,
+) -> LeaderHome:
+    require_exact_keys(
+        data,
+        required={"enabled", "action_keys", "action_values"},
+        label="reset leader",
+    )
+    expected_keys = (*(f"joint{index}.pos" for index in range(dof)), gripper_key)
+    keys = string_tuple(data, "action_keys", len(expected_keys))
+    if keys != expected_keys:
         raise ValueError(
-            "leader.action_keys and leader.action_values must have the same length"
+            f"reset leader action keys must be {list(expected_keys)}, got {list(keys)}"
         )
-
-    motion_data = data.get("leader_motion")
-    if not isinstance(motion_data, dict):
-        raise ValueError("leader_motion table is required when leader is configured")
-    return (
-        LeaderHome(
-            enabled=enabled,
-            port=_required_string(leader_data, "port"),
-            id=_required_string(leader_data, "id"),
-            use_degrees=bool(leader_data.get("use_degrees", True)),
-            action=dict(zip(keys, (float(value) for value in values), strict=True)),
-        ),
-        LeaderMotion(
-            hz=float(motion_data["hz"]),
-            min_duration_s=float(motion_data["min_duration_s"]),
-            max_velocity_units_s=float(motion_data["max_velocity_units_s"]),
-            hold_s=float(motion_data["hold_s"]),
-            goal_tolerance_units=float(motion_data["goal_tolerance_units"]),
-            gripper_goal_tolerance_units=float(
-                motion_data.get(
-                    "gripper_goal_tolerance_units",
-                    motion_data["goal_tolerance_units"],
-                )
-            ),
-        ),
+    values = float_tuple(data, "action_values", len(keys))
+    return LeaderHome(
+        enabled=boolean(data, "enabled"),
+        config=config,
+        action=dict(zip(keys, values, strict=True)),
     )
 
 
-def _load_a1_gripper_home(data: dict[str, Any]) -> A1GripperHome:
-    gripper = data.get("gripper")
-    if not isinstance(gripper, dict):
-        raise ValueError("gripper table is required")
-    return A1GripperHome(
-        enabled=bool(gripper.get("enabled", True)),
-        closed_stroke_mm=float(gripper["closed_stroke_mm"]),
-        publish_hz=float(gripper["publish_hz"]),
-        publish_s=float(gripper["publish_s"]),
+def _load_leader_motion(data: dict) -> LeaderMotion:
+    require_exact_keys(
+        data,
+        required={
+            "hz",
+            "min_duration_s",
+            "max_velocity_units_s",
+            "hold_s",
+            "goal_tolerance_units",
+            "gripper_goal_tolerance_units",
+        },
+        label="reset leader_motion",
+    )
+    return LeaderMotion(
+        hz=floating(data, "hz"),
+        min_duration_s=floating(data, "min_duration_s"),
+        max_velocity_units_s=floating(data, "max_velocity_units_s"),
+        hold_s=floating(data, "hold_s"),
+        goal_tolerance_units=floating(data, "goal_tolerance_units"),
+        gripper_goal_tolerance_units=floating(data, "gripper_goal_tolerance_units"),
     )
 
 
-def _required_list(data: dict[str, Any], key: str, item_type: type) -> list[Any]:
-    value = data.get(key)
-    if not isinstance(value, list) or not all(
-        isinstance(item, item_type) for item in value
-    ):
-        raise ValueError(f"{key} must be a list of {item_type.__name__}")
-    return value
-
-
-def _required_number_list(data: dict[str, Any], key: str) -> list[float | int]:
-    value = data.get(key)
-    if not isinstance(value, list) or not all(
-        isinstance(item, int | float) for item in value
-    ):
-        raise ValueError(f"{key} must be a number list")
-    return value
-
-
-def _required_string(data: dict[str, Any], key: str) -> str:
-    value = data.get(key)
-    if not isinstance(value, str) or not value:
-        raise ValueError(f"{key} must be a non-empty string")
-    return value
+def _validate_joint_targets(
+    names: tuple[str, ...],
+    positions: tuple[float, ...],
+    lower: tuple[float, ...],
+    upper: tuple[float, ...],
+) -> None:
+    violations = [
+        f"{name}={value:g} outside [{lo:g}, {hi:g}]"
+        for name, value, lo, hi in zip(names, positions, lower, upper, strict=True)
+        if value < lo or value > hi
+    ]
+    if violations:
+        raise ValueError(
+            "reset joint target violates system limits: " + "; ".join(violations)
+        )
