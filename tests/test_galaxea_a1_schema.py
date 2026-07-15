@@ -19,6 +19,7 @@ def test_default_contract_targets_lerobot_v3():
 
     assert contract.dataset_format == LEROBOT_DATASET_FORMAT
     assert contract.dataset_format == "v3.0"
+    assert contract.action_mode == ActionMode.JOINT_ABSOLUTE
     assert contract.features()["observation.images.front"]["shape"] == (480, 480, 3)
 
 
@@ -52,16 +53,6 @@ def test_depth_camera_spec_marks_lerobot_depth_feature():
     assert feature["dtype"] == "video"
     assert feature["shape"] == (480, 640, 1)
     assert feature["info"] == {"is_depth_map": True, "depth_unit": "mm"}
-
-
-def test_translation_action_contract_uses_four_actions():
-    contract = default_dataset_contract(
-        action_mode=ActionMode.EEF_TRANSLATION,
-        cameras=(CameraSpec("front", height=10, width=10),),
-    )
-
-    assert contract.action_names == ("delta_x", "delta_y", "delta_z", "gripper")
-    assert contract.features()["action"]["shape"] == (4,)
 
 
 def test_validate_frame_keys_reports_missing_required_keys():

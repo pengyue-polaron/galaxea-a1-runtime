@@ -12,7 +12,6 @@ from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
 from galaxea_a1_runtime.schema import (
     ActionMode,
     DEFAULT_STATE_NAMES,
-    JOINT_ACTION_NAMES,
 )
 
 TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v3"
@@ -105,15 +104,6 @@ def state_names_for_mode(mode: StateMode | str) -> tuple[str, ...]:
     if mode == StateMode.EEF_JOINT:
         return DEFAULT_STATE_NAMES
     raise ValueError(f"unsupported state mode: {mode}")
-
-
-def action_names_for_teleop(mode: ActionMode | str) -> tuple[str, ...]:
-    mode = ActionMode(mode)
-    if mode != ActionMode.JOINT_ABSOLUTE:
-        raise ValueError(
-            f"teleop collection currently records joint_absolute actions, got {mode}"
-        )
-    return JOINT_ACTION_NAMES
 
 
 def state_columns(names: tuple[str, ...]) -> tuple[str, ...]:

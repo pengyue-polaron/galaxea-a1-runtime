@@ -3,8 +3,6 @@ import pytest
 from galaxea_a1_runtime.constants import IDLE_TIMEOUT_CODE
 from galaxea_a1_runtime.safety import (
     RelayInputs,
-    WorkspaceBounds,
-    clamp_eef_delta,
     validate_relay_inputs,
     validate_initial_alignment,
 )
@@ -67,15 +65,3 @@ def test_initial_alignment_accepts_small_first_error_without_modifying_command()
 def test_initial_alignment_rejects_large_first_error():
     with pytest.raises(ValueError, match="initial command error exceeds"):
         validate_initial_alignment([0.0], [0.1], max_abs_error=0.05)
-
-
-def test_clamp_eef_delta_supports_translation_gripper_action():
-    output = clamp_eef_delta([0.2, -0.2, 0.01, 2.0], max_translation=0.03)
-
-    assert output == pytest.approx((0.03, -0.03, 0.01, 1.0))
-
-
-def test_workspace_bounds_clamp_position():
-    bounds = WorkspaceBounds(x=(0.1, 0.4), y=(-0.2, 0.2), z=(0.05, 0.5))
-
-    assert bounds.clamp((1.0, -1.0, 0.2)) == pytest.approx((0.4, -0.2, 0.2))

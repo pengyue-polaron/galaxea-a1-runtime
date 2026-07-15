@@ -44,32 +44,6 @@ class SafetyDecision:
         return cls(False, reason)
 
 
-@dataclass(frozen=True)
-class WorkspaceBounds:
-    """Axis-aligned EEF workspace bounds in meters."""
-
-    x: tuple[float, float]
-    y: tuple[float, float]
-    z: tuple[float, float]
-
-    def clamp(self, xyz: Sequence[float]) -> tuple[float, float, float]:
-        if len(xyz) != 3:
-            raise ValueError(f"workspace clamp expects 3 values, got {len(xyz)}")
-        return (
-            clamp_float(xyz[0], self.x[0], self.x[1]),
-            clamp_float(xyz[1], self.y[0], self.y[1]),
-            clamp_float(xyz[2], self.z[0], self.z[1]),
-        )
-
-
-def clamp_float(value: float, lower: float, upper: float) -> float:
-    if lower > upper:
-        raise ValueError(f"invalid bounds: lower={lower} upper={upper}")
-    if not isfinite(value):
-        raise ValueError(f"value must be finite, got {value!r}")
-    return min(max(value, lower), upper)
-
-
 def validate_relay_inputs(
     inputs: RelayInputs,
     *,
@@ -242,45 +216,6 @@ def validate_arm_control_command(
             f"tracker command mode {mode} is not allowed; "
             f"expected one of {list(allowed_modes)}"
         )
-
-
-def clamp_eef_delta(
-    delta: Sequence[float],
-    *,
-    max_translation: float,
-    max_rotation: float | None = None,
-) -> tuple[float, ...]:
-    """Clamp an EEF delta action.
-
-    Supported shapes are translation-only `[dx, dy, dz]`, translation plus
-    gripper `[dx, dy, dz, gripper]`, or full pose delta plus gripper
-    `[dx, dy, dz, droll, dpitch, dyaw, gripper]`.
-    """
-
-    if len(delta) not in (3, 4, 7):
-        raise ValueError(f"unsupported EEF delta length: {len(delta)}")
-    if max_translation < 0:
-        raise ValueError(f"max_translation must be non-negative, got {max_translation}")
-    if len(delta) == 7:
-        if max_rotation is None:
-            raise ValueError("max_rotation is required for a full EEF delta")
-        if max_rotation < 0:
-            raise ValueError(f"max_rotation must be non-negative, got {max_rotation}")
-    elif max_rotation is not None:
-        raise ValueError("max_rotation is only valid for a full EEF delta")
-
-    values = [float(v) for v in delta]
-    clamped = [
-        clamp_float(values[i], -max_translation, max_translation) for i in range(3)
-    ]
-    if len(values) == 7:
-        clamped.extend(
-            clamp_float(values[i], -max_rotation, max_rotation) for i in range(3, 6)
-        )
-        clamped.append(clamp_float(values[6], 0.0, 1.0))
-    elif len(values) == 4:
-        clamped.append(clamp_float(values[3], 0.0, 1.0))
-    return tuple(clamped)
 
 
 def _require_same_length(

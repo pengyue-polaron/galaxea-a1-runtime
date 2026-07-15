@@ -30,23 +30,6 @@ DEFAULT_STATE_NAMES = (
     "gripper",
 )
 
-EEF_DELTA_ACTION_NAMES = (
-    "delta_x",
-    "delta_y",
-    "delta_z",
-    "delta_roll",
-    "delta_pitch",
-    "delta_yaw",
-    "gripper",
-)
-
-EEF_TRANSLATION_ACTION_NAMES = (
-    "delta_x",
-    "delta_y",
-    "delta_z",
-    "gripper",
-)
-
 JOINT_ACTION_NAMES = (
     "joint_1",
     "joint_2",
@@ -74,8 +57,6 @@ DEFAULT_RGB_IMAGE_KEYS = (FRONT_IMAGE_KEY, WRIST_IMAGE_KEY)
 
 
 class ActionMode(StrEnum):
-    EEF_DELTA = "eef_delta"
-    EEF_TRANSLATION = "eef_translation"
     JOINT_ABSOLUTE = "joint_absolute"
 
 
@@ -133,13 +114,12 @@ class DatasetContract:
 def default_dataset_contract(
     *,
     cameras: tuple[CameraSpec, ...],
-    action_mode: ActionMode = ActionMode.EEF_DELTA,
 ) -> DatasetContract:
     return DatasetContract(
         dataset_format=LEROBOT_DATASET_FORMAT,
-        action_mode=action_mode,
+        action_mode=ActionMode.JOINT_ABSOLUTE,
         state_names=DEFAULT_STATE_NAMES,
-        action_names=action_names_for_mode(action_mode),
+        action_names=JOINT_ACTION_NAMES,
         camera_specs=cameras,
     )
 
@@ -184,16 +164,6 @@ def camera_specs_from_system(
             )
         )
     return tuple(specs)
-
-
-def action_names_for_mode(action_mode: ActionMode) -> tuple[str, ...]:
-    if action_mode == ActionMode.EEF_DELTA:
-        return EEF_DELTA_ACTION_NAMES
-    if action_mode == ActionMode.EEF_TRANSLATION:
-        return EEF_TRANSLATION_ACTION_NAMES
-    if action_mode == ActionMode.JOINT_ABSOLUTE:
-        return JOINT_ACTION_NAMES
-    raise ValueError(f"unsupported action mode: {action_mode}")
 
 
 def vector_feature(names: tuple[str, ...]) -> dict[str, Any]:

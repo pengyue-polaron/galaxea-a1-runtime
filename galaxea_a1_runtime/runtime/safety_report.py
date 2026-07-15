@@ -313,7 +313,7 @@ def build_safety_settings(
 
 def build_architecture_findings() -> tuple[str, ...]:
     return (
-        "GalaxeaA1Robot is a schema/IO composition wrapper and has no implicit hardware adapter; managed apps own every live ROS path.",
+        "Managed Teleop, ACT, and LingBot apps own every supported live ROS path; no generic package adapter publishes implicitly.",
         "Teleop joint-space control is implemented as an app runtime that stages jointTracker output through the relay.",
         "The relay no longer applies joint tracking-error or velocity clamps; staged tracker output is forwarded unchanged once validation passes.",
         "LingBot episode-relative targets are composed onto the startup pose before using the staged EEF target route.",

@@ -58,11 +58,18 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   not alternate configuration objects.
 - Host command topic literals may occur only in System config, explicit debug
   tools, and documentation.
+- First-party ROS launch files must require their topic arguments. Runtime
+  entrypoints render them from System config; fallback topics would create an
+  unsafe second source of truth.
 - Decode named joint vectors using `joint_safety.names`; reject duplicate,
   missing, or non-finite values and reorder explicitly. Positional fallback is
   allowed only for truly unnamed feedback; command messages must carry names.
 - Do not add hidden clamps, scaling, thresholds, or policy-output rewrites.
   Required limits belong in tracked config or a named safety module.
+- Preserve verified Teleop observation, action, mapping, and reset semantics.
+  An intentional change must update the owning config, behavioral tests, and
+  affected documentation in the same change; compatibility must not drift
+  implicitly.
 
 ## Data and models
 
@@ -90,6 +97,9 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 
 - Keep configuration, validation, mapping, clamps, and safety decisions in pure,
   ROS-free modules. Hardware code adapts those decisions to external APIs.
+- Give every safety-critical config-to-runtime mapping an exhaustive,
+  hardware-free unit test. Doctors and generated reports must derive displayed
+  values from loaded config rather than hardcoding a second expected value.
 - A hardware family has one config-driven constructor. Every physical resource
   has one explicit owner and shutdown order.
 - Keep optional heavy dependencies lazy so config validation and pure tests do
