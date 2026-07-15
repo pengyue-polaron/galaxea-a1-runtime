@@ -54,6 +54,13 @@ def map_leader_joints_to_a1(
     config.validate(dof)
     if len(leader_now) != dof or len(leader_start) != dof:
         raise ValueError("leader and A1 joint vectors must have the same length")
+    for name, values in (
+        ("leader_now", leader_now),
+        ("leader_start", leader_start),
+        ("a1_start", a1_start),
+    ):
+        if not all(math.isfinite(float(value)) for value in values):
+            raise ValueError(f"{name} must contain only finite joint values")
 
     if config.relative:
         values = tuple(

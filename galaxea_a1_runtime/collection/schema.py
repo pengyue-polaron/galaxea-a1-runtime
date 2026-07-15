@@ -16,9 +16,6 @@ from galaxea_a1_runtime.schema import (
 )
 
 TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v3"
-TELEOP_STRUCTURED_SCHEMA_VERSIONS = frozenset(
-    {"galaxea_a1_teleop_raw_v2", TELEOP_RAW_SCHEMA_VERSION}
-)
 EXPERIMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
 EEF_STATE_NAMES = DEFAULT_STATE_NAMES[:7]

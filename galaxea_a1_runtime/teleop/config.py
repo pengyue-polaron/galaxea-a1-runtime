@@ -197,6 +197,8 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("bridge.dof must be positive")
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
+    if not config.collection.fps.is_integer():
+        raise ValueError("collection.fps must be an integer for LeRobot conversion")
     if config.collection.max_duration_s < 0:
         raise ValueError("collection.max_duration_s must be non-negative")
     if not 1 <= config.collection.jpeg_quality <= 100:

@@ -56,3 +56,23 @@ def test_relative_mapping_starts_at_current_a1_pose_and_applies_signs():
 
     assert target[0] == pytest.approx(1.0 - 0.1745329)
     assert target[1] == pytest.approx(2.0 + 2.0 * 0.1745329)
+
+
+def test_joint_mapping_rejects_non_finite_hardware_input():
+    config = JointMappingConfig(
+        relative=True,
+        input_degrees=True,
+        sign=(1.0,),
+        scale=(1.0,),
+        bias_rad=(0.0,),
+        lower_limits=(-1.0,),
+        upper_limits=(1.0,),
+    )
+
+    with pytest.raises(ValueError, match="leader_now"):
+        map_leader_joints_to_a1(
+            leader_now=(float("nan"),),
+            leader_start=(0.0,),
+            a1_start=(0.0,),
+            config=config,
+        )

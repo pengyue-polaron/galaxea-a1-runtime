@@ -73,6 +73,19 @@ def test_uncommitted_directory_transaction_removes_staging(tmp_path):
     assert _temporary_outputs(tmp_path) == []
 
 
+def test_directory_transaction_can_reserve_an_uncreated_staging_path(tmp_path):
+    target = tmp_path / "dataset"
+
+    with OutputDirectoryTransaction(target, precreate_staging=False) as transaction:
+        assert transaction.path is not None
+        assert not transaction.path.exists()
+        transaction.path.mkdir()
+        (transaction.path / "complete.txt").write_text("ready")
+        transaction.commit()
+
+    assert (target / "complete.txt").read_text() == "ready"
+
+
 def test_atomic_file_failure_preserves_existing_output(tmp_path):
     target = tmp_path / "dataset.tar.gz"
     target.write_bytes(b"old")

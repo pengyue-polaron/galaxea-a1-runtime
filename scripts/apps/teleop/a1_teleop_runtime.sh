@@ -111,7 +111,7 @@ start_services() {
 
   a1_step "3/4 Joint tracker"
   a1_container_run tracker "${TRACKER_CONTAINER}" \
-    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${JOINT_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${JOINT_TRACKER_NODE}"
+    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${JOINT_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${JOINT_TRACKER_NODE_NAME}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
 
   a1_step "4/4 Command relay"
@@ -316,7 +316,6 @@ case "${1:-help}" in
   doctor    Static/import checks plus base runtime doctor
   status    Containers and bridge process state
   logs      Runtime and bridge logs
-  cameras   Capture front/wrist/depth snapshots from the tracked teleop config
 
 Config:
   ${CONFIG_PATH}

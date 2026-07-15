@@ -15,7 +15,7 @@ from galaxea_a1_runtime.collection import (
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.configuration.image import ImageRoi
-from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE, SAFE_RELAY_SCRIPT
+from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
 from galaxea_a1_runtime.filesystem import atomic_write_text
 from galaxea_a1_runtime.schema import (
     ActionMode,
@@ -113,7 +113,7 @@ def write_metadata(request: EpisodeMetadataRequest) -> None:
         },
         control_path=(
             system.topics.joint_target,
-            JOINT_TRACKER_NODE.removeprefix("/"),
+            JOINT_TRACKER_NODE_NAME,
             system.topics.staged_command,
             SAFE_RELAY_SCRIPT,
             system.topics.host_command,

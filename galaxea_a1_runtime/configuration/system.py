@@ -39,8 +39,13 @@ from galaxea_a1_runtime.configuration.web_preview import (
     WebPreviewConfig,
     parse_web_preview_config,
 )
-from galaxea_a1_runtime.constants import EE_TRACKER_NODE, JOINT_TRACKER_NODE
-from galaxea_a1_runtime.constants import ARM_JOINT_COUNT
+from galaxea_a1_runtime.constants import (
+    ARM_JOINT_COUNT,
+    EE_TRACKER_NODE,
+    EE_TRACKER_NODE_NAME,
+    JOINT_TRACKER_NODE,
+    JOINT_TRACKER_NODE_NAME,
+)
 
 __all__ = [
     "DEFAULT_SYSTEM_CONFIG",
@@ -407,7 +412,9 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         "EEF_POSE_TOPIC": config.topics.eef_pose,
         "EEF_TARGET_TOPIC": config.topics.eef_target,
         "EE_TRACKER_NODE": EE_TRACKER_NODE,
+        "EE_TRACKER_NODE_NAME": EE_TRACKER_NODE_NAME,
         "JOINT_TRACKER_NODE": JOINT_TRACKER_NODE,
+        "JOINT_TRACKER_NODE_NAME": JOINT_TRACKER_NODE_NAME,
         "WRIST_BACKEND": config.cameras.wrist.backend,
         "WRIST_CAMERA": (
             config.cameras.wrist.device
@@ -450,7 +457,9 @@ def bash_config(config: SystemConfig) -> str:
             "EEF_POSE_TOPIC",
             "EEF_TARGET_TOPIC",
             "EE_TRACKER_NODE",
+            "EE_TRACKER_NODE_NAME",
             "JOINT_TRACKER_NODE",
+            "JOINT_TRACKER_NODE_NAME",
             "ROS_MASTER_STARTUP_TIMEOUT_S",
             "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
             "TOPIC_STARTUP_TIMEOUT_S",

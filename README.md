@@ -1,27 +1,84 @@
 # Galaxea A1 Runtime
 
-LeRobot-native runtime for the Galaxea A1 arm.
+Fail-closed runtime, SO leader teleoperation, data collection, dataset
+conversion, and policy deployment for a real Galaxea A1 arm. The repository
+uses LeRobot v0.6 and LeRobotDataset v3 as its current baseline.
 
-This repository is being rebuilt around:
+The arm may be powered and reachable while this repository is open. Treat every
+ROS publish path as live hardware. Read [Safety](docs/SAFETY.md) before running
+motion commands.
 
-- a fail-closed A1 execution runtime,
-- LeRobot v0.6.0,
-- LeRobotDataset v3.0,
-- SO leader teleoperation collection,
-- ACT joint-state policy deployment,
-- managed ACT and LingBot deployments,
-- clean module boundaries for safety, hardware IO, datasets, and policies.
+## Operator Flow
 
-SO-100 leader printable parts are kept under
-[`assets/cad/so100_leader/`](assets/cad/so100_leader/) instead of the repository
-root.
+Static checks do not move the robot:
 
-The arm may be powered and reachable while this repo is open. Treat every ROS
-publish path as live hardware.
+```bash
+just setup       # first-time Python environment
+just check       # config, lint, shell, and unit tests
+just hardware    # enumerate configured hardware; no motion
+just cameras     # camera snapshots and FPS probe; no motion
+```
 
-## Safe Command Path
+Normal teleoperation and collection:
 
-Normal EEF apps and inference code must use:
+```bash
+just stop
+just reset
+just teleop banana_in_the_plate
+```
+
+The recorder prompts once for a task, then uses this episode loop:
+
+- `Enter`: start recording; while recording, save and validate the episode.
+- `d` + `Enter`: discard the current episode.
+- `q` + `Enter`: quit.
+- `Ctrl+C`: stop immediately.
+
+Successful saves are atomic. A save is rejected if samples are stale, files are
+incomplete, or a joint action jump exceeds the tracked collection threshold.
+The rejected episode is deleted and its index is reused. With the default
+config, a successful save resets both arms before the next episode.
+
+Convert the newly collected raw experiment with its tracked dataset config:
+
+```bash
+just convert banana_in_the_plate
+```
+
+That one command atomically builds, in order:
+
+1. raw teleop v3 -> base LeRobot v3;
+2. LingBot EEF continuous v3;
+3. LingBot-compatible EEF continuous v2.1 export;
+4. ACT/joint continuous v3.
+
+Only the current `galaxea_a1_teleop_raw_v3` input contract is supported. Old
+raw schemas are intentionally not migrated. Each experiment needs a tracked
+`configs/datasets/<experiment>.toml` before conversion.
+
+Useful lifecycle commands:
+
+```bash
+just teleop-test
+just camera-web
+just eef-test
+just act
+just lingbot
+just logs
+just stop
+```
+
+`just eef-test`, `just reset`, `just teleop-test`, `just teleop`, `just act`,
+and `just lingbot` may command live hardware. Power and position the arm safely
+first. ACT and LingBot are currently fail-closed until new checkpoints are
+registered and their deployment configs are explicitly marked ready.
+
+See [Runbook](docs/RUNBOOK.md) for the full preflight, recording, conversion,
+and recovery procedure.
+
+## Safe Control Paths
+
+EEF applications use:
 
 ```text
 /a1_ee_target
@@ -31,11 +88,7 @@ Normal EEF apps and inference code must use:
   -> /arm_joint_command_host
 ```
 
-The relay starts locked. Direct `/arm_joint_command_host` publishing is only for
-explicit hardware debug after stopping the safe runtime.
-
-Teleop collection and ACT joint-state inference use the same relay with staged
-jointTracker output:
+Teleop and ACT joint policies use:
 
 ```text
 /arm_joint_target_position
@@ -45,7 +98,7 @@ jointTracker output:
   -> /arm_joint_command_host
 ```
 
-Normal gripper control is staged through that relay as well:
+Normal gripper commands use:
 
 ```text
 /a1_gripper_target
@@ -53,320 +106,84 @@ Normal gripper control is staged through that relay as well:
   -> /gripper_position_control_host
 ```
 
-The relay forwards only fresh, finite targets inside the `0..100 mm` physical
-range while it is `ACTIVE` and the gripper motor status is `0` or idle `64`.
+The relay starts `LOCKED`, requires fresh validated inputs, and is the only
+normal publisher to host command topics. Direct host publishing is reserved for
+explicit debug after `just stop`.
 
-## Current Main Commands
+## Configuration Ownership
 
-Daily local checks, no hardware motion:
+| Path | Owns |
+| --- | --- |
+| `configs/system/a1.toml` | physical devices, ROS topics, cameras, joint/EEF safety, relay, 0-100 mm gripper stroke |
+| `configs/teleop/a1_so100.toml` | SO leader mapping, collection state/FPS/quality behavior, reset reference |
+| `configs/poses/` | tracked reset target values and reset motion behavior |
+| `configs/datasets/` | raw source and generated dataset/package locations; reference to its Teleop collection contract |
+| `configs/deployments/` | model registry paths and inference/execution semantics |
 
-```bash
-just check
+App configs reference the system config rather than restating physical values.
+Normal live CLIs accept lifecycle commands or an experiment identity, not
+per-run overrides for hardware or safety settings.
+
+## Observation and Action Contract
+
+- AgentView D455: capture `640x480`, then use the configured
+  `x=103, y=0, width=480, height=480` square crop for collection and inference.
+- Wrist D405: full `640x480` RGB frame.
+- Web preview: full AgentView with the actual recorded/policy ROI outlined in
+  red; it does not save the overlay.
+- Default state: EEF pose + six arm joints + continuous gripper.
+- Action: six absolute joint targets + continuous gripper.
+- Gripper: normalized `0..1` everywhere above hardware, mapped once to the
+  system-owned physical `0..100 mm` stroke.
+- Feedback: `/gripper_stroke_host`; the seventh joint-state value is never
+  reinterpreted as millimeters.
+- Runtime action-step protection is intentionally disabled in the system
+  config. Enter-to-save collection continuity validation remains enabled in
+  the teleop config.
+
+The read-only camera preview listens on `0.0.0.0:8088` with no login:
+
+```text
+http://<robot-lan-ip>:8088
 ```
 
-Hardware enumeration check, no arm motion:
+It is LAN-only, unencrypted, and contains no robot-control endpoint. Do not
+port-forward it. Only one process may own each RealSense; standalone preview
+is for use when Teleop, ACT, and LingBot are not already using the cameras.
 
-```bash
-just hardware
-```
-
-Camera check, no arm motion:
-
-```bash
-just cameras
-```
-
-LAN dual-camera web preview, no arm motion:
-
-```bash
-just camera-web
-```
-
-Open `http://<robot-lan-ip>:8088` directly. Stop the standalone camera owner
-with `just camera-web stop`; the same preview endpoint is embedded in Teleop,
-ACT, and LingBot, so the LAN URL remains useful while one of those apps owns
-the cameras.
-
-EEF hardware acceptance:
-
-```bash
-just eef-test
-```
-
-SO leader teleop:
-
-```bash
-just reset              # restore tracked A1 + SO leader start pose
-just teleop-test        # manual leader-to-A1 check
-just teleop pick_cube   # record episodes
-just stop
-```
-
-LingBot:
-
-```bash
-just models
-just lingbot
-tmux attach -t lingbot-a1
-just stop
-```
-
-LingBot runtime parameters live in
-[configs/deployments/lingbot_va.toml](configs/deployments/lingbot_va.toml).
-The tracked command starts the managed deployment policy server before the A1
-runtime. Put the machine-local LingBot source checkout at the ignored
-`external/lingbot-va` path (a symlink is fine) and create its Python environment
-at `external/lingbot-va/.env312`. The checked-in profile is currently
-fail-closed until a new checkpoint, prompt, and dataset quantiles are
-registered. Edit that file when the
-checkpoint, server, prompt, rollout cadence, or action normalization changes.
-Physical topics, cameras, joint limits, EEF workspace/quaternion behavior, and
-the physical gripper contract live once in
-[configs/system/a1.toml](configs/system/a1.toml).
-That file also owns runtime readiness/doctor timeouts and the tracked EEF
-acceptance-test step; live command CLIs do not override those values.
-
-Deployment weights are registered under the ignored local `models/` directory;
-see [models/README.md](models/README.md). `just models` validates every configured
-weight, catches tracked files over 100 MiB, and reports stale Git pack garbage.
-
-ACT joint policy:
-
-```bash
-just act
-tmux attach -t act-a1
-just stop
-```
-
-ACT runtime parameters live in
-[configs/deployments/act_joint.toml](configs/deployments/act_joint.toml).
-It starts dry-run and step-gated by default. Set `execution.execute = true` in
-that tracked file only after static checks, camera checks, and a clear robot
-workspace.
-
-ACT, LingBot, and teleop processes load their tracked TOML directly. Their CLI
-entrypoints accept only the config path plus operator-run identity such as the
-teleop experiment name; physical settings are not duplicated as flags.
-Human-facing commands share one semantic console (`INFO`, `STEP`, `PASS`,
-`WARN`, `FAIL`) across Python and shell. Colors are emitted only to terminals;
-set `NO_COLOR=1` for plain output, while JSON and `key=value` diagnostics always
-remain machine-readable.
-Shared tmux process-start observation time is tracked under
-`configs/system/a1.toml [startup]`, so ACT, LingBot, and camera Web lifecycle
-commands do not carry separate hidden sleep defaults.
-
-Collection, ACT, and LingBot share the same AgentView contract: the D455 is
-captured at 640x480 and only `(x=103, y=0, width=480, height=480)` is recorded
-or passed to a policy. Camera Web keeps the full view visible and outlines that
-actual policy region in red.
-
-Dataset conversion:
-
-```bash
-just convert banana_in_the_plate
-```
-
-Each experiment has a tracked conversion contract at
-`configs/datasets/<experiment>.toml`. One command emits separate EEF LeRobot
-v3.0 and v2.1 packages plus a joint-action v3.0 package.
-
-Use motion commands only after the arm is powered on and positioned safely.
-
-## Package Layout
+## Repository Layout
 
 ```text
 galaxea_a1_runtime/
-  safety.py           # pure fail-closed validation and limiters
-  schema.py           # LeRobot v3 state/action/camera contracts
-  configuration/      # the single typed physical system configuration
-  hardware/           # IO protocol, EEF helpers, camera and preview modules
-  collection/         # teleop state/action schema and episode helpers
-  teleop/             # SO leader to A1 joint mapping helpers
-  lerobot/            # Robot adapter, conversion, deterministic packaging
-  policies/           # shared runtime action normalization
-  apps/               # managed app implementations split by protocol/IO/CLI
-  runtime/            # doctor, relay/feedback primitives, ROS1 bootstrap
-assets/cad/            # versioned robot/leader mechanical assets
-configs/               # tracked runtime, inference, pose, and dataset contracts
-external/              # ignored machine-local source checkouts and symlinks
-scripts/               # operator entrypoints grouped by runtime/app responsibility
+  configuration/   typed strict config loading
+  hardware/        cameras, EEF helpers, and preview
+  runtime/         relay, ROS feedback, doctors
+  apps/            Teleop, ACT, and LingBot implementations
+  collection/      raw episode schema and validation
+  teleop/          SO leader adapter and joint mapping
+  lerobot/         raw conversion and deterministic packaging
+  policies/        shared policy action contracts
+scripts/
+  runtime/         app-agnostic ROS/driver/tracker/relay lifecycle
+  apps/            thin operator entrypoints by application
+configs/           tracked system, app, pose, dataset, and deployment contracts
+models/            ignored local deployment registry
+data/              ignored raw, processed, and exported datasets
+assets/cad/         versioned mechanical assets
+third_party/        pinned vendor snapshots
 ```
 
-The runtime entrypoints share app-agnostic service primitives in
-`scripts/runtime/a1_services.sh` and tmux lifecycle primitives in
-`scripts/runtime/a1_tmux.sh`; both Python and shell entrypoints also share the
-same semantic console. Tracker selection and app startup policy stay in
-their owning scripts. ACT, LingBot, and teleop configurations reference the
-same typed `SystemConfig` directly instead of copying physical fields into
-parallel app-specific config objects.
+Inference configs reference weights only through the ignored local
+[`models/`](models/README.md) registry. Never commit model weights or patch the
+vendored LeRobot tree for A1-specific behavior.
 
-## Policy Targets
-
-Managed deployment paths currently cover:
-
-- ACT joint-state through `configs/deployments/act_joint.toml`
-- LingBot-VA through `configs/deployments/lingbot_va.toml`
-
-All policy outputs are normalized into the same A1 runtime action contract
-before execution.
-
-## LeRobot Robot Adapter
-
-`GalaxeaA1Robot` exposes a LeRobot-style schema and IO composition interface.
-It requires an explicit `A1HardwareIO`; it has no default ROS publisher or
-automatically selected in-memory adapter. Live Teleop, ACT, and LingBot execution remains in
-the managed app runtimes so there is only one implementation of each ROS
-control path.
-
-## Original SDK Coverage
-
-The vendored A1 SDK exposes mobiman tracker demos for EEF targets
-(`/a1_ee_target`), EEF trajectories (`/arm_target_trajectory`), joint targets
-(`/arm_joint_target_position`), gripper topics, FK feedback, and RViz
-visualization. This runtime wraps the EEF and joint target paths through the
-fail-closed relay. It does not currently expose the upstream EEF trajectory
-demo as a first-class `just` command.
-
-There is no standard MoveIt `move_group`/MoveIt config path in this repo. The
-Docker/runtime baseline includes RViz and TRAC-IK/mobiman pieces, not a MoveIt
-planning stack.
-
-## Teleoperation Collection
-
-Daily recording flow:
-
-```bash
-just stop
-just check
-just hardware
-just cameras
-just reset
-just teleop pick_cube
-```
-
-`just reset` moves the A1 and the SO leader to the tracked collection start pose
-in [configs/poses/a1_so100_collection_start.toml](configs/poses/a1_so100_collection_start.toml), closes both
-grippers, resets both devices concurrently, disables leader torque, and stops
-the runtime. That pose file owns only target values and reset motion behavior;
-the Teleop config references it and injects leader identity/mapping plus the
-System-derived joint names, limits, topics, and relay timings into the reset
-loader. `just teleop <experiment>` then starts the staged joint teleop
-runtime, records front RGB,
-wrist RGB, and A1 state/action data, and keeps the old episode loop:
-Enter starts recording, Enter saves, `d` discards, and `q` exits.
-After each successful save, it pauses the bridge, automatically restores both
-devices, restarts the bridge, and waits for the next episode. Discarding an
-episode does not trigger a reset.
-
-Runtime parameters live in [configs/teleop/a1_so100.toml](configs/teleop/a1_so100.toml).
-Edit it for the SO leader, state mode, FPS, reset, or joint mapping. Edit
-[configs/system/a1.toml](configs/system/a1.toml) for cameras, topics, physical
-joint limits, and physical gripper range.
-The normal collection entrypoint does not take per-run collector flags.
-
-The gripper contract is continuous end to end. Leader `0..100`, collected
-state/action `0..1`, and ACT/LingBot output `0..1` all map linearly onto the
-single tracked `0..100 mm` system stroke range. Apps publish
-`/a1_gripper_target`; the relay alone publishes the hardware command topic.
-Fresh `/gripper_stroke_host` feedback is required;
-the collector never guesses millimeters from the seventh joint-state value.
-
-The A1 leader adapter lives in
-[galaxea_a1_runtime/teleop/a1_so_leader.py](galaxea_a1_runtime/teleop/a1_so_leader.py):
-leader actions use six arm axes `joint0.pos..joint5.pos` plus an independent
-`gripper.pos`. The bridge intentionally rejects upstream SO arm names so a
-miswired leader cannot treat gripper input as an A1 arm joint. Vendored LeRobot
-source stays on the official v0.6.0 baseline.
-
-The raw teleop schema records configurable state modes:
-
-- `eef`: EEF pose plus gripper
-- `joint`: six arm joints plus gripper
-- `eef_joint`: EEF pose, six arm joints, and gripper; the tracked default
-
-Teleop actions are recorded as `joint_absolute` targets from
-`/arm_joint_target_position`. Each saved episode contains `frames.csv`,
-`metadata.json`, `cam0/`, and `cam1/`; `cam0_depth/` is present only when
-RealSense depth is enabled in the tracked config. The metadata records the
-state topics, action topics, cameras, staged relay control path, and tracked
-teleop config path used for that episode, so the referenced system contract can
-be recovered later.
-
-The default tracked teleop config is USB2-compatible RGB-only. Depth capture is
-still supported, but it should be enabled intentionally in
-`configs/system/a1.toml` after the RealSense is on a stable USB3 link or
-after lowering the camera FPS/resolution for USB2; add depth dimensions and
-alignment mode when enabling it. During recording, every
-frame requires fresh camera, joint, EEF, joint-target action, and gripper
-samples. Any required stream becoming stale aborts the episode and deletes the
-partial folder instead of saving repeated old data. The exact freshness limits
-are copied into `metadata.json`.
-
-AgentView is captured at 640x480 and cropped to the tracked square ROI
-`x=103, y=0, width=480, height=480` before `cam0` is written. The LAN preview
-keeps the full frame and draws the recorded area in red; the overlay is not
-saved. Wrist frames remain uncropped.
-The collector rejects appending 480x480 AgentView frames to an older raw
-experiment containing 640x480 frames; use a new experiment name or migrate the
-whole existing experiment first.
-New continuous-gripper episodes use raw schema `galaxea_a1_teleop_raw_v3`.
-The collector records both camera sequence numbers and monotonic sample times,
-rejects camera pairs beyond `cameras.max_pair_skew_s`, and refuses to append to
-older schema directories. The converter retains read-only v2 compatibility.
-
-Enter requests a save; it does not make the episode durable immediately. The
-collector records into a hidden sibling staging directory, then checks
-joint-action continuity using the tracked
-`collection.max_joint_action_step_rad` threshold. A failed check prints the
-frame, joint, values, and limit, removes the staging output, reuses its index,
-and homes both devices before the next attempt. Metadata and frame counts are
-validated before one atomic rename makes the final episode visible.
-
-Raw episodes are written under `data/raw/<experiment>/episode_NNN_timestamp/`.
-Convert a selected source dataset to its tracked training package with
-`just convert <experiment>`. Each converter builds in a sibling staging
-directory and only replaces an existing output after generation and validation
-succeed; failed `--overwrite` runs preserve the previous complete dataset.
-
-The tracked rig binds the agent D455 and wrist D405 by explicit RealSense
-serial number. `just cameras` captures `cam0_front.jpg`, optional `cam0_depth.png` plus
-`cam0_depth_preview.jpg`, `cam1_wrist.jpg`, and a contact sheet from the same
-tracked camera config without moving the arm. It also runs a short sustained
-FPS probe and prints the RealSense USB link type. Snapshot destination, frame
-timeout, probe duration, and JPEG quality live in `[camera_diagnostics]` in the
-same system config rather than in per-run CLI flags.
-
-The shared web preview listens on the host's LAN interfaces at port `8088` and
-has no ROS or robot-control endpoints. It has no login, so do not port-forward
-this unencrypted HTTP service to the public Internet. Only one process may own the
-RealSense devices: use standalone `just camera-web` when no robot app is
-running; Teleop, ACT, and LingBot reuse their existing readers for preview.
-
-## Dependency Baseline
-
-The main Python environment uses the vendored official LeRobot v0.6.0 snapshot:
-
-```text
-30da8e687a6dfc617fcd94afc367ac7071c376ce
-```
-
-Python baseline is `>=3.12,<3.13`.
-
-`pyproject.toml` points directly at `third_party/lerobot`; no second Git-installed
-copy or application-level LeRobot `PYTHONPATH` override is used.
-
-## Docs
+## Documentation
 
 - [Architecture](docs/ARCHITECTURE.md)
 - [Runbook](docs/RUNBOOK.md)
 - [Safety](docs/SAFETY.md)
 - [Environment setup](docs/SETUP_ENV.md)
-- [udev/serial setup](docs/SETUP_UDEV.md)
-- [Local model registry](models/README.md)
-- [Third-party vendor policy](third_party/README.md)
+- [udev and serial setup](docs/SETUP_UDEV.md)
+- [Model registry](models/README.md)
+- [Third-party policy](third_party/README.md)
 - [SO-100 leader CAD](assets/cad/so100_leader/README.md)
-
-## Legacy Systems
-
-The previous ZMQ/OpenPI/LeRobot v2.1 mainline stack has been removed. Dataset
-conversion remains one-way under `just convert <experiment>`.

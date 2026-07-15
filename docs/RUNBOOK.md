@@ -1,370 +1,259 @@
 # Runbook
 
-This file is the short operator path. Edit tracked config files when hardware
-settings change; avoid ad hoc per-run flags for data collection.
+This is the operator procedure for checking the rig, teleoperating, recording
+new data, and converting it. Commands that can move the arm are called out
+explicitly.
 
-## Daily Check
+## 1. Static Preflight
 
-No hardware motion:
-
-```bash
-just check
-just hardware
-```
-
-## Hardware Acceptance
-
-Use this after reconnecting all hardware and clearing the workspace.
-
-1. Stop stale processes and inspect hardware enumeration:
+These commands do not publish robot commands:
 
 ```bash
 just stop
-just hardware
+just check
 ```
 
-`just hardware` checks the tracked A1 serial, SO leader by-id serial, RealSense,
-wrist camera, and config consistency without moving the robot. If it reports a
-serial as busy, stop the runtime before running `just reset` or `just teleop`.
+`just check` validates all tracked configs, shell syntax, formatting, and unit
+tests. `just models` is an optional inference preflight and is expected to fail
+until new deployment weights are registered; missing weights do not block
+Teleop collection.
 
-2. Inspect cameras:
+Inspect current static safety values when needed:
 
 ```bash
+.venv/bin/python -m galaxea_a1_runtime.cli safety-report
+.venv/bin/python -m galaxea_a1_runtime.cli safety-report --json
+```
+
+If this is a new machine, run `just setup` and `just udev`, then open a new
+login shell so serial group membership applies.
+
+## 2. Hardware and Camera Acceptance
+
+Power the arm, clear its workspace, connect the SO leader and both RealSense
+cameras, then run non-motion enumeration:
+
+```bash
+just hardware
 just cameras
 ```
 
-Check the printed `cam0_front`, `cam1_wrist`, `contact_sheet`, and, when
-enabled, `cam0_depth`/`cam0_depth_preview` image paths.
+Expected configured devices:
 
-To inspect both cameras remotely without starting ROS:
+- A1 controller at `/dev/a1`;
+- SO leader at the by-id path in `configs/teleop/a1_so100.toml`;
+- AgentView D455 serial `341522300456`;
+- wrist D405 serial `218622276998`.
+
+`just cameras` writes diagnostics under the system-configured output directory,
+checks sustained frame production, and reports the USB link. The AgentView
+policy image must be `480x480`; the wrist image must be `640x480` with the
+current config.
+
+For a read-only LAN preview when no app owns the cameras:
 
 ```bash
 just camera-web
 ```
 
-Use `http://<robot-lan-ip>:8088` directly. The LAN URL exposes only the
-dashboard, MJPEG/snapshot
-endpoints, and health JSON. Run `just camera-web stop` before starting Teleop,
-ACT, or LingBot because RealSense devices have one owning process; those apps
-serve the same preview themselves on port 8088. Do not configure router port
-forwarding for this HTTP service.
+Open `http://<robot-lan-ip>:8088`. The full AgentView contains a red rectangle
+showing the exact square region saved and sent to policies. Stop standalone
+preview before Teleop:
 
-The AgentView panel keeps the full 640x480 sensor view. Its red rectangle is
-the tracked 480x480 region saved by teleop collection; the overlay itself is
-never written into training images. Change the ROI only in
-`configs/system/a1.toml`, then restart the camera service.
-Do not mix this crop with older 640x480 episodes under one experiment name;
-the collector checks existing metadata and fails before opening ROS/cameras.
-New collection uses raw schema `galaxea_a1_teleop_raw_v3` and must use a new
-experiment directory instead of appending to v1/v2 data. The v3 CSV records
-per-camera sequence/sample times and enforces the system-level maximum pair
-skew before a staged episode is atomically committed.
+```bash
+just camera-web stop
+```
 
-3. Test EEF control:
+The preview has no login or encryption. Keep it on the LAN and do not
+port-forward it.
+
+Optional EEF hardware acceptance moves the arm:
 
 ```bash
 just eef-test
 ```
 
-The tool holds the current EEF pose, then waits for Enter before each
-`x+/x-/y+/y-/z+/z-` step. Confirm the EEF moves in the printed direction.
-Step size and settle time come from `configs/system/a1.toml [eef_test]`; ROS
-topic probe and service-start readiness timeouts come from that same file's
-`[doctor]` and `[startup]` tables. The CLI intentionally has no alternate
-motion-size flags.
+Run it only with a powered arm and clear workspace. A failed partial startup
+must be followed by `just stop` before retrying.
 
-4. Test SO leader teleop:
+## 3. Reset the Collection Rig
+
+This command moves both devices:
+
+```bash
+just reset
+```
+
+It uses `configs/poses/a1_so100_collection_start.toml`, moves the A1 through the
+staged jointTracker/relay path, moves the SO leader to its tracked position,
+closes both grippers, disables leader torque, and stops the runtime afterward.
+
+Do not manually move either arm during reset. If reset fails, run `just stop`,
+inspect the error, restore a safe physical position, and retry only after the
+cause is understood.
+
+## 4. Optional Teleop Acceptance
+
+This command moves the A1 from leader input but does not start collection:
 
 ```bash
 just teleop-test
+```
+
+Check all six joint directions and the continuous gripper over a small range.
+The mapping is relative to both startup poses. Unknown leader action keys and
+non-finite samples fail instead of guessing an ordering.
+
+Watch logs if needed:
+
+```bash
 just logs
 ```
 
-Confirm the bridge log prints `leader_keys=['joint0.pos', ..., 'joint5.pos']`.
-Move one leader joint at a time and verify the A1 direction matches the old
-working behavior. Test gripper open/close.
-
-5. Return to the tracked initial pose:
-
-```bash
-just reset
-```
-
-The target pose is tracked in `configs/poses/a1_so100_collection_start.toml`.
-It includes both the A1 joint pose and the SO leader/LeRobot start pose.
-It does not duplicate device identity, joint names, topics, or safety limits:
-the owning Teleop config injects them from its own leader contract and System
-reference. Both grippers are closed as part of this command.
-
-6. Stop:
+Stop before proceeding:
 
 ```bash
 just stop
 ```
 
-## Daily Teleop Recording Flow
+## 5. Record New Episodes
 
-Use this path for normal dataset collection after the hardware is connected,
-powered, and the workspace is clear.
-
-1. Clear stale runtime state and run static checks:
-
-```bash
-just stop
-just check
-just hardware
-```
-
-2. Confirm cameras from the tracked system config:
-
-```bash
-just cameras
-```
-
-Check `cam0_front`, `cam1_wrist`, and `contact_sheet`. If depth is enabled in
-the tracked config, also check `cam0_depth`/`cam0_depth_preview`. The command
-prints `cam0_usb`, `cam0_front_fps`, and `cam1_wrist_fps`. The default config
-is USB2-compatible RGB-only. Adjust diagnostic output/timing/encoding only in
-`configs/system/a1.toml [camera_diagnostics]`.
-
-3. Restore the collection start pose:
+Use a clean experiment identity whose dataset config will be tracked:
 
 ```bash
 just reset
+just teleop banana_in_the_plate
 ```
 
-This reads `configs/poses/a1_so100_collection_start.toml`, moves the A1 arm to the tracked
-joint pose, closes the A1 gripper, moves the SO leader to its tracked pose,
-commands the SO leader gripper closed, disables leader torque, and stops the
-runtime. The A1 and leader move concurrently. If the hardware start pose or
-reset speed changes intentionally, update and commit that config file.
-During Reset, the terminal shows one compact `A1 xx% | Leader xx%` progress
-line. Interactive collection uses color for setup, recording, saved, rejected,
-and reset states; set `NO_COLOR=1` when plain output is required.
-On a cold start, jointTracker may spend about 10 seconds compiling its CppAD
-libraries. The tracked reset and teleop configs allow 30 seconds for the first
-staged command; the relay remains locked throughout this alignment wait.
+At the task prompt, enter the natural-language task once. At the episode prompt:
 
-4. Start recording:
+- press `Enter` to start;
+- while recording, press `Enter` to request save;
+- use `d` + `Enter` to discard;
+- use `q` + `Enter` to quit;
+- use `Ctrl+C` for immediate stop.
 
-```bash
-just teleop pick_cube
-```
+The current default records at 30 FPS:
 
-Replace `pick_cube` with the experiment name. The command reads
-`configs/teleop/a1_so100.toml`; it starts ROS, the A1 driver, the staged joint
-tracker, the fail-closed relay, the SO leader bridge, and the interactive
-recorder. No extra collector flags are accepted on the normal path.
+- cropped `480x480` AgentView RGB;
+- full `640x480` wrist RGB;
+- EEF pose, six named A1 joints, and normalized gripper state;
+- six absolute joint targets and normalized gripper action;
+- camera sequence numbers and monotonic sample times;
+- reproducibility metadata for configs, topics, cameras, control path, and
+  freshness limits.
 
-5. Use the episode loop:
+Gripper values are continuous `0..1`; the relay maps them to the single tracked
+physical `0..100 mm` stroke. `/gripper_stroke_host` is required feedback.
+
+During every frame, collection requires fresh joint, EEF, gripper-feedback,
+joint-action, and paired-camera samples. A stale stream or excessive camera
+skew aborts and removes the partial episode.
+
+Enter-to-save is a durability boundary. The recorder first validates the staged
+files and rejects a joint action discontinuity beyond
+`collection.max_joint_action_step_rad`. Only a complete episode is atomically
+renamed into:
 
 ```text
-first run only: enter task prompt
-each episode : Enter=start recording
-recording    : Enter=save, d+Enter=discard, q+Enter=quit
+data/raw/<experiment>/episode_NNN_timestamp/
 ```
 
-After Enter=save, the collector validates joint-action continuity before
-writing metadata. A step larger than
-`collection.max_joint_action_step_rad` rejects and deletes the whole episode,
-prints the exact frame/joint/value transition, reuses the episode index, and
-automatically homes both devices. Only episodes that pass are reported as
-`saved`.
+Rejected saves print the exact failure and reuse the index. With
+`collection.auto_reset_after_save = true`, successful saves reset both devices
+before the next episode. A discard does not reset them.
 
-Saved episodes are appended under `data/raw/<experiment>/`. Discarded episodes
-are deleted immediately. Exiting the recorder stops the teleop runtime.
-After every successful save, the recorder pauses the leader bridge, resets the
-A1 and leader concurrently, restarts the bridge, and only then offers the next
-episode. A reset failure stops collection with the bridge off. Set
-`collection.auto_reset_after_save = false` in the tracked teleop config only
-when this behavior is intentionally unwanted.
-After saving, compare the printed frame count against the real action length:
-at the default 30 FPS, 10 seconds should be about 300 frames. If the printed
-nominal duration is much shorter than the action you performed, discard or
-delete that episode and investigate camera readiness before continuing.
-If a required camera, joint feedback, EEF feedback, joint-target action, or
-gripper stream stops producing fresh samples while recording, the collector
-aborts that episode and deletes the partial folder. It never waits indefinitely
-and resumes writing from a cached old ROS message.
+Formal collection writes only `galaxea_a1_teleop_raw_v3`. Do not mix manually
+edited episodes or previous raw schemas into the experiment directory.
 
-6. Stop manually if needed:
+## 6. Inspect a Collection
+
+After quitting and running `just stop`, inspect without modifying the data:
 
 ```bash
-just stop
+find data/raw/banana_in_the_plate -maxdepth 2 -type f | sort | head
 ```
 
-## What Teleop Records
+Each episode must have `metadata.json`, `frames.csv`, `cam0/`, and `cam1/`.
+`cam0_depth/` exists only when depth was intentionally enabled in the System
+config. Hidden sibling staging directories indicate an interrupted commit;
+inspect them before removal rather than allowing a new run to ignore them.
 
-Teleop behavior composes `configs/teleop/a1_so100.toml` (leader, mapping, and
-collection) with `configs/system/a1.toml` (cameras, topics, physical limits,
-and gripper range).
-The system file is the only physical source of truth. The tracked gripper range
-is `0..100 mm`; Teleop and inference publish `/a1_gripper_target`, and the
-`ACTIVE` relay alone publishes `/gripper_position_control_host`.
-The Teleop file explicitly owns the SO100 source interval and inversion plus
-bridge startup/stop supervision timeouts. Source feedback outside that interval
-fails instead of being silently clipped; the mapped A1 physical interval still
-comes only from the system file.
-The default agent D455 RealSense config records RGB only and accepts USB2.1. Depth
-capture remains supported, but enable it intentionally in the tracked config
-after the RealSense is on USB3 or after lowering FPS/resolution for USB2. When
-enabling depth, add its dimensions and alignment mode in the same camera table;
-those fields are intentionally absent while depth is disabled. The
-wrist D405 is also selected by explicit RealSense serial and records RGB.
+## 7. Convert to Training Data
 
-Recorded state modes:
+Create or update `configs/datasets/<experiment>.toml` with the raw source,
+base LeRobot output, three derived output locations, archives, repo IDs, and
+URDF links. Collection state/action names and hardware observation shapes are
+not copied into this file; they derive from its referenced Teleop config and
+that config's System reference.
 
-- `joint`: `joint_1..joint_6`, `gripper`.
-- `eef`: `eef_x/y/z/qx/qy/qz/qw`, `gripper`.
-- `eef_joint`: both, the tracked default.
-
-Actions are recorded as `joint_absolute` targets from
-`/arm_joint_target_position`.
-Saved episodes contain `frames.csv`, `metadata.json`, `cam0/`, `cam1/`, and
-`cam0_depth/` when depth is enabled. Raw depth is stored as aligned 16-bit PNG
-in millimetres and converts to LeRobot as `observation.images.front_depth`.
-
-The raw frame table contains frame index, wall-clock timestamp, ROS timestamp,
-both camera sequence numbers and monotonic sample times, relative image paths,
-configured state columns, and configured action columns.
-Episode metadata stores task text, experiment name, state/action names, topics,
-camera settings, FPS target, the tracked teleop config path, and the staged
-relay control path.
-
-## Convert Training Data
+Run the complete pipeline:
 
 ```bash
 just convert banana_in_the_plate
 ```
 
-Conversion paths and task packaging come from
-`configs/datasets/<experiment>.toml`; that file references the same system
-config for the physical gripper range. All packages preserve continuous
-normalized gripper state/actions: `0=minimum stroke`, `1=maximum stroke`.
-Each conversion emits EEF v3.0, EEF v2.1, and
-joint-action v3.0 packages; never mix their files in one directory. Joint
-positions remain absolute targets in radians.
-Every target dataset and archive is first generated beside its final path. A
-failed overwrite leaves the previous complete output intact; the final path is
-replaced only after the staged conversion and validation finish successfully.
+The command performs:
 
-## LingBot-VA
-
-The tracked LingBot command assembles the deployment model root from the frozen
-base components and fine-tuned transformer, then starts the policy server, A1
-runtime, and bridge:
-
-```bash
-mkdir -p external
-ln -s /absolute/path/to/lingbot-va external/lingbot-va
+```text
+current raw v3
+  -> base LeRobot v3
+       -> LingBot EEF continuous v3
+            -> LingBot EEF continuous v2.1
+       -> ACT/joint continuous v3
 ```
 
-The tracked deployment config resolves this ignored machine-local checkout as
-`external/lingbot-va` and expects its Python 3.12 environment at
-`external/lingbot-va/.env312`. A real directory may be used instead of a
-symlink. Do not put a user-specific home-directory path in the tracked TOML.
+It rejects old or incomplete raw schemas, task mismatches, non-finite values,
+incorrect camera shapes, mismatched episode contracts, and missing files.
+Outputs and archives use sibling staging paths; a failed conversion preserves
+the previous complete target. Overwrite policy is tracked in the dataset TOML,
+not passed on the CLI.
+
+## 8. Failure Recovery
+
+First stop all repository-owned resources:
 
 ```bash
+just stop
+```
+
+Then diagnose the narrow layer:
+
+- serial or device missing: `just hardware`;
+- camera missing/stale/slow: `just cameras` and check USB topology;
+- teleop process exited: `just logs`;
+- model missing: `just models`;
+- configuration error: `just check`;
+- raw conversion error: inspect the named episode and its metadata/files; do
+  not weaken validation to accept damaged data.
+
+Status `64` alone is accepted as the observed idle ECU-to-ACU timeout. Codes
+with additional bits, such as `68`, remain faults. Never start two trackers,
+drivers, camera owners, or command publishers for the same hardware.
+
+## 9. Policy Deployment
+
+New policy weights must be registered under the ignored local model registry:
+
+```bash
+just model-link act-a1-agentview-square /path/to/act_checkpoint
+just model-link lingbot-a1-agentview-square /path/to/lingbot_checkpoint
 just models
+```
+
+The checkpoints must use the same AgentView square crop and continuous gripper
+contract as the new data. Update the owning deployment TOML and review its
+model-specific normalization before setting `deployment_ready = true`.
+
+ACT and LingBot remain dry-run until `execution.execute = true` is explicitly
+committed in their separate configs:
+
+```bash
+just act
+tmux attach -t act-a1
+
 just lingbot
 tmux attach -t lingbot-a1
 ```
 
-All inference configs use the ignored local registry under `models/`. The
-LingBot base remains registered, while new AgentView-square LingBot and ACT
-checkpoints must be registered after retraining; no weight is copied. Native training outputs stay in
-`train_out/` or `outputs/train/`; runtime observations stay in `outputs/` and
-are not model weights. Use `just model-link <slot> <source>` to register a new
-local source and `just models` before inference. The exact layout and supported
-slot names are documented in `models/README.md`.
-
-Deployment behavior is locked by `configs/deployments/lingbot_va.toml`: server,
-checkpoint, prompt, execution cadence, action semantics, and checkpoint
-quantiles. Physical cameras, EEF workspace/orientation, gripper range, and relay topics come
-from `configs/system/a1.toml`.
-
-The checked-in profile is dry-run and step-gated with empty q01/q99 arrays,
-`expected_weight_size_bytes = 0`, and a replacement prompt. The loader refuses
-`deployment_ready = true` until real statistics, prompt, and weight size are
-provided. Its configured
-rollout remains 36 model calls, four latent frames per call, four actions per
-frame, four fresh KV-cache observations per action frame, at 30 Hz. These are
-required deployment fields rather than Python defaults. Model EEF
-poses are episode-relative and are composed onto the measured startup pose
-before the absolute A1 workspace clamp. Continuous gripper values map linearly
-through the shared physical range in `configs/system/a1.toml`. KV-cache action history uses
-the target actually sent to the tracker, matching the checkpoint's training
-action contract; measured EEF feedback remains the observation and safety
-signal, not the model's past-action token.
-
-When the bridge completes, raises an error, or receives `Ctrl-C`, its process
-guard stops the A1 runtime and policy server. `just stop` remains the operator
-emergency-stop command.
-
-To review a saved LingBot latent without adding optional model dependencies to
-the main runtime environment:
-
-```bash
-external/lingbot-va/.env312/bin/python \
-  scripts/apps/lingbot/decode_lingbot_latents.py LATENTS.pt \
-  --output outputs/lingbot/review.mp4
-```
-
-The decoder imports `diffusers` only when decoding starts, so `--help` also
-works in the normal repository environment.
-
-After the tracked LingBot profile is deployment-ready, start only the model
-server for a no-ROS load test with:
-
-```bash
-scripts/apps/lingbot/a1_lingbot_runtime.sh server
-scripts/apps/lingbot/a1_lingbot_runtime.sh server-logs
-```
-
-Stop with:
-
-```bash
-just stop
-```
-
-## ACT Joint Policy
-
-The ACT deployment path is configured by
-`configs/deployments/act_joint.toml`. The tracked deployment slot is
-`models/checkpoints/act/a1_agentview_square/latest` and remains missing until a
-new checkpoint is registered.
-
-For both inference systems, AgentView is cropped to
-`(x=103, y=0, width=480, height=480)` before policy preprocessing. Wrist remains
-the full 640x480 stream. ACT also checks the image shapes stored in the
-checkpoint and refuses to start if they do not match this contract.
-
-After retraining, register both new slots. For LingBot, replace the prompt,
-expected weight size, and q01/q99 values from that same run before setting its
-`deployment_ready = true`. For ACT, verify the checkpoint image/state/action
-contract before setting its separate `deployment_ready = true`. Enabling real
-robot motion remains an independent `execution.execute = true` review in each
-deployment config.
-
-Start in the default dry-run mode:
-
-```bash
-just stop
-just check
-just cameras
-just act
-tmux attach -t act-a1
-```
-
-In dry-run, Enter runs one model inference and prints the first predicted joint
-targets without enabling the relay. To move the arm, edit the tracked config and
-set `execution.execute = true` after the robot is powered, reset, and clear.
-Execution still remains step-gated: the bridge aligns jointTracker output to
-current feedback, waits for relay `ACTIVE`, then publishes only
-`/arm_joint_target_position` plus continuous staged `/a1_gripper_target` values.
-
-Stop with:
-
-```bash
-just stop
-```
+Run only one live app at a time, and use `just stop` when switching.

@@ -32,6 +32,7 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_json,
     write_tar_archive,
 )
+from galaxea_a1_runtime.lerobot.convert_raw import convert_raw_dataset
 from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
 from galaxea_a1_runtime.lerobot.lingbot_pack_config import load_pack_config
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
@@ -313,6 +314,8 @@ def _convert_episode(
     joint_actions: np.ndarray,
     chain: SerialChainFK,
 ) -> dict[str, np.ndarray]:
+    if not np.all(np.isfinite(observations)) or not np.all(np.isfinite(joint_actions)):
+        raise ValueError(f"episode {episode_index} contains non-finite vectors")
     arm_dof = len(JOINT_ACTION_NAMES) - 1
     eef_pose_dof = len(ACTION_NAMES) - 1
     initial_pose = observations[0, :eef_pose_dof]
@@ -362,6 +365,10 @@ def _convert_episode(
 def _normalized_gripper(
     values: np.ndarray, *, episode_index: int, label: str
 ) -> np.ndarray:
+    if not np.all(np.isfinite(values)):
+        raise ValueError(
+            f"episode {episode_index} gripper {label} contains non-finite values"
+        )
     if np.any(values < -1e-6) or np.any(values > 1.0 + 1e-6):
         raise ValueError(
             f"episode {episode_index} gripper {label} is outside normalized [0, 1]"
@@ -451,9 +458,15 @@ def main(argv: list[str] | None = None) -> int:
         type=Path,
         required=True,
     )
-    parser.add_argument("--overwrite", action="store_true")
     args = parser.parse_args(argv)
     config = load_pack_config(args.config)
+    convert_raw_dataset(
+        source_root=config.raw_source_root,
+        target_root=config.source_root,
+        repo_id=config.source_repo_id,
+        overwrite=config.overwrite,
+        expected_contract=config.source_contract,
+    )
     v3_manifest = pack_lingbot_dataset(
         source_root=config.source_root,
         target_root=config.v3_target_root,
@@ -463,21 +476,21 @@ def main(argv: list[str] | None = None) -> int:
         gripper_stroke_max_mm=config.gripper_stroke_max_mm,
         base_link=config.base_link,
         tip_link=config.tip_link,
-        overwrite=args.overwrite,
+        overwrite=config.overwrite,
         archive_path=config.v3_archive_path,
     )
     v21_manifest = export_v21_dataset(
         source_root=config.v3_target_root,
         target_root=config.v21_target_root,
         repo_id=config.v21_repo_id,
-        overwrite=args.overwrite,
+        overwrite=config.overwrite,
         archive_path=config.v21_archive_path,
     )
     joint_v3_manifest = pack_joint_v3_dataset(
         source_root=config.source_root,
         target_root=config.joint_v3_target_root,
         repo_id=config.joint_v3_repo_id,
-        overwrite=args.overwrite,
+        overwrite=config.overwrite,
         archive_path=config.joint_v3_archive_path,
     )
     print(

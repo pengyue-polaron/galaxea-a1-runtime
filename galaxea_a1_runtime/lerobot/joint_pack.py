@@ -69,6 +69,8 @@ def _build_joint_v3_dataset(
         frame = pd.read_parquet(path)
         actions = np.stack(frame["action"].to_numpy()).astype(np.float32)
         states = np.stack(frame["observation.state"].to_numpy()).astype(np.float32)
+        if not np.all(np.isfinite(actions)) or not np.all(np.isfinite(states)):
+            raise ValueError(f"source vectors contain non-finite values: {path}")
         _validate_normalized_gripper(actions[:, -1], label="action")
         _validate_normalized_gripper(states[:, -1], label="observation.state")
         for episode_index in frame["episode_index"].drop_duplicates().tolist():

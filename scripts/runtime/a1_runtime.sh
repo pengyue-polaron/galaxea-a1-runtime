@@ -57,7 +57,7 @@ start_services() {
 
   a1_step "2/4 Starting isolated EE tracker"
   a1_container_run tracker "${TRACKER_CONTAINER}" \
-    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${EEF_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${EE_TRACKER_NODE}"
+    "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${EEF_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${EE_TRACKER_NODE_NAME}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${STAGED_TOPIC}"
 

@@ -11,14 +11,11 @@ __all__ = [
     "GalaxeaA1RobotConfig",
     "LeRobotV3DatasetWriter",
     "LeRobotEpisodeRecorder",
-    "MigrationPlan",
     "RecordedStep",
     "build_lerobot_frame",
     "build_dataset_create_kwargs",
     "create_lerobot_dataset",
     "dataset_contract_from_robot_config",
-    "plan_raw_episodes_to_v30",
-    "plan_v21_to_v30",
 ]
 
 
@@ -29,14 +26,6 @@ def __getattr__(name: str):
         return {
             "build_dataset_create_kwargs": build_dataset_create_kwargs,
             "create_lerobot_dataset": create_lerobot_dataset,
-        }[name]
-    if name in {"MigrationPlan", "plan_raw_episodes_to_v30", "plan_v21_to_v30"}:
-        from .migration import MigrationPlan, plan_raw_episodes_to_v30, plan_v21_to_v30
-
-        return {
-            "MigrationPlan": MigrationPlan,
-            "plan_raw_episodes_to_v30": plan_raw_episodes_to_v30,
-            "plan_v21_to_v30": plan_v21_to_v30,
         }[name]
     if name in {
         "GalaxeaA1Robot",

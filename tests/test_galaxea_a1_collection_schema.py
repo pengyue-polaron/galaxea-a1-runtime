@@ -21,7 +21,7 @@ from galaxea_a1_runtime.collection import (
     validate_experiment_name,
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
-from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE, SAFE_RELAY_SCRIPT
+from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
 from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
 
 
@@ -156,7 +156,7 @@ def test_metadata_json_explains_topics_and_control_path():
         action_topics={"joint_target": "/arm_joint_target_position"},
         control_path=(
             "/arm_joint_target_position",
-            JOINT_TRACKER_NODE.removeprefix("/"),
+            JOINT_TRACKER_NODE_NAME,
             "/arm_joint_command_a1_staged",
             SAFE_RELAY_SCRIPT,
             "/arm_joint_command_host",

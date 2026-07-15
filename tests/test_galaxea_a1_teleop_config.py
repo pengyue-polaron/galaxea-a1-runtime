@@ -70,6 +70,8 @@ def test_teleop_shell_contract_renders_lifecycle_values():
 
     assert "BRIDGE_STARTUP_TIMEOUT_S=15" in rendered
     assert "BRIDGE_STOP_TIMEOUT_S=5" in rendered
+    assert "JOINT_TRACKER_NODE=/jointTracker_demo_node" in rendered
+    assert "JOINT_TRACKER_NODE_NAME=jointTracker_demo_node" in rendered
 
 
 def test_teleop_config_rejects_unknown_keys(tmp_path: Path):
@@ -77,4 +79,12 @@ def test_teleop_config_rejects_unknown_keys(tmp_path: Path):
     path.write_text(CONFIG.read_text() + "\n[unexpected]\nvalue = true\n")
 
     with pytest.raises(ValueError):
+        load_teleop_config(path, repo_root=REPO)
+
+
+def test_teleop_config_rejects_fractional_collection_fps(tmp_path: Path):
+    path = tmp_path / "teleop.toml"
+    path.write_text(CONFIG.read_text().replace("fps = 30.0", "fps = 29.97"))
+
+    with pytest.raises(ValueError, match="integer for LeRobot conversion"):
         load_teleop_config(path, repo_root=REPO)

@@ -1,10 +1,13 @@
 # Reproducible LingBot-VA package for `just convert banana_in_the_plate`.
 
-[system]
-config = "configs/system/a1.toml"
+[teleop]
+config = "configs/teleop/a1_so100.toml"
 
 [dataset]
-source_root = "data/processed/banana_in_the_plate_lerobot_v3"
+raw_root = "data/raw/banana_in_the_plate"
+lerobot_v3_root = "data/processed/banana_in_the_plate_lerobot_v3"
+repo_id = "galaxea-a1/banana_in_the_plate_lerobot_v3"
+overwrite = true
 
 [outputs.v3]
 target_root = "data/processed/banana_in_the_plate_lingbot_eef_continuous_v3"

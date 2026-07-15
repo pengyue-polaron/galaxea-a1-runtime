@@ -349,6 +349,17 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
   EEF, action, or gripper stream stops producing fresh samples during
   collection, fail the episode and delete the partial folder rather than
   saving cached old values.
+- Formal collection and conversion support only the current
+  `galaxea_a1_teleop_raw_v3` input contract. Do not add old-raw migration,
+  schema fallbacks, or inferred compatibility unless the user explicitly asks
+  to recover old data. An unsupported raw schema must fail before creating or
+  replacing a processed dataset.
+- `just convert <experiment>` is the complete tracked pipeline: current raw v3
+  to base LeRobot v3, then LingBot EEF continuous v3, its deliberate v2.1
+  compatibility export, and joint continuous v3. The expected raw
+  state/action/camera contract derives from the referenced Teleop config and
+  its System reference; do not duplicate state mode, physical dimensions, or
+  camera schema in the dataset TOML.
 - Dataset converters must build into sibling staging paths. An overwrite may
   replace an existing dataset or archive only after the new output is complete;
   failures must preserve the previous complete output.
@@ -390,7 +401,9 @@ rostopic pub /gripper_position_control_host signal_arm/gripper_position_control 
     into the pose loader; never copy device identity, topic, or mapping fields
     into the pose file.
   - `configs/datasets/` owns source/output dataset packaging and conversion
-    semantics only.
+    semantics only. It references the Teleop contract used to collect the raw
+    data, which already references the System contract, instead of restating
+    state mode or observation shapes.
 - Do not mirror fields from a typed owner config into another app-specific
   dataclass merely for convenience. Pass the owning typed config through, or
   derive a smaller runtime object in one pure, named mapping function with an

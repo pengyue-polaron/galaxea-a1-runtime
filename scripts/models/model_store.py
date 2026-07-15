@@ -1,38 +1,62 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import os
 from pathlib import Path
 import subprocess
 import sys
 
 from galaxea_a1_runtime.apps.act.config import load_act_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.configuration.base import load_toml, required_table, string
 from galaxea_a1_runtime.configuration.paths import ACT_CONFIG, LINGBOT_CONFIG
 from galaxea_a1_runtime.console import ArgumentParser, emit, failure, info, success
 
 MAX_TRACKED_BYTES = 100 * 1024 * 1024
 
 
-def configured_slots(repo: Path) -> dict[str, Path]:
-    """Resolve registry destinations from deployment configs, the only path source."""
+def configured_registry_paths(repo: Path) -> dict[str, Path]:
+    """Return config-owned registry paths without resolving their symlink targets."""
 
-    lingbot = load_lingbot_config(repo / LINGBOT_CONFIG, repo_root=repo)
-    act = load_act_config(repo / ACT_CONFIG, repo_root=repo)
-    model_root = (repo / "models").resolve()
-    configured = {
-        "lingbot-base": lingbot.policy_server.base_model,
-        "lingbot-a1-agentview-square": lingbot.policy_server.checkpoint,
-        "act-a1-agentview-square": act.policy.checkpoint,
+    # Typed loading remains the strict validation boundary. Read the same raw
+    # path strings afterward because Path.resolve() intentionally follows an
+    # already-registered model symlink outside this ignored registry.
+    load_lingbot_config(repo / LINGBOT_CONFIG, repo_root=repo)
+    load_act_config(repo / ACT_CONFIG, repo_root=repo)
+    _, _, lingbot_raw = load_toml(repo / LINGBOT_CONFIG, repo_root=repo)
+    _, _, act_raw = load_toml(repo / ACT_CONFIG, repo_root=repo)
+    lingbot_policy = required_table(lingbot_raw, "policy_server")
+    act_policy = required_table(act_raw, "policy")
+    values = {
+        "lingbot-base": string(lingbot_policy, "base_model"),
+        "lingbot-a1-agentview-square": string(lingbot_policy, "checkpoint"),
+        "lingbot-runtime": string(lingbot_policy, "model_root"),
+        "act-a1-agentview-square": string(act_policy, "checkpoint"),
     }
-    slots: dict[str, Path] = {}
-    for name, path in configured.items():
+    model_root = (repo / "models").resolve()
+    configured: dict[str, Path] = {}
+    for name, value in values.items():
+        path = Path(value).expanduser()
+        if not path.is_absolute():
+            path = repo / path
+        path = Path(os.path.abspath(path))
         try:
-            slots[name] = path.relative_to(model_root)
+            path.relative_to(model_root)
         except ValueError as exc:
             raise ValueError(
                 f"model slot {name} must be configured under models/: {path}"
             ) from exc
-    return slots
+        configured[name] = path
+    return configured
+
+
+def configured_slots(repo: Path) -> dict[str, Path]:
+    model_root = (repo / "models").resolve()
+    return {
+        name: path.relative_to(model_root)
+        for name, path in configured_registry_paths(repo).items()
+        if name != "lingbot-runtime"
+    }
 
 
 def _human_bytes(size: int) -> str:
@@ -154,18 +178,26 @@ def _check_extra_lingbot_checkpoints(
 def doctor(repo: Path) -> int:
     reporter = Reporter()
     lingbot = load_lingbot_config(repo / LINGBOT_CONFIG, repo_root=repo)
-    act = load_act_config(repo / ACT_CONFIG, repo_root=repo)
     policy = lingbot.policy_server
+    configured = configured_registry_paths(repo)
 
-    base = _require_registry_path(reporter, repo, "lingbot_base", policy.base_model)
+    base = _require_registry_path(
+        reporter, repo, "lingbot_base", configured["lingbot-base"]
+    )
     checkpoint = _require_registry_path(
-        reporter, repo, "lingbot_checkpoint", policy.checkpoint
+        reporter,
+        repo,
+        "lingbot_checkpoint",
+        configured["lingbot-a1-agentview-square"],
     )
     runtime = _require_registry_path(
-        reporter, repo, "lingbot_runtime", policy.model_root
+        reporter, repo, "lingbot_runtime", configured["lingbot-runtime"]
     )
     act_checkpoint = _require_registry_path(
-        reporter, repo, "act_checkpoint", act.policy.checkpoint
+        reporter,
+        repo,
+        "act_checkpoint",
+        configured["act-a1-agentview-square"],
     )
 
     _require_directory(

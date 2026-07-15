@@ -97,4 +97,4 @@ logs:
 
 convert experiment:
     {{vpy}} -m galaxea_a1_runtime.lerobot.lingbot_pack \
-        --config "{{repo}}/configs/datasets/{{experiment}}.toml" --overwrite
+        --config "{{repo}}/configs/datasets/{{experiment}}.toml"

@@ -25,9 +25,16 @@ def _remove(path: Path) -> None:
 class OutputDirectoryTransaction:
     """Explicitly commit a staged directory or remove it on scope exit."""
 
-    def __init__(self, target: Path, *, overwrite: bool = False):
+    def __init__(
+        self,
+        target: Path,
+        *,
+        overwrite: bool = False,
+        precreate_staging: bool = True,
+    ):
         self.target = target.expanduser().resolve()
         self.overwrite = overwrite
+        self.precreate_staging = precreate_staging
         self.path: Path | None = None
         self._committed = False
 
@@ -40,6 +47,8 @@ class OutputDirectoryTransaction:
                 prefix=f".{self.target.name}.staging-", dir=self.target.parent
             )
         )
+        if not self.precreate_staging:
+            self.path.rmdir()
         return self
 
     def commit(self) -> Path:
@@ -47,6 +56,8 @@ class OutputDirectoryTransaction:
             raise RuntimeError("output transaction has not started")
         if self._committed:
             raise RuntimeError("output transaction was already committed")
+        if not _exists(self.path):
+            raise RuntimeError(f"staged directory was not created: {self.path}")
         _install_staged_directory(self.path, self.target, overwrite=self.overwrite)
         self._committed = True
         return self.target
@@ -58,10 +69,16 @@ class OutputDirectoryTransaction:
 
 
 @contextmanager
-def atomic_output_directory(target: Path, *, overwrite: bool) -> Iterator[Path]:
+def atomic_output_directory(
+    target: Path, *, overwrite: bool, precreate_staging: bool = True
+) -> Iterator[Path]:
     """Build beside ``target`` and install it only after the body succeeds."""
 
-    with OutputDirectoryTransaction(target, overwrite=overwrite) as transaction:
+    with OutputDirectoryTransaction(
+        target,
+        overwrite=overwrite,
+        precreate_staging=precreate_staging,
+    ) as transaction:
         assert transaction.path is not None
         yield transaction.path
         transaction.commit()

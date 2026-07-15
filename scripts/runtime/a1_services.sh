@@ -146,6 +146,30 @@ a1_start_driver() {
     "${A1_ROS_PREFIX} && exec roslaunch signal_arm single_arm_node.launch single_arm_serial_port_path:=${SERIAL}"
 }
 
+a1_require_running_container() {
+  if (( $# != 2 )); then
+    a1_fail "a1_require_running_container expects <container> <wait-description>."
+    return 2
+  fi
+  local container="$1"
+  local wait_description="$2"
+  local state
+  if ! state="$(docker inspect --format \
+    '{{if .State.Running}}running{{else}}{{.State.Status}} (exit {{.State.ExitCode}}){{end}}' \
+    "${container}" 2>/dev/null)"; then
+    state="missing"
+  fi
+  if [[ "${state}" == "running" ]]; then
+    return 0
+  fi
+  a1_fail "Container ${container} is ${state} while waiting for ${wait_description}."
+  if [[ "${state}" != "missing" ]]; then
+    a1_warn "Last ${A1_LOG_TAIL:-120} log lines from ${container}:"
+    docker logs --tail "${A1_LOG_TAIL:-120}" "${container}" >&2 || true
+  fi
+  return 1
+}
+
 a1_wait_valid_joint_feedback() {
   local container="$1"
   local topic="$2"
@@ -156,6 +180,9 @@ a1_wait_valid_joint_feedback() {
       "${A1_ROS_PREFIX}; timeout 2 rostopic echo -n1 '${topic}' | grep -Eq '^position: \\[[^]]+\\]'" \
       >/dev/null 2>&1; then
       return 0
+    fi
+    if ! a1_require_running_container "${container}" "non-empty ${topic}"; then
+      return 1
     fi
     sleep 1
   done
@@ -173,6 +200,9 @@ a1_wait_topic() {
       "${A1_ROS_PREFIX}; timeout 2 rostopic echo -n1 '${topic}' >/dev/null" \
       >/dev/null 2>&1; then
       return 0
+    fi
+    if ! a1_require_running_container "${container}" "a message on ${topic}"; then
+      return 1
     fi
     sleep 1
   done

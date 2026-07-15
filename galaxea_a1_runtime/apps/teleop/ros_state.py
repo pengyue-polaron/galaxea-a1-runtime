@@ -13,6 +13,7 @@ from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
 
 from galaxea_a1_runtime.collection import StateMode
+from galaxea_a1_runtime.apps.eef_bridge import pose_msg_to_xyz_quat
 from galaxea_a1_runtime.gripper import normalize_stroke
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 from galaxea_a1_runtime.runtime.ros_feedback import ordered_joint_positions
@@ -76,19 +77,12 @@ class RosTeleopState:
     def wait_ready(self, *, state_mode: StateMode, timeout_s: float) -> None:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline and not rospy.is_shutdown():
-            if self.joint_snapshot() is None:
-                time.sleep(0.05)
-                continue
-            if self.action_values() is None:
-                time.sleep(0.05)
-                continue
             if (
-                state_mode in (StateMode.EEF, StateMode.EEF_JOINT)
-                and self.eef_vector() is None
+                self.state_sample(state_mode) is not None
+                and self.action_values() is not None
             ):
-                time.sleep(0.05)
-                continue
-            return
+                return
+            time.sleep(0.05)
         raise RuntimeError(f"ROS state did not become ready within {timeout_s:.1f}s")
 
     def joint_snapshot(self) -> JointSnapshot | None:
@@ -111,25 +105,11 @@ class RosTeleopState:
 
     def eef_vector(self) -> tuple[float, ...] | None:
         msg = self.eef.get(max_age_s=self.system.eef.max_feedback_age_s)
-        if msg is None:
+        decoded = pose_msg_to_xyz_quat(msg, min_quat_norm=self.system.eef.min_quat_norm)
+        if decoded is None:
             return None
-        pose = msg.pose
-        quat = (
-            float(pose.orientation.x),
-            float(pose.orientation.y),
-            float(pose.orientation.z),
-            float(pose.orientation.w),
-        )
-        norm = float(np.linalg.norm(np.asarray(quat, dtype=np.float64)))
-        if norm < 1e-9:
-            return None
-        quat = tuple(value / norm for value in quat)
-        return (
-            float(pose.position.x),
-            float(pose.position.y),
-            float(pose.position.z),
-            *quat,
-        )
+        xyz, quat = decoded
+        return tuple(float(value) for value in (*xyz, *quat))
 
     def state_values(self, mode: StateMode) -> tuple[float, ...] | None:
         sample = self.state_sample(mode)

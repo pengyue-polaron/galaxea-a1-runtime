@@ -21,6 +21,7 @@ def bash_config(config: TeleopConfig) -> str:
             "RELAY_STATUS_TOPIC",
             "EEF_POSE_TOPIC",
             "JOINT_TRACKER_NODE",
+            "JOINT_TRACKER_NODE_NAME",
             "GRIPPER_MIN_STROKE_MM",
             "GRIPPER_MAX_STROKE_MM",
             "ROS_MASTER_STARTUP_TIMEOUT_S",

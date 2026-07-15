@@ -3,6 +3,7 @@ from pathlib import Path
 import numpy as np
 import pytest
 
+import galaxea_a1_runtime.lerobot.lingbot_pack as lingbot_pack_module
 from galaxea_a1_runtime.kinematics import (
     SerialChainFK,
     compose_relative_pose,
@@ -71,7 +72,16 @@ def test_lingbot_a1_action_contract():
 
 def test_tracked_lingbot_pack_config():
     config = load_pack_config(REPO_ROOT / "configs/datasets/banana_in_the_plate.toml")
+    assert config.raw_source_root.name == "banana_in_the_plate"
     assert config.source_root.name == "banana_in_the_plate_lerobot_v3"
+    assert config.source_repo_id == "galaxea-a1/banana_in_the_plate_lerobot_v3"
+    assert config.overwrite is True
+    assert config.source_contract.state_names[-1] == "gripper"
+    assert len(config.source_contract.state_names) == 14
+    assert (
+        config.source_contract.camera_specs[0].height,
+        config.source_contract.camera_specs[0].width,
+    ) == (480, 480)
     assert config.v3_target_root.name == "banana_in_the_plate_lingbot_eef_continuous_v3"
     assert (
         config.v21_target_root.name == "banana_in_the_plate_lingbot_eef_continuous_v21"
@@ -94,3 +104,41 @@ def test_lingbot_pack_config_rejects_unknown_keys(tmp_path):
 def test_v21_json_conversion_handles_nested_numpy_values():
     value = np.array([np.array([1.0]), np.array([2.0])], dtype=object)
     assert json_value(value) == [[1.0], [2.0]]
+
+
+def test_dataset_command_runs_raw_conversion_before_all_packages(monkeypatch):
+    calls = []
+
+    def record(name, result=None):
+        def invoke(**kwargs):
+            calls.append((name, kwargs))
+            return {} if result is None else result
+
+        return invoke
+
+    monkeypatch.setattr(
+        lingbot_pack_module, "convert_raw_dataset", record("raw_to_lerobot")
+    )
+    monkeypatch.setattr(
+        lingbot_pack_module, "pack_lingbot_dataset", record("lingbot_v3")
+    )
+    monkeypatch.setattr(
+        lingbot_pack_module, "export_v21_dataset", record("lingbot_v21")
+    )
+    monkeypatch.setattr(
+        lingbot_pack_module, "pack_joint_v3_dataset", record("joint_v3")
+    )
+
+    result = lingbot_pack_module.main(
+        ["--config", str(REPO_ROOT / "configs/datasets/banana_in_the_plate.toml")]
+    )
+
+    assert result == 0
+    assert [name for name, _ in calls] == [
+        "raw_to_lerobot",
+        "lingbot_v3",
+        "lingbot_v21",
+        "joint_v3",
+    ]
+    assert calls[0][1]["source_root"] == REPO_ROOT / "data/raw/banana_in_the_plate"
+    assert calls[0][1]["overwrite"] is True
