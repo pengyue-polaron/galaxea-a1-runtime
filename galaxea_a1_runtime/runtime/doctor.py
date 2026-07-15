@@ -37,7 +37,9 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     checks: list[Check] = []
 
     def add(name: str, ok: bool, detail: str, *, required: bool = True) -> None:
-        checks.append(Check(name, "PASS" if ok else ("FAIL" if required else "WARN"), detail))
+        checks.append(
+            Check(name, "PASS" if ok else ("FAIL" if required else "WARN"), detail)
+        )
 
     architecture = repo_root / "docs" / "ARCHITECTURE.md"
     add("architecture_doc", architecture.is_file(), str(architecture))
@@ -66,7 +68,9 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         settings = build_safety_settings(repo_root / "configs" / "system" / "a1.toml")
         teleop_state_names = state_names_for_mode("eef_joint")
         teleop_mapping = JointMappingConfig()
-        teleop_config = load_teleop_config(repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root)
+        teleop_config = load_teleop_config(
+            repo_root / "configs" / "teleop" / "a1_so100.toml", repo_root=repo_root
+        )
         lingbot_config = load_lingbot_config(
             repo_root / "configs" / "deployments" / "lingbot_va.toml",
             repo_root=repo_root,
@@ -111,7 +115,9 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     pyproject = repo_root / "pyproject.toml"
     try:
         data = tomllib.loads(pyproject.read_text())
-        source = data.get("tool", {}).get("uv", {}).get("sources", {}).get("lerobot", {})
+        source = (
+            data.get("tool", {}).get("uv", {}).get("sources", {}).get("lerobot", {})
+        )
         path = source.get("path")
         add(
             "lerobot_single_source",
@@ -129,7 +135,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         vendor_names = tuple(vendor["name"] for vendor in vendors)
         add(
             "third_party_vendor_manifest_entries",
-            set(EXPECTED_VENDOR_NAMES) <= set(vendor_names) and len(vendor_names) == len(set(vendor_names)),
+            set(EXPECTED_VENDOR_NAMES) <= set(vendor_names)
+            and len(vendor_names) == len(set(vendor_names)),
             ", ".join(vendor_names),
         )
         for vendor in vendors:
@@ -150,18 +157,25 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             policy = str(vendor.get("patch_policy", "")).strip()
             add(f"vendor_{name}_patch_policy", bool(policy), policy or "missing")
             overrides = tuple(str(item) for item in vendor.get("local_overrides", ()))
-            missing_overrides = [item for item in overrides if not (vendor_path / item).exists()]
+            missing_overrides = [
+                item for item in overrides if not (vendor_path / item).exists()
+            ]
             add(
                 f"vendor_{name}_local_overrides",
                 not missing_overrides,
                 "none" if not overrides else "tracked: " + ", ".join(overrides),
                 required=False,
             )
-        lerobot_vendor = next((vendor for vendor in vendors if vendor["name"] == "lerobot"), None)
+        lerobot_vendor = next(
+            (vendor for vendor in vendors if vendor["name"] == "lerobot"), None
+        )
         add(
             "vendor_lerobot_rev",
-            lerobot_vendor is not None and lerobot_vendor.get("upstream_rev") == EXPECTED_LEROBOT_V060_COMMIT,
-            "missing" if lerobot_vendor is None else str(lerobot_vendor.get("upstream_rev")),
+            lerobot_vendor is not None
+            and lerobot_vendor.get("upstream_rev") == EXPECTED_LEROBOT_V060_COMMIT,
+            "missing"
+            if lerobot_vendor is None
+            else str(lerobot_vendor.get("upstream_rev")),
             required=False,
         )
     except Exception as exc:
@@ -174,7 +188,9 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add(
         "third_party_nested_git_dirs",
         not nested_git_dirs,
-        "none" if not nested_git_dirs else "local artifact(s): " + ", ".join(nested_git_dirs),
+        "none"
+        if not nested_git_dirs
+        else "local artifact(s): " + ", ".join(nested_git_dirs),
         required=False,
     )
     vendored_pyproject = third_party_lerobot / "pyproject.toml"
@@ -189,7 +205,14 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         )
     except Exception as exc:
         add("vendored_lerobot_v060", False, repr(exc), required=False)
-    vendored_so_leader = third_party_lerobot / "src" / "lerobot" / "teleoperators" / "so_leader" / "so_leader.py"
+    vendored_so_leader = (
+        third_party_lerobot
+        / "src"
+        / "lerobot"
+        / "teleoperators"
+        / "so_leader"
+        / "so_leader.py"
+    )
     a1_so_leader = repo_root / "galaxea_a1_runtime" / "teleop" / "a1_so_leader.py"
     add("a1_so_leader_adapter", a1_so_leader.is_file(), str(a1_so_leader))
     try:
@@ -207,15 +230,25 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("safe_relay_script", relay_script.is_file(), str(relay_script))
     runtime_services = repo_root / "scripts" / "runtime" / "a1_services.sh"
     add("runtime_services_lib", runtime_services.is_file(), str(runtime_services))
-    joint_tracker_launch = repo_root / "scripts" / "runtime" / "joint_tracker_staged.launch"
-    add("joint_tracker_staged_launch", joint_tracker_launch.is_file(), str(joint_tracker_launch))
+    runtime_tmux = repo_root / "scripts" / "runtime" / "a1_tmux.sh"
+    add("runtime_tmux_lib", runtime_tmux.is_file(), str(runtime_tmux))
+    joint_tracker_launch = (
+        repo_root / "scripts" / "runtime" / "joint_tracker_staged.launch"
+    )
+    add(
+        "joint_tracker_staged_launch",
+        joint_tracker_launch.is_file(),
+        str(joint_tracker_launch),
+    )
     teleop_runtime = repo_root / "scripts" / "apps" / "teleop" / "a1_teleop_runtime.sh"
     add("teleop_runtime_script", teleop_runtime.is_file(), str(teleop_runtime))
     teleop_bridge = repo_root / "scripts" / "apps" / "teleop" / "so100_joint_bridge.py"
     add("teleop_bridge_script", teleop_bridge.is_file(), str(teleop_bridge))
     teleop_collect = repo_root / "scripts" / "apps" / "teleop" / "teleop_collect.py"
     add("teleop_collect_script", teleop_collect.is_file(), str(teleop_collect))
-    lingbot_runtime = repo_root / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh"
+    lingbot_runtime = (
+        repo_root / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh"
+    )
     add("lingbot_runtime_script", lingbot_runtime.is_file(), str(lingbot_runtime))
 
     existing_removed_paths = [
@@ -262,7 +295,9 @@ def _vendor_entries(data: dict) -> tuple[dict, ...]:
         if missing:
             raise ValueError(f"vendor entry {index} missing fields: {missing}")
         if vendor["mode"] != "snapshot":
-            raise ValueError(f"vendor {vendor['name']!r} has unsupported mode {vendor['mode']!r}")
+            raise ValueError(
+                f"vendor {vendor['name']!r} has unsupported mode {vendor['mode']!r}"
+            )
         out.append(vendor)
     return tuple(out)
 

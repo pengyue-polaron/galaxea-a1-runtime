@@ -6,7 +6,8 @@ import argparse
 
 import numpy as np
 
-from galaxea_a1_runtime.apps.act.bridge import ActJointBridge, _front_roi_from_args
+from galaxea_a1_runtime.apps.act.bridge import ActJointBridge
+from galaxea_a1_runtime.apps.policy_camera import required_square_front_roi
 from galaxea_a1_runtime.hardware.web_preview import add_web_preview_arguments
 
 
@@ -126,7 +127,7 @@ def validate_args(args: argparse.Namespace) -> None:
     upper = np.asarray(args.upper_limits, dtype=np.float64)
     if np.any(lower >= upper):
         raise ValueError("--lower-limits must be below --upper-limits")
-    _front_roi_from_args(args)
+    required_square_front_roi(args)
 
 
 def main() -> int:

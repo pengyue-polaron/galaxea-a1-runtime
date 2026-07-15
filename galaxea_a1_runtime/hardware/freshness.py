@@ -20,21 +20,25 @@ class LatestMessageCache(Generic[MessageT]):
         self._msg: MessageT | None = None
         self._updated_monotonic: float | None = None
 
-    def callback(self, msg: MessageT) -> None:
+    def set(self, msg: MessageT) -> None:
         with self._lock:
             self._msg = msg
             self._updated_monotonic = self._clock()
+
+    callback = set
+
+    def snapshot(self) -> tuple[MessageT | None, float | None]:
+        """Return the value and its monotonic update time atomically."""
+        with self._lock:
+            return self._msg, self._updated_monotonic
 
     def get(self, *, max_age_s: float | None = None) -> MessageT | None:
         if max_age_s is not None and max_age_s <= 0:
             raise ValueError("max_age_s must be positive")
         with self._lock:
-            if (
-                max_age_s is not None
-                and (
-                    self._updated_monotonic is None
-                    or self._clock() - self._updated_monotonic > max_age_s
-                )
+            if max_age_s is not None and (
+                self._updated_monotonic is None
+                or self._clock() - self._updated_monotonic > max_age_s
             ):
                 return None
             return self._msg

@@ -3,9 +3,11 @@ import pytest
 from galaxea_a1_runtime.apps.eef_bridge import (
     EefCommandPublisher,
     condition_state_from_action8,
-    decode_relay_status,
     format_xyz_direction,
     pose_msg_to_xyz_quat,
+)
+from galaxea_a1_runtime.runtime.relay import (
+    decode_relay_status,
     relay_state_summary,
     relay_status_is_fresh,
 )
@@ -87,7 +89,9 @@ def test_pose_msg_and_condition_helpers():
     msg.pose.position.z = 0.3
 
     xyz_quat = pose_msg_to_xyz_quat(msg)
-    state = condition_state_from_action8([0.1, -0.2, 0.3, 0, 0, 0, 1, 0.5], frame_chunk_size=4, action_per_frame=20)
+    state = condition_state_from_action8(
+        [0.1, -0.2, 0.3, 0, 0, 0, 1, 0.5], frame_chunk_size=4, action_per_frame=20
+    )
 
     assert xyz_quat is not None
     xyz, quat = xyz_quat

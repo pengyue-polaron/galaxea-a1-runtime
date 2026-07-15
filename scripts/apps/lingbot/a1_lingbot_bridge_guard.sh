@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -uo pipefail
 
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+source "${ROOT}/scripts/runtime/a1_tmux.sh"
+
 if (( $# < 4 )) || [[ "$3" != "--" ]]; then
   echo "Usage: $0 <base-runtime> <model-session> -- <bridge-command> [args...]" >&2
   exit 2
@@ -20,7 +23,7 @@ cleanup() {
   if ! "${BASE_RUNTIME}" stop >/dev/null 2>&1; then
     echo "[CLEANUP ERROR] Failed to stop the A1 runtime: ${BASE_RUNTIME}" >&2
   fi
-  tmux kill-session -t "${MODEL_SESSION}" >/dev/null 2>&1 || true
+  a1_tmux_stop "${MODEL_SESSION}"
 }
 
 trap cleanup EXIT HUP INT TERM

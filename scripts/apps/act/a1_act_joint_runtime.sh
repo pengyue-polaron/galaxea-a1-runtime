@@ -4,6 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 JOINT_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CONFIG_PATH="${ROOT}/configs/deployments/act_joint.toml"
+source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -57,22 +58,21 @@ start_services() {
 start_tmux() {
   check_act_app
   echo "Using ACT config: ${CONFIG_PATH}"
-  tmux kill-session -t "${SESSION}" >/dev/null 2>&1 || true
   local bridge_command=(
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/act/act_joint_policy_bridge.py"
     "${BRIDGE_ARGS[@]}"
   )
   local bridge_command_q
   printf -v bridge_command_q "%q " "${bridge_command[@]}"
-  tmux new-session -d -s "${SESSION}" -c "${ROOT}" \
+  a1_tmux_start "${SESSION}" "${ROOT}" \
     "export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${bridge_command_q}; rc=\$?; echo ACT_BRIDGE_EXIT=\$rc; exec bash"
   sleep 4
-  if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
+  if ! a1_tmux_has_session "${SESSION}"; then
     echo "[FAIL] tmux session exited during startup." >&2
     exit 2
   fi
   local pane
-  pane="$(tmux capture-pane -pt "${SESSION}" -S -80 2>/dev/null || true)"
+  pane="$(a1_tmux_capture "${SESSION}" 80 || true)"
   printf "%s\n" "${pane}"
   if grep -q "ACT_BRIDGE_EXIT=" <<<"${pane}"; then
     echo "[FAIL] ACT bridge exited during startup." >&2
@@ -93,7 +93,7 @@ doctor() {
 }
 
 stop_runtime() {
-  tmux kill-session -t "${SESSION}" >/dev/null 2>&1 || true
+  a1_tmux_stop "${SESSION}"
   joint_runtime_env "${JOINT_RUNTIME}" stop
   echo "ACT A1 joint bridge stopped."
 }
@@ -102,7 +102,7 @@ status() {
   joint_runtime_env "${JOINT_RUNTIME}" status
   echo
   echo "tmux:"
-  tmux list-sessions 2>/dev/null | grep "${SESSION}" || echo "${SESSION}: not running"
+  a1_tmux_status "${SESSION}"
 }
 
 case "${1:-help}" in
@@ -132,7 +132,7 @@ case "${1:-help}" in
   logs)
     joint_runtime_env "${JOINT_RUNTIME}" logs
     echo "===== ${SESSION} tmux ====="
-    tmux capture-pane -pt "${SESSION}" -S -"${A1_LOG_TAIL:-120}" 2>&1 || true
+    a1_tmux_capture "${SESSION}" "${A1_LOG_TAIL:-120}" 2>&1 || true
     ;;
   *)
     cat <<EOF

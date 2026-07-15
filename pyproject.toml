@@ -38,13 +38,16 @@ environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or pl
 [tool.uv.sources]
 lerobot = { path = "third_party/lerobot", editable = true }
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
 [dependency-groups]
 dev = [
     "ipykernel>=7.1.0",
     "ipywidgets>=8.1.8",
     "matplotlib>=3.10.8",
     "pre-commit>=4.5.1",
-    "pynvml>=13.0.1",
+    "nvidia-ml-py>=13.580.65",
     "pytest>=9.0.2",
     "ruff>=0.14.14",
 ]

@@ -15,8 +15,9 @@ arm is disconnected.
   the A1 driver, the isolated joint tracker, and the safe relay.
 - Keep `scripts/apps/**` as thin operator/runtime entrypoints. Stateful app
   implementations belong under `galaxea_a1_runtime/apps/<app>/`; for example,
-  LingBot protocol, cameras, CLI, and bridge code live under
-  `galaxea_a1_runtime/apps/lingbot/`, while
+  LingBot protocol, CLI, and bridge code live under
+  `galaxea_a1_runtime/apps/lingbot/`, shared policy-camera ownership lives in
+  `galaxea_a1_runtime/apps/policy_camera.py`, while
   `scripts/apps/lingbot/lingbot_va_ee_bridge.py` only dispatches to that package.
 - Teleop collection, inference, and data processing should
   use shared runtime/doctor concepts but should not depend on LingBot being
@@ -27,6 +28,8 @@ arm is disconnected.
 - Inference configs must reference deployment weights through the ignored local
   registry under `models/`; do not point tracked configs directly at a user's
   home directory or a native training output.
+- Machine-local external source checkouts belong under the ignored `external/`
+  directory; tracked deployment configs must use repo-relative paths there.
 - Keep downloaded base models under `models/base/`, trained deployment exports
   under `models/checkpoints/<app>/<run>/`, and generated component assemblies
   under `models/runtime/`.

@@ -14,8 +14,8 @@ prompt = "REPLACE_WITH_NEW_TASK_PROMPT"
 
 [policy_server]
 tmux = "lingbot-va-server"
-checkout = "/home/pengyue/lingbot-va"
-python = "/home/pengyue/lingbot-va/.env312/bin/python"
+checkout = "external/lingbot-va"
+python = "external/lingbot-va/.env312/bin/python"
 base_model = "models/base/lingbot-va-base"
 checkpoint = "models/checkpoints/lingbot/a1_agentview_square/latest"
 model_root = "models/runtime/lingbot/a1_agentview_square/latest"

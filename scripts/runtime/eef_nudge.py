@@ -6,10 +6,8 @@ from __future__ import annotations
 
 import argparse
 import sys
-import threading
 import time
 from pathlib import Path
-from typing import Any
 
 import numpy as np
 
@@ -28,39 +26,30 @@ from std_msgs.msg import Bool, String
 
 from galaxea_a1_runtime.apps.eef_bridge import (
     EefCommandPublisher,
+    pose_msg_to_xyz_quat,
+)
+from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
+from galaxea_a1_runtime.runtime.relay import (
     RelayStatus,
     decode_relay_status,
-    pose_msg_to_xyz_quat,
     relay_state_summary,
     relay_status_is_fresh,
 )
 
 
-class Latest:
-    def __init__(self):
-        self._lock = threading.Lock()
-        self.value: Any | None = None
-        self.updated: float | None = None
-
-    def set(self, value: Any) -> None:
-        with self._lock:
-            self.value = value
-            self.updated = time.monotonic()
-
-    def get(self) -> tuple[Any | None, float | None]:
-        with self._lock:
-            return self.value, self.updated
-
-
 class EefNudge:
     def __init__(self, args: argparse.Namespace):
         self.args = args
-        self.pose = Latest()
-        self.relay = Latest()
+        self.pose = LatestMessageCache()
+        self.relay = LatestMessageCache()
         rospy.init_node("a1_eef_nudge", anonymous=False, disable_signals=True)
         pose_pub = rospy.Publisher(args.cmd_pose_topic, PoseStamped, queue_size=10)
-        gripper_pub = rospy.Publisher(args.cmd_gripper_topic, gripper_position_control, queue_size=10)
-        enable_pub = rospy.Publisher(args.motion_enable_topic, Bool, queue_size=1, latch=True)
+        gripper_pub = rospy.Publisher(
+            args.cmd_gripper_topic, gripper_position_control, queue_size=10
+        )
+        enable_pub = rospy.Publisher(
+            args.motion_enable_topic, Bool, queue_size=1, latch=True
+        )
         self.commander = EefCommandPublisher(
             rospy=rospy,
             pose_pub=pose_pub,
@@ -73,9 +62,13 @@ class EefNudge:
             gripper_to_stroke=lambda value: value,
             execute=args.execute,
         )
-        rospy.Subscriber(args.state_pose_topic, PoseStamped, self.pose.set, queue_size=1)
+        rospy.Subscriber(
+            args.state_pose_topic, PoseStamped, self.pose.callback, queue_size=1
+        )
         rospy.Subscriber(args.relay_status_topic, String, self._relay_cb, queue_size=1)
-        self.keepalive = rospy.Timer(rospy.Duration(1.0 / args.hold_hz), self._publish_hold)
+        self.keepalive = rospy.Timer(
+            rospy.Duration(1.0 / args.hold_hz), self._publish_hold
+        )
 
     def _relay_cb(self, msg: String) -> None:
         self.relay.set(decode_relay_status(msg.data))
@@ -86,7 +79,7 @@ class EefNudge:
     def wait_pose(self) -> PoseStamped:
         deadline = time.monotonic() + self.args.feedback_timeout_s
         while not rospy.is_shutdown() and time.monotonic() < deadline:
-            msg, _ = self.pose.get()
+            msg, _ = self.pose.snapshot()
             if pose_msg_to_xyz_quat(msg) is not None:
                 return msg
             time.sleep(0.05)
@@ -94,20 +87,24 @@ class EefNudge:
 
     def enable_motion(self) -> None:
         if not self.args.execute:
-            print("[eef-nudge] DRY RUN: not enabling relay or publishing robot commands.")
+            print(
+                "[eef-nudge] DRY RUN: not enabling relay or publishing robot commands."
+            )
             return
         self.commander.publish_motion_enable(True)
         deadline = time.monotonic() + self.args.relay_enable_timeout_s
         last = "no relay status"
         while not rospy.is_shutdown() and time.monotonic() < deadline:
-            status, updated = self.relay.get()
+            status, updated = self.relay.snapshot()
             last = relay_state_summary(
                 status,
                 updated,
                 max_age_s=self.args.max_relay_status_age_s,
             )
             relay = status or RelayStatus(state="UNKNOWN")
-            if relay_status_is_fresh(updated, max_age_s=self.args.max_relay_status_age_s):
+            if relay_status_is_fresh(
+                updated, max_age_s=self.args.max_relay_status_age_s
+            ):
                 if relay.state == "ACTIVE":
                     print("[eef-nudge] relay ACTIVE")
                     return
@@ -126,7 +123,11 @@ class EefNudge:
         self.enable_motion()
 
         for label, delta in sequence(self.args.step_m):
-            command = input(f"[eef-nudge] Enter=nudge {label}, s=skip, q=quit: ").strip().lower()
+            command = (
+                input(f"[eef-nudge] Enter=nudge {label}, s=skip, q=quit: ")
+                .strip()
+                .lower()
+            )
             if command in {"q", "quit", "exit"}:
                 break
             if command in {"s", "skip"}:
@@ -166,8 +167,12 @@ def sequence(step_m: float) -> tuple[tuple[str, np.ndarray], ...]:
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Step-gated EEF nudge through the safe A1 runtime.")
-    parser.add_argument("--execute", action="store_true", help="Enable relay and publish commands.")
+    parser = argparse.ArgumentParser(
+        description="Step-gated EEF nudge through the safe A1 runtime."
+    )
+    parser.add_argument(
+        "--execute", action="store_true", help="Enable relay and publish commands."
+    )
     parser.add_argument("--step-m", type=float, default=0.03)
     parser.add_argument("--settle-s", type=float, default=1.0)
     parser.add_argument("--hold-hz", type=float, default=25.0)

@@ -222,6 +222,8 @@ train_out/
 # Canonical local model registry. Keep only its tracked documentation.
 /models/*
 !/models/README.md
+# Machine-local external source checkouts and symlinks.
+/external/
 uv.lock.bak
 third_party/A1_SDK_runtime/
 third_party/TFP_pro/

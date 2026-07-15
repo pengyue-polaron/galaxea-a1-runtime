@@ -4,6 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
 CONFIG_PATH="${ROOT}/configs/deployments/lingbot_va.toml"
+source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
@@ -127,7 +128,7 @@ prepare_model_root() {
 start_model_server() {
   prepare_model_root
   if ss -H -ltn "sport = :${LINGBOT_PORT}" | grep -q .; then
-    if tmux has-session -t "${MODEL_SESSION}" 2>/dev/null; then
+    if a1_tmux_has_session "${MODEL_SESSION}"; then
       check_lingbot_server
       echo "LingBot policy server is already running in tmux ${MODEL_SESSION}."
       return
@@ -136,7 +137,6 @@ start_model_server() {
     exit 2
   fi
 
-  tmux kill-session -t "${MODEL_SESSION}" >/dev/null 2>&1 || true
   local server_command=(
     "${MODEL_PYTHON}" -m torch.distributed.run
     --nproc_per_node=1
@@ -149,7 +149,7 @@ start_model_server() {
   )
   local server_command_q
   printf -v server_command_q "%q " "${server_command[@]}"
-  tmux new-session -d -s "${MODEL_SESSION}" -c "${MODEL_CHECKOUT}" \
+  a1_tmux_start "${MODEL_SESSION}" "${MODEL_CHECKOUT}" \
     "bash -lc 'export PYTHONPATH=\"${MODEL_CHECKOUT}:${ROOT}:\${PYTHONPATH:-}\"; export TOKENIZERS_PARALLELISM=false; export PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True; ${server_command_q}; rc=\$?; echo SERVER_EXIT=\$rc; exec bash'"
 
   local timeout_s="${MODEL_STARTUP_TIMEOUT%.*}"
@@ -160,18 +160,18 @@ start_model_server() {
       echo "LingBot policy server is listening on ${LINGBOT_HOST}:${LINGBOT_PORT}."
       return
     fi
-    if ! tmux has-session -t "${MODEL_SESSION}" 2>/dev/null; then
+    if ! a1_tmux_has_session "${MODEL_SESSION}"; then
       echo "[FAIL] LingBot policy server tmux exited during startup." >&2
       exit 2
     fi
-    if tmux capture-pane -pt "${MODEL_SESSION}" -S -20 2>/dev/null | grep -q 'SERVER_EXIT='; then
-      tmux capture-pane -pt "${MODEL_SESSION}" -S -80 >&2 || true
+    if a1_tmux_capture "${MODEL_SESSION}" 20 | grep -q 'SERVER_EXIT='; then
+      a1_tmux_capture "${MODEL_SESSION}" 80 >&2 || true
       echo "[FAIL] LingBot policy server process exited during startup." >&2
       exit 2
     fi
     sleep 1
   done
-  tmux capture-pane -pt "${MODEL_SESSION}" -S -80 >&2 || true
+  a1_tmux_capture "${MODEL_SESSION}" 80 >&2 || true
   echo "[FAIL] LingBot policy server did not listen within ${MODEL_STARTUP_TIMEOUT}s." >&2
   exit 2
 }
@@ -185,7 +185,6 @@ start_tmux() {
   check_bridge_environment
   check_lingbot_app
   echo "Using LingBot config: ${CONFIG_PATH}"
-  tmux kill-session -t "${SESSION}" >/dev/null 2>&1 || true
   local bridge_command=(
     uv run --project "${ROOT}" python "${BRIDGE_SCRIPT}"
     "${BRIDGE_ARGS[@]}"
@@ -196,15 +195,15 @@ start_tmux() {
   )
   local guarded_command_q
   printf -v guarded_command_q "%q " "${guarded_command[@]}"
-  tmux new-session -d -s "${SESSION}" -c "${ROOT}" \
+  a1_tmux_start "${SESSION}" "${ROOT}" \
     "bash -lc 'export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${guarded_command_q}; exec bash'"
   sleep 4
-  if ! tmux has-session -t "${SESSION}" 2>/dev/null; then
+  if ! a1_tmux_has_session "${SESSION}"; then
     echo "[FAIL] tmux session exited during startup." >&2
     exit 2
   fi
   local pane
-  pane="$(tmux capture-pane -pt "${SESSION}" -S -40)"
+  pane="$(a1_tmux_capture "${SESSION}" 40)"
   printf '%s\n' "${pane}"
   if grep -q 'BRIDGE_EXIT=' <<<"${pane}"; then
     echo "[FAIL] LingBot bridge exited during startup; runtime cleanup has run." >&2
@@ -217,8 +216,8 @@ start_pipeline() {
     local status=$?
     if [[ "${status}" != "0" ]]; then
       echo "[CLEANUP] Pipeline startup failed; stopping partial LingBot/A1 runtime." >&2
-      tmux kill-session -t "${SESSION}" >/dev/null 2>&1 || true
-      tmux kill-session -t "${MODEL_SESSION}" >/dev/null 2>&1 || true
+      a1_tmux_stop "${SESSION}"
+      a1_tmux_stop "${MODEL_SESSION}"
       "${BASE_RUNTIME}" stop >/dev/null 2>&1 || true
     fi
   }
@@ -246,8 +245,8 @@ doctor() {
 }
 
 stop_runtime() {
-  tmux kill-session -t "${SESSION}" >/dev/null 2>&1 || true
-  tmux kill-session -t "${MODEL_SESSION}" >/dev/null 2>&1 || true
+  a1_tmux_stop "${SESSION}"
+  a1_tmux_stop "${MODEL_SESSION}"
   "${BASE_RUNTIME}" stop
   echo "LingBot A1 bridge and policy server stopped."
 }
@@ -256,8 +255,8 @@ status() {
   "${BASE_RUNTIME}" status
   echo
   echo "tmux:"
-  tmux list-sessions 2>/dev/null | grep "${SESSION}" || echo "${SESSION}: not running"
-  tmux list-sessions 2>/dev/null | grep "${MODEL_SESSION}" || echo "${MODEL_SESSION}: not running"
+  a1_tmux_status "${SESSION}"
+  a1_tmux_status "${MODEL_SESSION}"
 }
 
 case "${1:-help}" in
@@ -273,10 +272,10 @@ case "${1:-help}" in
     start_model_server
     ;;
   server-stop)
-    tmux kill-session -t "${MODEL_SESSION}" >/dev/null 2>&1 || true
+    a1_tmux_stop "${MODEL_SESSION}"
     ;;
   server-logs)
-    tmux capture-pane -pt "${MODEL_SESSION}" -S -160
+    a1_tmux_capture "${MODEL_SESSION}" 160
     ;;
   tmux)
     start_tmux

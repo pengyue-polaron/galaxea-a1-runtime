@@ -239,6 +239,16 @@ base components and fine-tuned transformer, then starts the policy server, A1
 runtime, and bridge:
 
 ```bash
+mkdir -p external
+ln -s /absolute/path/to/lingbot-va external/lingbot-va
+```
+
+The tracked deployment config resolves this ignored machine-local checkout as
+`external/lingbot-va` and expects its Python 3.12 environment at
+`external/lingbot-va/.env312`. A real directory may be used instead of a
+symlink. Do not put a user-specific home-directory path in the tracked TOML.
+
+```bash
 just models
 just lingbot
 tmux attach -t lingbot-a1

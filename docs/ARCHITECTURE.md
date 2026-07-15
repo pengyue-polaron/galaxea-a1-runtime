@@ -14,13 +14,16 @@ LeRobotDataset v3.0.
    - `policies/`: normalized action contract and policy profile metadata.
    - `apps/`: managed implementations split by app and responsibility.
    - `lerobot/`: explicit-IO `GalaxeaA1Robot`, writer helpers, passive recorder,
-     migration, and atomic dataset output.
-   - `runtime/`: doctor, safety report, and the shared ROS1 Python-path bootstrap.
+     migration, atomic output, and shared deterministic package primitives.
+   - `runtime/`: doctor, safety report, shared relay/feedback caches, and the
+     ROS1 Python-path bootstrap.
 
 2. Base runtime: `scripts/runtime`
 
    - `a1_services.sh` is the thin, app-agnostic owner of repeated Docker,
      ROS-master, driver, feedback-wait, and locked-relay startup primitives.
+   - `a1_tmux.sh` owns only repeated tmux start, stop, status, and log-capture
+     primitives; app scripts still decide startup checks and cleanup policy.
    - `a1_runtime.sh`, `a1_joint_runtime.sh`, and the teleop runtime retain their
      own tracker choice, lifecycle, doctors, UI, and failure policy.
    - Owns ROS master, A1 driver, isolated EE/joint trackers, and safe relay.
@@ -103,24 +106,35 @@ file:
 
 The reusable parts now live in package modules:
 
-- `galaxea_a1_runtime.apps.eef_bridge`: relay status parsing, EEF feedback
-  helpers, state conditioning shape helper, direction formatting, and ROS-like
-  EEF/gripper command publisher.
+- `galaxea_a1_runtime.runtime.relay` and `.ros_feedback`: app-agnostic,
+  thread-safe relay, joint, gripper, and staged-command feedback monitors used
+  by ACT, Teleop, and LingBot.
+- `galaxea_a1_runtime.apps.eef_bridge`: EEF feedback helpers, state conditioning
+  shape helper, direction formatting, and ROS-like EEF/gripper publisher.
 - `galaxea_a1_runtime.apps.lingbot.actions`: LingBot-specific 8D action
   sanitation, workspace bounds, orientation behavior, gripper mapping, and
   optional tracker compensation.
 - `galaxea_a1_runtime.apps.lingbot.client`: WebSocket/MessagePack protocol.
-- `galaxea_a1_runtime.apps.lingbot.camera_session`: exclusive camera ownership,
-  freshness, AgentView crop, and read-only preview lifecycle.
-- `galaxea_a1_runtime.apps.lingbot.bridge` and `.cli`: stateful EEF execution
-  and the operator-facing argument contract, respectively.
-- `galaxea_a1_runtime.apps.lingbot.config`: tracked LingBot runtime config
-  loading and conversion into the bridge arguments used by `just lingbot`.
-- `galaxea_a1_runtime.apps.act.config`: tracked ACT joint runtime config
-  loading and conversion into the bridge arguments used by `just act`.
-- `galaxea_a1_runtime.apps.act.policy`, `.ros_state`, `.bridge`, and `.cli`:
-  checkpoint inference, fresh ROS caches, guarded execution, and argument
-  parsing as independent responsibilities.
+- `galaxea_a1_runtime.apps.policy_camera`: shared ACT/LingBot exclusive camera
+  ownership, freshness, AgentView crop validation, and read-only preview
+  lifecycle.
+- `galaxea_a1_runtime.apps.lingbot.episode_state`, `.rollout`, and `.review`:
+  fresh episode coordinates, validated action-tensor indexing, and operator
+  previews without ROS process ownership.
+- `galaxea_a1_runtime.apps.lingbot.bridge` and `.cli`: ROS/camera rollout
+  orchestration and the operator-facing argument contract, respectively.
+- `galaxea_a1_runtime.apps.lingbot.config_schema`, `.config`, and
+  `.config_runtime`: typed deployment schema, TOML loading/validation, and
+  conversion into process arguments used by `just lingbot`.
+- `galaxea_a1_runtime.apps.act.config_schema`, `.config`, and `.config_runtime`:
+  typed ACT schema, TOML loading/validation, and process-argument translation.
+- `galaxea_a1_runtime.apps.act.actions`, `.policy`, `.bridge`, and `.cli`: pure
+  model-action validation, checkpoint inference, guarded execution, and
+  argument parsing; feedback caches come directly from the shared runtime
+  layer.
+- `galaxea_a1_runtime.lerobot.dataset_package`: one implementation of dataset
+  tree copying, hard-link fallback, vector statistics, digesting, JSON, and
+  atomic archives shared by the joint and LingBot packagers.
 - `galaxea_a1_runtime.hardware.cameras`: shared RealSense color/depth and
   OpenCV color camera wrappers used by teleop collection, camera snapshots, and
   LingBot.
@@ -153,8 +167,9 @@ Teleop is the built-in demonstration collection mode.
   patching vendored LeRobot source.
 - `scripts/apps/teleop/teleop_collect.py`: stable, thin collector entrypoint.
 - `galaxea_a1_runtime.apps.teleop`: separates fresh ROS state assembly,
-  frame recording, episode metadata, collector orchestration, reset config,
-  and reset execution. The collector does not command the robot. Background
+  frame recording, camera ownership, single-episode validation/persistence,
+  collector orchestration, reset config, A1 reset, and leader reset. The
+  collector does not command the robot. Background
   readers prevent a blocking camera read from silently stopping state/action
   recording; stale required streams abort and delete the partial episode.
   Enter=save runs quality checks before metadata is committed.
@@ -185,6 +200,12 @@ The former parallel `RuntimeConfig/TopicConfig/SafetyConfig` stack and app-level
 physical mirror dataclasses have been removed. Dataset writer settings remain a
 data-layer `DatasetConfig`; they contain no hardware topics, limits, or gripper
 range.
+
+Each app config follows the same three-part shape: `config_schema.py` contains
+immutable typed values, `config.py` loads and validates TOML, and
+`config_runtime.py` translates validated values into shell/CLI arguments. This
+keeps process syntax out of the configuration contract without adding another
+parallel configuration hierarchy.
 
 The episode interaction is:
 
@@ -219,11 +240,14 @@ optional depth, and wrist RGB, then writes synchronized raw episode files. Once
 a save is durable, it asks the runtime shell to perform the shared reset
 workflow; it does not implement or publish reset commands itself.
 
-The shared reset implementation uses `configs/poses/a1_so100_collection_start.toml` to restore
-the A1 and SO leader concurrently and close both grippers. `just reset` starts
-the required services, runs that implementation, and stops the runtime. The
-post-save path reuses it while keeping the services and cameras alive, then
-restarts the bridge for the next episode.
+The shared reset implementation uses
+`configs/poses/a1_so100_collection_start.toml` to restore the A1 and SO leader
+concurrently and close both grippers. Its orchestrator delegates A1 relay and
+joint monitoring to `reset_a1.py`, leader IO to `reset_leader.py`, and display
+state to `reset_progress.py`. `just reset` starts the required services, runs
+that implementation, and stops the runtime. The post-save path reuses it while
+keeping the services and cameras alive, then restarts the bridge for the next
+episode.
 
 ## Original SDK Feature Coverage
 
@@ -271,6 +295,7 @@ capabilities, but are not first-class daily `just` commands. Standard MoveIt
 ## Intentionally Not Done Yet
 
 - FastWAM and GR00T have profiles but not dedicated A1 app scripts yet.
-- LingBot's interactive execution loop remains a cohesive stateful bridge, but
-  protocol, camera ownership, action transforms, configuration, and CLI are
-  independent package modules.
+- LingBot's ROS publishing and interactive rollout orchestration intentionally
+  remain together; protocol, shared policy-camera ownership, episode state,
+  tensor indexing, review output, configuration, and CLI are independent
+  modules.

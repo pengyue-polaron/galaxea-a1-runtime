@@ -115,8 +115,11 @@ just stop
 LingBot runtime parameters live in
 [configs/deployments/lingbot_va.toml](configs/deployments/lingbot_va.toml).
 The tracked command starts the managed deployment policy server before the A1
-runtime. The checked-in profile is currently fail-closed until a new checkpoint,
-prompt, and dataset quantiles are registered. Edit that file when the
+runtime. Put the machine-local LingBot source checkout at the ignored
+`external/lingbot-va` path (a symlink is fine) and create its Python environment
+at `external/lingbot-va/.env312`. The checked-in profile is currently
+fail-closed until a new checkpoint, prompt, and dataset quantiles are
+registered. Edit that file when the
 checkpoint, server, prompt, rollout cadence, or action normalization changes.
 Physical topics, cameras, joint limits, EEF workspace/quaternion behavior, and
 the physical gripper contract live once in
@@ -157,7 +160,7 @@ v3.0 and v2.1 packages plus a joint-action v3.0 package.
 
 Use motion commands only after the arm is powered on and positioned safely.
 
-## New Package Layout
+## Package Layout
 
 ```text
 galaxea_a1_runtime/
@@ -167,18 +170,20 @@ galaxea_a1_runtime/
   hardware/           # IO protocol, EEF helpers, camera and preview modules
   collection/         # teleop state/action schema and episode helpers
   teleop/             # SO leader to A1 joint mapping helpers
-  lerobot/            # Robot adapter, dataset writer, recorder, migration
+  lerobot/            # Robot adapter, conversion, deterministic packaging
   policies/           # action normalization and policy profiles
   apps/               # managed app implementations split by protocol/IO/CLI
-  runtime/            # doctor, safety disclosure, and ROS1 env bootstrap
+  runtime/            # doctor, relay/feedback primitives, ROS1 bootstrap
 assets/cad/            # versioned robot/leader mechanical assets
 configs/               # tracked runtime, inference, pose, and dataset contracts
+external/              # ignored machine-local source checkouts and symlinks
 scripts/               # operator entrypoints grouped by runtime/app responsibility
 ```
 
-The runtime entrypoints share only the app-agnostic service primitives in
-`scripts/runtime/a1_services.sh`. Tracker selection and app lifecycle stay
-in their owning scripts. ACT, LingBot, and teleop configurations reference the
+The runtime entrypoints share app-agnostic service primitives in
+`scripts/runtime/a1_services.sh` and tmux lifecycle primitives in
+`scripts/runtime/a1_tmux.sh`. Tracker selection and app startup policy stay in
+their owning scripts. ACT, LingBot, and teleop configurations reference the
 same typed `SystemConfig` directly instead of copying physical fields into
 parallel app-specific config objects.
 

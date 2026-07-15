@@ -28,6 +28,8 @@ def test_static_doctor_has_no_failures_for_repo_root():
         "a1_so_leader_adapter",
         "vendored_so_leader_unpatched",
         "safe_relay_script",
+        "runtime_services_lib",
+        "runtime_tmux_lib",
         "joint_tracker_staged_launch",
         "teleop_runtime_script",
         "teleop_config",

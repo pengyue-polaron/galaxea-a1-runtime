@@ -18,3 +18,12 @@ def test_latest_message_cache_requires_positive_deadline():
 
     with pytest.raises(ValueError, match="positive"):
         cache.get(max_age_s=0.0)
+
+
+def test_latest_message_cache_snapshot_keeps_value_and_update_time_together():
+    now = [3.5]
+    cache = LatestMessageCache[str](clock=lambda: now[0])
+
+    cache.set("first")
+
+    assert cache.snapshot() == ("first", 3.5)

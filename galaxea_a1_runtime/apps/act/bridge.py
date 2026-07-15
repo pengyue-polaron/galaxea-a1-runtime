@@ -26,30 +26,22 @@ configure_ros1_python(ROOT_DIR, include_system_site=False, remove_ros2=True)
 import numpy as np
 
 import rospy
-from galaxea_a1_runtime.hardware.cameras import (
-    LatestCameraReader,
-    RealSenseColorCamera,
-    RealSenseFrameSet,
-    open_color_camera,
-)
-from galaxea_a1_runtime.hardware.image_geometry import ImageRoi, crop_image
-from galaxea_a1_runtime.hardware.web_preview import (
-    CameraWebPreview,
-    color_from_bgr,
-    color_from_frameset,
-    web_preview_config_from_args,
-)
 from galaxea_a1_runtime.gripper import denormalize_stroke
 from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
 
+from galaxea_a1_runtime.apps.act.actions import ActActionValidator
 from galaxea_a1_runtime.apps.act.policy import ActPolicyRunner, log
-from galaxea_a1_runtime.apps.act.ros_state import (
+from galaxea_a1_runtime.apps.policy_camera import (
+    PolicyCameraSession,
+    required_square_front_roi,
+)
+from galaxea_a1_runtime.runtime.relay import RelayMonitor
+from galaxea_a1_runtime.runtime.ros_feedback import (
     A1JointStateCache,
     GripperFeedbackCache,
-    RelayMonitor,
     StagedCommandMonitor,
 )
 
@@ -58,10 +50,17 @@ class ActJointBridge:
     def __init__(self, args: argparse.Namespace):
         self.args = args
         self.target_names = tuple(args.target_joint_names)
-        self.lower_limits = np.asarray(args.lower_limits, dtype=np.float64)
-        self.upper_limits = np.asarray(args.upper_limits, dtype=np.float64)
         self.motion_enabled = False
-        self.front_roi = _front_roi_from_args(args)
+        self.front_roi = required_square_front_roi(args)
+        self.action_validator = ActActionValidator(
+            joint_names=self.target_names,
+            lower_limits=np.asarray(args.lower_limits, dtype=np.float64),
+            upper_limits=np.asarray(args.upper_limits, dtype=np.float64),
+            execute_steps=int(args.execute_steps_per_inference),
+            step_guard_enabled=bool(args.action_step_guard_enabled),
+            max_first_delta_rad=float(args.max_first_target_delta_rad),
+            max_step_rad=float(args.max_joint_action_step_rad),
+        )
 
         rospy.init_node(
             "act_joint_policy_bridge", anonymous=False, disable_signals=True
@@ -95,73 +94,14 @@ class ActJointBridge:
         )
 
         self.policy = ActPolicyRunner(args)
-        self.cam_front = RealSenseColorCamera(
-            args.cam0_serial,
-            args.cam_width,
-            args.cam_height,
-            args.cam_fps,
-            auto_exposure=args.cam0_auto_exposure,
-            exposure=args.cam0_exposure,
-            gain=args.cam0_gain,
-            auto_white_balance=args.cam0_auto_white_balance,
-            white_balance=args.cam0_white_balance,
-            warmup_frames=args.camera_warmup_frames,
-        )
-        self.cam_wrist = open_color_camera(
-            args.cam1_backend,
-            serial=args.cam1_serial,
-            device=args.cam1_device,
-            width=args.cam_width,
-            height=args.cam_height,
-            fps=args.cam_fps,
-            backend_api=args.cam1_backend_api,
-            pixel_format=args.cam1_pixel_format,
-            warmup_frames=args.camera_warmup_frames,
-        )
-        self.front_reader = LatestCameraReader("front", self.cam_front.read_frameset)
-        self.wrist_reader = LatestCameraReader("wrist", self.cam_wrist.read_bgr)
-        self.front_reader.start()
-        self.wrist_reader.start()
-        self.web_preview: CameraWebPreview | None = None
-        preview_config = web_preview_config_from_args(args)
-        if preview_config.enabled:
-            self.web_preview = CameraWebPreview(preview_config)
-            self.web_preview.register_reader(
-                "agent",
-                self.front_reader,
-                extract=color_from_frameset,
-                source=self.cam_front.label,
-                overlay_roi=self.front_roi,
-                overlay_label=(
-                    f"POLICY INPUT {self.front_roi.width}x{self.front_roi.height}"
-                ),
-            )
-            self.web_preview.register_reader(
-                "wrist",
-                self.wrist_reader,
-                extract=color_from_bgr,
-                source=self.cam_wrist.label,
-            )
-            self.web_preview.start()
+        self.cameras = PolicyCameraSession(args, self.front_roi)
 
     def close(self) -> None:
         if self.motion_enabled:
             self.motion_enable_pub.publish(Bool(data=False))
             self.motion_enabled = False
-        if getattr(self, "web_preview", None) is not None:
-            self.web_preview.close()
-        for reader in (
-            getattr(self, "front_reader", None),
-            getattr(self, "wrist_reader", None),
-        ):
-            if reader is not None:
-                reader.stop()
-        for camera in (
-            getattr(self, "cam_wrist", None),
-            getattr(self, "cam_front", None),
-        ):
-            if camera is not None:
-                camera.close()
+        if getattr(self, "cameras", None) is not None:
+            self.cameras.close()
 
     def run(self) -> None:
         mode = "EXECUTE" if self.args.execute else "DRY-RUN"
@@ -189,7 +129,7 @@ class ActJointBridge:
                 continue
 
             try:
-                steps = self._validated_execution_steps(chunk, current_joints)
+                steps = self.action_validator.validate(chunk, current_joints)
             except RuntimeError as exc:
                 self._skip_execution(str(exc))
                 continue
@@ -242,89 +182,10 @@ class ActJointBridge:
         )
 
     def _wait_for_cameras(self) -> tuple[np.ndarray, np.ndarray]:
-        deadline = time.monotonic() + self.args.state_timeout
-        while not rospy.is_shutdown() and time.monotonic() < deadline:
-            for reader in (self.front_reader, self.wrist_reader):
-                exc = reader.exception()
-                if exc is not None:
-                    raise RuntimeError(f"{reader.name} camera reader failed") from exc
-            front = self.front_reader.latest()
-            wrist = self.wrist_reader.latest()
-            now = time.perf_counter()
-            if (
-                front is not None
-                and wrist is not None
-                and now - front.monotonic_s <= self.args.max_camera_age
-                and now - wrist.monotonic_s <= self.args.max_camera_age
-            ):
-                frameset = front.value
-                if not isinstance(frameset, RealSenseFrameSet):
-                    raise RuntimeError(
-                        "front camera did not return a RealSenseFrameSet"
-                    )
-                return (
-                    crop_image(
-                        frameset.color_bgr,
-                        self.front_roi,
-                        label="AgentView inference frame",
-                    ),
-                    wrist.value,
-                )
-            time.sleep(0.02)
-        raise RuntimeError("No fresh camera pair within timeout")
-
-    def _validated_execution_steps(
-        self, chunk: np.ndarray, current_joints: tuple[float, ...]
-    ) -> np.ndarray:
-        if chunk.ndim != 2 or chunk.shape[1] != 7:
-            raise RuntimeError(f"invalid chunk shape: {chunk.shape}")
-        if not np.all(np.isfinite(chunk)):
-            raise RuntimeError("ACT chunk contains non-finite values")
-        count = min(int(self.args.execute_steps_per_inference), len(chunk))
-        steps = chunk[:count].copy()
-        current = np.asarray(current_joints, dtype=np.float64)
-        if self.args.action_step_guard_enabled:
-            first_delta = float(np.max(np.abs(steps[0, :6] - current)))
-            if first_delta > self.args.max_first_target_delta_rad:
-                raise RuntimeError(
-                    f"first ACT target jumps {first_delta:.4f} rad from feedback; "
-                    f"limit={self.args.max_first_target_delta_rad:.4f}"
-                )
-        previous = current
-        for index, row in enumerate(steps):
-            joints = row[:6]
-            violations = self._joint_limit_violations(joints)
-            if violations:
-                detail = "; ".join(violations)
-                raise RuntimeError(
-                    f"ACT target {index} violates joint limits: {detail}"
-                )
-            if self.args.action_step_guard_enabled:
-                step = float(np.max(np.abs(joints - previous)))
-                limit = (
-                    self.args.max_first_target_delta_rad
-                    if index == 0
-                    else self.args.max_joint_action_step_rad
-                )
-                if step > limit:
-                    raise RuntimeError(
-                        f"ACT target {index} step={step:.4f} rad exceeds limit={limit:.4f}"
-                    )
-            previous = joints
-        return steps
-
-    def _joint_limit_violations(self, joints: np.ndarray) -> list[str]:
-        out: list[str] = []
-        for name, value, lo, hi in zip(
-            self.target_names, joints, self.lower_limits, self.upper_limits, strict=True
-        ):
-            value = float(value)
-            if value < float(lo) or value > float(hi):
-                out.append(
-                    f"{name}={value:.4f} outside [{float(lo):.4f}, {float(hi):.4f}] "
-                    f"(target={np.round(joints, 4).tolist()})"
-                )
-        return out
+        return self.cameras.wait_pair(
+            timeout_s=self.args.state_timeout,
+            is_shutdown=rospy.is_shutdown,
+        )
 
     def _skip_execution(self, reason: str) -> None:
         self.motion_enable_pub.publish(Bool(data=False))
@@ -442,26 +303,3 @@ class ActJointBridge:
         msg.gripper_stroke = stroke
         self.gripper_pub.publish(msg)
         return stroke
-
-
-def _front_roi_from_args(args: argparse.Namespace) -> ImageRoi:
-    if not args.cam0_crop_enabled:
-        raise ValueError(
-            "--cam0-crop-enabled is required for the inference input contract"
-        )
-    roi = ImageRoi(
-        x=args.cam0_crop_x,
-        y=args.cam0_crop_y,
-        width=args.cam0_crop_width,
-        height=args.cam0_crop_height,
-    )
-    roi.validate(
-        image_width=args.cam_width,
-        image_height=args.cam_height,
-        label="AgentView inference crop",
-    )
-    if roi.width != roi.height:
-        raise ValueError(
-            f"AgentView inference crop must be square, got {roi.width}x{roi.height}"
-        )
-    return roi
