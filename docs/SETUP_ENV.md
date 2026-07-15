@@ -21,12 +21,32 @@ Verify the environment without opening hardware:
 just check
 ```
 
+## Host and container boundary
+
+The host does not need Ubuntu 20.04 or a native ROS Noetic installation. Build
+the execution image once:
+
+```bash
+docker compose -f docker-compose.a1-noetic.yml build a1-noetic
+```
+
+The image is based on `ros:noetic-ros-base-focal`; it owns ROS Noetic and the
+A1 SDK execution environment. Runtime orchestration starts isolated containers
+for roscore, the A1 driver, the selected tracker, and the validating relay.
+
+Python 3.12 applications, RealSense cameras, serial-device discovery, and
+optional GPU drivers remain host-side responsibilities. Ubuntu 22.04 is the
+currently verified host. Ubuntu 24.04 can also be used with a working Docker
+Engine and compatible device/GPU drivers; it does not need native ROS packages.
+
 ## Baseline
 
 - Python `>=3.12,<3.13`
 - LeRobot v0.6.0 at `30da8e687a6dfc617fcd94afc367ac7071c376ce`
-- LeRobotDataset v3.0
+- LeRobotDataset v3.0 writer and reader
+- first-party LeRobotDataset v2.1 exporter, validated through LeRobot's
+  official v2.1-to-v3.0 migrator
 
 The runtime no longer uses the old OpenPI/TFP, ZMQ, or DataCoach environments.
-One offline LeRobot v2.1 export remains solely for LingBot dataset
-compatibility.
+Collection writes the current raw-v3 contract; conversion emits the base A1
+dataset in both v3.0 and v2.1 and does the same for the LingBot EEF package.

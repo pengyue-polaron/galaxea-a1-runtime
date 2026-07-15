@@ -1,4 +1,4 @@
-"""Derive a LingBot-VA EEF-action package from an A1 LeRobot v3 dataset."""
+"""Build A1 LeRobot v2.1/v3.0, LingBot-VA, and ACT dataset packages."""
 
 from __future__ import annotations
 
@@ -462,32 +462,39 @@ def main(argv: list[str] | None = None) -> int:
     config = load_pack_config(args.config)
     convert_raw_dataset(
         source_root=config.raw_source_root,
-        target_root=config.source_root,
-        repo_id=config.source_repo_id,
+        target_root=config.base_v3_root,
+        repo_id=config.base_v3_repo_id,
         overwrite=config.overwrite,
         expected_contract=config.source_contract,
     )
+    base_v21_manifest = export_v21_dataset(
+        source_root=config.base_v3_root,
+        target_root=config.base_v21_target_root,
+        repo_id=config.base_v21_repo_id,
+        overwrite=config.overwrite,
+        archive_path=config.base_v21_archive_path,
+    )
     v3_manifest = pack_lingbot_dataset(
-        source_root=config.source_root,
-        target_root=config.v3_target_root,
+        source_root=config.base_v3_root,
+        target_root=config.eef_v3_target_root,
         urdf_path=config.urdf_path,
-        repo_id=config.v3_repo_id,
+        repo_id=config.eef_v3_repo_id,
         gripper_stroke_min_mm=config.gripper_stroke_min_mm,
         gripper_stroke_max_mm=config.gripper_stroke_max_mm,
         base_link=config.base_link,
         tip_link=config.tip_link,
         overwrite=config.overwrite,
-        archive_path=config.v3_archive_path,
+        archive_path=config.eef_v3_archive_path,
     )
     v21_manifest = export_v21_dataset(
-        source_root=config.v3_target_root,
-        target_root=config.v21_target_root,
-        repo_id=config.v21_repo_id,
+        source_root=config.eef_v3_target_root,
+        target_root=config.eef_v21_target_root,
+        repo_id=config.eef_v21_repo_id,
         overwrite=config.overwrite,
-        archive_path=config.v21_archive_path,
+        archive_path=config.eef_v21_archive_path,
     )
     joint_v3_manifest = pack_joint_v3_dataset(
-        source_root=config.source_root,
+        source_root=config.base_v3_root,
         target_root=config.joint_v3_target_root,
         repo_id=config.joint_v3_repo_id,
         overwrite=config.overwrite,
@@ -496,6 +503,7 @@ def main(argv: list[str] | None = None) -> int:
     print(
         json.dumps(
             {
+                "base_v2.1": base_v21_manifest,
                 "eef_v3.0": v3_manifest,
                 "eef_v2.1": v21_manifest,
                 "joint_v3.0": joint_v3_manifest,

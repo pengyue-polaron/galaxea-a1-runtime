@@ -128,14 +128,18 @@ referenced Teleop and System configs:
 ```text
 raw v3
   -> base LeRobotDataset v3
+       ├── base LeRobotDataset v2.1
        ├── LingBot EEF continuous v3
-       │     └── LingBot EEF continuous v2.1 compatibility export
+       │     └── LingBot EEF continuous v2.1
        └── ACT joint continuous v3
 ```
 
 Each output and archive is built beside its destination and installed
-atomically. Failure preserves the previous complete output. The v2.1 package is
-a deliberate derived export, never accepted as collector input.
+atomically. Failure preserves the previous complete output. The base A1
+joint/state dataset is emitted in both LeRobotDataset v3.0 and episode-based
+v2.1; the first-party v2.1 exporter is checked against LeRobot's official
+v2.1-to-v3.0 migrator. Both v2.1 packages are derived outputs, never accepted as
+collector input.
 
 ## Deployment
 

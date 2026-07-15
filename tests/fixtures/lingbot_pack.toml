@@ -9,12 +9,17 @@ lerobot_v3_root = "data/processed/test_experiment_lerobot_v3"
 repo_id = "galaxea-a1/test_experiment_lerobot_v3"
 overwrite = true
 
-[outputs.v3]
+[outputs.base_v21]
+target_root = "data/processed/test_experiment_lerobot_v21"
+archive_path = "data/exports/test_experiment_lerobot_v21.tar.gz"
+repo_id = "galaxea-a1/test_experiment_lerobot_v21"
+
+[outputs.eef_v3]
 target_root = "data/processed/test_experiment_lingbot_eef_continuous_v3"
 archive_path = "data/exports/test_experiment_lingbot_eef_continuous_v3.tar.gz"
 repo_id = "galaxea-a1/test_experiment_lingbot_eef_continuous_v3"
 
-[outputs.v21]
+[outputs.eef_v21]
 target_root = "data/processed/test_experiment_lingbot_eef_continuous_v21"
 archive_path = "data/exports/test_experiment_lingbot_eef_continuous_v21.tar.gz"
 repo_id = "galaxea-a1/test_experiment_lingbot_eef_continuous_v21"

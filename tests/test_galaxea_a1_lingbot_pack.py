@@ -76,8 +76,10 @@ def test_lingbot_a1_action_contract():
 def test_lingbot_pack_config_fixture():
     config = load_pack_config(PACK_CONFIG_FIXTURE)
     assert config.raw_source_root.name == "test_experiment"
-    assert config.source_root.name == "test_experiment_lerobot_v3"
-    assert config.source_repo_id == "galaxea-a1/test_experiment_lerobot_v3"
+    assert config.base_v3_root.name == "test_experiment_lerobot_v3"
+    assert config.base_v3_repo_id == "galaxea-a1/test_experiment_lerobot_v3"
+    assert config.base_v21_target_root.name == "test_experiment_lerobot_v21"
+    assert config.base_v21_repo_id == "galaxea-a1/test_experiment_lerobot_v21"
     assert config.overwrite is True
     assert config.source_contract.state_names[-1] == "gripper"
     assert len(config.source_contract.state_names) == 14
@@ -85,8 +87,10 @@ def test_lingbot_pack_config_fixture():
         config.source_contract.camera_specs[0].height,
         config.source_contract.camera_specs[0].width,
     ) == (480, 480)
-    assert config.v3_target_root.name == "test_experiment_lingbot_eef_continuous_v3"
-    assert config.v21_target_root.name == "test_experiment_lingbot_eef_continuous_v21"
+    assert config.eef_v3_target_root.name == "test_experiment_lingbot_eef_continuous_v3"
+    assert (
+        config.eef_v21_target_root.name == "test_experiment_lingbot_eef_continuous_v21"
+    )
     assert config.joint_v3_target_root.name == "test_experiment_joint_continuous_v3"
     assert config.urdf_path == URDF
     assert config.gripper_stroke_min_mm == 0.0
@@ -127,9 +131,7 @@ def test_dataset_command_runs_raw_conversion_before_all_packages(monkeypatch):
     monkeypatch.setattr(
         lingbot_pack_module, "pack_lingbot_dataset", record("lingbot_v3")
     )
-    monkeypatch.setattr(
-        lingbot_pack_module, "export_v21_dataset", record("lingbot_v21")
-    )
+    monkeypatch.setattr(lingbot_pack_module, "export_v21_dataset", record("v21"))
     monkeypatch.setattr(
         lingbot_pack_module, "pack_joint_v3_dataset", record("joint_v3")
     )
@@ -139,9 +141,16 @@ def test_dataset_command_runs_raw_conversion_before_all_packages(monkeypatch):
     assert result == 0
     assert [name for name, _ in calls] == [
         "raw_to_lerobot",
+        "v21",
         "lingbot_v3",
-        "lingbot_v21",
+        "v21",
         "joint_v3",
     ]
     assert calls[0][1]["source_root"] == REPO_ROOT / "data/raw/test_experiment"
     assert calls[0][1]["overwrite"] is True
+    assert calls[1][1]["source_root"] == (
+        REPO_ROOT / "data/processed/test_experiment_lerobot_v3"
+    )
+    assert calls[3][1]["source_root"] == (
+        REPO_ROOT / "data/processed/test_experiment_lingbot_eef_continuous_v3"
+    )

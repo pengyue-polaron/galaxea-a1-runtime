@@ -129,7 +129,9 @@ just convert EXPERIMENT
 The dataset config owns packaging paths and policy only; observation and action
 contracts derive from its referenced Teleop and System configs. Conversion
 rejects incomplete or mismatched raw data and preserves an existing complete
-output if replacement fails.
+output if replacement fails. A complete run emits the base A1 joint/state
+dataset in LeRobotDataset v3.0 and v2.1, LingBot EEF packages in v3.0 and v2.1,
+and the ACT joint package in v3.0.
 
 ## 6. Failure recovery
 

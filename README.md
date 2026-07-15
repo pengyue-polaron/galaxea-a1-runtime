@@ -1,57 +1,95 @@
-# Galaxea A1 Runtime
+<h1 align="center">Galaxea A1 Runtime</h1>
 
-Fail-closed runtime, SO leader teleoperation, data collection, dataset
-conversion, and policy deployment for a real Galaxea A1 arm. The current
-baseline is Python 3.12, LeRobot v0.6, and LeRobotDataset v3.
+<p align="center">
+  End-to-end teleoperation, LeRobot data collection, and policy deployment for
+  the Galaxea A1 robot arm.
+</p>
 
-The arm may be powered and reachable while this repository is open. Treat every
-ROS publish path as live hardware and read [Safety](docs/SAFETY.md) before
-running motion commands.
+<p align="center">
+  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&amp;logoColor=white">
+  <img alt="ROS 1 Noetic" src="https://img.shields.io/badge/ROS_1-Noetic-22314E?logo=ros&amp;logoColor=white">
+  <img alt="Containerized ROS runtime" src="https://img.shields.io/badge/ROS_Runtime-Dockerized-2496ED?logo=docker&amp;logoColor=white">
+  <img alt="LeRobot 0.6" src="https://img.shields.io/badge/LeRobot-0.6-FFD21E">
+  <img alt="LeRobotDataset v2.1 and v3.0" src="https://img.shields.io/badge/LeRobotDataset-v2.1_%7C_v3.0-0A7BBC">
+</p>
 
-## Start here
+![Galaxea A1 follower and modified SO-101 leader](assets/images/a1-teleoperation-setup.png)
 
-Create the environment and run static validation:
+## What it does
+
+- **Teleoperate** a Galaxea A1 follower with a modified six-axis SO-101 leader
+  and continuous gripper control.
+- **Collect** synchronized joint, EEF, action, gripper, and paired-camera data
+  into atomically validated raw episodes.
+- **Convert** current raw-v3 experiments into deterministic LeRobotDataset v2.1
+  and v3.0 outputs, plus LingBot and ACT packages.
+- **Deploy** ACT joint and LingBot EEF policies through isolated trackers and a
+  locked, validating command relay.
+- **Run on modern Ubuntu hosts** with ROS Noetic and the A1 SDK isolated inside
+  a Focal-based Docker runtime—no native Ubuntu 20.04 or ROS installation
+  required.
+
+The current baseline is Python 3.12, ROS 1 Noetic, and LeRobot 0.6, with
+first-party LeRobotDataset v2.1 and v3.0 conversion. Hardware, safety,
+collection, and deployment behavior is owned by strict tracked configuration
+rather than per-run overrides.
+
+The current host is Ubuntu 22.04; Ubuntu 24.04 is also suitable as a Docker
+host. Cameras, serial devices, and optional GPU acceleration remain host
+resources passed into the containerized ROS execution layer.
+
+## Quick start
+
+Create the Python environment, build the ROS runtime image, and run the
+hardware-free validation suite:
 
 ```bash
 just setup
+docker compose -f docker-compose.a1-noetic.yml build a1-noetic
 just check
 ```
 
-Then follow the [Runbook](docs/RUNBOOK.md) for hardware acceptance, reset,
-Teleop collection, conversion, recovery, and deployment. It labels every
-command that can move the robot.
+Continue with the [Runbook](docs/RUNBOOK.md) for hardware acceptance, reset,
+Teleop collection, conversion, recovery, and deployment. Every command that can
+move the robot is labeled there.
 
-## Scope
+## Hardware setup
 
-This repository provides:
+The reference setup pairs a modified SO-101 leader with a Galaxea A1 follower.
+Its wrist view comes from an Intel RealSense D405 on a custom mount; collection
+also uses the configured external AgentView camera.
 
-- isolated ROS driver/tracker runtimes behind a validating command relay;
-- six-axis SO leader Teleop with continuous gripper control;
-- atomic raw episode collection with camera and sample-freshness checks;
-- deterministic LeRobot and policy-specific dataset packaging;
-- fail-closed ACT joint and LingBot EEF deployment entrypoints;
-- strict tracked configuration for hardware, apps, poses, datasets, and models.
+<p align="center">
+  <img src="assets/images/a1-d405-wrist-camera.png" width="520" alt="Intel RealSense D405 wrist camera mounted on the Galaxea A1">
+</p>
 
-First-party implementation lives under `galaxea_a1_runtime/`; `scripts/`
-contains thin lifecycle entrypoints, `configs/` contains tracked contracts, and
-`third_party/` contains pinned vendor snapshots. Runtime data, results, external
-checkouts, and weights live in the ignored `data/`, `outputs/`, `external/`, and
-`models/` roots respectively.
+Mechanical files are kept with the hardware they describe:
+
+- [RealSense D405 wrist-camera holder](assets/cad/d405_wrist_camera_holder/README.md)
+  — STEP source for the mount shown above.
+- [Modified SO-101 leader parts](assets/cad/so100_leader/README.md) — printable
+  STL files used by the leader arm.
+
+## Repository map
+
+| Path | Purpose |
+| --- | --- |
+| `galaxea_a1_runtime/` | first-party runtime, hardware, collection, policy, and conversion logic |
+| `scripts/` | thin lifecycle and operator entrypoints |
+| `configs/` | tracked system, Teleop, pose, dataset, and deployment contracts |
+| `docker/` | Ubuntu 20.04 / ROS Noetic execution environment |
+| `assets/` | setup images and versioned mechanical files |
+| `data/`, `outputs/`, `models/` | ignored local datasets, durable run results, and deployment weights |
+| `third_party/` | pinned vendor snapshots; no A1-specific behavior |
 
 ## Documentation
 
-Each document has one responsibility:
-
-| Document | Owns |
+| Document | Covers |
 | --- | --- |
 | [Runbook](docs/RUNBOOK.md) | operator commands, expected results, and recovery |
-| [Safety](docs/SAFETY.md) | live control paths, relay invariants, status handling, and direct debug |
-| [Architecture](docs/ARCHITECTURE.md) | layers, configuration ownership, runtime/data contracts, and artifact layout |
+| [Safety](docs/SAFETY.md) | live control paths, relay invariants, and direct debug |
+| [Architecture](docs/ARCHITECTURE.md) | layers, configuration ownership, data contracts, and artifact layout |
 | [Environment setup](docs/SETUP_ENV.md) | Python environment and dependency baseline |
 | [udev setup](docs/SETUP_UDEV.md) | persistent A1 serial permissions and device alias |
 | [Model registry](models/README.md) | registering local deployment weights |
 | [Agent guide](AGENTS.md) | constraints for code-writing agents |
-
-Mechanical assets and vendor-specific notes remain with their directories:
-[SO-100 leader CAD](assets/cad/so100_leader/README.md) and
-[third-party policy](third_party/README.md).

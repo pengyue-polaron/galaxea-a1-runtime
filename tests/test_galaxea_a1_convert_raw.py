@@ -14,6 +14,7 @@ from galaxea_a1_runtime.lerobot.convert_raw import (
     iter_episode_frames,
     raw_episode_contract,
 )
+from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 from galaxea_a1_runtime.schema import DEFAULT_STATE_NAMES, JOINT_ACTION_NAMES
 
 
@@ -202,3 +203,48 @@ def test_current_raw_converts_with_real_lerobot_writer(tmp_path):
     assert (target / "meta/stats.json").is_file()
     assert len(list(target.glob("data/**/*.parquet"))) == 1
     assert len(list(target.glob("videos/**/*.mp4"))) == 2
+
+
+def test_v21_export_round_trips_through_official_lerobot_migrator(tmp_path):
+    from lerobot.datasets import LeRobotDataset
+    from lerobot.scripts.convert_dataset_v21_to_v30 import (
+        convert_dataset,
+        legacy_load_episodes,
+        legacy_load_episodes_stats,
+        legacy_load_tasks,
+        validate_local_dataset_version,
+    )
+
+    source = make_raw_episode(tmp_path, width=64, height=48)
+    v3_root = tmp_path / "lerobot_v3"
+    v21_root = tmp_path / "lerobot_v21"
+    convert_raw_dataset(
+        source_root=source,
+        target_root=v3_root,
+        repo_id="galaxea-a1/test_v3",
+    )
+
+    result = export_v21_dataset(
+        source_root=v3_root,
+        target_root=v21_root,
+        repo_id="galaxea-a1/test_v21",
+    )
+
+    validate_local_dataset_version(v21_root)
+    assert result["format"] == "v2.1"
+    assert result["episodes"] == 1
+    assert result["frames"] == 2
+    assert result["videos"] == 2
+    assert legacy_load_episodes(v21_root)[0]["length"] == 2
+    assert set(legacy_load_episodes_stats(v21_root)) == {0}
+    assert legacy_load_tasks(v21_root)[0] == {0: "pick cube"}
+
+    convert_dataset(
+        repo_id="galaxea-a1/test_v21",
+        root=v21_root,
+        push_to_hub=False,
+    )
+    round_trip = LeRobotDataset(repo_id="galaxea-a1/test_v21", root=v21_root)
+    assert len(round_trip) == 2
+    assert round_trip.meta.total_episodes == 1
+    assert round_trip.meta.info.codebase_version == "v3.0"
