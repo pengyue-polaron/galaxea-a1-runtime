@@ -1,13 +1,10 @@
 .venv
-.venv-camera
 .cache
 .git
 .conda
 data/
 outputs/
-wandb/
-checkpoints/
+external/
 third_party/lerobot/.venv
-third_party/A1_SDK_runtime/
 *.egg-info
 __pycache__

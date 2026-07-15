@@ -24,7 +24,7 @@ Normal teleoperation and collection:
 ```bash
 just stop
 just reset
-just teleop banana_in_the_plate
+just teleop EXPERIMENT
 ```
 
 The recorder prompts once for a task, then uses this episode loop:
@@ -43,7 +43,7 @@ config, a successful save resets both arms before the next episode.
 Convert the newly collected raw experiment with its tracked dataset config:
 
 ```bash
-just convert banana_in_the_plate
+just convert EXPERIMENT
 ```
 
 That one command atomically builds, in order:

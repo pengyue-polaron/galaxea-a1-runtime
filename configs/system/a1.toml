@@ -112,7 +112,7 @@ auto_white_balance = true
 crop_enabled = false
 
 [camera_diagnostics]
-output_root = "data/diagnostics/camera_snapshots"
+output_root = "outputs/camera_diagnostics"
 frame_timeout_s = 5.0
 rate_probe_s = 2.0
 jpeg_quality = 95

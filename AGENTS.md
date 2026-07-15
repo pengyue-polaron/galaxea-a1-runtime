@@ -23,22 +23,32 @@ arm is disconnected.
   use shared runtime/doctor concepts but should not depend on LingBot being
   installed or running.
 
-## Model Storage
+## Repository Artifact Placement
 
-- Inference configs must reference deployment weights through the ignored local
-  registry under `models/`; do not point tracked configs directly at a user's
-  home directory or a native training output.
-- Machine-local external source checkouts belong under the ignored `external/`
-  directory; tracked deployment configs must use repo-relative paths there.
-- Keep downloaded base models under `models/base/`, trained deployment exports
-  under `models/checkpoints/<app>/<run>/`, and generated component assemblies
-  under `models/runtime/`.
-- Register existing files with `just model-link <slot> <source>`. The registry
-  uses symlinks so large weights are not copied.
-- Native training jobs may continue writing to `train_out/` or `outputs/train/`.
-  Treat those as sources, `outputs/` as run logs/results, and `data/` as datasets.
-- Never commit model weights or use Git LFS for them in this repo. Run
-  `just models` before inference and after any interrupted large Git operation.
+- This checkout owns collection and deployment, not model training. It has no
+  first-party local training-output directory.
+- Keep datasets and dataset packages under `data/`: raw episodes in `data/raw/`,
+  converted datasets in `data/processed/`, and archives in `data/exports/`.
+  Unsupported historical captures belong under `data/legacy/` and must never be
+  mixed into a current raw-v3 experiment directory.
+- Keep persistent non-dataset run artifacts under `outputs/<app>/<run>/`,
+  including inference observations, camera diagnostics, reports, reviews, and
+  logs that an operator may need later.
+- Inference configs must reference weights through the ignored `models/`
+  registry: base models under `models/base/`, deployment checkpoints under
+  `models/checkpoints/<app>/<run>/`, and disposable assemblies under
+  `models/runtime/`. Register weights produced or downloaded elsewhere with
+  `just model-link <slot> <source>`; never commit weights or use Git LFS.
+- Machine-local external source checkouts belong under ignored `external/`;
+  tracked configs must reference them through repo-relative paths.
+- `.cache/` is only for disposable, reproducible caches. Persistent logs,
+  reports, ad hoc scripts, datasets, and canonical weights do not belong there.
+- PID files, sockets, and other process-lifecycle state belong in an app-owned
+  absolute `run_dir` under `/tmp`, not in the repository.
+- Do not introduce alternate roots such as `artifacts/`, `video_exports/`,
+  `train_out/`, or `scripts/**/outputs/`. Dataset staging is the deliberate
+  exception and follows the hidden sibling/atomic-install rules below.
+- Run `just models` before inference and after interrupted large Git operations.
 
 ## ROS Control Paths
 
@@ -261,7 +271,7 @@ just teleop-test
 just teleop pick_cube
 just lingbot
 just act
-just convert banana_in_the_plate
+just convert EXPERIMENT
 just stop
 tmux attach -t lingbot-a1
 tmux attach -t act-a1

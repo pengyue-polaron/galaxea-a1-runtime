@@ -122,7 +122,7 @@ Use a clean experiment identity whose dataset config will be tracked:
 
 ```bash
 just reset
-just teleop banana_in_the_plate
+just teleop EXPERIMENT
 ```
 
 At the task prompt, enter the natural-language task once. At the episode prompt:
@@ -177,7 +177,7 @@ edited episodes or previous raw schemas into the experiment directory.
 After quitting and running `just stop`, inspect without modifying the data:
 
 ```bash
-find data/raw/banana_in_the_plate -maxdepth 2 -type f | sort | head
+find data/raw/EXPERIMENT -maxdepth 2 -type f | sort | head
 ```
 
 Each episode must have `metadata.json`, `frames.csv`, `cam0/`, and `cam1/`.
@@ -196,7 +196,7 @@ that config's System reference.
 Run the complete pipeline:
 
 ```bash
-just convert banana_in_the_plate
+just convert EXPERIMENT
 ```
 
 The command performs:

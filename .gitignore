@@ -207,32 +207,14 @@ marimo/_static/
 marimo/_lsp/
 __marimo__/
 
-# project runtime artifacts
-wandb/
-outputs/
-scripts/outputs/
-scripts/collect_data/outputs/
-scripts/process_data/outputs/
-scripts/inference/outputs/
-scripts/train/wandb/
-scripts/train/checkpoints/
-data/
-artifacts/
-train_out/
+# Canonical project-local artifacts.
+/outputs/
+/data/
 # Canonical local model registry. Keep only its tracked documentation.
 /models/*
 !/models/README.md
 # Machine-local external source checkouts and symlinks.
 /external/
-uv.lock.bak
-third_party/A1_SDK_runtime/
-third_party/TFP_pro/
-video_exports/
-.tmp_uv/
-
-# Local Orbax/OCDBT checkpoint exports accidentally created at repo root.
-/4000/
-/7000/
 
 __MACOSX
 .DS_Store

@@ -13,9 +13,10 @@ models/
   runtime/lingbot/a1_agentview_square/latest
 ```
 
-The base and checkpoint paths may be symlinks to downloaded models or native
-training outputs. `runtime/` is disposable and is assembled by the LingBot launcher from
-the registered base and checkpoint components.
+The base and checkpoint paths may be symlinks to weights produced or downloaded
+elsewhere. This checkout does not train models. `runtime/` is disposable and is
+assembled by the LingBot launcher from the registered base and checkpoint
+components.
 
 Register the current supported slots without copying their contents:
 
@@ -40,10 +41,15 @@ their independent execution setting is enabled.
 Storage ownership is intentionally separate:
 
 - `models/`: canonical deployment references and generated model assemblies.
-- `train_out/` and `outputs/train/`: native training outputs.
 - `outputs/`: inference logs, observations, reviews, and evaluations.
-- `data/`: raw and converted datasets.
+- `data/`: raw episodes, converted datasets, and dataset archives.
+- `external/`: machine-local source checkouts used by deployment tools.
 - `.cache/`: disposable package/runtime caches, never canonical weights.
+- `/tmp`: PID files, sockets, and other process-lifecycle state.
+
+There is no local training-output root. Bring a reviewed checkpoint onto this
+machine, register it with `just model-link`, and keep tracked deployment configs
+pointing only at the resulting `models/` slot.
 
 Do not commit weights and do not add Git LFS to this repository. `just models`
 fails when a configured model is missing, a file over 100 MiB is tracked, or

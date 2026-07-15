@@ -206,8 +206,8 @@ camera, gripper, topic, and safety contract.
 - LingBot predicts EEF targets and publishes through the staged EEF path.
 - Each starts dry-run/step-gated and refuses startup until a new registered
   checkpoint is explicitly marked deployment-ready.
-- Model weights live only in the ignored `models/` registry. Native training
-  outputs are sources, not deployment paths.
+- This checkout does not train models. Weights produced or downloaded elsewhere
+  are registered in the ignored `models/` registry before deployment.
 
 `GalaxeaA1Robot` is an injected LeRobot-style adapter and has no implicit live
 ROS publisher. Managed live paths remain in the app runtimes so there is one
