@@ -32,7 +32,6 @@ check:
     {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/teleop/a1_gripper_debug.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/lingbot/decode_lingbot_latents.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/runtime/a1_ros_python_check.py --help >/dev/null
     {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
@@ -88,9 +87,6 @@ teleop-test:
     scripts/apps/teleop/a1_teleop_runtime.sh start
     source {{repo}}/scripts/runtime/a1_console.sh
     a1_info "Teleop is live. Check leader keys with: just logs"
-
-grippers *args:
-    {{vpy}} {{repo}}/scripts/apps/teleop/a1_gripper_debug.py {{args}}
 
 reset:
     scripts/apps/teleop/a1_teleop_runtime.sh reset

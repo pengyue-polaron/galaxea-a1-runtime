@@ -140,8 +140,6 @@ per-run overrides for hardware or safety settings.
   binary threshold or second scale rewrite.
 - Feedback: `/gripper_stroke_host`; the seventh joint-state value is never
   reinterpreted as millimeters.
-- Read-only comparison: `just grippers` shows the leader-derived target and A1
-  feedback side by side without opening either serial device.
 - Runtime action-step protection is intentionally disabled in the system
   config. Enter-to-save collection continuity validation remains enabled in
   the teleop config.

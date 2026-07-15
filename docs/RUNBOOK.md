@@ -147,8 +147,7 @@ Gripper values are continuous `0..1` and map exactly once to the tracked
 physical `0..104 mm` A1 stroke. The SO leader's usable `0..53.16` input range
 maps to the same normalized interval, so leader full-open, collected action
 `1.0`, and an A1 target of `104 mm` have one meaning. Measured full-open feedback
-is about `103.8 mm`. `/gripper_stroke_host` is required feedback. Run `just
-grippers` during Teleop for read-only target/feedback comparison.
+is about `103.8 mm`. `/gripper_stroke_host` is required feedback.
 
 During every frame, collection requires fresh joint, EEF, gripper-feedback,
 joint-action, and paired-camera samples. A stale stream or excessive camera
