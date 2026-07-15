@@ -138,12 +138,24 @@ conversion pipeline:
 just convert EXPERIMENT
 ```
 
-The dataset config owns packaging paths and policy only; observation and action
-contracts derive from its referenced Teleop and System configs. Conversion
-rejects incomplete or mismatched raw data and preserves an existing complete
-output if replacement fails. A complete run emits the base A1 joint/state
-dataset in LeRobotDataset v3.0 and v2.1, LingBot EEF packages in v3.0 and v2.1,
-and the ACT joint package in v3.0.
+The default builds all four outputs. Build one independently when only one
+training format is needed:
+
+```bash
+just convert EXPERIMENT joint-v3
+just convert EXPERIMENT joint-v2.1
+just convert EXPERIMENT eef-v3
+just convert EXPERIMENT eef-v2.1
+```
+
+The dataset config owns packaging paths and overwrite policy only; observation
+and action contracts derive from its referenced Teleop and System configs.
+Conversion rejects incomplete or mismatched raw data and preserves an existing
+complete output if replacement fails. Every selected output starts from Raw v3;
+processed output directories are never chained together. A complete run emits
+model-agnostic Joint and EEF datasets in both LeRobotDataset v3.0 and v2.1.
+Training and deployment adapters select the appropriate representation without
+changing the stored contract.
 
 ## 6. Failure recovery
 

@@ -87,6 +87,12 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   inspected.
 - Dataset keys, state/action names, camera order, and protocol channels come from
   one schema module, never repeated literals or positional slicing.
+- Name processed datasets by their stored Joint/EEF representation and LeRobot
+  version, never by a consuming model; model adapters must consume that shared
+  contract without rewriting it.
+- Every processed format must derive from the referenced Raw v3 dataset. A
+  converter may use disposable internal staging representations, but one final
+  Joint/EEF output must never be the source of another final output.
 - Keep datasets under `data/`, durable run results under `outputs/`, external
   checkouts under `external/`, and deployment weights under `models/` as defined
   in `docs/ARCHITECTURE.md`. Never commit weights or add Git LFS.

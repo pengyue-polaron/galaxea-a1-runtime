@@ -33,6 +33,7 @@ def export_v21_dataset(
     source_root: Path,
     target_root: Path,
     repo_id: str,
+    source_dataset: str | None = None,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -45,6 +46,7 @@ def export_v21_dataset(
             target_root=staging_root,
             final_target_root=final_target_root,
             repo_id=repo_id,
+            source_dataset=source_dataset,
             archive_path=archive_path,
         )
 
@@ -55,6 +57,7 @@ def _build_v21_dataset(
     target_root: Path,
     final_target_root: Path,
     repo_id: str,
+    source_dataset: str | None,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
@@ -114,18 +117,34 @@ def _build_v21_dataset(
         source_file = source_root / filename
         if source_file.is_file():
             shutil.copy2(source_file, target_root / filename)
-    source_manifest = source_root / "meta/lingbot_va.json"
-    if source_manifest.is_file():
+    representation_manifests = [
+        path
+        for path in (source_root / "meta/eef.json", source_root / "meta/joint.json")
+        if path.is_file()
+    ]
+    if len(representation_manifests) > 1:
+        raise ValueError("v3 source has multiple action representation manifests")
+    if representation_manifests:
+        source_manifest = representation_manifests[0]
         manifest = read_json(source_manifest)
-        source_v3_package_sha256 = manifest.pop("package_sha256", None)
+        source_format = str(manifest.get("format", ""))
+        if not source_format.startswith("lerobot_v3_"):
+            raise ValueError(
+                f"invalid v3 representation manifest format: {source_format!r}"
+            )
+        intermediate_v3_package_sha256 = manifest.pop("package_sha256", None)
         manifest.pop("archive", None)
         manifest.pop("archive_sha256", None)
-        manifest["format"] = "lerobot_v2.1_lingbot_va_a1_eef_continuous_v1"
+        manifest["format"] = source_format.replace("lerobot_v3_", "lerobot_v2.1_", 1)
         manifest["repo_id"] = repo_id
-        manifest["source_v3_dataset"] = str(source_root)
+        if source_dataset is not None:
+            manifest["source_dataset"] = source_dataset
         manifest["v21_video_codec"] = "h264"
-        manifest["source_v3_package_sha256"] = source_v3_package_sha256
-        write_json(target_root / "meta/lingbot_va.json", manifest)
+        manifest["conversion_intermediate"] = {
+            "format": "lerobot_v3.0",
+            "package_sha256": intermediate_v3_package_sha256,
+        }
+        write_json(target_root / "meta" / source_manifest.name, manifest)
 
     result = {
         "format": "v2.1",

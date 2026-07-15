@@ -114,7 +114,7 @@ class SerialChainFK:
 def relative_pose(
     target_pose: Sequence[float], initial_pose: Sequence[float]
 ) -> np.ndarray:
-    """Return RoboTwin-style pose delta: world translation and local rotation."""
+    """Return an episode-relative pose: base-frame translation and local rotation."""
 
     target = _pose7(target_pose, "target_pose")
     initial = _pose7(initial_pose, "initial_pose")
@@ -129,7 +129,7 @@ def relative_pose(
 def compose_relative_pose(
     delta_pose: Sequence[float], initial_pose: Sequence[float]
 ) -> np.ndarray:
-    """Compose a RoboTwin-style pose delta onto an episode initial pose."""
+    """Compose an episode-relative pose onto its initial absolute pose."""
 
     delta = _pose7(delta_pose, "delta_pose")
     initial = _pose7(initial_pose, "initial_pose")

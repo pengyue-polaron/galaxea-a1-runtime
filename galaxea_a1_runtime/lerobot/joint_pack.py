@@ -9,6 +9,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
+from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.filesystem import (
     atomic_output_directory,
 )
@@ -34,6 +35,7 @@ def pack_joint_v3_dataset(
     source_root: Path,
     target_root: Path,
     repo_id: str,
+    source_dataset: str,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -46,6 +48,7 @@ def pack_joint_v3_dataset(
             target_root=staging_root,
             final_target_root=final_target_root,
             repo_id=repo_id,
+            source_dataset=source_dataset,
             archive_path=archive_path,
         )
 
@@ -56,6 +59,7 @@ def _build_joint_v3_dataset(
     target_root: Path,
     final_target_root: Path,
     repo_id: str,
+    source_dataset: str,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
@@ -99,9 +103,11 @@ def _build_joint_v3_dataset(
     )
 
     manifest = {
-        "format": "lerobot_v3_galaxea_a1_joint_continuous_v1",
+        "format": "lerobot_v3_galaxea_a1_joint_absolute_v1",
+        "representation": "joint",
         "repo_id": repo_id,
-        "source_dataset": str(source_root),
+        "source_dataset": source_dataset,
+        "source_format": TELEOP_RAW_SCHEMA_VERSION,
         "episodes": int(info["total_episodes"]),
         "frames": int(info["total_frames"]),
         "fps": int(info["fps"]),
@@ -132,7 +138,7 @@ def _build_joint_v3_dataset(
             ),
         },
     }
-    write_json(target_root / "meta/joint_v3.json", manifest)
+    write_json(target_root / "meta/joint.json", manifest)
     (target_root / "TRAINING.md").write_text(
         "# A1 Joint LeRobot Dataset\n\n"
         "Action is `[joint_1..joint_6, gripper]`. Joint values are absolute targets in radians. "
@@ -140,9 +146,9 @@ def _build_joint_v3_dataset(
         encoding="utf-8",
     )
     manifest["package_sha256"] = dataset_digest(
-        target_root, exclude={Path("meta/joint_v3.json")}
+        target_root, exclude={Path("meta/joint.json")}
     )
-    write_json(target_root / "meta/joint_v3.json", manifest)
+    write_json(target_root / "meta/joint.json", manifest)
 
     if archive_path is not None:
         archive_path, archive_sha256 = write_tar_archive(

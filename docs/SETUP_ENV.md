@@ -48,5 +48,5 @@ Engine and compatible device/GPU drivers; it does not need native ROS packages.
   official v2.1-to-v3.0 migrator
 
 The runtime no longer uses the old OpenPI/TFP, ZMQ, or DataCoach environments.
-Collection writes the current raw-v3 contract; conversion emits the base A1
-dataset in both v3.0 and v2.1 and does the same for the LingBot EEF package.
+Collection writes the current raw-v3 contract; conversion emits generic Joint
+and EEF datasets in both v3.0 and v2.1.

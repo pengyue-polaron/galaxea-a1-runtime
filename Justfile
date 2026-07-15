@@ -116,6 +116,7 @@ logs:
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
-convert experiment:
-    {{vpy}} -m galaxea_a1_runtime.lerobot.lingbot_pack \
-        --config "{{repo}}/configs/datasets/{{experiment}}.toml"
+convert experiment target="all":
+    {{vpy}} -m galaxea_a1_runtime.lerobot.pipeline \
+        --config "{{repo}}/configs/datasets/{{experiment}}.toml" \
+        --target "{{target}}"

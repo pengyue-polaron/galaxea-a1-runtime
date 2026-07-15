@@ -1,10 +1,9 @@
-"""Build A1 LeRobot v2.1/v3.0, LingBot-VA, and ACT dataset packages."""
+"""Build a model-agnostic episode-relative EEF LeRobot v3 dataset."""
 
 from __future__ import annotations
 
 import hashlib
 import json
-import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -12,8 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.console import ArgumentParser
-
+from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.kinematics import (
     SerialChainFK,
     compose_relative_pose,
@@ -32,18 +30,14 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_json,
     write_tar_archive,
 )
-from galaxea_a1_runtime.lerobot.convert_raw import convert_raw_dataset
-from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
-from galaxea_a1_runtime.lerobot.lingbot_pack_config import load_pack_config
-from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 from galaxea_a1_runtime.schema import (
     DEFAULT_RGB_IMAGE_KEYS,
     DEFAULT_STATE_NAMES,
     JOINT_ACTION_NAMES,
-    LINGBOT_EEF_ACTION_CHANNEL_IDS,
+    JOINT_ACTION_NAMES_RAD,
 )
 
-ACTION_NAMES = (
+EEF_ACTION_NAMES = (
     "eef_delta_x_from_episode_start",
     "eef_delta_y_from_episode_start",
     "eef_delta_z_from_episode_start",
@@ -55,6 +49,7 @@ ACTION_NAMES = (
 )
 SOURCE_ACTION_NAMES = JOINT_ACTION_NAMES
 SOURCE_STATE_NAMES = DEFAULT_STATE_NAMES
+TARGET_STATE_NAMES = (*DEFAULT_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)
 
 
 @dataclass
@@ -68,7 +63,7 @@ class _ConversionResult:
     roundtrip_quaternion_dots: list[np.ndarray]
 
 
-def pack_lingbot_dataset(
+def pack_eef_v3_dataset(
     *,
     source_root: Path,
     target_root: Path,
@@ -78,6 +73,7 @@ def pack_lingbot_dataset(
     gripper_stroke_max_mm: float,
     base_link: str,
     tip_link: str,
+    source_dataset: str,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -85,7 +81,7 @@ def pack_lingbot_dataset(
     with atomic_output_directory(
         final_target_root, overwrite=overwrite
     ) as staging_root:
-        return _build_lingbot_dataset(
+        return _build_eef_v3_dataset(
             source_root=source_root,
             target_root=staging_root,
             final_target_root=final_target_root,
@@ -95,11 +91,12 @@ def pack_lingbot_dataset(
             gripper_stroke_max_mm=gripper_stroke_max_mm,
             base_link=base_link,
             tip_link=tip_link,
+            source_dataset=source_dataset,
             archive_path=archive_path,
         )
 
 
-def _build_lingbot_dataset(
+def _build_eef_v3_dataset(
     *,
     source_root: Path,
     target_root: Path,
@@ -110,6 +107,7 @@ def _build_lingbot_dataset(
     gripper_stroke_max_mm: float,
     base_link: str,
     tip_link: str,
+    source_dataset: str,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
@@ -179,10 +177,12 @@ def _build_lingbot_dataset(
         },
     }
     manifest = {
-        "format": "lerobot_v3_lingbot_va_a1_eef_continuous_v1",
+        "format": "lerobot_v3_galaxea_a1_eef_episode_relative_v1",
+        "representation": "eef",
         "repo_id": repo_id,
-        "source_dataset": str(source_root),
-        "source_data_sha256": converted.source_data_sha256,
+        "source_dataset": source_dataset,
+        "source_format": TELEOP_RAW_SCHEMA_VERSION,
+        "intermediate_v3_data_sha256": converted.source_data_sha256,
         "episodes": int(info["total_episodes"]),
         "frames": int(info["total_frames"]),
         "fps": int(info["fps"]),
@@ -195,9 +195,9 @@ def _build_lingbot_dataset(
             "joint_names": list(chain.joint_names),
         },
         "action": {
-            "shape": [len(ACTION_NAMES)],
-            "names": list(ACTION_NAMES),
-            "semantics": "RoboTwin-style EEF target relative to episode initial feedback pose",
+            "shape": [len(EEF_ACTION_NAMES)],
+            "names": list(EEF_ACTION_NAMES),
+            "semantics": "EEF target relative to episode initial feedback pose",
             "translation": "target_xyz_base_link - initial_xyz_base_link",
             "rotation": "inverse(initial_quaternion) * target_quaternion, xyzw",
             "target_source": "FK of same-frame joint_absolute action",
@@ -207,31 +207,19 @@ def _build_lingbot_dataset(
             ),
             "gripper_stroke_min_mm": gripper_stroke_min_mm,
             "gripper_stroke_max_mm": gripper_stroke_max_mm,
-            "lingbot_used_action_channel_ids": list(LINGBOT_EEF_ACTION_CHANNEL_IDS),
         },
         "cameras": {
             "ordered_keys": list(DEFAULT_RGB_IMAGE_KEYS),
-            "layout": "width_concat",
-        },
-        "recommended_policy": {
-            "checkpoint": "lerobot/lingbot_va_robotwin",
-            "use_peft": True,
-            "attn_mode": "flex",
-            "obs_cam_keys": list(DEFAULT_RGB_IMAGE_KEYS),
-            "camera_layout": "width_concat",
-            "used_action_channel_ids": list(LINGBOT_EEF_ACTION_CHANNEL_IDS),
-            "runtime_gripper_stroke_min_mm": gripper_stroke_min_mm,
-            "runtime_gripper_stroke_max_mm": gripper_stroke_max_mm,
         },
         "validation": validation,
     }
-    write_json(target_root / "meta/lingbot_va.json", manifest)
+    write_json(target_root / "meta/eef.json", manifest)
     (target_root / "TRAINING.md").write_text(
         _training_doc(gripper_stroke_min_mm, gripper_stroke_max_mm), encoding="utf-8"
     )
-    package_sha256 = dataset_digest(target_root, exclude={Path("meta/lingbot_va.json")})
+    package_sha256 = dataset_digest(target_root, exclude={Path("meta/eef.json")})
     manifest["package_sha256"] = package_sha256
-    write_json(target_root / "meta/lingbot_va.json", manifest)
+    write_json(target_root / "meta/eef.json", manifest)
 
     if archive_path is not None:
         archive_path, archive_sha256 = write_tar_archive(
@@ -266,7 +254,7 @@ def _convert_data_files(
             np.float64
         )
         source_actions = np.stack(frame["action"].to_numpy()).astype(np.float64)
-        output_actions = np.empty((len(frame), len(ACTION_NAMES)), dtype=np.float32)
+        output_actions = np.empty((len(frame), len(EEF_ACTION_NAMES)), dtype=np.float32)
         output_states = source_states.astype(np.float32, copy=True)
         episode_indices = frame["episode_index"].to_numpy()
 
@@ -316,8 +304,8 @@ def _convert_episode(
 ) -> dict[str, np.ndarray]:
     if not np.all(np.isfinite(observations)) or not np.all(np.isfinite(joint_actions)):
         raise ValueError(f"episode {episode_index} contains non-finite vectors")
-    arm_dof = len(JOINT_ACTION_NAMES) - 1
-    eef_pose_dof = len(ACTION_NAMES) - 1
+    arm_dof = len(JOINT_ACTION_NAMES_RAD) - 1
+    eef_pose_dof = len(EEF_ACTION_NAMES) - 1
     initial_pose = observations[0, :eef_pose_dof]
     feedback_fk = np.stack(
         [
@@ -328,7 +316,7 @@ def _convert_episode(
     target_fk = np.stack([chain.pose(values) for values in joint_actions[:, :arm_dof]])
     _align_quaternion_signs(feedback_fk[:, 3:7], observations[:, 3:7])
 
-    actions = np.empty((len(observations), len(ACTION_NAMES)), dtype=np.float64)
+    actions = np.empty((len(observations), len(EEF_ACTION_NAMES)), dtype=np.float64)
     for row, target_pose in enumerate(target_fk):
         actions[row, :7] = relative_pose(target_pose, initial_pose)
     _make_quaternions_continuous(actions[:, 3:7])
@@ -393,13 +381,13 @@ def _validate_source(info: dict[str, Any]) -> None:
 
 def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
     info = json.loads(json.dumps(source_info))
-    info["robot_type"] = "galaxea_a1_lingbot_eef"
+    info["robot_type"] = "galaxea_a1_eef"
     info["features"]["action"] = {
         "dtype": "float32",
-        "shape": [len(ACTION_NAMES)],
-        "names": list(ACTION_NAMES),
+        "shape": [len(EEF_ACTION_NAMES)],
+        "names": list(EEF_ACTION_NAMES),
     }
-    info["features"]["observation.state"]["names"][-1] = "gripper_normalized"
+    info["features"]["observation.state"]["names"] = list(TARGET_STATE_NAMES)
     write_json(target_root / "meta/info.json", info)
 
 
@@ -437,83 +425,14 @@ def _error_summary(values: np.ndarray) -> dict[str, float]:
 
 
 def _training_doc(gripper_stroke_min_mm: float, gripper_stroke_max_mm: float) -> str:
-    return f"""# A1 LingBot-VA Dataset
+    return f"""# A1 EEF LeRobot v3 Dataset
 
 The two ordered observations are the external `front` camera followed by the eye-in-hand
-`wrist` camera. See `meta/lingbot_va.json` for the exact
-EEF action convention, source hash, URDF hash, channel mapping, and validation results.
+`wrist` camera. See `meta/eef.json` for the exact EEF action convention, source hash,
+URDF hash, and validation results.
 
-Use the RoboTwin checkpoint as the action-semantics baseline, LoRA/PEFT training, camera layout
-`width_concat`, and action channels `[0,1,2,3,4,5,6,28]`. At inference, compose each predicted
-EEF delta onto the episode's measured initial `base_link -> arm_seg6` pose before publishing the
-absolute target. Gripper state and action are continuous normalized values. The hardware adapter
-maps 0 to {gripper_stroke_min_mm:g} mm and 1 to {gripper_stroke_max_mm:g} mm linearly.
+Action is an episode-relative EEF pose followed by a continuous normalized gripper target.
+At inference, compose each predicted EEF delta onto the episode's measured initial
+`base_link -> arm_seg6` pose before publishing the absolute target. The hardware adapter maps
+gripper 0 to {gripper_stroke_min_mm:g} mm and 1 to {gripper_stroke_max_mm:g} mm linearly.
 """
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--config",
-        type=Path,
-        required=True,
-    )
-    args = parser.parse_args(argv)
-    config = load_pack_config(args.config)
-    convert_raw_dataset(
-        source_root=config.raw_source_root,
-        target_root=config.base_v3_root,
-        repo_id=config.base_v3_repo_id,
-        overwrite=config.overwrite,
-        expected_contract=config.source_contract,
-    )
-    base_v21_manifest = export_v21_dataset(
-        source_root=config.base_v3_root,
-        target_root=config.base_v21_target_root,
-        repo_id=config.base_v21_repo_id,
-        overwrite=config.overwrite,
-        archive_path=config.base_v21_archive_path,
-    )
-    v3_manifest = pack_lingbot_dataset(
-        source_root=config.base_v3_root,
-        target_root=config.eef_v3_target_root,
-        urdf_path=config.urdf_path,
-        repo_id=config.eef_v3_repo_id,
-        gripper_stroke_min_mm=config.gripper_stroke_min_mm,
-        gripper_stroke_max_mm=config.gripper_stroke_max_mm,
-        base_link=config.base_link,
-        tip_link=config.tip_link,
-        overwrite=config.overwrite,
-        archive_path=config.eef_v3_archive_path,
-    )
-    v21_manifest = export_v21_dataset(
-        source_root=config.eef_v3_target_root,
-        target_root=config.eef_v21_target_root,
-        repo_id=config.eef_v21_repo_id,
-        overwrite=config.overwrite,
-        archive_path=config.eef_v21_archive_path,
-    )
-    joint_v3_manifest = pack_joint_v3_dataset(
-        source_root=config.base_v3_root,
-        target_root=config.joint_v3_target_root,
-        repo_id=config.joint_v3_repo_id,
-        overwrite=config.overwrite,
-        archive_path=config.joint_v3_archive_path,
-    )
-    print(
-        json.dumps(
-            {
-                "base_v2.1": base_v21_manifest,
-                "eef_v3.0": v3_manifest,
-                "eef_v2.1": v21_manifest,
-                "joint_v3.0": joint_v3_manifest,
-            },
-            indent=2,
-            sort_keys=True,
-        )
-    )
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())

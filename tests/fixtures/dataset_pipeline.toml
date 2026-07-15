@@ -1,0 +1,33 @@
+# Test-only model-agnostic dataset conversion contract.
+
+[teleop]
+config = "configs/teleop/a1_so100.toml"
+
+[dataset]
+raw_root = "data/raw/test_experiment"
+overwrite = true
+
+[outputs.joint_v3]
+target_root = "data/processed/test_experiment_joint_v3"
+archive_path = "data/exports/test_experiment_joint_v3.tar.gz"
+repo_id = "galaxea-a1/test_experiment_joint_v3"
+
+[outputs.joint_v21]
+target_root = "data/processed/test_experiment_joint_v21"
+archive_path = "data/exports/test_experiment_joint_v21.tar.gz"
+repo_id = "galaxea-a1/test_experiment_joint_v21"
+
+[outputs.eef_v3]
+target_root = "data/processed/test_experiment_eef_v3"
+archive_path = "data/exports/test_experiment_eef_v3.tar.gz"
+repo_id = "galaxea-a1/test_experiment_eef_v3"
+
+[outputs.eef_v21]
+target_root = "data/processed/test_experiment_eef_v21"
+archive_path = "data/exports/test_experiment_eef_v21.tar.gz"
+repo_id = "galaxea-a1/test_experiment_eef_v21"
+
+[kinematics]
+urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+base_link = "base_link"
+tip_link = "arm_seg6"

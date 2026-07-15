@@ -1,4 +1,5 @@
 import json
+from dataclasses import replace
 from pathlib import Path
 
 import numpy as np
@@ -14,8 +15,23 @@ from galaxea_a1_runtime.lerobot.convert_raw import (
     iter_episode_frames,
     raw_episode_contract,
 )
+from galaxea_a1_runtime.lerobot.eef_pack import pack_eef_v3_dataset
+from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
+from galaxea_a1_runtime.lerobot.pipeline import build_datasets
+from galaxea_a1_runtime.lerobot.pipeline_config import load_pipeline_config
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
-from galaxea_a1_runtime.schema import DEFAULT_STATE_NAMES, JOINT_ACTION_NAMES
+from galaxea_a1_runtime.schema import (
+    DEFAULT_STATE_NAMES,
+    JOINT_ACTION_NAMES,
+    JOINT_ACTION_NAMES_RAD,
+)
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+URDF = (
+    REPO_ROOT
+    / "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+)
+PIPELINE_CONFIG_FIXTURE = REPO_ROOT / "tests/fixtures/dataset_pipeline.toml"
 
 
 def make_raw_episode(
@@ -248,3 +264,139 @@ def test_v21_export_round_trips_through_official_lerobot_migrator(tmp_path):
     assert len(round_trip) == 2
     assert round_trip.meta.total_episodes == 1
     assert round_trip.meta.info.codebase_version == "v3.0"
+
+
+def test_joint_and_eef_outputs_are_model_agnostic_lerobot_datasets(tmp_path):
+    raw = make_raw_episode(tmp_path, width=64, height=48)
+    raw_v3 = tmp_path / "raw_v3"
+    joint_v3 = tmp_path / "joint_v3"
+    eef_v3 = tmp_path / "eef_v3"
+    eef_v21 = tmp_path / "eef_v21"
+    convert_raw_dataset(
+        source_root=raw,
+        target_root=raw_v3,
+        repo_id="galaxea-a1/raw_v3",
+    )
+
+    joint_manifest = pack_joint_v3_dataset(
+        source_root=raw_v3,
+        target_root=joint_v3,
+        repo_id="galaxea-a1/joint_v3",
+        source_dataset=str(raw),
+    )
+    eef_manifest = pack_eef_v3_dataset(
+        source_root=raw_v3,
+        target_root=eef_v3,
+        urdf_path=URDF,
+        repo_id="galaxea-a1/eef_v3",
+        gripper_stroke_min_mm=0.0,
+        gripper_stroke_max_mm=104.0,
+        base_link="base_link",
+        tip_link="arm_seg6",
+        source_dataset=str(raw),
+    )
+    eef_v21_manifest = export_v21_dataset(
+        source_root=eef_v3,
+        target_root=eef_v21,
+        repo_id="galaxea-a1/eef_v21",
+        source_dataset=str(raw),
+    )
+
+    assert joint_manifest["format"] == "lerobot_v3_galaxea_a1_joint_absolute_v1"
+    assert joint_manifest["representation"] == "joint"
+    assert eef_manifest["format"] == ("lerobot_v3_galaxea_a1_eef_episode_relative_v1")
+    assert eef_manifest["representation"] == "eef"
+    assert eef_manifest["action"]["shape"] == [8]
+    assert eef_manifest["source_dataset"] == str(raw)
+    assert eef_manifest["source_format"] == TELEOP_RAW_SCHEMA_VERSION
+    eef_info = json.loads((eef_v3 / "meta/info.json").read_text())
+    assert eef_info["features"]["observation.state"]["names"] == [
+        *DEFAULT_STATE_NAMES[:7],
+        *JOINT_ACTION_NAMES_RAD,
+    ]
+    serialized_manifest = json.dumps(eef_manifest).lower()
+    assert "lingbot" not in serialized_manifest
+    assert "robotwin" not in serialized_manifest
+    assert "recommended_policy" not in eef_manifest
+    assert eef_v21_manifest["format"] == "v2.1"
+    persisted = json.loads((eef_v21 / "meta/eef.json").read_text())
+    assert persisted["format"] == ("lerobot_v2.1_galaxea_a1_eef_episode_relative_v1")
+    assert persisted["source_dataset"] == str(raw)
+    assert "source_v3_dataset" not in persisted
+    assert persisted["conversion_intermediate"]["format"] == "lerobot_v3.0"
+
+
+def test_pipeline_builds_four_independent_outputs_from_raw_v3(tmp_path):
+    raw = make_raw_episode(tmp_path, width=64, height=48)
+    summary = discover_raw_dataset(source_root=raw)
+    first = summary.episodes[0]
+    source_contract = raw_episode_contract(
+        state_names=first.state_names,
+        action_names=first.action_names,
+        camera_specs=first.camera_specs,
+    )
+    config = replace(
+        load_pipeline_config(PIPELINE_CONFIG_FIXTURE),
+        raw_source_root=raw,
+        source_contract=source_contract,
+        joint_v3_target_root=tmp_path / "joint_v3",
+        joint_v3_archive_path=tmp_path / "joint_v3.tar.gz",
+        joint_v21_target_root=tmp_path / "joint_v21",
+        joint_v21_archive_path=tmp_path / "joint_v21.tar.gz",
+        eef_v3_target_root=tmp_path / "eef_v3",
+        eef_v3_archive_path=tmp_path / "eef_v3.tar.gz",
+        eef_v21_target_root=tmp_path / "eef_v21",
+        eef_v21_archive_path=tmp_path / "eef_v21.tar.gz",
+    )
+
+    result = build_datasets(config)
+
+    assert set(result) == {"joint-v3", "joint-v2.1", "eef-v3", "eef-v2.1"}
+    manifests = [
+        json.loads((tmp_path / output / "meta" / filename).read_text())
+        for output, filename in (
+            ("joint_v3", "joint.json"),
+            ("joint_v21", "joint.json"),
+            ("eef_v3", "eef.json"),
+            ("eef_v21", "eef.json"),
+        )
+    ]
+    assert all(manifest["source_dataset"] == str(raw) for manifest in manifests)
+    assert all(
+        manifest["source_format"] == TELEOP_RAW_SCHEMA_VERSION for manifest in manifests
+    )
+    for v3_name, v21_name in (("joint_v3", "joint_v21"), ("eef_v3", "eef_v21")):
+        v3_frames = pd.concat(
+            [
+                pd.read_parquet(path)
+                for path in sorted((tmp_path / v3_name).glob("data/**/*.parquet"))
+            ],
+            ignore_index=True,
+        )
+        v21_frames = pd.concat(
+            [
+                pd.read_parquet(path)
+                for path in sorted((tmp_path / v21_name).glob("data/**/*.parquet"))
+            ],
+            ignore_index=True,
+        )
+        np.testing.assert_allclose(
+            np.stack(v21_frames["observation.state"]),
+            np.stack(v3_frames["observation.state"]),
+        )
+        np.testing.assert_allclose(
+            np.stack(v21_frames["action"]),
+            np.stack(v3_frames["action"]),
+        )
+    joint_actions = np.stack(
+        pd.concat(
+            [
+                pd.read_parquet(path)
+                for path in sorted((tmp_path / "joint_v3").glob("data/**/*.parquet"))
+            ],
+            ignore_index=True,
+        )["action"]
+    )
+    np.testing.assert_allclose(joint_actions[:, -1], [0.2, 0.8])
+    assert ".a1-raw-v3-conversion-" not in json.dumps(manifests)
+    assert not list(tmp_path.glob(".a1-raw-v3-conversion-*"))
