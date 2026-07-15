@@ -75,3 +75,22 @@ def test_relay_command_executes_its_python312_entrypoint_directly() -> None:
     assert "exec /workspace/scripts/runtime/safe_arm_command_relay.py" in result.stdout
     assert "--config '/workspace/configs/system/a1.toml'" in result.stdout
     assert "exec python3 " not in result.stdout
+
+
+def test_output_writer_mounts_only_outputs_read_write(tmp_path: Path) -> None:
+    docker_log = tmp_path / "docker.log"
+    result = run_services_bash(
+        f"""
+        ROOT={tmp_path}
+        IMAGE=a1-test-image
+        DOCKER_LOG={docker_log}
+        docker() {{ printf '%s\\n' "$*" >> "${{DOCKER_LOG}}"; }}
+        a1_container_run output-writer recorder 'exec rosbag record'
+        """
+    )
+
+    assert result.returncode == 0
+    commands = docker_log.read_text()
+    assert f"{tmp_path}:/workspace:ro" in commands
+    assert f"{tmp_path}/outputs:/workspace/outputs:rw" in commands
+    assert f"{tmp_path}:/workspace:rw" not in commands

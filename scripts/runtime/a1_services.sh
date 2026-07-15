@@ -15,10 +15,9 @@ a1_require_runtime_value() {
   fi
 }
 
-a1_preflight_container_runtime() {
+a1_preflight_container_host() {
   a1_require_runtime_value ROOT
   a1_require_runtime_value IMAGE
-  a1_require_runtime_value SERIAL
   if ! command -v docker >/dev/null 2>&1; then
     a1_fail "Docker CLI is not installed."
     return 2
@@ -35,6 +34,11 @@ a1_preflight_container_runtime() {
     a1_fail "Vendored A1 SDK is missing under ${ROOT}/third_party/A1_SDK."
     return 2
   fi
+}
+
+a1_preflight_container_runtime() {
+  a1_preflight_container_host || return
+  a1_require_runtime_value SERIAL
   if [[ ! -c "${SERIAL}" ]]; then
     a1_fail "A1 serial path is not a character device: ${SERIAL}"
     return 2
@@ -61,6 +65,14 @@ a1_container_run() {
       ;;
     tracker)
       access_args=(--network host --ipc host -v "${ROOT}:/workspace:rw")
+      ;;
+    output-writer)
+      mkdir -p "${ROOT}/outputs"
+      access_args=(
+        --network host
+        -v "${ROOT}:/workspace:ro"
+        -v "${ROOT}/outputs:/workspace/outputs:rw"
+      )
       ;;
     *)
       a1_fail "Unknown A1 container profile: ${profile}"

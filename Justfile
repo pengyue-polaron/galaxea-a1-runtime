@@ -32,7 +32,7 @@ check:
     {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/decode_lingbot_latents.py --help >/dev/null
+    {{repo}}/scripts/apps/recording/a1_rosbag.sh --help >/dev/null
     {{vpy}} {{repo}}/scripts/runtime/a1_ros_python_check.py --help >/dev/null
     {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
@@ -67,6 +67,9 @@ model-link slot source:
 
 hardware *args:
     {{vpy}} {{repo}}/scripts/runtime/a1_hardware_check.py {{args}}
+
+rosbag *args:
+    {{repo}}/scripts/apps/recording/a1_rosbag.sh {{args}}
 
 cameras *args:
     {{vpy}} scripts/apps/cameras/a1_camera_diagnostics.py {{args}}

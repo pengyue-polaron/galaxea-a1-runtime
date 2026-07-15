@@ -1,6 +1,11 @@
 import subprocess
 from pathlib import Path
 
+from galaxea_a1_runtime.configuration.system import (
+    load_system_config,
+    render_shell_values,
+)
+
 
 REPO = Path(__file__).resolve().parents[1]
 LOADER = REPO / "scripts/runtime/a1_config.sh"
@@ -35,3 +40,31 @@ def test_shell_config_loader_applies_assignments_in_calling_shell():
     )
 
     assert result.returncode == 0
+
+
+def test_rosbag_topic_exports_come_from_system_config():
+    config = load_system_config(
+        REPO / "configs/system/a1.toml",
+        repo_root=REPO,
+    )
+    names = (
+        "HOST_COMMAND_TOPIC",
+        "MOTOR_STATUS_TOPIC",
+        "MOTION_ENABLE_TOPIC",
+        "GRIPPER_TARGET_TOPIC",
+        "GRIPPER_COMMAND_TOPIC",
+        "GRIPPER_FEEDBACK_TOPIC",
+    )
+
+    rendered = dict(
+        line.split("=", 1) for line in render_shell_values(config, names).splitlines()
+    )
+
+    assert rendered == {
+        "HOST_COMMAND_TOPIC": config.topics.host_command,
+        "MOTOR_STATUS_TOPIC": config.topics.motor_status,
+        "MOTION_ENABLE_TOPIC": config.topics.motion_enable,
+        "GRIPPER_TARGET_TOPIC": config.topics.gripper_target,
+        "GRIPPER_COMMAND_TOPIC": config.topics.gripper_command,
+        "GRIPPER_FEEDBACK_TOPIC": config.topics.gripper_feedback,
+    }

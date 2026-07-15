@@ -59,6 +59,18 @@ just eef-test
 Run it only with a clear workspace. After any partial startup failure, use
 `just stop` before retrying.
 
+Optional read-only ROS bag capture while an A1 runtime is already running:
+
+```bash
+just rosbag start SESSION_NAME
+just rosbag status
+just rosbag stop
+```
+
+The recorder does not publish commands. It records the configured state,
+target, staged, host, relay, and gripper topics under `outputs/rosbags/`. Stop
+it with `just rosbag stop` so the active bag is finalized cleanly.
+
 ## 3. Reset and Teleop acceptance
 
 Reset **MOVES BOTH DEVICES**:
