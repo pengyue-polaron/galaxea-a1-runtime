@@ -11,6 +11,7 @@
   <img alt="Containerized ROS runtime" src="https://img.shields.io/badge/ROS_Runtime-Dockerized-2496ED?logo=docker&amp;logoColor=white">
   <img alt="LeRobot 0.6" src="https://img.shields.io/badge/LeRobot-0.6-FFD21E">
   <img alt="LeRobotDataset v2.1 and v3.0" src="https://img.shields.io/badge/LeRobotDataset-v2.1_%7C_v3.0-0A7BBC">
+  <a href="https://arxiv.org/abs/2607.08283"><img alt="arXiv 2607.08283" src="https://img.shields.io/badge/arXiv-2607.08283-B31B1B?logo=arxiv&amp;logoColor=white"></a>
 </p>
 
 ![Galaxea A1 follower and modified SO-101 leader](assets/images/a1-teleoperation-setup.png)
@@ -69,6 +70,14 @@ Mechanical files are kept with the hardware they describe:
   — STEP source for the mount shown above.
 - [Modified SO-101 leader parts](assets/cad/so100_leader/README.md) — printable
   STL files used by the leader arm.
+
+## Research
+
+The Galaxea A1 platform behind this repository was used for the real-robot
+experiments reported in:
+
+> **[TFP: Temporally Conditioned Memory-Fusion Policies for Visuomotor Learning](https://arxiv.org/abs/2607.08283)**<br>
+> Yushen Liang, Yue Peng, Baosheng Jin, et al. · SemRob 2026 @ RSS 2026
 
 ## Repository map
 
