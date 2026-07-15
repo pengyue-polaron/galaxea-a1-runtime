@@ -47,6 +47,7 @@ def build_datasets(
             repo_id=_repo_id(config, selected[0]),
             overwrite=False,
             expected_contract=config.source_contract,
+            trim_config=config.boundary_trim,
         )
         return {
             target: _build_target_from_raw(

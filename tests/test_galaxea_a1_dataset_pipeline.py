@@ -14,6 +14,7 @@ from galaxea_a1_runtime.kinematics import (
 )
 from galaxea_a1_runtime.lerobot.dataset_package import json_value
 from galaxea_a1_runtime.lerobot.eef_pack import EEF_ACTION_NAMES
+from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
 from galaxea_a1_runtime.lerobot.pipeline_config import (
     load_pipeline_config,
 )
@@ -87,6 +88,17 @@ def test_dataset_pipeline_config_fixture():
     assert config.joint_v21_target_root.name == "test_experiment_joint_v21"
     assert config.joint_v21_repo_id == "galaxea-a1/test_experiment_joint_v21"
     assert config.overwrite is True
+    assert config.boundary_trim == BoundaryTrimConfig(
+        enabled=True,
+        anchor_window_s=0.5,
+        joint_deadband_rad=0.01,
+        gripper_deadband=0.01,
+        confirm_frames=5,
+        pre_roll_s=0.5,
+        post_roll_s=0.75,
+        max_trim_fraction=0.2,
+        min_kept_duration_s=5.0,
+    )
     assert config.source_contract.state_names[-1] == "gripper"
     assert len(config.source_contract.state_names) == 14
     assert (
@@ -110,6 +122,23 @@ def test_dataset_pipeline_config_rejects_unknown_keys(tmp_path, monkeypatch):
     )
 
     with pytest.raises(ValueError, match="unknown=.*unexpected"):
+        load_pipeline_config(path)
+
+
+def test_dataset_pipeline_config_rejects_invalid_trim(tmp_path, monkeypatch):
+    path = tmp_path / "dataset.toml"
+    path.write_text(
+        PIPELINE_CONFIG_FIXTURE.read_text().replace(
+            "max_trim_fraction = 0.20", "max_trim_fraction = 1.0"
+        )
+    )
+    monkeypatch.setattr(
+        pipeline_config_module,
+        "load_toml",
+        lambda config_path: load_toml(config_path, repo_root=REPO_ROOT),
+    )
+
+    with pytest.raises(ValueError, match="max_trim_fraction"):
         load_pipeline_config(path)
 
 
@@ -171,6 +200,7 @@ def test_dataset_command_builds_each_output_from_raw_v3(tmp_path, monkeypatch):
     }
     assert calls[0][1]["source_root"] == raw_root
     assert calls[0][1]["overwrite"] is False
+    assert calls[0][1]["trim_config"] == config.boundary_trim
     assert calls[1][1]["target_root"] == tmp_path / "joint_v3"
     for name, kwargs in calls[1:]:
         assert kwargs["source_dataset"] == str(raw_root)

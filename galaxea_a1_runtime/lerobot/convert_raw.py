@@ -17,7 +17,14 @@ from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.filesystem import atomic_output_directory
+from galaxea_a1_runtime.lerobot.boundary_trim import (
+    EpisodeTrimDecision,
+    decide_episode_bounds,
+    trim_manifest,
+)
+from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
 from galaxea_a1_runtime.lerobot.dataset import DatasetConfig, create_lerobot_dataset
+from galaxea_a1_runtime.lerobot.dataset_package import write_json
 from galaxea_a1_runtime.schema import (
     ActionMode,
     CameraSpec,
@@ -185,6 +192,7 @@ def convert_raw_dataset(
     repo_id: str,
     overwrite: bool = False,
     expected_contract: DatasetContract | None = None,
+    trim_config: BoundaryTrimConfig,
 ) -> RawDatasetSummary:
     summary = discover_raw_dataset(source_root=source_root)
     first = summary.episodes[0]
@@ -195,6 +203,7 @@ def convert_raw_dataset(
     )
     if expected_contract is not None and contract != expected_contract:
         raise ValueError(_contract_mismatch(contract, expected_contract))
+    trim_decisions = _plan_episode_trims(summary, config=trim_config)
 
     target_root = target_root.expanduser().resolve()
     with atomic_output_directory(
@@ -207,15 +216,31 @@ def convert_raw_dataset(
             contract=contract,
         )
         try:
-            for episode in summary.episodes:
+            for episode, decision in zip(summary.episodes, trim_decisions, strict=True):
                 for frame in iter_episode_frames(
                     episode=episode,
                     task=summary.task,
                     contract=contract,
+                    start=decision.start,
+                    end=decision.end,
                 ):
                     dataset.add_frame(frame)
                 dataset.save_episode()
             dataset.finalize()
+            manifest = trim_manifest(
+                decisions=tuple(
+                    (episode.path.name, decision)
+                    for episode, decision in zip(
+                        summary.episodes, trim_decisions, strict=True
+                    )
+                ),
+                fps=first.fps,
+                config=trim_config,
+            )
+            manifest["source_format"] = TELEOP_RAW_SCHEMA_VERSION
+            manifest["source_dataset"] = str(summary.source_root)
+            manifest["task"] = summary.task
+            write_json(staging_root / "meta/trim.json", manifest)
         finally:
             stop = getattr(dataset, "stop_image_writer", None)
             if callable(stop):
@@ -228,6 +253,8 @@ def iter_episode_frames(
     episode: RawEpisode,
     task: str,
     contract: DatasetContract,
+    start: int = 0,
+    end: int | None = None,
 ) -> Iterable[dict[str, Any]]:
     frame = pd.read_csv(episode.path / "frames.csv")
     state = frame[[f"state.{name}" for name in episode.state_names]].to_numpy(
@@ -241,8 +268,14 @@ def iter_episode_frames(
             f"episode contains non-finite state/action values: {episode.path}"
         )
     _validate_gripper_values(episode, state=state, action=action)
+    stop = len(frame) if end is None else end
+    if start < 0 or stop > len(frame) or start >= stop:
+        raise ValueError(
+            f"invalid source frame bounds [{start}, {stop}) for {episode.path}"
+        )
 
-    for row_index, row in frame.iterrows():
+    for row_index in range(start, stop):
+        row = frame.iloc[row_index]
         frame_index = int(row["frame_index"])
         output: dict[str, Any] = {
             "observation.state": state[row_index],
@@ -260,6 +293,32 @@ def iter_episode_frames(
             output[camera.feature_key()] = image
         validate_frame_keys(output, contract=contract)
         yield output
+
+
+def _plan_episode_trims(
+    summary: RawDatasetSummary, *, config: BoundaryTrimConfig
+) -> tuple[EpisodeTrimDecision, ...]:
+    decisions = []
+    for episode in summary.episodes:
+        frame = pd.read_csv(episode.path / "frames.csv")
+        state = frame[[f"state.{name}" for name in episode.state_names]].to_numpy(
+            dtype=np.float64
+        )
+        action = frame[[f"action.{name}" for name in episode.action_names]].to_numpy(
+            dtype=np.float64
+        )
+        _validate_gripper_values(episode, state=state, action=action)
+        decisions.append(
+            decide_episode_bounds(
+                actions=action,
+                states=state,
+                action_names=episode.action_names,
+                state_names=episode.state_names,
+                fps=episode.fps,
+                config=config,
+            )
+        )
+    return tuple(decisions)
 
 
 def _load_camera_frame(
@@ -360,16 +419,19 @@ def _positive_integer(data: dict[str, Any], key: str) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from galaxea_a1_runtime.lerobot.pipeline_config import load_pipeline_config
+
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--source-root", type=Path, required=True)
+    parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--target-root", type=Path, required=True)
     parser.add_argument("--repo-id", required=True)
     parser.add_argument("--overwrite", action="store_true")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args(argv)
+    pipeline_config = load_pipeline_config(args.config)
 
     if args.dry_run:
-        summary = discover_raw_dataset(source_root=args.source_root)
+        summary = discover_raw_dataset(source_root=pipeline_config.raw_source_root)
         first = summary.episodes[0]
         print(
             f"raw episodes={len(summary.episodes)} frames={summary.total_frames} "
@@ -382,10 +444,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     convert_raw_dataset(
-        source_root=args.source_root,
+        source_root=pipeline_config.raw_source_root,
         target_root=args.target_root,
         repo_id=args.repo_id,
         overwrite=args.overwrite,
+        expected_contract=pipeline_config.source_contract,
+        trim_config=pipeline_config.boundary_trim,
     )
     return 0
 

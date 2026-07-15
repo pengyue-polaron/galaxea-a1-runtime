@@ -113,6 +113,9 @@ def _build_v21_dataset(
     v21_info = _v21_info(info, video_keys=video_keys)
     write_json(target_root / "meta/info.json", v21_info)
     shutil.copy2(source_root / "meta/stats.json", target_root / "meta/stats.json")
+    trim_manifest = source_root / "meta/trim.json"
+    if trim_manifest.is_file():
+        shutil.copy2(trim_manifest, target_root / "meta/trim.json")
     for filename in ("TRAINING.md",):
         source_file = source_root / filename
         if source_file.is_file():

@@ -93,6 +93,10 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 - Every processed format must derive from the referenced Raw v3 dataset. A
   converter may use disposable internal staging representations, but one final
   Joint/EEF output must never be the source of another final output.
+- Apply the Dataset-owned boundary-trim policy once before the Joint/EEF
+  fan-out. Trim only stable contiguous prefixes/suffixes, preserve pre/post
+  rolls and interior pauses, keep ambiguous episodes whole, and record each raw
+  `[start, end)` decision in `meta/trim.json`.
 - Keep datasets under `data/`, durable run results under `outputs/`, external
   checkouts under `external/`, and deployment weights under `models/` as defined
   in `docs/ARCHITECTURE.md`. Never commit weights or add Git LFS.

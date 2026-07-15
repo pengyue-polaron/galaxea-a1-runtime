@@ -148,14 +148,33 @@ just convert EXPERIMENT eef-v3
 just convert EXPERIMENT eef-v2.1
 ```
 
-The dataset config owns packaging paths and overwrite policy only; observation
-and action contracts derive from its referenced Teleop and System configs.
+The dataset config owns packaging paths, overwrite policy, and the explicit
+boundary-trim policy; observation and action contracts derive from its
+referenced Teleop and System configs. Use the reviewed trim values unless a
+dataset inspection justifies changing them:
+
+```toml
+[trim]
+enabled = true
+anchor_window_s = 0.5
+joint_deadband_rad = 0.01
+gripper_deadband = 0.01
+confirm_frames = 5
+pre_roll_s = 0.5
+post_roll_s = 0.75
+max_trim_fraction = 0.20
+min_kept_duration_s = 5.0
+```
+
 Conversion rejects incomplete or mismatched raw data and preserves an existing
-complete output if replacement fails. Every selected output starts from Raw v3;
-processed output directories are never chained together. A complete run emits
-model-agnostic Joint and EEF datasets in both LeRobotDataset v3.0 and v2.1.
-Training and deployment adapters select the appropriate representation without
-changing the stored contract.
+complete output if replacement fails. It removes only stable stationary
+episode boundaries, never interior pauses; uncertain or over-large candidates
+remain untrimmed. Inspect `meta/trim.json` in any output for the exact source
+frame interval and reason for every episode. Every selected output starts from
+the same trimmed Raw v3 view; processed output directories are never chained
+together. A complete run emits model-agnostic Joint and EEF datasets in both
+LeRobotDataset v3.0 and v2.1. Training and deployment adapters select the
+appropriate representation without changing the stored contract.
 
 ## 6. Failure recovery
 

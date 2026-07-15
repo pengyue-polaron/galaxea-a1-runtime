@@ -127,17 +127,27 @@ referenced Teleop and System configs:
 
 ```text
 raw v3
-  ├── Joint LeRobotDataset v3
-  ├── Joint LeRobotDataset v2.1
-  ├── EEF LeRobotDataset v3
-  └── EEF LeRobotDataset v2.1
+  └── validated boundary trim [start, end)
+      ├── Joint LeRobotDataset v3
+      ├── Joint LeRobotDataset v2.1
+      ├── EEF LeRobotDataset v3
+      └── EEF LeRobotDataset v2.1
 ```
+
+The boundary trim removes only contiguous stationary prefixes and suffixes.
+It detects departure from stable endpoint medians using the six named joint
+targets and continuous gripper, requires stable final action and feedback
+anchors before trimming the suffix, and retains configured pre/post rolls. It
+never removes interior pauses. Ambiguous endpoints, excessive trimming, or a
+too-short result preserve the complete episode. Raw v3 remains immutable, and
+every processed package records the shared source-frame bounds and decisions in
+`meta/trim.json`.
 
 Each output and archive is built beside its destination and installed
 atomically. Failure preserves the previous complete output. All four outputs
-derive independently from the same validated Raw v3 source; no final processed
-dataset is an input to another. The converter may create disposable LeRobot v3
-staging data while writing v2.1, but those intermediates are removed
+derive independently from the same validated and trimmed Raw v3 view; no final
+processed dataset is an input to another. The converter may create disposable
+LeRobot v3 staging data while writing v2.1, but those intermediates are removed
 automatically and never become a user-managed source of truth.
 
 Joint and EEF are model-agnostic action representations, each emitted in

@@ -7,6 +7,17 @@ config = "configs/teleop/a1_so100.toml"
 raw_root = "data/raw/test_experiment"
 overwrite = true
 
+[trim]
+enabled = true
+anchor_window_s = 0.5
+joint_deadband_rad = 0.01
+gripper_deadband = 0.01
+confirm_frames = 5
+pre_roll_s = 0.5
+post_roll_s = 0.75
+max_trim_fraction = 0.20
+min_kept_duration_s = 5.0
+
 [outputs.joint_v3]
 target_root = "data/processed/test_experiment_joint_v3"
 archive_path = "data/exports/test_experiment_joint_v3.tar.gz"

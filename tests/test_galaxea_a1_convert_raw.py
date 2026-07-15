@@ -32,6 +32,10 @@ URDF = (
     / "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
 )
 PIPELINE_CONFIG_FIXTURE = REPO_ROOT / "tests/fixtures/dataset_pipeline.toml"
+NO_TRIM = replace(
+    load_pipeline_config(PIPELINE_CONFIG_FIXTURE).boundary_trim,
+    enabled=False,
+)
 
 
 def make_raw_episode(
@@ -41,6 +45,8 @@ def make_raw_episode(
     width: int = 5,
     height: int = 4,
     depth: bool = False,
+    frame_count: int = 2,
+    stationary_boundaries: bool = False,
 ) -> Path:
     source = root / "raw_task"
     episode = source / f"episode_{episode_index:03d}_20260708_120000"
@@ -67,7 +73,7 @@ def make_raw_episode(
                 "schema_version": TELEOP_RAW_SCHEMA_VERSION,
                 "task": "pick cube",
                 "action_mode": "joint_absolute",
-                "frame_count": 2,
+                "frame_count": frame_count,
                 "fps_target": 30.0,
                 "state_names": list(DEFAULT_STATE_NAMES),
                 "action_names": list(JOINT_ACTION_NAMES),
@@ -77,7 +83,7 @@ def make_raw_episode(
     )
 
     rows = []
-    for frame_index in range(2):
+    for frame_index in range(frame_count):
         row = {
             "frame_index": frame_index,
             "cam0_relpath": f"cam0/{frame_index:06d}.jpg",
@@ -86,10 +92,21 @@ def make_raw_episode(
         if depth:
             row["cam0_depth_relpath"] = f"cam0_depth/{frame_index:06d}.png"
         state = [0.1, -0.2, 0.3, 0.0, 0.0, 0.0, 1.0]
-        state.extend([0.01 * (joint + frame_index) for joint in range(6)])
-        state.append(0.25 + frame_index * 0.5)
-        action = [0.02 * (joint + frame_index) for joint in range(6)]
-        action.append(0.2 + frame_index * 0.6)
+        if stationary_boundaries:
+            action_level = 0.0 if frame_index < 30 else 0.2
+            if frame_index >= 250:
+                action_level = 0.4
+            state_level = 0.0 if frame_index < 35 else 0.2
+            if frame_index >= 255:
+                state_level = 0.4
+            state.extend([state_level, 0.0, 0.0, 0.0, 0.0, 0.0])
+            state.append(0.2)
+            action = [action_level, 0.0, 0.0, 0.0, 0.0, 0.0, 0.2]
+        else:
+            state.extend([0.01 * (joint + frame_index) for joint in range(6)])
+            state.append(0.25 + frame_index * 0.5)
+            action = [0.02 * (joint + frame_index) for joint in range(6)]
+            action.append(0.2 + frame_index * 0.6)
         row.update(
             {f"state.{name}": value for name, value in zip(DEFAULT_STATE_NAMES, state)}
         )
@@ -99,7 +116,7 @@ def make_raw_episode(
         rows.append(row)
         for directory in ("cam0", "cam1"):
             Image.fromarray(
-                np.full((height, width, 3), frame_index, dtype=np.uint8)
+                np.full((height, width, 3), frame_index % 256, dtype=np.uint8)
             ).save(episode / directory / f"{frame_index:06d}.jpg")
         if depth:
             Image.fromarray(
@@ -198,6 +215,7 @@ def test_failed_overwrite_preserves_previous_converted_dataset(tmp_path, monkeyp
             target_root=target,
             repo_id="galaxea/test",
             overwrite=True,
+            trim_config=NO_TRIM,
         )
 
     assert (target / "complete.txt").read_text() == "previous"
@@ -212,13 +230,68 @@ def test_current_raw_converts_with_real_lerobot_writer(tmp_path):
         source_root=source,
         target_root=target,
         repo_id="galaxea-a1/test_current_raw",
+        trim_config=NO_TRIM,
     )
 
     assert summary.total_frames == 2
     assert (target / "meta/info.json").is_file()
     assert (target / "meta/stats.json").is_file()
+    trim = json.loads((target / "meta/trim.json").read_text())
+    assert trim["policy"]["enabled"] is False
+    assert trim["summary"]["trimmed_frames"] == 0
     assert len(list(target.glob("data/**/*.parquet"))) == 1
     assert len(list(target.glob("videos/**/*.mp4"))) == 2
+
+
+def test_raw_conversion_applies_one_audited_boundary_trim(tmp_path, monkeypatch):
+    source = make_raw_episode(
+        tmp_path,
+        frame_count=300,
+        stationary_boundaries=True,
+    )
+    target = tmp_path / "trimmed"
+
+    class RecordingDataset:
+        def __init__(self, root):
+            self.frames = []
+            self.root = root
+            (root / "meta").mkdir(parents=True)
+
+        def add_frame(self, frame):
+            self.frames.append(frame)
+
+        def save_episode(self):
+            return None
+
+        def finalize(self):
+            return None
+
+        def stop_image_writer(self):
+            return None
+
+    datasets = []
+
+    def create_dataset(*, config, contract):
+        del contract
+        dataset = RecordingDataset(config.root)
+        datasets.append(dataset)
+        return dataset
+
+    monkeypatch.setattr(convert_raw_module, "create_lerobot_dataset", create_dataset)
+    trim_config = load_pipeline_config(PIPELINE_CONFIG_FIXTURE).boundary_trim
+
+    convert_raw_dataset(
+        source_root=source,
+        target_root=target,
+        repo_id="galaxea-a1/trimmed",
+        trim_config=trim_config,
+    )
+
+    assert len(datasets[0].frames) == 263
+    manifest = json.loads((target / "meta/trim.json").read_text())
+    decision = manifest["episodes"][0]
+    assert (decision["start"], decision["end"]) == (15, 278)
+    assert manifest["summary"]["trimmed_frames"] == 37
 
 
 def test_v21_export_round_trips_through_official_lerobot_migrator(tmp_path):
@@ -238,6 +311,7 @@ def test_v21_export_round_trips_through_official_lerobot_migrator(tmp_path):
         source_root=source,
         target_root=v3_root,
         repo_id="galaxea-a1/test_v3",
+        trim_config=NO_TRIM,
     )
 
     result = export_v21_dataset(
@@ -276,6 +350,7 @@ def test_joint_and_eef_outputs_are_model_agnostic_lerobot_datasets(tmp_path):
         source_root=raw,
         target_root=raw_v3,
         repo_id="galaxea-a1/raw_v3",
+        trim_config=NO_TRIM,
     )
 
     joint_manifest = pack_joint_v3_dataset(
@@ -365,6 +440,14 @@ def test_pipeline_builds_four_independent_outputs_from_raw_v3(tmp_path):
     assert all(
         manifest["source_format"] == TELEOP_RAW_SCHEMA_VERSION for manifest in manifests
     )
+    trim_manifests = [
+        json.loads((tmp_path / output / "meta/trim.json").read_text())
+        for output in ("joint_v3", "joint_v21", "eef_v3", "eef_v21")
+    ]
+    assert all(manifest == trim_manifests[0] for manifest in trim_manifests)
+    assert trim_manifests[0]["policy"]["enabled"] is True
+    assert trim_manifests[0]["summary"]["trimmed_frames"] == 0
+    assert trim_manifests[0]["source_dataset"] == str(raw.resolve())
     for v3_name, v21_name in (("joint_v3", "joint_v21"), ("eef_v3", "eef_v21")):
         v3_frames = pd.concat(
             [

@@ -8,12 +8,15 @@ from typing import Any
 
 from galaxea_a1_runtime.configuration.base import (
     boolean,
+    floating,
+    integer,
     load_toml,
     repo_path,
     require_exact_keys,
     required_table,
     string,
 )
+from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
 from galaxea_a1_runtime.collection import state_names_for_mode
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.schema import (
@@ -29,6 +32,7 @@ from galaxea_a1_runtime.teleop.config import load_teleop_config
 class DatasetPipelineConfig:
     raw_source_root: Path
     overwrite: bool
+    boundary_trim: BoundaryTrimConfig
     source_contract: DatasetContract
     joint_v3_target_root: Path
     joint_v3_archive_path: Path
@@ -53,7 +57,7 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     _, repo_root, raw = load_toml(path)
     require_exact_keys(
         raw,
-        required={"teleop", "dataset", "outputs", "kinematics"},
+        required={"teleop", "dataset", "trim", "outputs", "kinematics"},
         label="dataset pipeline config",
     )
     teleop_reference = required_table(raw, "teleop")
@@ -68,12 +72,28 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     )
     system = teleop.system
     dataset = required_table(raw, "dataset")
+    trim = required_table(raw, "trim")
     outputs = required_table(raw, "outputs")
     kinematics = required_table(raw, "kinematics")
     require_exact_keys(
         dataset,
         required={"raw_root", "overwrite"},
         label="dataset",
+    )
+    require_exact_keys(
+        trim,
+        required={
+            "enabled",
+            "anchor_window_s",
+            "joint_deadband_rad",
+            "gripper_deadband",
+            "confirm_frames",
+            "pre_roll_s",
+            "post_roll_s",
+            "max_trim_fraction",
+            "min_kept_duration_s",
+        },
+        label="trim",
     )
     require_exact_keys(
         outputs,
@@ -92,6 +112,7 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     config = DatasetPipelineConfig(
         raw_source_root=repo_path(repo_root, string(dataset, "raw_root")),
         overwrite=boolean(dataset, "overwrite"),
+        boundary_trim=_boundary_trim_config(trim),
         source_contract=DatasetContract(
             dataset_format=LEROBOT_DATASET_FORMAT,
             action_mode=ActionMode.JOINT_ABSOLUTE,
@@ -119,6 +140,20 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     )
     _validate_pack_paths(config)
     return config
+
+
+def _boundary_trim_config(data: dict[str, Any]) -> BoundaryTrimConfig:
+    return BoundaryTrimConfig(
+        enabled=boolean(data, "enabled"),
+        anchor_window_s=floating(data, "anchor_window_s"),
+        joint_deadband_rad=floating(data, "joint_deadband_rad"),
+        gripper_deadband=floating(data, "gripper_deadband"),
+        confirm_frames=integer(data, "confirm_frames"),
+        pre_roll_s=floating(data, "pre_roll_s"),
+        post_roll_s=floating(data, "post_roll_s"),
+        max_trim_fraction=floating(data, "max_trim_fraction"),
+        min_kept_duration_s=floating(data, "min_kept_duration_s"),
+    )
 
 
 def _output_config(outputs: dict[str, Any], name: str) -> dict[str, Any]:
