@@ -1,223 +1,139 @@
 # Runbook
 
-This is the operator procedure for checking the rig, teleoperating, recording
-new data, and converting it. Commands that can move the arm are called out
-explicitly.
+This document is the operator procedure for setup, hardware acceptance, Teleop
+collection, dataset conversion, recovery, and policy deployment. Commands that
+can move the arm are labeled **MOVES HARDWARE**.
 
-## 1. Static Preflight
+## 1. Static preflight
 
-These commands do not publish robot commands:
+On a new checkout:
 
 ```bash
-just stop
+just setup
 just check
 ```
 
-`just check` validates all tracked configs, shell syntax, formatting, and unit
-tests. `just models` is an optional inference preflight and is expected to fail
-until new deployment weights are registered; missing weights do not block
-Teleop collection.
+`just check` validates tracked configuration, shell syntax, formatting, and
+unit tests without opening hardware. `just models` is an optional deployment
+preflight; missing checkpoints do not block Teleop collection.
 
-Inspect current static safety values when needed:
+Install serial rules once per machine with `just udev`, then start a new login
+shell. See [Environment setup](SETUP_ENV.md) and [udev setup](SETUP_UDEV.md).
 
-```bash
-.venv/bin/python -m galaxea_a1_runtime.cli safety-report
-.venv/bin/python -m galaxea_a1_runtime.cli safety-report --json
-```
+## 2. Hardware and cameras
 
-If this is a new machine, run `just setup` and `just udev`, then open a new
-login shell so serial group membership applies.
-
-## 2. Hardware and Camera Acceptance
-
-Power the arm, clear its workspace, connect the SO leader and both RealSense
-cameras, then run non-motion enumeration:
+Power the arm, clear its workspace, and connect the configured leader and
+cameras. These checks enumerate or read devices but do not command motion:
 
 ```bash
 just hardware
 just cameras
 ```
 
-Expected configured devices:
+`just cameras` writes snapshots and FPS results to the output path printed from
+System config. Resolve missing devices, stale frames, wrong image shapes, or USB
+bandwidth failures before continuing.
 
-- A1 controller at `/dev/a1`;
-- SO leader at the by-id path in `configs/teleop/a1_so100.toml`;
-- AgentView D455 serial `341522300456`;
-- wrist D405 serial `218622276998`.
-
-`just cameras` writes diagnostics under the system-configured output directory,
-checks sustained frame production, and reports the USB link. The AgentView
-policy image must be `480x480`; the wrist image must be `640x480` with the
-current config.
-
-For a read-only LAN preview when no app owns the cameras:
+For read-only LAN preview when no app owns the cameras:
 
 ```bash
 just camera-web
 ```
 
-Open `http://<robot-lan-ip>:8088`. The full AgentView contains a red rectangle
-showing the exact square region saved and sent to policies. Stop standalone
-preview before Teleop:
+Open the printed URL. The AgentView overlay shows the exact configured policy
+crop but is not recorded. Stop preview before another camera-owning app:
 
 ```bash
 just camera-web stop
 ```
 
-The preview has no login or encryption. Keep it on the LAN and do not
-port-forward it.
+The preview is unauthenticated, unencrypted, and LAN-only. Do not port-forward
+it.
 
-Optional EEF hardware acceptance moves the arm:
+Optional EEF acceptance **MOVES HARDWARE**:
 
 ```bash
 just eef-test
 ```
 
-Run it only with a powered arm and clear workspace. A failed partial startup
-must be followed by `just stop` before retrying.
+Run it only with a clear workspace. After any partial startup failure, use
+`just stop` before retrying.
 
-## 3. Reset the Collection Rig
+## 3. Reset and Teleop acceptance
 
-This command moves both devices:
+Reset **MOVES BOTH DEVICES**:
 
 ```bash
 just reset
 ```
 
-It uses `configs/poses/a1_so100_collection_start.toml`, moves the A1 through the
-staged jointTracker/relay path, moves the SO leader to its tracked position,
-closes both grippers, disables leader torque, and stops the runtime afterward.
+It loads the tracked reset pose, moves A1 through the staged joint runtime,
+moves the SO leader, closes both grippers, disables leader torque, and stops the
+runtime. Do not manually move either device during reset.
 
-Do not manually move either arm during reset. If reset fails, run `just stop`,
-inspect the error, restore a safe physical position, and retry only after the
-cause is understood.
-
-## 4. Optional Teleop Acceptance
-
-This command moves the A1 from leader input but does not start collection:
+Optional Teleop acceptance **MOVES THE A1** without recording:
 
 ```bash
 just teleop-test
 ```
 
-Check all six joint directions and the continuous gripper over a small range.
-The mapping is relative to both startup poses. Unknown leader action keys and
-non-finite samples fail instead of guessing an ordering.
+Exercise all six joint directions and the continuous gripper over a small
+range. Use `just logs` for failures and `just stop` when finished.
 
-Watch logs if needed:
+## 4. Record episodes
 
-```bash
-just logs
-```
-
-Stop before proceeding:
-
-```bash
-just stop
-```
-
-## 5. Record New Episodes
-
-Use a clean experiment identity whose dataset config will be tracked:
+Collection **MOVES THE A1**:
 
 ```bash
 just reset
 just teleop EXPERIMENT
 ```
 
-At the task prompt, enter the natural-language task once. At the episode prompt:
+Enter the natural-language task once. At the episode prompt:
 
-- press `Enter` to start;
-- while recording, press `Enter` to request save;
-- use `d` + `Enter` to discard;
-- use `q` + `Enter` to quit;
-- use `Ctrl+C` for immediate stop.
+- `Enter`: start recording; while recording, request save and validation;
+- `d` + `Enter`: discard, reset both devices, and retry the same index;
+- `q` + `Enter`: quit without reset;
+- `Ctrl+C`: stop immediately.
 
-The current default records at 30 FPS:
+Every frame requires fresh joint, EEF, gripper, action, and paired-camera data.
+Save validates continuity and exact files, then atomically installs the episode
+under `data/raw/EXPERIMENT/`. A rejected save is deleted, reuses its index, and
+resets before retry when configured. A successful save resets before the next
+episode when configured.
 
-- cropped `480x480` AgentView RGB;
-- full `640x480` wrist RGB;
-- EEF pose, six named A1 joints, and normalized gripper state;
-- six absolute joint targets and normalized gripper action;
-- camera sequence numbers and monotonic sample times;
-- reproducibility metadata for configs, topics, cameras, control path, and
-  freshness limits.
+Do not mix manually edited or older-schema episodes into a current experiment.
+The exact raw contract and commit behavior are documented in
+[Architecture](ARCHITECTURE.md).
 
-Gripper values are continuous `0..1` and map exactly once to the tracked
-physical `0..104 mm` A1 stroke. The SO leader's usable `0..53.16` input range
-maps to the same normalized interval, so leader full-open, collected action
-`1.0`, and an A1 target of `104 mm` have one meaning. Measured full-open feedback
-is about `103.8 mm`. `/gripper_stroke_host` is required feedback.
+## 5. Inspect and convert
 
-During every frame, collection requires fresh joint, EEF, gripper-feedback,
-joint-action, and paired-camera samples. A stale stream or excessive camera
-skew aborts and removes the partial episode.
-
-Enter-to-save is a durability boundary. The recorder first validates the staged
-files and rejects a joint action discontinuity beyond
-`collection.max_joint_action_step_rad`. Only a complete episode is atomically
-renamed into:
-
-```text
-data/raw/<experiment>/episode_NNN_timestamp/
-```
-
-Rejected saves print the exact failure and reuse the index. With
-`collection.auto_reset_after_save = true`, successful saves reset both devices
-before the next episode. With `collection.auto_reset_after_discard = true`, a
-user discard or quality-check rejection removes the staged data, resets both
-devices, and only then permits retrying the same episode index. Quit does not
-reset because collection does not continue.
-
-Formal collection writes only `galaxea_a1_teleop_raw_v3`. Do not mix manually
-edited episodes or previous raw schemas into the experiment directory.
-
-## 6. Inspect a Collection
-
-After quitting and running `just stop`, inspect without modifying the data:
+After quitting:
 
 ```bash
+just stop
 find data/raw/EXPERIMENT -maxdepth 2 -type f | sort | head
 ```
 
-Each episode must have `metadata.json`, `frames.csv`, `cam0/`, and `cam1/`.
-`cam0_depth/` exists only when depth was intentionally enabled in the System
-config. Hidden sibling staging directories indicate an interrupted commit;
-inspect them before removal rather than allowing a new run to ignore them.
+Each episode contains metadata, frame records, and configured camera folders.
+Hidden sibling staging directories indicate an interrupted commit; inspect them
+before removal.
 
-## 7. Convert to Training Data
-
-Create or update `configs/datasets/<experiment>.toml` with the raw source,
-base LeRobot output, three derived output locations, archives, repo IDs, and
-URDF links. Collection state/action names and hardware observation shapes are
-not copied into this file; they derive from its referenced Teleop config and
-that config's System reference.
-
-Run the complete pipeline:
+Create a tracked `configs/datasets/EXPERIMENT.toml`, then run the complete
+conversion pipeline:
 
 ```bash
 just convert EXPERIMENT
 ```
 
-The command performs:
+The dataset config owns packaging paths and policy only; observation and action
+contracts derive from its referenced Teleop and System configs. Conversion
+rejects incomplete or mismatched raw data and preserves an existing complete
+output if replacement fails.
 
-```text
-current raw v3
-  -> base LeRobot v3
-       -> LingBot EEF continuous v3
-            -> LingBot EEF continuous v2.1
-       -> ACT/joint continuous v3
-```
+## 6. Failure recovery
 
-It rejects old or incomplete raw schemas, task mismatches, non-finite values,
-incorrect camera shapes, mismatched episode contracts, and missing files.
-Outputs and archives use sibling staging paths; a failed conversion preserves
-the previous complete target. Overwrite policy is tracked in the dataset TOML,
-not passed on the CLI.
-
-## 8. Failure Recovery
-
-First stop all repository-owned resources:
+First stop repository-owned resources:
 
 ```bash
 just stop
@@ -225,21 +141,22 @@ just stop
 
 Then diagnose the narrow layer:
 
-- serial or device missing: `just hardware`;
-- camera missing/stale/slow: `just cameras` and check USB topology;
-- teleop process exited: `just logs`;
-- model missing: `just models`;
-- configuration error: `just check`;
-- raw conversion error: inspect the named episode and its metadata/files; do
-  not weaken validation to accept damaged data.
+| Symptom | Command or action |
+| --- | --- |
+| serial/device missing | `just hardware` |
+| camera missing, stale, or slow | `just cameras`; inspect USB topology |
+| Teleop process exited | `just logs` |
+| model missing | `just models` |
+| configuration or test failure | `just check` |
+| conversion rejected an episode | inspect its metadata and files; do not weaken validation |
 
-Status `64` alone is accepted as the observed idle ECU-to-ACU timeout. Codes
-with additional bits, such as `68`, remain faults. Never start two trackers,
-drivers, camera owners, or command publishers for the same hardware.
+Never run two apps that own the same driver, tracker, camera, serial port, or
+publisher. A1 status interpretation and direct-debug procedures are maintained
+only in [Safety](SAFETY.md).
 
-## 9. Policy Deployment
+## 7. Policy deployment
 
-New policy weights must be registered under the ignored local model registry:
+Bring reviewed weights onto this machine and register them without copying:
 
 ```bash
 just model-link act-a1-agentview-square /path/to/act_checkpoint
@@ -247,12 +164,12 @@ just model-link lingbot-a1-agentview-square /path/to/lingbot_checkpoint
 just models
 ```
 
-The checkpoints must use the same AgentView square crop and continuous gripper
-contract as the new data. Update the owning deployment TOML and review its
-model-specific normalization before setting `deployment_ready = true`.
+Follow [Model registry](../models/README.md) to verify the input and action
+contract. Update the owning deployment config and review it before marking the
+checkpoint ready or enabling execution.
 
-ACT and LingBot remain dry-run until `execution.execute = true` is explicitly
-committed in their separate configs:
+Starting either app may **MOVE THE A1** when its tracked execution setting is
+enabled:
 
 ```bash
 just act
@@ -262,4 +179,4 @@ just lingbot
 tmux attach -t lingbot-a1
 ```
 
-Run only one live app at a time, and use `just stop` when switching.
+Run one live app at a time and use `just stop` when switching.

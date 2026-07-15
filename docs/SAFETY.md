@@ -1,17 +1,12 @@
 # Safety
 
-The arm may be powered and reachable while this repo is open. Treat ROS publish
-paths as live hardware.
+This document is authoritative for live control paths, relay gates, A1 status
+handling, and direct hardware debug. The arm may be powered and reachable while
+the repository is open; treat every ROS publisher as live hardware.
 
-The camera web preview is deliberately outside every ROS control path. It
-exposes only read-only HTML, JPEG/MJPEG, and health endpoints on the LAN. It has
-no login and uses unencrypted HTTP, so do not port-forward
-it to the public Internet; never add motion-enable or command endpoints to the
-camera service.
+## Managed control paths
 
-## Required Path
-
-Normal EEF apps must publish EEF targets only:
+Normal EEF applications publish only:
 
 ```text
 /a1_ee_target
@@ -21,10 +16,7 @@ Normal EEF apps must publish EEF targets only:
   -> /arm_joint_command_host
 ```
 
-Do not publish directly to `/arm_joint_command_host` from app or inference code.
-
-Teleop collection and ACT joint-state inference are the normal joint-space
-apps. They still do not publish host commands directly:
+Teleop and ACT publish joint targets only:
 
 ```text
 /arm_joint_target_position
@@ -34,82 +26,114 @@ apps. They still do not publish host commands directly:
   -> /arm_joint_command_host
 ```
 
-## Runtime Gates
+Normal gripper applications publish only:
 
-- Relay starts `LOCKED`.
-- An app must explicitly enable `/a1_arm_motion_enable`.
-- Relay requires fresh joint feedback, staged tracker command, and motor status.
-- Every staged driver vector (`p_des`, `v_des`, `kp`, `kd`, and `t_ff`) must
-  have exactly the configured arm DOF and contain only finite values. Gains
-  must be non-negative, and `mode` must be listed in the tracked
-  `relay.allowed_control_modes` system setting.
-- First staged command must align with current joint feedback within `0.05rad`.
-- After validation, relay forwards staged tracker commands unchanged.
-- Normal gripper commands follow `/a1_gripper_target -> relay ->
-  /gripper_position_control_host`. The relay rejects non-finite or out-of-range
-  targets, requires gripper status `0` or idle `64`, and forwards only fresh
-  targets while `ACTIVE`.
-- Relay does not apply hidden joint tracking-error or joint-speed clamps.
-- Motor status code `64` alone is accepted as observed idle timeout; additional
-  error bits still fault.
-- Teleop starts from the current A1 joint pose and maps relative SO leader
-  motion onto A1 joint targets before arming the relay.
-- Teleop target joint limits come directly from `configs/system/a1.toml` and
-  are checked by `just check`.
-- ACT starts dry-run by default. When execution is enabled, it first commands
-  the current joint feedback target through jointTracker and waits for staged
-  alignment before arming the relay.
+```text
+/a1_gripper_target
+  -> safe_arm_command_relay.py
+  -> /gripper_position_control_host
+```
 
-## Action Behavior
+App and policy code must never publish host commands directly. The relay is the
+only normal owner of both host command topics.
 
-- `GalaxeaA1Robot` has no implicit ROS implementation. A caller must inject an
-  explicit `A1HardwareIO`; all supported live control is owned by the managed
-  Teleop, ACT, LingBot, reset, and EEF app paths below.
-- Collected gripper state and action are continuous normalized values. Teleop,
-  dataset conversion, ACT, and LingBot use the same linear mapping from `0..1`
-  into the physical range in `configs/system/a1.toml`.
-- Collection and ACT require fresh `/gripper_stroke_host` feedback. They do not
-  fall back to the unit-ambiguous seventh `/joint_states_host` value.
-- LingBot workspace bounds apply to outgoing targets, not feedback state.
-- LingBot orientation defaults to `hold-current`.
-- LingBot execution settings live in `configs/deployments/lingbot_va.toml`;
-  avoid per-run hidden flags.
-- The LingBot KV cache records tracker commands because its training
-  action is a commanded episode-relative EEF target. Measured EEF feedback is
-  still used for freshness checks, workspace-relative diagnostics, and camera
-  context. The number of fresh KV-cache observations per action frame is an
-  explicit deployment setting and must divide the configured actions per frame.
-- LingBot bridge exit is guarded: normal completion, errors, and `Ctrl-C` stop
-  the A1 runtime and policy server.
-- ACT execution settings live in `configs/deployments/act_joint.toml`; the
-  tracked default is `execution.execute = false`.
-- ACT action-step jump rejection is explicitly disabled by
-  `configs/system/a1.toml [joint_safety.action_step_guard_enabled]`. Finite
-  values and absolute joint limits are still enforced before execution.
-- Teleop gripper state/action is continuous normalized `0..1`, mapped exactly
-  once to the physical `0..104 mm` range in `configs/system/a1.toml`.
-- Teleop, ACT, LingBot, reset, and EEF tools publish only the staged gripper
-  target. The relay owns the hardware command topic.
-- The tracked relay policy ignores only gripper DTC bit 3 (`Position Jump`,
-  mask `8`) for Teleop compatibility. Idle bit 6 remains accepted; every other
-  gripper error bit still blocks forwarding and latches relay FAULT.
+## Relay gates
 
-## Direct Debug
+- The relay starts `LOCKED`; an app must explicitly enable
+  `/a1_arm_motion_enable`.
+- Joint feedback, staged tracker commands, gripper targets, and motor status
+  must be fresh.
+- Every named driver vector is reordered against configured joint names and
+  must have the expected DOF and finite values. Gains must be non-negative and
+  control mode must be allowed by System config.
+- The first staged command must align with current joint feedback within the
+  configured startup tolerance.
+- Absolute joint, workspace, and physical gripper limits come from System
+  config. No hidden tracking-error, speed, or action-step clamp is applied.
+- Gripper forwarding occurs only while `ACTIVE` and healthy. State/action above
+  hardware is continuous `0..1`, mapped exactly once to physical stroke;
+  `/gripper_stroke_host` is the only feedback source.
+- Normal completion, errors, and `Ctrl+C` must disable motion and stop the
+  owning runtime.
 
-Direct debug is explicit and isolated. Stop safe runtime first:
+## Observed A1 status semantics
+
+Status `64` alone is the observed idle ECU-to-ACU timeout and is accepted as
+non-blocking. Any additional fault bits remain blocking; for example, `68` is
+not equivalent to idle `64`.
+
+The only tracked compatibility exception is gripper bit 3, Position Jump
+(`8`). The relay may ignore it only through
+`relay.gripper_ignored_error_mask`. Idle bit 6 remains acceptable; every other
+additional gripper bit latches `FAULT`.
+
+## Resource ownership
+
+- Parse and validate all tracked configuration before opening hardware or
+  creating processes.
+- One process owns each driver, tracker, camera, serial bus, and command
+  publisher.
+- After partial startup failure, run `just stop` before retrying.
+- The configuration-independent shutdown fallback may stop only marked
+  repository-owned containers and tmux sessions.
+- The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
+  encryption and must not be port-forwarded or gain control endpoints.
+
+## Direct debug
+
+Direct host publishing is reserved for explicit hardware diagnosis. Stop every
+managed runtime first:
 
 ```bash
 just stop
 ```
 
-Then use only documented direct-debug commands. Do not leave safe and direct
-trackers running at the same time.
-
-## Static Disclosure
-
-Print current safety settings without touching hardware:
+The preferred headless EEF debug launch remaps the isolated tracker back to the
+official host topic:
 
 ```bash
-python -m galaxea_a1_runtime.cli safety-report
-python -m galaxea_a1_runtime.cli safety-report --json
+roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch \
+  staged_command_topic:=/arm_joint_command_host \
+  joint_states_topic:=/joint_states_host \
+  target_topic:=/a1_ee_target \
+  ee_pose_topic:=/end_effector_pose \
+  tracker_node:=/eeTracker_demo_node
+```
+
+Mount the repository read-write in the debug container because `mobiman` may
+write generated CppAD files. Do not start the managed relay or another tracker
+at the same time. The tracker is MPC/IK-style and may couple axes or under-track
+small Cartesian targets; never assume a published EEF target was reached.
+
+`/end_effector_pose` is feedback in `base_link`; `/a1_ee_target` is a
+`geometry_msgs/PoseStamped` command accepted in `world`. The managed launch
+currently supplies an identity `world -> base_link` transform.
+
+Explicit direct gripper checks, also only after `just stop`, use the physical
+stroke from System config. With the current rig that range is `0..104 mm`:
+
+```bash
+rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
+  "{header: {stamp: now}, gripper_stroke: 104.0}"
+rostopic pub /gripper_position_control_host signal_arm/gripper_position_control \
+  "{header: {stamp: now}, gripper_stroke: 0.0}"
+```
+
+Useful read-only ROS inspection inside the runtime environment:
+
+```bash
+rostopic echo -n1 /end_effector_pose
+rostopic echo -n1 /joint_states_host
+rostopic echo -n1 /arm_status_host
+rostopic info /a1_ee_target
+rostopic info /arm_joint_command_host
+```
+
+## Static disclosure
+
+Print current safety settings without opening hardware:
+
+```bash
+.venv/bin/python -m galaxea_a1_runtime.cli safety-report
+.venv/bin/python -m galaxea_a1_runtime.cli safety-report --json
 ```

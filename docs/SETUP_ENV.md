@@ -1,57 +1,32 @@
-# Environment Setup
+# Environment setup
 
-The refactored Galaxea A1 Runtime uses one Python 3.12 environment managed by
-`uv`.
+This document owns the Python environment and dependency baseline. Hardware
+setup and operation are covered by the [Runbook](RUNBOOK.md).
 
-## Main Environment
+## Install
+
+The repository uses one `uv`-managed Python 3.12 environment:
 
 ```bash
 just setup
 ```
 
-This installs the locked project environment from `pyproject.toml` and
-`uv.lock`.
+This installs the locked project from `pyproject.toml` and `uv.lock`. Use `just`
+recipes or `${PWD}/.venv/bin/python` for first-party tools; do not invoke app
+entrypoints with the older system Python.
 
-Check it with:
-
-```bash
-just check
-```
-
-Use `just` recipes or `${PWD}/.venv/bin/python` for first-party Python tools.
-Do not invoke the app entrypoints with an older system Python: the runtime uses
-Python 3.12 features and the shell launchers deliberately run them through the
-locked project environment.
-
-## Dependency Baseline
-
-- Python: `>=3.12,<3.13`
-- LeRobot: official v0.6.0 tag
-  `30da8e687a6dfc617fcd94afc367ac7071c376ce`
-- Dataset target: LeRobotDataset v3.0
-
-The old OpenPI/TFP, ZMQ, and DataCoach paths have been removed from the main
-runtime. LeRobot v3.0 is the training/runtime baseline; the dataset packer keeps
-one deliberate offline v2.1 export for LingBot compatibility, isolated from the
-live runtime.
-
-## Hardware Setup
-
-Install udev rules:
-
-```bash
-just udev
-```
-
-Static runtime checks:
+Verify the environment without opening hardware:
 
 ```bash
 just check
 ```
 
-Camera and EEF hardware acceptance after power-on:
+## Baseline
 
-```bash
-just cameras
-just eef-test
-```
+- Python `>=3.12,<3.13`
+- LeRobot v0.6.0 at `30da8e687a6dfc617fcd94afc367ac7071c376ce`
+- LeRobotDataset v3.0
+
+The runtime no longer uses the old OpenPI/TFP, ZMQ, or DataCoach environments.
+One offline LeRobot v2.1 export remains solely for LingBot dataset
+compatibility.

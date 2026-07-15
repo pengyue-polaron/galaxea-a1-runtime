@@ -1,9 +1,9 @@
 # Architecture
 
-This repository separates physical system policy, reusable runtime logic, app
-behavior, and operator lifecycle. Dependency direction points inward toward
-typed configuration and pure contracts; live hardware is opened only at the
-outer edge.
+This document owns the repository's design, configuration graph, data
+contracts, and artifact layout. Live-control invariants are defined in
+[Safety](SAFETY.md); operator procedures are defined in the
+[Runbook](RUNBOOK.md).
 
 ## Layers
 
@@ -20,28 +20,24 @@ galaxea_a1_runtime.apps
         configuration / schema / safety / collection contracts
 ```
 
-- `scripts/runtime/` owns ROS, the A1 driver, staged trackers, the relay, and
-  shared process lifecycle. It is app-agnostic.
-- `scripts/apps/` contains thin operator entrypoints for cameras, Teleop, ACT,
-  and LingBot.
-- `galaxea_a1_runtime/apps/` implements app orchestration and protocol logic.
-- `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, and process
-  APIs.
-- `configuration/`, `schema.py`, `safety.py`, and collection contracts remain
-  hardware-free and are unit-testable.
+- `scripts/runtime/` owns app-agnostic ROS, driver, staged tracker, relay, and
+  process lifecycle.
+- `scripts/apps/` contains thin operator entrypoints.
+- `galaxea_a1_runtime/apps/` implements Teleop, ACT, and LingBot orchestration.
+- `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
+  process APIs.
+- `configuration/`, schema, safety, and collection modules remain hardware-free.
 - `lerobot/` owns current raw conversion and deterministic derived packages.
-- `third_party/` contains pinned vendor snapshots, never A1-specific app logic.
+- `third_party/` contains pinned vendor snapshots, not A1-specific behavior.
 
-Heavy optional dependencies are lazy. Static config validation and unit tests do
-not need ROS, cameras, serial devices, Torch, or a model checkout.
+Heavy dependencies are loaded only at hardware or model boundaries. Static
+configuration validation and pure tests do not require ROS, cameras, serial
+devices, Torch, or a model checkout.
 
-## One Configuration Graph
+## Configuration graph
 
-`configs/system/a1.toml` is the root physical contract. It owns host runtime,
-ROS topics, relay settings, joint and EEF safety, gripper stroke, both cameras,
-camera diagnostics, and LAN preview.
-
-The remaining configs reference it:
+`configs/system/a1.toml` is the physical root. Other tracked configs reference
+it instead of copying its values:
 
 ```text
 configs/system/a1.toml
@@ -52,182 +48,125 @@ configs/system/a1.toml
   └── configs/deployments/lingbot_va.toml
 ```
 
-Each layer owns only its semantics:
+Ownership is exclusive:
 
-- Teleop: leader identity/mapping and collection behavior.
-- Pose: reset targets and reset motion behavior.
-- Deployment: model identity and inference/execution behavior.
-- Dataset: raw source and output package locations.
+| Config | Owns |
+| --- | --- |
+| System | devices, ROS topics, cameras, physical limits, relay and startup safety |
+| Teleop | leader identity/mapping and collection behavior |
+| Pose | reset targets and reset motion behavior |
+| Dataset | source/output packaging and conversion policy |
+| Deployment | model references and inference/execution behavior |
 
-Loaders reject missing and unknown keys. Derived runtime objects are built by
-named mappings from these typed owners rather than parallel defaults. Shell
-export helpers expose only values required for process lifecycle; Python apps
-load the same typed config directly.
+Schemas require all behavior-affecting keys and reject unknown ones. Python
+apps load typed owners directly; shell exports contain only values needed for
+process lifecycle. No app-specific config may mirror a physical value from the
+System config.
 
-## Safe Control Plane
+## Runtime composition
 
-EEF target path:
+Every managed motion path has four roles: an app publishes a high-level target,
+an isolated tracker produces a staged driver command, the relay validates it,
+and the A1 driver owns the hardware. Exact topics and relay gates are defined in
+[Safety](SAFETY.md).
 
-```text
-/a1_ee_target
-  -> isolated eeTracker
-  -> /arm_joint_command_a1_staged
-  -> safe relay
-  -> /arm_joint_command_host
-```
+The relay starts locked. An app enables it only after its own inputs and the
+shared runtime are ready. Repository-owned Docker containers and tmux sessions
+are marked so emergency cleanup can stop them without touching unrelated user
+processes.
 
-Joint target path used by Teleop and ACT:
+Each physical resource has one owner. An app that owns cameras shares its open
+readers with collection, inference, and embedded preview; the standalone
+preview is used only when no app owns those cameras.
 
-```text
-/arm_joint_target_position
-  -> isolated jointTracker
-  -> /arm_joint_command_a1_staged
-  -> safe relay
-  -> /arm_joint_command_host
-```
+## Teleop and observation contract
 
-Gripper path:
+The first-party `A1SOLeader` exposes six arm axes, `joint0..joint5`, plus an
+independent `gripper`. Leader joint motion is mapped relative to both startup
+poses using the tracked signs and limits; unknown layouts fail instead of being
+sorted heuristically.
 
-```text
-/a1_gripper_target
-  -> safe relay
-  -> /gripper_position_control_host
-```
+The default collection contract contains:
 
-The relay starts locked. It validates vector shape, finite values, configured
-joint limits, control modes, input freshness, motor status, and initial staged
-alignment before forwarding. Code outside the relay does not publish normal
-commands to host topics.
+- configured AgentView and wrist RGB observations, plus optional aligned depth;
+- EEF pose, six named A1 joints, and continuous gripper state;
+- six absolute joint targets and continuous gripper action;
+- camera sequence numbers and monotonic sample times;
+- configuration, topic, camera, and control-path metadata.
 
-The runtime joint action-step guard is explicitly disabled by the tracked
-system config. Finite-value and absolute-limit checks remain active. Collection
-has a separate post-recording continuity boundary before an episode becomes
-durable.
+Application gripper state and action are continuous normalized `0..1`. The
+leader input maps to that interval, which maps exactly once to the System-owned
+physical A1 stroke. `/gripper_stroke_host` is the only gripper feedback source.
 
-## Teleop Runtime
+An owning app applies the configured camera crop before recording or policy
+input. Web preview may show the full image with that crop outlined, but the
+overlay is never stored. A valid observation requires fresh frames whose
+monotonic-time skew remains within the System limit.
 
-The normal entrypoint is `just teleop <experiment>`:
+## Episode and dataset commit
 
-1. load and validate Teleop, System, and reset-pose configs;
-2. start the isolated joint runtime and locked relay;
-3. open the six-axis SO leader and both configured cameras;
-4. map leader displacement relative to startup pose into A1 joint targets;
-5. require fresh joint, EEF, gripper-feedback, action, and paired-camera data;
-6. arm the relay only after readiness checks pass;
-7. record episodes into hidden sibling staging directories;
-8. validate quality and exact files, then atomically rename a successful save;
-9. reset both devices after a successful save or discard when configured.
-
-Unknown leader key layouts, non-finite values, stale samples, camera skew, or a
-partial episode fail closed. A rejected episode does not consume its index.
-
-The first-party leader adapter deliberately exposes six arm axes
-`joint0..joint5` plus an independent `gripper`; the upstream five-axis naming is
-not interchangeable with this physical rig.
-
-## Observation Contract
-
-The System config selects two RealSense cameras by serial. A single owning app
-opens them and shares frames with collection/inference and its embedded preview.
-A standalone preview is available only when another app is not the owner.
-
-```text
-D455 AgentView 640x480
-  ├── full frame -> web preview + red ROI overlay
-  └── 480x480 ROI -> collection and every policy
-
-D405 wrist 640x480
-  └── full frame -> preview, collection, and every policy
-```
-
-The red web rectangle is display-only. Optional aligned depth is recorded as
-raw 16-bit PNG and converts to `observation.images.front_depth`. Each
-observation must contain fresh frames whose monotonic-time skew is within the
-system limit.
-
-The gripper contract is continuous: application state and action use normalized
-`0..1`, mapped exactly once to the physical `0..104 mm` A1 stroke. The tracked
-SO leader input range `0..53.16` maps directly to that interval. Full-open
-feedback is about `103.8 mm`, and the only feedback source is
-`/gripper_stroke_host`.
-
-## Raw Episode Commit
-
-Current episodes use schema `galaxea_a1_teleop_raw_v3` and contain:
+Formal collection writes only `galaxea_a1_teleop_raw_v3`:
 
 ```text
 episode_NNN_timestamp/
   metadata.json
   frames.csv
-  cam0/                 cropped AgentView RGB
-  cam1/                 wrist RGB
-  cam0_depth/           optional aligned uint16 depth
+  cam0/
+  cam1/
+  cam0_depth/       optional
 ```
 
-Metadata records the config path, task, state/action names and topics, control
-path, FPS, camera settings, crop, freshness limits, and counts. `frames.csv`
-stores continuous state/action vectors plus camera sequence and sample times.
+Recording occurs in a hidden sibling staging directory. Save validates vector
+dimensions, names, finite values, joint-action continuity, metadata, frame
+counts, and exact image sets before an atomic rename exposes the episode.
+Rejected saves reuse the episode index; undeletable crash leftovers block the
+next run for inspection.
 
-Recording never writes directly to the final episode directory. Enter-to-save
-validates state/action dimensions, finite values, joint action continuity,
-metadata, frame count, and the exact image set. Only an atomic rename exposes a
-complete episode. Stale streams or interrupted writes remove the partial
-episode; undeletable crash leftovers block the next run for operator review.
-
-## Dataset Pipeline
-
-`just convert <experiment>` loads `configs/datasets/<experiment>.toml` and runs:
+Conversion derives its expected state, action, and camera contract from the
+referenced Teleop and System configs:
 
 ```text
-raw v3 episodes
+raw v3
   -> base LeRobotDataset v3
-       ├── LingBot EEF continuous v3 + archive
-       │     └── LingBot EEF continuous v2.1 + archive
-       └── joint continuous v3 + archive
+       ├── LingBot EEF continuous v3
+       │     └── LingBot EEF continuous v2.1 compatibility export
+       └── ACT joint continuous v3
 ```
 
-The converter supports only current raw v3. It derives expected state/action
-and camera shapes from the referenced Teleop config and its System config, so
-the dataset config does not duplicate the collection or physical observation
-contract. It validates every episode
-and requires all episodes to agree on names, cameras, shapes, and FPS.
+Each output and archive is built beside its destination and installed
+atomically. Failure preserves the previous complete output. The v2.1 package is
+a deliberate derived export, never accepted as collector input.
 
-Every output is built next to its destination and installed atomically. An
-existing complete dataset remains intact if generation, encoding, validation,
-or archive creation fails. The v2.1 package is an intentional derived LingBot
-compatibility export; it is not accepted as raw collector input.
+## Deployment
 
-## Deployment Boundaries
+ACT predicts joint targets through the staged joint runtime. LingBot predicts
+EEF targets through the staged EEF runtime. Both reuse the System camera,
+gripper, topic, and safety contracts and refuse startup until their registered
+checkpoint is explicitly marked ready. Execution remains independently
+step-gated in each deployment config.
 
-ACT and LingBot each have one tracked deployment config. Both reuse the System
-camera, gripper, topic, and safety contract.
+This checkout does not train models. Reviewed weights produced or downloaded
+elsewhere are registered through the local model registry described in
+[`models/README.md`](../models/README.md).
 
-- ACT predicts joint targets and publishes through the staged joint path.
-- LingBot predicts EEF targets and publishes through the staged EEF path.
-- Each starts dry-run/step-gated and refuses startup until a new registered
-  checkpoint is explicitly marked deployment-ready.
-- This checkout does not train models. Weights produced or downloaded elsewhere
-  are registered in the ignored `models/` registry before deployment.
+## Artifact roots
 
-`GalaxeaA1Robot` is an injected LeRobot-style adapter and has no implicit live
-ROS publisher. Managed live paths remain in the app runtimes so there is one
-implementation of each control plane.
+| Root | Contents |
+| --- | --- |
+| `data/` | raw episodes, processed datasets, exports, and quarantined legacy data |
+| `outputs/` | durable diagnostics, logs, evaluations, and run results |
+| `models/` | deployment references and generated runtime assemblies |
+| `external/` | machine-local external source checkouts |
+| `.cache/` | reproducible disposable caches only |
+| `/tmp` | PID files, sockets, and process-lifecycle state |
 
-## Process Ownership
+There is no local training-output root. First-party code must not create
+`train_out/`, `outputs/train/`, `artifacts/`, `video_exports/`, or nested
+`scripts/**/outputs/` directories.
 
-Runtime resources are repository-marked. Normal app stop paths use their
-validated config; the global stop fallback can remove repository-owned
-containers and tmux sessions even if config parsing fails. It must never target
-unrelated user processes.
-
-The camera web service is read-only HTTP/MJPEG on the LAN. It has no ROS or
-motion endpoint, no authentication, and no encryption. It is not a public
-Internet service.
-
-## Deliberate Limits
+## Deliberate limits
 
 - No standard MoveIt `move_group` path is provided.
-- The upstream EEF trajectory demo is not a first-class operator command.
-- No old raw-data migration is maintained.
-- No deployment is enabled until its newly trained checkpoint contract is
-  registered and reviewed.
+- Old raw-data migration is not maintained.
+- No deployment is enabled until its checkpoint contract is registered and
+  reviewed.

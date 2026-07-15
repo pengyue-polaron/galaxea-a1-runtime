@@ -27,25 +27,15 @@ just model-link act-a1-agentview-square /path/to/new_act_pretrained_model
 just models
 ```
 
-Both deployment checkpoints must be trained from data whose AgentView input is
-the configured `(x=103, y=0, width=480, height=480)` crop. ACT additionally
-stores that raw front shape in its checkpoint input-feature contract and will
-refuse to load a mismatched checkpoint.
+Both deployment checkpoints must match the camera feature contract derived
+from their referenced System config. ACT also stores the front image shape in
+its checkpoint contract and refuses to load a mismatch.
 
 After registering new weights, update the LingBot prompt, expected weight size,
 and q01/q99 statistics from that same training run before setting LingBot
 `deployment_ready = true`. Review the ACT checkpoint contract separately before
 setting ACT `deployment_ready = true`. Both deployments remain dry-run until
 their independent execution setting is enabled.
-
-Storage ownership is intentionally separate:
-
-- `models/`: canonical deployment references and generated model assemblies.
-- `outputs/`: inference logs, observations, reviews, and evaluations.
-- `data/`: raw episodes, converted datasets, and dataset archives.
-- `external/`: machine-local source checkouts used by deployment tools.
-- `.cache/`: disposable package/runtime caches, never canonical weights.
-- `/tmp`: PID files, sockets, and other process-lifecycle state.
 
 There is no local training-output root. Bring a reviewed checkpoint onto this
 machine, register it with `just model-link`, and keep tracked deployment configs
