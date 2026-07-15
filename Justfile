@@ -13,7 +13,7 @@ default:
 setup:
     #!/usr/bin/env bash
     set -euo pipefail
-    export UV_DEFAULT_INDEX="${UV_DEFAULT_INDEX:-https://pypi.tuna.tsinghua.edu.cn/simple}"
+    export UV_DEFAULT_INDEX="https://pypi.org/simple"
     export UV_TORCH_BACKEND="${UV_TORCH_BACKEND:-cu128}"
     {{uv}} python install 3.12
     {{uv}} sync --frozen --python 3.12
