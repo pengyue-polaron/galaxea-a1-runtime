@@ -24,6 +24,7 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     copy_dataset_tree,
     dataset_digest,
     file_sha256,
+    portable_metadata_id,
     read_json,
     rewrite_episode_vector_stats,
     vector_stats,
@@ -112,6 +113,7 @@ def _build_eef_v3_dataset(
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
     urdf_path = urdf_path.expanduser().resolve()
+    source_dataset = portable_metadata_id(source_dataset, label="source dataset")
     info = read_json(source_root / "meta/info.json")
     _validate_source(info)
     if gripper_stroke_max_mm <= gripper_stroke_min_mm:
@@ -188,7 +190,7 @@ def _build_eef_v3_dataset(
         "fps": int(info["fps"]),
         "robot": "galaxea_a1",
         "kinematics": {
-            "urdf": str(urdf_path),
+            "urdf": urdf_path.name,
             "urdf_sha256": file_sha256(urdf_path),
             "base_link": base_link,
             "tip_link": tip_link,
@@ -425,7 +427,7 @@ def _error_summary(values: np.ndarray) -> dict[str, float]:
 
 
 def _training_doc(gripper_stroke_min_mm: float, gripper_stroke_max_mm: float) -> str:
-    return f"""# A1 EEF LeRobot v3 Dataset
+    return f"""# A1 EEF LeRobot Dataset
 
 The two ordered observations are the external `front` camera followed by the eye-in-hand
 `wrist` camera. See `meta/eef.json` for the exact EEF action convention, source hash,

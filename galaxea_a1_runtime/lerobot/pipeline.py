@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.console import ArgumentParser
-from galaxea_a1_runtime.lerobot.convert_raw import convert_raw_dataset
+from galaxea_a1_runtime.lerobot.convert_raw import convert_raw_datasets
 from galaxea_a1_runtime.lerobot.eef_pack import pack_eef_v3_dataset
 from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
 from galaxea_a1_runtime.lerobot.pipeline_config import (
@@ -41,10 +41,11 @@ def build_datasets(
     ) as temporary:
         workspace = Path(temporary)
         raw_lerobot_v3 = workspace / "raw-lerobot-v3"
-        convert_raw_dataset(
-            source_root=config.raw_source_root,
+        convert_raw_datasets(
+            source_roots=config.raw_source_roots,
             target_root=raw_lerobot_v3,
             repo_id=_repo_id(config, selected[0]),
+            source_dataset=config.raw_source_id,
             overwrite=False,
             expected_contract=config.source_contract,
             trim_config=config.boundary_trim,
@@ -67,7 +68,7 @@ def _build_target_from_raw(
     raw_lerobot_v3: Path,
     workspace: Path,
 ) -> dict[str, Any]:
-    raw_source = str(config.raw_source_root)
+    raw_source = config.raw_source_id
     if target == JOINT_V3:
         return pack_joint_v3_dataset(
             source_root=raw_lerobot_v3,
@@ -139,7 +140,7 @@ def _build_v21_from_raw(
         source_root=intermediate_root,
         target_root=target_root,
         repo_id=repo_id,
-        source_dataset=str(config.raw_source_root),
+        source_dataset=config.raw_source_id,
         overwrite=config.overwrite,
         archive_path=archive_path,
     )

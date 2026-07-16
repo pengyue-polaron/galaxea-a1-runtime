@@ -90,9 +90,11 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 - Name processed datasets by their stored Joint/EEF representation and LeRobot
   version, never by a consuming model; model adapters must consume that shared
   contract without rewriting it.
-- Every processed format must derive from the referenced Raw v3 dataset. A
-  converter may use disposable internal staging representations, but one final
-  Joint/EEF output must never be the source of another final output.
+- Every processed format must derive from the Raw v3 roots owned by its
+  referenced Raw-package config. A multi-task dataset preserves each root's
+  task text per episode. A converter may use disposable internal staging
+  representations, but one final Joint/EEF output must never be the source of
+  another final output.
 - Apply the Dataset-owned boundary-trim policy once before the Joint/EEF
   fan-out. Trim only stable contiguous prefixes/suffixes, preserve pre/post
   rolls and interior pauses, keep ambiguous episodes whole, and record each raw

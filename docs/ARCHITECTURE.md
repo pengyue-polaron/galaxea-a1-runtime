@@ -143,6 +143,14 @@ too-short result preserve the complete episode. Raw v3 remains immutable, and
 every processed package records the shared source-frame bounds and decisions in
 `meta/trim.json`.
 
+Published metadata is machine-independent: provenance uses logical dataset IDs,
+and external assets use portable names plus content hashes, never host absolute
+paths.
+
+One logical processed dataset references a Raw-package config that owns one or
+more Raw v3 task roots. All roots must share the same state, action, camera, and
+FPS contract, while each episode retains its source root's task text.
+
 Each output and archive is built beside its destination and installed
 atomically. Failure preserves the previous complete output. All four outputs
 derive independently from the same validated and trimmed Raw v3 view; no final

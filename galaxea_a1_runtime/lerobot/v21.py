@@ -15,6 +15,7 @@ from galaxea_a1_runtime.filesystem import atomic_output_directory
 from galaxea_a1_runtime.lerobot.dataset_package import (
     dataset_digest,
     json_value,
+    portable_metadata_id,
     read_json,
     write_json,
     write_jsonl,
@@ -61,6 +62,8 @@ def _build_v21_dataset(
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
+    if source_dataset is not None:
+        source_dataset = portable_metadata_id(source_dataset, label="source dataset")
     info = read_json(source_root / "meta/info.json")
     if info.get("codebase_version") != "v3.0":
         raise ValueError("v2.1 export source must be a LeRobot v3.0 dataset")

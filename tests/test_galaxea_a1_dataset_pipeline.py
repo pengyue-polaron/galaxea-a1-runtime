@@ -82,7 +82,8 @@ def test_generic_a1_action_contracts():
 
 def test_dataset_pipeline_config_fixture():
     config = load_pipeline_config(PIPELINE_CONFIG_FIXTURE)
-    assert config.raw_source_root.name == "test_experiment"
+    assert config.raw_source_id == "galaxea-a1/test_experiment_raw_v3"
+    assert [path.name for path in config.raw_source_roots] == ["test_experiment"]
     assert config.joint_v3_target_root.name == "test_experiment_joint_v3"
     assert config.joint_v3_repo_id == "galaxea-a1/test_experiment_joint_v3"
     assert config.joint_v21_target_root.name == "test_experiment_joint_v21"
@@ -158,7 +159,7 @@ def test_dataset_command_builds_each_output_from_raw_v3(tmp_path, monkeypatch):
         return invoke
 
     monkeypatch.setattr(
-        pipeline_module, "convert_raw_dataset", record("raw_to_lerobot")
+        pipeline_module, "convert_raw_datasets", record("raw_to_lerobot")
     )
     monkeypatch.setattr(pipeline_module, "pack_joint_v3_dataset", record("joint_v3"))
     monkeypatch.setattr(pipeline_module, "pack_eef_v3_dataset", record("eef_v3"))
@@ -198,12 +199,12 @@ def test_dataset_command_builds_each_output_from_raw_v3(tmp_path, monkeypatch):
         tmp_path / "eef_v3",
         tmp_path / "eef_v21",
     }
-    assert calls[0][1]["source_root"] == raw_root
+    assert calls[0][1]["source_roots"] == (raw_root,)
     assert calls[0][1]["overwrite"] is False
     assert calls[0][1]["trim_config"] == config.boundary_trim
     assert calls[1][1]["target_root"] == tmp_path / "joint_v3"
     for name, kwargs in calls[1:]:
-        assert kwargs["source_dataset"] == str(raw_root)
+        assert kwargs["source_dataset"] == config.raw_source_id
         if name in {"joint_v3", "eef_v3"}:
             assert kwargs["source_root"] == raw_intermediate
         else:
@@ -222,7 +223,7 @@ def test_dataset_command_can_build_one_selected_output(tmp_path, monkeypatch):
         return invoke
 
     monkeypatch.setattr(
-        pipeline_module, "convert_raw_dataset", record("raw_to_lerobot")
+        pipeline_module, "convert_raw_datasets", record("raw_to_lerobot")
     )
     monkeypatch.setattr(pipeline_module, "pack_joint_v3_dataset", record("joint_v3"))
     monkeypatch.setattr(pipeline_module, "pack_eef_v3_dataset", record("eef_v3"))

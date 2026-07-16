@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 import sys
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable
@@ -24,7 +25,7 @@ from galaxea_a1_runtime.lerobot.boundary_trim import (
 )
 from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
 from galaxea_a1_runtime.lerobot.dataset import DatasetConfig, create_lerobot_dataset
-from galaxea_a1_runtime.lerobot.dataset_package import write_json
+from galaxea_a1_runtime.lerobot.dataset_package import portable_metadata_id, write_json
 from galaxea_a1_runtime.schema import (
     ActionMode,
     CameraSpec,
@@ -190,12 +191,46 @@ def convert_raw_dataset(
     source_root: Path,
     target_root: Path,
     repo_id: str,
+    source_dataset: str,
     overwrite: bool = False,
     expected_contract: DatasetContract | None = None,
     trim_config: BoundaryTrimConfig,
 ) -> RawDatasetSummary:
-    summary = discover_raw_dataset(source_root=source_root)
-    first = summary.episodes[0]
+    return convert_raw_datasets(
+        source_roots=(source_root,),
+        target_root=target_root,
+        repo_id=repo_id,
+        source_dataset=source_dataset,
+        overwrite=overwrite,
+        expected_contract=expected_contract,
+        trim_config=trim_config,
+    )[0]
+
+
+def convert_raw_datasets(
+    *,
+    source_roots: Sequence[Path],
+    target_root: Path,
+    repo_id: str,
+    source_dataset: str,
+    overwrite: bool = False,
+    expected_contract: DatasetContract | None = None,
+    trim_config: BoundaryTrimConfig,
+) -> tuple[RawDatasetSummary, ...]:
+    """Convert one logical multi-task dataset from one or more Raw v3 roots."""
+
+    source_dataset = portable_metadata_id(source_dataset, label="source dataset")
+    resolved_roots = tuple(root.expanduser().resolve() for root in source_roots)
+    if not resolved_roots:
+        raise ValueError("at least one raw source root is required")
+    if len(set(resolved_roots)) != len(resolved_roots):
+        raise ValueError("raw source roots must not contain duplicates")
+    summaries = tuple(
+        discover_raw_dataset(source_root=source_root) for source_root in resolved_roots
+    )
+    episodes = tuple(episode for summary in summaries for episode in summary.episodes)
+    _validate_episode_contracts(episodes)
+    first = episodes[0]
     contract = raw_episode_contract(
         state_names=first.state_names,
         action_names=first.action_names,
@@ -203,7 +238,9 @@ def convert_raw_dataset(
     )
     if expected_contract is not None and contract != expected_contract:
         raise ValueError(_contract_mismatch(contract, expected_contract))
-    trim_decisions = _plan_episode_trims(summary, config=trim_config)
+    trim_decisions = tuple(
+        _plan_episode_trims(summary, config=trim_config) for summary in summaries
+    )
 
     target_root = target_root.expanduser().resolve()
     with atomic_output_directory(
@@ -216,36 +253,43 @@ def convert_raw_dataset(
             contract=contract,
         )
         try:
-            for episode, decision in zip(summary.episodes, trim_decisions, strict=True):
-                for frame in iter_episode_frames(
-                    episode=episode,
-                    task=summary.task,
-                    contract=contract,
-                    start=decision.start,
-                    end=decision.end,
-                ):
-                    dataset.add_frame(frame)
-                dataset.save_episode()
+            for summary, decisions in zip(summaries, trim_decisions, strict=True):
+                for episode, decision in zip(summary.episodes, decisions, strict=True):
+                    for frame in iter_episode_frames(
+                        episode=episode,
+                        task=summary.task,
+                        contract=contract,
+                        start=decision.start,
+                        end=decision.end,
+                    ):
+                        dataset.add_frame(frame)
+                    dataset.save_episode()
             dataset.finalize()
             manifest = trim_manifest(
                 decisions=tuple(
-                    (episode.path.name, decision)
+                    (f"{summary.source_root.name}/{episode.path.name}", decision)
+                    for summary, decisions in zip(
+                        summaries, trim_decisions, strict=True
+                    )
                     for episode, decision in zip(
-                        summary.episodes, trim_decisions, strict=True
+                        summary.episodes, decisions, strict=True
                     )
                 ),
                 fps=first.fps,
                 config=trim_config,
             )
             manifest["source_format"] = TELEOP_RAW_SCHEMA_VERSION
-            manifest["source_dataset"] = str(summary.source_root)
-            manifest["task"] = summary.task
+            manifest["source_dataset"] = source_dataset
+            if len(summaries) == 1:
+                manifest["task"] = summaries[0].task
+            else:
+                manifest["tasks"] = [summary.task for summary in summaries]
             write_json(staging_root / "meta/trim.json", manifest)
         finally:
             stop = getattr(dataset, "stop_image_writer", None)
             if callable(stop):
                 stop()
-    return summary
+    return summaries
 
 
 def iter_episode_frames(
@@ -431,22 +475,28 @@ def main(argv: list[str] | None = None) -> int:
     pipeline_config = load_pipeline_config(args.config)
 
     if args.dry_run:
-        summary = discover_raw_dataset(source_root=pipeline_config.raw_source_root)
-        first = summary.episodes[0]
-        print(
-            f"raw episodes={len(summary.episodes)} frames={summary.total_frames} "
-            f"task={summary.task!r}"
+        summaries = tuple(
+            discover_raw_dataset(source_root=source_root)
+            for source_root in pipeline_config.raw_source_roots
         )
+        first = summaries[0].episodes[0]
+        print(
+            f"raw roots={len(summaries)} "
+            f"episodes={sum(len(summary.episodes) for summary in summaries)} "
+            f"frames={sum(summary.total_frames for summary in summaries)}"
+        )
+        print(f"tasks={[summary.task for summary in summaries]}")
         print(f"schema_version={TELEOP_RAW_SCHEMA_VERSION}")
         print(f"state={list(first.state_names)}")
         print(f"action={list(first.action_names)}")
         print(f"cameras={[camera.name for camera in first.camera_specs]}")
         return 0
 
-    convert_raw_dataset(
-        source_root=pipeline_config.raw_source_root,
+    convert_raw_datasets(
+        source_roots=pipeline_config.raw_source_roots,
         target_root=args.target_root,
         repo_id=args.repo_id,
+        source_dataset=pipeline_config.raw_source_id,
         overwrite=args.overwrite,
         expected_contract=pipeline_config.source_contract,
         trim_config=pipeline_config.boundary_trim,

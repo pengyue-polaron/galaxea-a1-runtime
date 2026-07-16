@@ -719,19 +719,16 @@ def _render_readme(
     total_frames = sum(task.total_frames for task in tasks)
     total_source_bytes = sum(task.summary.total_bytes for task in tasks)
     total_archive_bytes = sum(item["archive_bytes"] for item in archive_records)
-    task_rows = "\n".join(
-        f"| `{task.slug}` | {task.prompt} | {len(task.episodes)} | "
-        f"{task.total_frames:,} |"
+    task_coverage = "<br>".join(
+        f"{task.prompt} — {len(task.episodes)} episodes / {task.total_frames:,} frames"
         for task in tasks
     )
-    state_names = ", ".join(f"`{name}`" for name in contract.state_names)
-    action_names = ", ".join(f"`{name}`" for name in contract.action_names)
-    camera_rows = "\n".join(
-        f"| `{camera['name']}` | `{camera['directory']}` | "
-        f"{camera['width']}×{camera['height']} | `{camera['modality']}` | "
-        f"`{camera['encoding']}` |"
+    camera_summary = "; ".join(
+        f"`{camera['name']}` {camera['width']}×{camera['height']} "
+        f"{str(camera['modality']).upper()}"
         for camera in contract.cameras
     )
+    local_dir = config.repo_id.rsplit("/", maxsplit=1)[-1]
     return f"""---
 pretty_name: NYUSH Galaxea A1 Fruit Placement Raw v3
 tags:
@@ -744,124 +741,44 @@ tags:
 
 # NYUSH Galaxea A1 — Fruit Placement Raw v3
 
-> **Private internal dataset.** This repository is intended to remain private.
-
-## Overview
-
-This repository is the archival raw-data release for a Galaxea A1 fruit-placement
-collection. It contains **{len(tasks)} tasks**, **{len(archive_records)} episodes**, and
-**{total_frames:,} synchronized frames** collected at **{contract.fps_target:g} FPS**.
-The uncompressed source payload is {_human_size(total_source_bytes)}; the verified
-episode archives total {_human_size(total_archive_bytes)}.
-
-This is **not** a LeRobot dataset. It preserves the current
-`{TELEOP_RAW_SCHEMA_VERSION}` collection output so that processed LeRobot exports can
-be reproduced separately without changing the raw archive.
-
-Hugging Face dataset repo: `{config.repo_id}`.
-
-## Scene setup
-
 ![Annotated agent-view frame](assets/{config.readme_scene_image.name})
 
-*Annotated first agent-view frame from the first banana-to-blue-plate episode. The
-labels and leader lines are presentation overlays; the source JPG in the raw episode
-is unchanged.*
+| Field | Value |
+| --- | --- |
+| Tasks | {task_coverage} |
+| Total | {len(tasks)} tasks · {len(archive_records)} episodes · {total_frames:,} frames · {contract.fps_target:g} FPS |
+| Cameras | {camera_summary} |
+| State | {len(contract.state_names)} channels: end-effector pose, arm joints, continuous gripper |
+| Action | {len(contract.action_names)} channels: absolute arm joints, continuous gripper |
+| Format | `{TELEOP_RAW_SCHEMA_VERSION}` · one `.tar.zst` per episode |
+| Payload | {_human_size(total_source_bytes)} raw · {_human_size(total_archive_bytes)} archived |
 
-The Galaxea A1 is positioned at the top edge of a black tabletop workspace. Three
-fruit objects—banana, mango, and lemon—are placed in front of the robot together with
-two target receptacles: a blue plate and a bowl. Each task asks the operator to pick
-the named fruit and place it into the named receptacle.
+## Use
 
-The external `front` camera provides the agent view shown above. A separate `wrist`
-camera records the eye-in-hand view. Both RGB streams are synchronized with robot
-state and action data at {contract.fps_target:g} FPS.
+Download:
 
-## Tasks
-
-| Task slug | Recorded prompt | Episodes | Frames |
-| --- | --- | ---: | ---: |
-{task_rows}
-
-The prompt spelling and capitalization above are preserved from collection metadata.
-In particular, both mango tasks use “red mango” in their recorded prompts.
-
-## Recorded data contract
-
-- Collection mode: teleoperation
-- State mode: `{contract.state_mode}`
-- Action mode: `{contract.action_mode}`
-- Collection rate: {contract.fps_target:g} FPS
-- Source collection config recorded in each episode: `{contract.config_path}`
-- State channels ({len(contract.state_names)}): {state_names}
-- Action channels ({len(contract.action_names)}): {action_names}
-- Gripper state/action convention: continuous normalized value, `0` = minimum stroke,
-  `1` = maximum stroke
-
-| Camera | Raw directory | Resolution | Modality | Encoding |
-| --- | --- | ---: | --- | --- |
-{camera_rows}
-
-Each episode includes `metadata.json`, `frames.csv`, and one frame directory per
-camera. The CSV contains frame indices and timing/sequence fields alongside state,
-action, and camera-relative-path columns.
-
-## Repository layout
-
-```text
-.
-├── README.md
-├── assets/
-│   └── {config.readme_scene_image.name}
-├── manifest.json
-├── episodes.jsonl
-├── checksums.sha256
-└── tasks/
-    └── <task-slug>/
-        ├── task.txt
-        └── episodes/
-            └── episode_NNN[_collection-suffix].tar.zst
+```bash
+hf download {config.repo_id} --repo-type dataset --local-dir {local_dir}
+cd {local_dir}
 ```
 
-Every archive expands to exactly one original `episode_*` directory. Archives are
-built from isolated copies of the source episodes, with normalized tar metadata
-and single-threaded zstd compression for reproducibility.
-
-## Integrity and restoration
-
-Validate all compressed episode archives from the repository root:
+Verify the episode archives:
 
 ```bash
 sha256sum -c checksums.sha256
 ```
 
-Restore one episode without modifying the archive:
+Extract one episode:
 
 ```bash
 mkdir -p restored
-zstd -dc tasks/<task-slug>/episodes/episode_NNN_collection-suffix.tar.zst \
-  | tar -xf - -C restored
+tar --use-compress-program=unzstd \
+  -xf tasks/<task>/episodes/<episode>.tar.zst -C restored
 ```
 
-`episodes.jsonl` records the compressed SHA-256, the source-tree SHA-256, byte counts,
-file counts, frame counts, task, and FPS for every episode. `manifest.json` documents
-the exact tree-digest algorithm and summarizes the complete collection.
-
-## Internal use
-
-This private raw archive is intended for dataset preservation, conversion validation,
-and reproducible generation of task-specific robotics datasets. Training pipelines
-should normally consume a separately versioned processed export (for example, LeRobot
-v2.1) rather than reading this archive format directly.
-
-## Limitations and safety
-
-- The collection contains demonstrations from one robot setup and a small family of
-  fruit-placement tasks; it should not be treated as broad manipulation coverage.
-- Replaying recorded actions on physical hardware is unsafe without the repository's
-  validated runtime, workspace limits, relay path, and operator supervision.
-- Raw demonstrations can contain imperfect behavior even when episode-level structural
-  and continuity checks pass.
+Use `manifest.json` for the dataset summary and `episodes.jsonl` for per-episode
+metadata and checksums. Convert the restored raw episodes to LeRobot v2.1 before
+training.
 """
 
 

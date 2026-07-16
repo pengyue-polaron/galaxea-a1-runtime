@@ -19,6 +19,7 @@ from galaxea_a1_runtime.configuration.base import (
 from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
 from galaxea_a1_runtime.collection import state_names_for_mode
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
+from galaxea_a1_runtime.datasets.raw_package import load_raw_package_config
 from galaxea_a1_runtime.schema import (
     ActionMode,
     JOINT_ACTION_NAMES,
@@ -30,7 +31,8 @@ from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 @dataclass(frozen=True)
 class DatasetPipelineConfig:
-    raw_source_root: Path
+    raw_source_id: str
+    raw_source_roots: tuple[Path, ...]
     overwrite: bool
     boundary_trim: BoundaryTrimConfig
     source_contract: DatasetContract
@@ -77,8 +79,12 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     kinematics = required_table(raw, "kinematics")
     require_exact_keys(
         dataset,
-        required={"raw_root", "overwrite"},
+        required={"raw_package_config", "overwrite"},
         label="dataset",
+    )
+    raw_package = load_raw_package_config(
+        repo_path(repo_root, string(dataset, "raw_package_config")),
+        repo_root=repo_root,
     )
     require_exact_keys(
         trim,
@@ -110,7 +116,8 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     eef_v3 = _output_config(outputs, "eef_v3")
     eef_v21 = _output_config(outputs, "eef_v21")
     config = DatasetPipelineConfig(
-        raw_source_root=repo_path(repo_root, string(dataset, "raw_root")),
+        raw_source_id=raw_package.repo_id,
+        raw_source_roots=raw_package.source_roots,
         overwrite=boolean(dataset, "overwrite"),
         boundary_trim=_boundary_trim_config(trim),
         source_contract=DatasetContract(
@@ -183,5 +190,5 @@ def _validate_pack_paths(config: DatasetPipelineConfig) -> None:
         raise ValueError("dataset output target roots must be unique")
     if len(set(archives)) != len(archives):
         raise ValueError("dataset output archive paths must be unique")
-    if config.raw_source_root in targets:
+    if any(source_root in targets for source_root in config.raw_source_roots):
         raise ValueError("raw source must differ from every processed dataset root")

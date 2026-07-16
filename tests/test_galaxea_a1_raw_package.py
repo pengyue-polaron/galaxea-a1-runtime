@@ -169,8 +169,11 @@ def test_raw_package_uses_copy_and_verifies_round_trip(tmp_path):
     assert result.total_episodes == 1
     assert result.total_frames == 1
     readme = result.readme_path.read_text()
-    assert "Private internal dataset" in readme
     assert "license:" not in readme
+    assert "private" not in readme.lower()
+    assert "Internal use" not in readme
+    assert "Limitations and safety" not in readme
+    assert "## Use" in readme
     assert "![Annotated agent-view frame](assets/scene.png)" in readme
     assert (result.output_root / "assets/scene.png").read_bytes() == b"annotated-scene"
     manifest = json.loads(result.manifest_path.read_text())

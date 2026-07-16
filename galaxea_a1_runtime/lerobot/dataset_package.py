@@ -7,7 +7,7 @@ import json
 import os
 import shutil
 import tarfile
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 from typing import Any
 
 import numpy as np
@@ -17,6 +17,16 @@ from galaxea_a1_runtime.filesystem import (
     atomic_output_file,
     atomic_write_text,
 )
+
+
+def portable_metadata_id(value: str, *, label: str) -> str:
+    """Validate a logical metadata identifier without host-specific paths."""
+
+    if not value or value != value.strip():
+        raise ValueError(f"{label} must be a non-empty logical identifier")
+    if Path(value).is_absolute() or PureWindowsPath(value).is_absolute():
+        raise ValueError(f"{label} must not be an absolute path: {value!r}")
+    return value
 
 
 def copy_dataset_tree(

@@ -4,7 +4,7 @@
 config = "configs/teleop/a1_so100.toml"
 
 [dataset]
-raw_root = "data/raw/test_experiment"
+raw_package_config = "tests/fixtures/raw_package.toml"
 overwrite = true
 
 [trim]

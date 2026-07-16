@@ -16,6 +16,7 @@ from galaxea_a1_runtime.filesystem import (
 from galaxea_a1_runtime.lerobot.dataset_package import (
     copy_dataset_tree,
     dataset_digest,
+    portable_metadata_id,
     read_json,
     rewrite_episode_vector_stats,
     vector_stats,
@@ -63,6 +64,7 @@ def _build_joint_v3_dataset(
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
+    source_dataset = portable_metadata_id(source_dataset, label="source dataset")
     info = read_json(source_root / "meta/info.json")
     _validate_source(info)
     copy_dataset_tree(source_root, target_root)
