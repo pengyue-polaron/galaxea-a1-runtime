@@ -29,6 +29,8 @@ check:
     {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
     find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
     {{vpy}} {{repo}}/scripts/apps/act/act_joint_policy_bridge.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/cameras/a1_camera_diagnostics.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/a1_lingbot_doctor.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
