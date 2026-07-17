@@ -242,6 +242,21 @@ under `outputs/offline_evaluation/fruit_placement/RUN_ID/`. This is a
 training-set regression check, not evidence of held-out generalization or live
 closed-loop task success.
 
+For a focused sequential Teacher Forcing replay of the tracked episode, with a
+per-step prediction-to-ground-truth action report for both models:
+
+```bash
+just teacher-force
+# or assign a durable run identity
+just teacher-force REVIEW_ID
+```
+
+LingBot receives ground-truth post-action images and ground-truth actions in
+each temporal-cache update. Pi0.5 receives the ground-truth image and full state
+at every step; its service has no action-history input. The result is written as
+`TEACHER_FORCING_REPORT.md` beside the detailed per-step JSON files under the
+offline evaluation output root.
+
 Starting either app may **MOVE THE A1** when its tracked execution setting is
 enabled:
 

@@ -15,3 +15,6 @@ lingbot_first_frame_episodes_per_task = 26
 lingbot_teacher_forced_episodes_per_task = 1
 lingbot_teacher_forced_chunks = 8
 pi05_frames_per_episode = 3
+
+[teacher_forcing]
+episode_index = 0

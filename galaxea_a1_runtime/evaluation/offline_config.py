@@ -24,6 +24,11 @@ class OfflineCoverage:
 
 
 @dataclass(frozen=True)
+class OfflineTeacherForcing:
+    episode_index: int
+
+
+@dataclass(frozen=True)
 class OfflineEvalConfig:
     path: Path
     repo_root: Path
@@ -34,6 +39,7 @@ class OfflineEvalConfig:
     pi05_deployment: Path
     output_root: Path
     coverage: OfflineCoverage
+    teacher_forcing: OfflineTeacherForcing
 
 
 def load_offline_eval_config(
@@ -42,13 +48,14 @@ def load_offline_eval_config(
     path, root, data = load_toml(path, repo_root=repo_root)
     require_exact_keys(
         data,
-        required={"dataset", "deployments", "output", "coverage"},
+        required={"dataset", "deployments", "output", "coverage", "teacher_forcing"},
         label="offline evaluation config",
     )
     dataset = required_table(data, "dataset")
     deployments = required_table(data, "deployments")
     output = required_table(data, "output")
     coverage = required_table(data, "coverage")
+    teacher_forcing = required_table(data, "teacher_forcing")
     require_exact_keys(
         dataset, required={"root", "raw_root", "repo_id"}, label="evaluation dataset"
     )
@@ -66,6 +73,11 @@ def load_offline_eval_config(
         },
         label="evaluation coverage",
     )
+    require_exact_keys(
+        teacher_forcing,
+        required={"episode_index"},
+        label="teacher forcing selection",
+    )
     selection = OfflineCoverage(
         lingbot_first_frame_episodes_per_task=integer(
             coverage, "lingbot_first_frame_episodes_per_task"
@@ -80,6 +92,9 @@ def load_offline_eval_config(
     )
     if any(value <= 0 for value in asdict(selection).values()):
         raise ValueError("offline evaluation coverage values must be positive")
+    episode_index = integer(teacher_forcing, "episode_index")
+    if episode_index < 0:
+        raise ValueError("teacher forcing episode_index must be non-negative")
     return OfflineEvalConfig(
         path=path,
         repo_root=root,
@@ -90,4 +105,5 @@ def load_offline_eval_config(
         pi05_deployment=repo_path(root, string(deployments, "pi05")),
         output_root=repo_path(root, string(output, "root")),
         coverage=selection,
+        teacher_forcing=OfflineTeacherForcing(episode_index=episode_index),
     )

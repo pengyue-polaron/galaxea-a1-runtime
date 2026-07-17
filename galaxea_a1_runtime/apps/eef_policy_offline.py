@@ -7,8 +7,6 @@ from pathlib import Path
 
 import numpy as np
 
-from galaxea_a1_runtime.apps.eef_bridge import condition_state_from_action8
-from galaxea_a1_runtime.apps.eef_policy_actions import absolute_action_to_relative
 from galaxea_a1_runtime.apps.lingbot.client import LingBotClient
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata as lingbot_metadata
@@ -17,6 +15,13 @@ from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
 from galaxea_a1_runtime.apps.pi05.protocol import server_metadata as pi05_metadata
 from galaxea_a1_runtime.console import ArgumentParser, info, step, success
 from galaxea_a1_runtime.evaluation.eef_dataset import EefDataset
+from galaxea_a1_runtime.evaluation.eef_policy_io import (
+    camera_packet,
+    lingbot_observation,
+    pi05_observation,
+    validated_lingbot_action,
+    validated_pi05_actions,
+)
 from galaxea_a1_runtime.evaluation.eef_report import (
     MODEL_NAMES,
     base_report,
@@ -90,10 +95,11 @@ def evaluate_lingbot(config: OfflineEvalConfig, run_id: str) -> Path:
                 images = dataset.frames(episode_index, indices)
                 client.reset(episode.task)
                 first_started = time.monotonic()
-                first = _lingbot_action(
+                first = validated_lingbot_action(
                     client.infer(
-                        _lingbot_observation(deployment, episode, images[0], 0)
-                    )
+                        lingbot_observation(deployment, episode, images[0], 0)
+                    ),
+                    deployment,
                 )
                 latency = time.monotonic() - first_started
                 prediction = first[:, 1:, :].transpose(1, 2, 0).reshape(-1, 8)
@@ -159,7 +165,7 @@ def _lingbot_teacher_forced_cases(
     cache_state[:, 1, :] = target.T
     client.infer(
         {
-            "obs": [_camera_packet(deployment, images[index]) for index in range(1, 5)],
+            "obs": [camera_packet(deployment, images[index]) for index in range(1, 5)],
             "compute_kv_cache": True,
             "imagine": False,
             "state": cache_state,
@@ -168,12 +174,13 @@ def _lingbot_teacher_forced_cases(
     for chunk_index in range(1, chunks):
         frame_index = chunk_index * 4
         started = time.monotonic()
-        action = _lingbot_action(
+        action = validated_lingbot_action(
             client.infer(
-                _lingbot_observation(
+                lingbot_observation(
                     deployment, episode, images[frame_index], frame_index
                 )
-            )
+            ),
+            deployment,
         )
         latency = time.monotonic() - started
         prediction = action[:, 0, :].T
@@ -197,7 +204,7 @@ def _lingbot_teacher_forced_cases(
         client.infer(
             {
                 "obs": [
-                    _camera_packet(deployment, images[index])
+                    camera_packet(deployment, images[index])
                     for index in range(frame_index + 1, frame_index + 5)
                 ],
                 "compute_kv_cache": True,
@@ -244,21 +251,13 @@ def evaluate_pi05(config: OfflineEvalConfig, run_id: str) -> Path:
             indices = even_indices(max_start, config.coverage.pi05_frames_per_episode)
             images = dataset.frames(episode_index, indices)
             for frame_index in indices:
-                packet = _camera_packet(deployment, images[frame_index])
-                packet["observation/state"] = episode.states[frame_index].copy()
-                packet["prompt"] = episode.task
+                packet = pi05_observation(
+                    deployment, episode, images[frame_index], frame_index
+                )
                 started = time.monotonic()
                 response = client.infer(packet)
                 latency = time.monotonic() - started
-                prediction = np.asarray(response.get("actions"), dtype=np.float32)
-                expected = (
-                    deployment.model_contract.action_horizon,
-                    deployment.model_contract.source_action_dim,
-                )
-                if prediction.shape != expected or not np.isfinite(prediction).all():
-                    raise RuntimeError(
-                        f"invalid pi0.5 offline action tensor: {prediction.shape}"
-                    )
+                prediction = validated_pi05_actions(response, deployment)
                 target = episode.actions[
                     frame_index : frame_index + deployment.model_contract.action_horizon
                 ]
@@ -306,42 +305,6 @@ def evaluate_pi05(config: OfflineEvalConfig, run_id: str) -> Path:
     write_json_object(path, report)
     success(f"Pi0.5 offline evaluation written: {path}")
     return path
-
-
-def _lingbot_observation(deployment, episode, images, frame_index):
-    packet = {
-        "obs": [_camera_packet(deployment, images)],
-        "prompt": episode.task,
-    }
-    absolute = np.concatenate(
-        [episode.states[frame_index, :7], episode.states[frame_index, -1:]]
-    )
-    origin = np.concatenate([episode.states[0, :7], episode.states[0, -1:]])
-    relative = absolute_action_to_relative(
-        absolute,
-        origin,
-        min_quat_norm=deployment.system.eef.min_quat_norm,
-    )
-    packet["state"] = condition_state_from_action8(
-        relative,
-        frame_chunk_size=deployment.policy_server.frame_chunk_size,
-        action_per_frame=deployment.policy_server.action_per_frame,
-    )
-    return packet
-
-
-def _camera_packet(deployment, images):
-    return {
-        deployment.observations.front_key: images["observation.images.front"],
-        deployment.observations.wrist_key: images["observation.images.wrist"],
-    }
-
-
-def _lingbot_action(response) -> np.ndarray:
-    action = np.asarray(response.get("action"), dtype=np.float32)
-    if action.shape != (8, 4, 4) or not np.isfinite(action).all():
-        raise RuntimeError(f"invalid LingBot offline action tensor: {action.shape}")
-    return action
 
 
 def main(argv: list[str] | None = None) -> int:
