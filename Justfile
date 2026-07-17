@@ -40,6 +40,7 @@ check:
     {{vpy}} {{repo}}/scripts/apps/pi05/setup_pi05_inference.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/pi05/smoke_pi05_inference.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/pi05/verify_pi05_inference.py --help >/dev/null
+    {{vpy}} -m galaxea_a1_runtime.apps.eef_policy_offline --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
     {{repo}}/scripts/apps/recording/a1_rosbag.sh --help >/dev/null
@@ -131,6 +132,9 @@ pi05-smoke:
 
 pi05:
     scripts/apps/pi05/a1_pi05_runtime.sh start
+
+offline-eval run_id="":
+    scripts/apps/eef_policy_offline_eval.sh {{run_id}}
 
 stop:
     scripts/apps/cameras/a1_camera_web_runtime.sh stop >/dev/null 2>&1 || true

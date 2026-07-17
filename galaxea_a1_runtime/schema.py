@@ -61,6 +61,8 @@ EEF_ACTION_NAMES = (
     "gripper_normalized",
 )
 
+EEF_DATASET_STATE_NAMES = (*DEFAULT_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)
+
 FRONT_IMAGE_KEY = "observation.images.front"
 WRIST_IMAGE_KEY = "observation.images.wrist"
 LINGBOT_EEF_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)

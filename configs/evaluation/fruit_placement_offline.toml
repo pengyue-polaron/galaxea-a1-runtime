@@ -1,0 +1,17 @@
+[dataset]
+root = "data/processed/fruit_placement_eef_v21"
+raw_root = "data/raw"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-fruit-placement-eef-v21"
+
+[deployments]
+lingbot = "configs/deployments/lingbot/fruit_placement_eef.toml"
+pi05 = "configs/deployments/pi05/fruit_placement_eef.toml"
+
+[output]
+root = "outputs/offline_evaluation/fruit_placement"
+
+[coverage]
+lingbot_first_frame_episodes_per_task = 26
+lingbot_teacher_forced_episodes_per_task = 1
+lingbot_teacher_forced_chunks = 8
+pi05_frames_per_episode = 3

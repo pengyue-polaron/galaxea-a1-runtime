@@ -225,6 +225,23 @@ registry](../models/README.md) to review the exact input/action contract. A new
 weight revision gets a new model descriptor and manifest; do not repoint a
 mutable alias or edit an existing revision in place.
 
+For a hardware-free replay against the real processed training episodes:
+
+```bash
+just offline-eval
+# or assign a durable run identity
+just offline-eval REVIEW_ID
+```
+
+This command starts only one managed GPU model service at a time. It does not
+initialize ROS, cameras, serial devices, or robot publishers. It validates all
+130 episode tables, checkpoint provenance, trim/RGB alignment and normalization,
+then runs LingBot first-frame inference plus teacher-forced cache replay and
+Pi0.5 first/middle/late-frame inference. Results and contact sheets are written
+under `outputs/offline_evaluation/fruit_placement/RUN_ID/`. This is a
+training-set regression check, not evidence of held-out generalization or live
+closed-loop task success.
+
 Starting either app may **MOVE THE A1** when its tracked execution setting is
 enabled:
 
