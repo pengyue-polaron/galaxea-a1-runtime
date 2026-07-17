@@ -174,7 +174,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     )
 
     deployment_id = _safe_id(string(deployment, "id"), label="deployment.id")
-    artifact_root = model.artifact_root
     transformer_weight = _manifest_file(
         model, "transformer/diffusion_pytorch_model.safetensors"
     )
@@ -195,25 +194,13 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             backend=backend,
             model=model,
             tmux=string(session, "model_tmux"),
-            checkout=backend.source.checkout,
-            python=backend.environment.python,
-            requirements=backend.environment.lock,
-            code_repository=backend.source.repository,
-            code_revision=backend.source.revision,
             vendor_config=contract.vendor_config,
-            model_repo_id=model.source.repo_id,
-            model_revision=model.source.revision,
-            artifact_root=artifact_root,
-            base_model=artifact_root,
-            checkpoint=artifact_root,
-            model_root=artifact_root,
             save_root=Path(
                 os.path.abspath(repo_root / "outputs" / "inference" / deployment_id)
             ),
             master_port=integer(session, "master_port"),
             world_size=engine.world_size,
             startup_timeout_s=floating(session, "startup_timeout_s"),
-            expected_weight_size_bytes=transformer_weight.size,
             expected_weight_sha256=transformer_weight.sha256,
             expected_transformer_config_sha256=transformer_config.sha256,
             model_action_dim=contract.model_action_dim,

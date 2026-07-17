@@ -27,11 +27,13 @@ def main() -> int:
 
     config = load_lingbot_config(args.config, repo_root=args.repo_root)
     policy = config.policy_server
+    checkout = policy.backend.source.checkout
+    model_root = policy.model.artifact_root
     if not policy.deployment_ready:
         raise RuntimeError("LingBot policy server refuses deployment_ready=false")
-    if str(policy.checkout) not in sys.path:
-        sys.path.insert(0, str(policy.checkout))
-    os.chdir(policy.checkout)
+    if str(checkout) not in sys.path:
+        sys.path.insert(0, str(checkout))
+    os.chdir(checkout)
 
     import numpy as np
     import torch
@@ -45,7 +47,7 @@ def main() -> int:
 
     job = copy.deepcopy(server_module.VA_CONFIGS[policy.vendor_config])
     job.__name__ = "Config: Galaxea A1 deployment policy server"
-    job.wan22_pretrained_model_name_or_path = str(policy.model_root)
+    job.wan22_pretrained_model_name_or_path = str(model_root)
     job.infer_mode = "server"
     job.host = config.server.host
     job.port = config.server.port
@@ -159,8 +161,8 @@ def main() -> int:
     np.random.seed(policy.seed)
     server_module.VA_CONFIGS["a1_deployment"] = job
 
-    info(f"LingBot checkout: {policy.checkout}")
-    info(f"LingBot model root: {policy.model_root}")
+    info(f"LingBot checkout: {checkout}")
+    info(f"LingBot model root: {model_root}")
     info(
         "LingBot server: "
         f"image={policy.height}x{policy.width} frame_chunk={policy.frame_chunk_size} "

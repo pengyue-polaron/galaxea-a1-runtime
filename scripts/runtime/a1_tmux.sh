@@ -81,6 +81,44 @@ a1_tmux_verify_startup() {
   [[ -z "${pane}" ]] || printf '%s\n' "${pane}"
 }
 
+a1_tmux_wait_for_http_health() {
+  if (( $# < 5 || $# > 6 )); then
+    a1_fail "a1_tmux_wait_for_http_health expects <session> <health-url> <exit-marker> <label> <timeout-s> [log-lines]."
+    return 2
+  fi
+  local session="$1"
+  local health_url="$2"
+  local exit_marker="$3"
+  local label="$4"
+  local timeout_s="$5"
+  local log_lines="${6:-80}"
+  if [[ ! "${timeout_s}" =~ ^[1-9][0-9]*$ ]]; then
+    a1_fail "HTTP health timeout must be a positive integer, got: ${timeout_s}"
+    return 2
+  fi
+  local deadline=$((SECONDS + timeout_s))
+  local pane=""
+  while (( SECONDS < deadline )); do
+    if curl -fsS --max-time 1 "${health_url}" >/dev/null 2>&1; then
+      return 0
+    fi
+    if ! a1_tmux_has_session "${session}"; then
+      a1_fail "${label} tmux session exited during startup."
+      return 2
+    fi
+    pane="$(a1_tmux_capture "${session}" 20 || true)"
+    if grep -Fq "${exit_marker}" <<<"${pane}"; then
+      a1_tmux_capture "${session}" "${log_lines}" >&2 || true
+      a1_fail "${label} process exited during startup."
+      return 2
+    fi
+    sleep 1
+  done
+  a1_tmux_capture "${session}" "${log_lines}" >&2 || true
+  a1_fail "${label} did not become healthy within ${timeout_s}s."
+  return 2
+}
+
 a1_tmux_status() {
   local session="$1"
   if a1_tmux_has_session "${session}"; then

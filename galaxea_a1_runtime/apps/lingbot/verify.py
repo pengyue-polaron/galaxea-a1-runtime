@@ -25,8 +25,8 @@ def verify_deployment(config: LingBotConfig) -> None:
     validate_training_summary(config, artifact.root)
     success(
         "LingBot deployment verified: "
-        f"source={policy.code_revision} model={policy.model.model_id} "
-        f"revision={policy.model_revision} files={artifact.files} "
+        f"source={policy.backend.source.revision} model={policy.model.model_id} "
+        f"revision={policy.model.source.revision} files={artifact.files} "
         f"manifest={artifact.manifest_sha256}"
     )
 
@@ -38,8 +38,8 @@ def validate_training_summary(config: LingBotConfig, artifact_root: Path) -> Non
         raise ValueError("LingBot training summary must be a JSON object")
     expected = {
         "checkpoint_step": policy.model.checkpoint_step,
-        "code_repository": policy.code_repository.removesuffix(".git"),
-        "code_revision": policy.code_revision,
+        "code_repository": policy.backend.source.repository.removesuffix(".git"),
+        "code_revision": policy.backend.source.revision,
         "source_action_dimension": len(policy.action_channel_ids),
         "model_action_dimension": policy.model_action_dim,
         "used_action_channel_ids": list(policy.action_channel_ids),

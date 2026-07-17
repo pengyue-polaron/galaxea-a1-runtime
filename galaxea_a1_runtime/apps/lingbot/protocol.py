@@ -22,15 +22,15 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
     contract: dict[str, Any] = {
         "protocol": PROTOCOL_VERSION,
         "backend": policy.backend.backend_id,
-        "code_repository": policy.code_repository,
-        "code_revision": policy.code_revision,
+        "code_repository": policy.backend.source.repository,
+        "code_revision": policy.backend.source.revision,
         "environment": {
             "manager": policy.backend.environment.manager,
             "python_version": policy.backend.environment.python_version,
             "lock_sha256": policy.backend.environment.lock_sha256,
         },
-        "model_repo_id": policy.model_repo_id,
-        "model_revision": policy.model_revision,
+        "model_repo_id": policy.model.source.repo_id,
+        "model_revision": policy.model.source.revision,
         "model_artifact": {
             "manifest_sha256": policy.model.manifest.sha256,
             "transformer_weight_sha256": policy.expected_weight_sha256,

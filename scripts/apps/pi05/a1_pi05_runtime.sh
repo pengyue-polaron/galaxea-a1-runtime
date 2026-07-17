@@ -78,27 +78,13 @@ start_server() {
     "bash -lc 'export PYTHONPATH=\"${ROOT}:\${PYTHONPATH:-}\"; ${command_q}; rc=\$?; echo SERVER_EXIT=\$rc; exec bash'"
 
   local timeout_s="${MODEL_STARTUP_TIMEOUT%.*}"
-  local deadline=$((SECONDS + timeout_s))
-  while (( SECONDS < deadline )); do
-    if curl -fsS --max-time 1 "http://${MODEL_HOST}:${MODEL_PORT}/healthz" >/dev/null 2>&1; then
-      probe_server
-      a1_success "OpenPI pi0.5 server is listening on ${MODEL_HOST}:${MODEL_PORT}."
-      return
-    fi
-    if ! a1_tmux_has_session "${MODEL_SESSION}"; then
-      a1_fail "OpenPI pi0.5 server tmux exited during startup."
-      exit 2
-    fi
-    if a1_tmux_capture "${MODEL_SESSION}" 20 | grep -q 'SERVER_EXIT='; then
-      a1_tmux_capture "${MODEL_SESSION}" 120 >&2 || true
-      a1_fail "OpenPI pi0.5 server process exited during startup."
-      exit 2
-    fi
-    sleep 1
-  done
-  a1_tmux_capture "${MODEL_SESSION}" 120 >&2 || true
-  a1_fail "OpenPI pi0.5 server did not listen within ${MODEL_STARTUP_TIMEOUT}s."
-  exit 2
+  if ! a1_tmux_wait_for_http_health \
+    "${MODEL_SESSION}" "http://${MODEL_HOST}:${MODEL_PORT}/healthz" \
+    "SERVER_EXIT=" "OpenPI pi0.5 server" "${timeout_s}" 120; then
+    exit 2
+  fi
+  probe_server
+  a1_success "OpenPI pi0.5 server is listening on ${MODEL_HOST}:${MODEL_PORT}."
 }
 
 smoke_inference() {

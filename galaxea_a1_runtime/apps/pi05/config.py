@@ -33,7 +33,7 @@ from galaxea_a1_runtime.configuration.paths import PI05_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
-from galaxea_a1_runtime.schema import DEFAULT_STATE_NAMES, EEF_ACTION_NAMES
+from galaxea_a1_runtime.schema import EEF_ACTION_NAMES, EEF_DATASET_STATE_NAMES
 
 
 DEFAULT_PI05_CONFIG = PI05_CONFIG
@@ -260,7 +260,7 @@ def validate_pi05_config(config: Pi05Config) -> None:
         raise ValueError("pi0.5 checkpoint format does not match the model descriptor")
     if contract.parameter_set != "ema_params":
         raise ValueError("pi0.5 deployment accepts only the published EMA parameters")
-    if contract.state_dim != len(DEFAULT_STATE_NAMES):
+    if contract.state_dim != len(EEF_DATASET_STATE_NAMES):
         raise ValueError(
             "pi0.5 state_dim does not match the shared A1 EEF state schema"
         )

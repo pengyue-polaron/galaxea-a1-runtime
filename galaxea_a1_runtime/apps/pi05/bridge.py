@@ -29,6 +29,10 @@ from galaxea_a1_runtime.apps.eef_policy_actions import (
     build_action_transform_config,
     gripper_stroke_from_norm,
 )
+from galaxea_a1_runtime.apps.eef_policy_executor import (
+    EefPolicyExecutor,
+    close_policy_resources,
+)
 from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
 from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 from galaxea_a1_runtime.apps.pi05.client import Pi05Client
@@ -46,7 +50,6 @@ class A1Pi05EEBridge:
         self.system = config.system
         self.execution = config.execution
         self.servo = config.servo
-        self.motion_enabled = False
         self.pose_keepalive_timer = None
         self.cameras = None
         self.client = None
@@ -95,6 +98,17 @@ class A1Pi05EEBridge:
             ),
             execute=config.execution.execute,
         )
+        self.executor = EefPolicyExecutor(
+            state=self.state,
+            relay=self.relay,
+            commander=self.commander,
+            relay_enable_timeout_s=self.system.relay.enable_timeout_s,
+            settle_s=self.servo.settle_s,
+            tolerance_m=self.servo.tolerance_m,
+            corrections=self.servo.corrections,
+            is_shutdown=rospy.is_shutdown,
+            policy_label="OpenPI pi0.5",
+        )
         rospy.Subscriber(
             topics.eef_pose, PoseStamped, self.state.pose_callback, queue_size=1
         )
@@ -110,7 +124,7 @@ class A1Pi05EEBridge:
         rospy.Subscriber(topics.relay_status, String, self.relay.callback, queue_size=1)
         try:
             self.pose_keepalive_timer = rospy.Timer(
-                rospy.Duration(0.05), self._publish_active_pose_target
+                rospy.Duration(0.05), self.executor.publish_active_pose_target
             )
             self.cameras = PolicyCameraSession(
                 config.system,
@@ -253,71 +267,7 @@ class A1Pi05EEBridge:
         return False
 
     def _publish_ee_action(self, policy_action: np.ndarray) -> None:
-        if not self.state.pose_is_fresh() or not self.state.gripper_is_fresh():
-            raise RuntimeError("Stale EEF or gripper feedback; refusing to publish")
-        started = time.monotonic()
-        last_command = self.state.tracker_command(policy_action)
-        self.commander.publish_action(last_command, publish_gripper=False)
-        self._enable_motion()
-        self.commander.publish_action(last_command, publish_gripper=True)
-        error = self._wait_for_target_tracking(policy_action, started)
-        for correction_index in range(self.servo.corrections):
-            if error <= self.servo.tolerance_m:
-                break
-            command = self.state.tracker_command(policy_action)
-            if np.allclose(command[:3], last_command[:3], atol=1e-4):
-                break
-            last_command = command
-            info(f"Tracking correction {correction_index + 1}/{self.servo.corrections}")
-            self.commander.publish_action(last_command, publish_gripper=False)
-            error = self._wait_for_target_tracking(policy_action, started)
-
-    def _enable_motion(self) -> None:
-        if self.motion_enabled:
-            if self.relay.is_active():
-                return
-            self.motion_enabled = False
-            self.commander.publish_motion_enable(False)
-            raise RuntimeError("A1 relay is no longer ACTIVE; refusing pi0.5 commands")
-        self.commander.publish_motion_enable(True)
-        deadline = time.monotonic() + self.system.relay.enable_timeout_s
-        while not rospy.is_shutdown() and time.monotonic() < deadline:
-            status, _ = self.relay.status()
-            if self.relay.is_active():
-                self.motion_enabled = True
-                success("Real arm command relay is ACTIVE.")
-                return
-            if status is not None and status.state == "FAULT":
-                break
-            time.sleep(0.05)
-        self.commander.publish_motion_enable(False)
-        raise RuntimeError(f"A1 relay did not become ACTIVE: {self.relay.summary()}")
-
-    def _wait_for_target_tracking(
-        self, policy_action: np.ndarray, started: float
-    ) -> float:
-        if self.servo.settle_s <= 0:
-            return float("nan")
-        deadline = time.monotonic() + self.servo.settle_s
-        error = float("inf")
-        while not rospy.is_shutdown() and time.monotonic() < deadline:
-            current = self.state.current_xyz()
-            if current is not None:
-                error = float(np.linalg.norm(policy_action[:3] - current))
-                if error <= self.servo.tolerance_m:
-                    break
-            time.sleep(0.03)
-        current = self.state.current_xyz()
-        if current is not None:
-            error = float(np.linalg.norm(policy_action[:3] - current))
-            info(
-                f"Tracking waited={time.monotonic() - started:.2f}s "
-                f"target_err_cm={error * 100.0:.2f}"
-            )
-        return error
-
-    def _publish_active_pose_target(self, _event=None) -> None:
-        self.commander.publish_active_pose_target()
+        self.executor.publish(policy_action)
 
     def _wait_for_operator(self, call_index: int) -> bool:
         step(f"Inference #{call_index + 1} ready. Enter=run, q=quit.")
@@ -335,29 +285,13 @@ class A1Pi05EEBridge:
             return "q"
 
     def close(self) -> None:
-        cleanup_errors: list[BaseException] = []
-        try:
-            self.commander.publish_motion_enable(False)
-            self.motion_enabled = False
-        except BaseException as exc:
-            cleanup_errors.append(exc)
         timer, self.pose_keepalive_timer = self.pose_keepalive_timer, None
-        if timer is not None:
-            try:
-                timer.shutdown()
-            except BaseException as exc:
-                cleanup_errors.append(exc)
         cameras, self.cameras = self.cameras, None
-        if cameras is not None:
-            try:
-                cameras.close()
-            except BaseException as exc:
-                cleanup_errors.append(exc)
         client, self.client = self.client, None
-        if client is not None:
-            try:
-                client.close()
-            except BaseException as exc:
-                cleanup_errors.append(exc)
-        if cleanup_errors:
-            raise BaseExceptionGroup("pi0.5 bridge cleanup failed", cleanup_errors)
+        close_policy_resources(
+            policy_label="pi0.5",
+            executor=self.executor,
+            timer=timer,
+            cameras=cameras,
+            client=client,
+        )

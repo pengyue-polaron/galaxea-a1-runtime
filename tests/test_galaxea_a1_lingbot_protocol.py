@@ -23,7 +23,7 @@ def test_server_metadata_exhaustively_identifies_deployment_contract():
     assert metadata["environment"]["lock_sha256"] == (
         config.policy_server.backend.environment.lock_sha256
     )
-    assert metadata["model_revision"] == config.policy_server.model_revision
+    assert metadata["model_revision"] == config.policy_server.model.source.revision
     assert metadata["model_artifact"]["transformer_weight_sha256"] == (
         config.policy_server.expected_weight_sha256
     )

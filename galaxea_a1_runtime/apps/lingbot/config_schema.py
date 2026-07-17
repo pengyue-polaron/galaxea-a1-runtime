@@ -11,7 +11,6 @@ from galaxea_a1_runtime.models.backend import CodeBackendConfig
 from galaxea_a1_runtime.models.config import ModelArtifactConfig
 
 
-OrientationMode = Literal["hold-current", "model-quat"]
 PoseMode = Literal["absolute", "episode-relative"]
 AttentionMode = Literal["torch", "flashattn"]
 TextEncoderDevice = Literal["cpu", "cuda"]
@@ -36,23 +35,11 @@ class LingBotPolicyServerConfig:
     backend: CodeBackendConfig
     model: ModelArtifactConfig
     tmux: str
-    checkout: Path
-    python: Path
-    requirements: Path
-    code_repository: str
-    code_revision: str
     vendor_config: str
-    model_repo_id: str
-    model_revision: str
-    artifact_root: Path
-    base_model: Path
-    checkpoint: Path
-    model_root: Path
     save_root: Path
     master_port: int
     world_size: int
     startup_timeout_s: float
-    expected_weight_size_bytes: int
     expected_weight_sha256: str
     expected_transformer_config_sha256: str
     model_action_dim: int

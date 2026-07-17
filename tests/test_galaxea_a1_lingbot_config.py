@@ -68,11 +68,14 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.policy_server.attention_mode == "torch"
     assert config.policy_server.enable_offload is False
     assert config.policy_server.world_size == 1
-    assert config.policy_server.python == (
+    assert config.policy_server.backend.environment.python == (
         REPO / "external/lingbot-va/.env312/bin/python"
     )
-    assert config.policy_server.model_root == config.policy_server.model.artifact_root
-    assert config.policy_server.checkpoint == config.policy_server.model.artifact_root
+    assert config.policy_server.model.artifact_root == (
+        REPO
+        / "models/artifacts/lingbot/a1_fruit_placement_eef"
+        / "90e017bdbc6afac2e441b4634c9192776bbcb8b7"
+    )
     assert config.system.cameras.front.crop is not None
     assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
 
@@ -175,8 +178,8 @@ def test_lingbot_training_metadata_matches_backend_and_action_contract(tmp_path)
     policy = config.policy_server
     summary = {
         "checkpoint_step": policy.model.checkpoint_step,
-        "code_repository": policy.code_repository.removesuffix(".git"),
-        "code_revision": policy.code_revision,
+        "code_repository": policy.backend.source.repository.removesuffix(".git"),
+        "code_revision": policy.backend.source.revision,
         "source_action_dimension": len(policy.action_channel_ids),
         "model_action_dimension": policy.model_action_dim,
         "used_action_channel_ids": list(policy.action_channel_ids),

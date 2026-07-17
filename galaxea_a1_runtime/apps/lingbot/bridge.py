@@ -30,6 +30,10 @@ from galaxea_a1_runtime.apps.eef_policy_actions import (
     build_action_transform_config,
     gripper_stroke_from_norm,
 )
+from galaxea_a1_runtime.apps.eef_policy_executor import (
+    EefPolicyExecutor,
+    close_policy_resources,
+)
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
@@ -55,7 +59,6 @@ class A1LingBotEEBridge:
         self.servo = config.servo
         self.server = config.server
         self.eef = config.system.eef
-        self.motion_enabled = False
         self.reported_condition_state = False
         self.pose_keepalive_timer = None
         self.cameras = None
@@ -106,6 +109,17 @@ class A1LingBotEEBridge:
             ),
             execute=self.execution.execute,
         )
+        self.executor = EefPolicyExecutor(
+            state=self.state,
+            relay=self.relay,
+            commander=self.commander,
+            relay_enable_timeout_s=self.system.relay.enable_timeout_s,
+            settle_s=self.servo.settle_s,
+            tolerance_m=self.servo.tolerance_m,
+            corrections=self.servo.corrections,
+            is_shutdown=rospy.is_shutdown,
+            policy_label="LingBot",
+        )
         rospy.Subscriber(
             topics.eef_pose, PoseStamped, self.state.pose_callback, queue_size=1
         )
@@ -118,7 +132,7 @@ class A1LingBotEEBridge:
         rospy.Subscriber(topics.relay_status, String, self.relay.callback, queue_size=1)
         try:
             self.pose_keepalive_timer = rospy.Timer(
-                rospy.Duration(0.05), self._publish_active_pose_target
+                rospy.Duration(0.05), self.executor.publish_active_pose_target
             )
             self.cameras = PolicyCameraSession(
                 self.system,
@@ -146,41 +160,12 @@ class A1LingBotEEBridge:
     def _set_active_pose_target(self, msg: PoseStamped) -> None:
         self.commander.set_active_pose_target_from_msg(msg)
 
-    def _publish_active_pose_target(self, _event=None) -> None:
-        self.commander.publish_active_pose_target()
-
     def _hold_current_pose(self) -> None:
         pose = self.state.current_pose_message()
         if pose is None:
             raise RuntimeError("Cannot hold EE pose before receiving feedback")
         self._set_active_pose_target(pose)
-        self._publish_active_pose_target()
-
-    def _enable_motion(self) -> None:
-        if self.motion_enabled:
-            if self.relay.is_active():
-                return
-            self.motion_enabled = False
-            self.commander.publish_motion_enable(False)
-            raise RuntimeError(
-                "A1 relay is no longer confirmed ACTIVE; refusing to publish "
-                f"more commands. Last relay state: {self.relay.summary()}"
-            )
-        self.commander.publish_motion_enable(True)
-        deadline = time.monotonic() + self.system.relay.enable_timeout_s
-        last_state = "no status"
-        while not rospy.is_shutdown() and time.monotonic() < deadline:
-            status, _ = self.relay.status()
-            last_state = self.relay.summary()
-            if self.relay.is_active():
-                self.motion_enabled = True
-                success("Real arm command relay is ACTIVE.")
-                return
-            if status is not None and status.state == "FAULT":
-                break
-            time.sleep(0.05)
-        self.commander.publish_motion_enable(False)
-        raise RuntimeError(f"A1 relay did not become ACTIVE: {last_state}")
+        self.executor.publish_active_pose_target()
 
     def _read_lingbot_obs(self) -> dict | None:
         if self.cameras is None:
@@ -240,70 +225,8 @@ class A1LingBotEEBridge:
             )
         return origin
 
-    def _wait_for_target_tracking(
-        self, policy_action8: np.ndarray, started: float
-    ) -> float:
-        if self.servo.settle_s <= 0:
-            return float("nan")
-        deadline = time.monotonic() + self.servo.settle_s
-        err_norm = float("inf")
-        while not rospy.is_shutdown() and time.monotonic() < deadline:
-            cur = self.state.current_xyz()
-            if cur is not None:
-                err = np.asarray(policy_action8[:3], dtype=np.float64) - cur
-                err_norm = float(np.linalg.norm(err))
-                if err_norm <= self.servo.tolerance_m:
-                    break
-            time.sleep(0.03)
-        cur = self.state.current_xyz()
-        if cur is not None:
-            err_norm = float(
-                np.linalg.norm(np.asarray(policy_action8[:3], dtype=np.float64) - cur)
-            )
-            info(
-                "Tracking: "
-                f"waited={time.monotonic() - started:.2f}s actual_xyz={np.round(cur, 4).tolist()} "
-                f"target_err_cm={err_norm * 100.0:.2f}"
-            )
-        return err_norm
-
-    def _publish_pose_and_gripper(
-        self, action8: np.ndarray, *, publish_gripper: bool
-    ) -> None:
-        self.commander.publish_action(action8, publish_gripper=publish_gripper)
-
     def _publish_ee_action(self, policy_action: np.ndarray) -> np.ndarray:
-        if not self.state.pose_is_fresh() or not self.state.gripper_is_fresh():
-            raise RuntimeError(
-                "A1 pose or gripper feedback is missing or stale; refusing to publish"
-            )
-
-        started = time.monotonic()
-        last_command = self.state.tracker_command(policy_action)
-
-        # Publish the pose target before arming the relay. While locked, this only
-        # refreshes the staged tracker command. Delay the gripper target until
-        # ACTIVE so enabling cannot forward a target queued before the safety gate.
-        self._publish_pose_and_gripper(last_command, publish_gripper=False)
-        self._enable_motion()
-        self._publish_pose_and_gripper(last_command, publish_gripper=True)
-
-        err_norm = self._wait_for_target_tracking(policy_action, started)
-        corrections = self.servo.corrections
-        for correction_i in range(corrections):
-            if err_norm <= self.servo.tolerance_m:
-                break
-            command = self.state.tracker_command(policy_action)
-            if np.allclose(command[:3], last_command[:3], atol=1e-4):
-                break
-            last_command = command
-            info(
-                "Tracking correction: "
-                f"{correction_i + 1}/{corrections} command_xyz={np.round(command[:3], 4).tolist()} "
-                f"policy_xyz={np.round(policy_action[:3], 4).tolist()}"
-            )
-            self._publish_pose_and_gripper(command, publish_gripper=False)
-            err_norm = self._wait_for_target_tracking(policy_action, started)
+        last_command = self.executor.publish(policy_action)
 
         grip_mm = gripper_stroke_from_norm(float(policy_action[7]), self.action_config)
         info(
@@ -528,29 +451,13 @@ class A1LingBotEEBridge:
         return False
 
     def close(self) -> None:
-        cleanup_errors: list[BaseException] = []
-        try:
-            self.commander.publish_motion_enable(False)
-            self.motion_enabled = False
-        except BaseException as exc:  # Cleanup must continue.
-            cleanup_errors.append(exc)
         timer, self.pose_keepalive_timer = self.pose_keepalive_timer, None
-        if timer is not None:
-            try:
-                timer.shutdown()
-            except BaseException as exc:  # Cleanup must continue.
-                cleanup_errors.append(exc)
         cameras, self.cameras = self.cameras, None
-        if cameras is not None:
-            try:
-                cameras.close()
-            except BaseException as exc:  # Cleanup must continue.
-                cleanup_errors.append(exc)
         client, self.client = self.client, None
-        if client is not None:
-            try:
-                client.close()
-            except BaseException as exc:  # Cleanup must continue.
-                cleanup_errors.append(exc)
-        if cleanup_errors:
-            raise BaseExceptionGroup("LingBot bridge cleanup failed", cleanup_errors)
+        close_policy_resources(
+            policy_label="LingBot",
+            executor=self.executor,
+            timer=timer,
+            cameras=cameras,
+            client=client,
+        )

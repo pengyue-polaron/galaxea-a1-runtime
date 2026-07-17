@@ -22,10 +22,11 @@ from galaxea_a1_runtime.apps.lingbot.verify import validate_training_summary
 
 def ensure_environment_imports(config: LingBotConfig) -> None:
     policy = config.policy_server
+    backend = policy.backend
     step("Validating LingBot GPU environment imports")
     subprocess.run(
         [
-            str(policy.python),
+            str(backend.environment.python),
             "-c",
             (
                 "import torch, diffusers, transformers, flash_attn; "
@@ -35,7 +36,7 @@ def ensure_environment_imports(config: LingBotConfig) -> None:
                 "torch.version.cuda, torch.cuda.get_device_name(0))"
             ),
         ],
-        cwd=policy.checkout,
+        cwd=backend.source.checkout,
         check=True,
     )
 

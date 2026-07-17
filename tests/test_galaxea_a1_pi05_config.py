@@ -10,6 +10,7 @@ from galaxea_a1_runtime.apps.pi05.protocol import (
     validate_server_metadata,
 )
 from galaxea_a1_runtime.apps.pi05.verify import validate_training_summary
+from galaxea_a1_runtime.schema import EEF_DATASET_STATE_NAMES
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -58,11 +59,13 @@ def test_pi05_protocol_exhaustively_identifies_model_and_io_contract():
     metadata = server_metadata(config)
 
     assert metadata["protocol"] == PROTOCOL_VERSION
+    assert metadata["deployment_id"] == config.deployment_id
     assert metadata["environment"]["python_version"] == "3.11"
     assert metadata["checkpoint_step"] == 14999
     assert metadata["model_revision_label"] == "step-14999"
     assert metadata["camera_shapes"] == [[480, 480, 3], [480, 640, 3]]
     assert metadata["state_shape"] == [14]
+    assert metadata["state_names"] == list(EEF_DATASET_STATE_NAMES)
     assert metadata["action_shape"] == [10, 8]
     assert metadata["pose_mode"] == "episode-relative"
     assert len(metadata["contract_sha256"]) == 64

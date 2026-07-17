@@ -206,6 +206,10 @@ At connection time both LingBot and pi0.5 bridges validate a canonical digest
 covering code, model, camera, state/action, normalization, and engine contracts
 before accepting actions. Their shared pure EEF adapter owns episode-relative
 pose composition, gripper conversion, review, and explicit safety transforms.
+Their shared ROS-free execution coordinator enforces staged pose before relay
+enable, gripper publication only after `ACTIVE`, configured tracker correction,
+and fail-closed cleanup; model bridges only supply rollout behavior. Model
+services reuse the app-agnostic tmux health/exit supervisor.
 Each live bridge can publish only staged EEF/gripper targets; the isolated
 tracker and locked relay remain the sole path toward host motor commands.
 
