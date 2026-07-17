@@ -129,7 +129,6 @@ def summarize_run(config: OfflineEvalConfig, run_id: str) -> Path:
         [
             "## Interpretation limits",
             "",
-            "- Quaternion error is reported for the raw learned channel, but the current live deployment uses `hold-current` orientation.",
             "- Raw workspace and gripper excursions are reported; the named runtime safety transform clamps them before publication.",
             "- A quaternion below the configured minimum norm is runtime-rejected rather than rewritten.",
             "- Demonstration workspace excursions are reported separately because some training targets already lie outside the current System workspace.",

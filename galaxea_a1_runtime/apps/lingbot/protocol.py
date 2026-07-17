@@ -12,7 +12,7 @@ from galaxea_a1_runtime.inference.protocol import (
 )
 
 
-PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v1"
+PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v2"
 
 
 def server_metadata(config: LingBotConfig) -> dict[str, Any]:
@@ -37,7 +37,7 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
             "transformer_config_sha256": policy.expected_transformer_config_sha256,
         },
         "vendor_config": policy.vendor_config,
-        "prompt": config.server.prompt,
+        "task_catalog": config.task_catalog.protocol_contract(),
         "camera_keys": [
             config.observations.front_key,
             config.observations.wrist_key,

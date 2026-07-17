@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import time
 from typing import Any, Sequence
 
 from galaxea_a1_runtime.gripper import normalize_stroke
@@ -102,9 +103,47 @@ class StagedCommandMonitor:
     def callback(self, msg: Any) -> None:
         self.cache.set(msg)
 
-    def max_error(self, target: Sequence[float], dof: int) -> float | None:
-        msg = self.cache.get()
+    def max_error(
+        self,
+        target: Sequence[float],
+        dof: int,
+        *,
+        max_age_s: float | None = None,
+    ) -> float | None:
+        msg = self.cache.get(max_age_s=max_age_s)
         if msg is None or len(getattr(msg, "p_des", ())) < dof:
             return None
         staged = tuple(float(value) for value in msg.p_des[:dof])
+        if not all(math.isfinite(value) for value in staged):
+            return None
         return max(abs(staged[index] - float(target[index])) for index in range(dof))
+
+
+def wait_for_staged_joint_alignment(
+    monitor: StagedCommandMonitor,
+    target: Sequence[float],
+    *,
+    dof: int,
+    timeout_s: float,
+    max_age_s: float,
+    tolerance_rad: float,
+    is_shutdown,
+    sleep=time.sleep,
+    monotonic=time.monotonic,
+) -> float:
+    """Wait until jointTracker has produced a fresh command aligned to a hold."""
+
+    deadline = monotonic() + timeout_s
+    last_error: float | None = None
+    while not is_shutdown() and monotonic() < deadline:
+        last_error = monitor.max_error(target, dof, max_age_s=max_age_s)
+        if last_error is not None and last_error <= tolerance_rad:
+            return last_error
+        sleep(0.02)
+    detail = "no complete fresh staged command"
+    if last_error is not None:
+        detail = f"last max error={last_error:.6f}rad"
+    raise RuntimeError(
+        "jointTracker did not stage the initial hold within "
+        f"{timeout_s:.1f}s ({detail})"
+    )

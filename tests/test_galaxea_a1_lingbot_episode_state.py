@@ -12,11 +12,8 @@ def _config() -> EefActionTransformConfig:
         xyz_min=(0.0, -1.0, 0.0),
         xyz_max=(1.0, 1.0, 1.0),
         min_quat_norm=0.25,
-        orientation_mode="hold-current",
         gripper_stroke_min=0.0,
         gripper_stroke_max=100.0,
-        eef_servo_gain=1.0,
-        eef_servo_max_extra=0.04,
     )
 
 

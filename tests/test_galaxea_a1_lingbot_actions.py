@@ -7,10 +7,8 @@ from galaxea_a1_runtime.apps.eef_policy_actions import (
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
     normalize_condition_action,
-    prepare_policy_action,
     relative_action_to_absolute,
     sanitize_policy_action,
-    tracker_command_action,
 )
 
 
@@ -19,11 +17,8 @@ def action_config(**overrides) -> EefActionTransformConfig:
         "xyz_min": (0.06, -0.27, 0.06),
         "xyz_max": (0.44, 0.14, 0.50),
         "min_quat_norm": 0.25,
-        "orientation_mode": "hold-current",
         "gripper_stroke_min": 0.0,
         "gripper_stroke_max": 100.0,
-        "eef_servo_gain": 1.0,
-        "eef_servo_max_extra": 0.04,
     }
     values.update(overrides)
     return EefActionTransformConfig(**values)
@@ -54,33 +49,15 @@ def test_policy_action_applies_workspace_without_per_step_delta_clamp():
     assert action[7] == pytest.approx(0.0)
 
 
-def test_hold_current_orientation_replaces_model_quaternion():
-    cfg = action_config(orientation_mode="hold-current")
+def test_policy_action_preserves_model_quaternion():
+    cfg = action_config()
 
-    action = prepare_policy_action(
-        [0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 1.0, 0.5],
+    action = sanitize_policy_action(
+        [0.1, 0.1, 0.1, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5), 0.5],
         cfg,
-        current_quat=(0.0, 1.0, 0.0, 0.0),
-        require_current_orientation=True,
     )
 
-    assert action[3:7] == pytest.approx((0.0, 1.0, 0.0, 0.0))
-
-
-def test_servo_compensation_is_off_by_default_and_explicit_when_enabled():
-    policy_action = np.array([0.20, 0.10, 0.10, 0.0, 0.0, 0.0, 1.0, 0.5])
-
-    off = tracker_command_action(
-        policy_action, action_config(), current_xyz=(0.10, 0.10, 0.10)
-    )
-    on = tracker_command_action(
-        policy_action,
-        action_config(eef_servo_gain=1.5, eef_servo_max_extra=1.0),
-        current_xyz=(0.10, 0.10, 0.10),
-    )
-
-    assert off[:3] == pytest.approx((0.20, 0.10, 0.10))
-    assert on[:3] == pytest.approx((0.25, 0.10, 0.10))
+    assert action[3:7] == pytest.approx((0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5)))
 
 
 def test_gripper_mapping_is_continuous_across_shared_stroke():

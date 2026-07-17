@@ -52,7 +52,7 @@ def main() -> int:
     policy = policy_config.create_trained_policy(
         train_config,
         config.model.artifact_root,
-        default_prompt=config.server.prompt,
+        default_prompt=config.task_catalog.default.prompt,
         sample_kwargs={"num_steps": config.engine.sampling_steps},
     )
     metadata = server_metadata(config)

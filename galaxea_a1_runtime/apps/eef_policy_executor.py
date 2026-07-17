@@ -51,6 +51,8 @@ class EefPolicyExecutor:
             or corrections < 0
         ):
             raise ValueError("EEF executor corrections must be a non-negative integer")
+        if corrections and settle_s <= 0:
+            raise ValueError("EEF executor corrections require a positive settle time")
         self.state = state
         self.relay = relay
         self.commander = commander
@@ -64,46 +66,47 @@ class EefPolicyExecutor:
         self.sleep = sleep
         self.motion_enabled = False
 
-    def publish_active_pose_target(self, _event: object = None) -> None:
-        """Refresh the staged pose target; safe for use as a ROS timer callback."""
+    def publish_active_target(self, _event: object = None) -> None:
+        """Refresh the staged target; safe for use as a ROS timer callback."""
 
-        self.commander.publish_active_pose_target()
+        self.commander.publish_active_target()
 
     def publish(self, policy_action: np.ndarray) -> np.ndarray:
         """Stage, unlock, publish, and track one already-sanitized action."""
 
-        if not self.state.pose_is_fresh() or not self.state.gripper_is_fresh():
+        stale_sources = []
+        if not self.state.pose_is_fresh():
+            stale_sources.append("EEF pose")
+        if not self.state.gripper_is_fresh():
+            stale_sources.append("gripper")
+        if stale_sources:
             raise RuntimeError(
-                f"{self.policy_label} EEF or gripper feedback is missing or stale; "
+                f"{self.policy_label} feedback is missing or stale: "
+                f"{', '.join(stale_sources)}; "
                 "refusing to publish"
             )
 
         started = self.monotonic()
-        last_command = self.state.tracker_command(policy_action)
+        target = np.asarray(policy_action, dtype=np.float64).reshape(8).copy()
 
-        # Pose is staged while the relay remains locked. Gripper publication is
-        # deliberately delayed until ACTIVE so no pre-gate target can pass through.
-        self.commander.publish_action(last_command, publish_gripper=False)
+        # The joint target is staged while the relay remains locked. Gripper
+        # publication is delayed until ACTIVE so no pre-gate target can pass through.
+        self.commander.publish_action(target, publish_gripper=False)
         self.enable_motion()
-        self.commander.publish_action(last_command, publish_gripper=True)
+        self.commander.publish_gripper(float(target[7]))
 
         error = self._wait_for_target_tracking(policy_action, started)
         for correction_index in range(self.corrections):
             if error <= self.tolerance_m:
                 break
-            command = self.state.tracker_command(policy_action)
-            if np.allclose(command[:3], last_command[:3], atol=1e-4):
-                break
-            last_command = command
             info(
                 f"{self.policy_label} tracking correction "
                 f"{correction_index + 1}/{self.corrections}: "
-                f"command_xyz={np.round(command[:3], 4).tolist()} "
-                f"policy_xyz={np.round(policy_action[:3], 4).tolist()}"
+                f"target_xyz={np.round(target[:3], 4).tolist()}"
             )
-            self.commander.publish_action(last_command, publish_gripper=False)
+            self.commander.publish_action(target, publish_gripper=False)
             error = self._wait_for_target_tracking(policy_action, started)
-        return last_command
+        return target
 
     def enable_motion(self) -> None:
         """Open the relay only after a fresh ACTIVE acknowledgement."""

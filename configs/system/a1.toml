@@ -52,13 +52,28 @@ state_timeout_s = 10.0
 max_feedback_age_s = 0.5
 
 [eef]
-command_frame = "world"
-orientation_mode = "hold-current"
+# Both reviewed EEF checkpoints were trained on full episode-relative pose.
+# Preserve their quaternion channel through absolute composition and IK.
 xyz_min = [0.06, -0.27, 0.06]
 xyz_max = [0.44, 0.14, 0.50]
 min_quat_norm = 0.25
 max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
+
+[eef_ik]
+urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+max_iterations = 200
+damping = 0.01
+orientation_weight = 0.2
+max_iteration_step_rad = 0.08
+# A live LingBot rollout reached a numerically valid solution with 1.417 mm
+# Cartesian residual; accept up to 2 mm while retaining fail-closed IK checks.
+position_tolerance_m = 0.002
+orientation_tolerance_rad = 0.01
+# Live pi0.5 and two-frame LingBot rollouts observed continuous valid IK
+# solutions up to 0.924255 rad. Allow practical headroom while still rejecting
+# larger branch jumps; absolute named-joint limits remain independently enforced.
+max_solution_delta_rad = 1.50
 
 [eef_test]
 step_m = 0.03

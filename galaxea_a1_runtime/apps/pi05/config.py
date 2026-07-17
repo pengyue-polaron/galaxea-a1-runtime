@@ -27,10 +27,10 @@ from galaxea_a1_runtime.configuration.base import (
     repo_path,
     required_table,
     string,
-    text,
 )
 from galaxea_a1_runtime.configuration.paths import PI05_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.configuration.tasks import load_task_catalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
 from galaxea_a1_runtime.schema import EEF_ACTION_NAMES, EEF_DATASET_STATE_NAMES
@@ -51,6 +51,7 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
             "system",
             "backend",
             "model",
+            "tasks",
             "deployment",
             "session",
             "server",
@@ -76,6 +77,9 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     if model.artifact_format != "orbax-ocdbt":
         raise ValueError("pi0.5 model artifact_format must be 'orbax-ocdbt'")
     model_contract = _load_model_contract(model)
+    task_catalog = load_task_catalog(
+        _config_reference(data, "tasks", repo_root), repo_root=repo_root
+    )
 
     deployment = required_table(data, "deployment")
     session = required_table(data, "session")
@@ -91,7 +95,7 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     )
     require_exact_keys(
         server,
-        required={"host", "port", "connect_timeout_s", "close_timeout_s", "prompt"},
+        required={"host", "port", "connect_timeout_s", "close_timeout_s"},
         label="pi0.5 server",
     )
     require_exact_keys(
@@ -114,8 +118,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     require_exact_keys(
         action,
         required={
-            "servo_gain",
-            "servo_max_extra_m",
             "servo_settle_s",
             "servo_tolerance_m",
             "servo_corrections",
@@ -131,6 +133,7 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
         engine=engine,
         model=model,
         model_contract=model_contract,
+        task_catalog=task_catalog,
         session=Pi05SessionConfig(
             tmux=string(session, "tmux"),
             model_tmux=string(session, "model_tmux"),
@@ -141,7 +144,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
             port=integer(server, "port"),
             connect_timeout_s=floating(server, "connect_timeout_s"),
             close_timeout_s=floating(server, "close_timeout_s"),
-            prompt=text(server, "prompt").strip(),
         ),
         observations=Pi05ObservationConfig(
             front_key=string(observations, "front_key"),
@@ -160,8 +162,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
             review_deadband_m=floating(execution, "review_deadband_m"),
         ),
         servo=Pi05ServoConfig(
-            gain=floating(action, "servo_gain"),
-            max_extra_m=floating(action, "servo_max_extra_m"),
             settle_s=floating(action, "servo_settle_s"),
             tolerance_m=floating(action, "servo_tolerance_m"),
             corrections=integer(action, "servo_corrections"),
@@ -282,8 +282,6 @@ def validate_pi05_config(config: Pi05Config) -> None:
     missing = sorted(required - manifest_paths)
     if missing:
         raise ValueError(f"pi0.5 model manifest is missing contract files: {missing}")
-    if config.deployment_ready and not config.server.prompt:
-        raise ValueError("deployment-ready pi0.5 config requires a real prompt")
     execution = config.execution
     if execution.execute and not config.deployment_ready:
         raise ValueError("pi0.5 execution.execute requires deployment.ready=true")
@@ -297,10 +295,10 @@ def validate_pi05_config(config: Pi05Config) -> None:
         )
     if config.system.cameras.front.backend != "realsense":
         raise ValueError("pi0.5 front camera must use the RealSense backend")
-    if config.servo.gain <= 0 or config.servo.tolerance_m <= 0:
-        raise ValueError("pi0.5 servo gain and tolerance must be positive")
-    if config.servo.max_extra_m < 0 or config.servo.settle_s < 0:
-        raise ValueError("pi0.5 servo max_extra_m and settle_s must be non-negative")
+    if config.servo.tolerance_m <= 0:
+        raise ValueError("pi0.5 servo tolerance must be positive")
+    if config.servo.settle_s < 0:
+        raise ValueError("pi0.5 servo settle_s must be non-negative")
     if config.servo.corrections < 0:
         raise ValueError("pi0.5 servo.corrections must be >= 0")
     if config.servo.corrections and config.servo.settle_s <= 0:

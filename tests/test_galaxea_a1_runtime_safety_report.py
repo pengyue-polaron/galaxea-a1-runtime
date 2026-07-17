@@ -14,22 +14,30 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "generic_ros1_adapter_arm_motion" not in settings
     assert "generic_ros1_gripper_range_check" not in settings
     assert "lingbot_xyz_delta_clamp" not in settings
-    assert "eef_policy_orientation_mode" in settings
-    assert "lingbot_eef_servo_compensation" in settings
+    assert settings["eef_policy_task_selection"].default == "6 tracked prompts"
+    assert "before model" in settings["eef_policy_task_selection"].behavior
+    assert "train/OOD" in settings["eef_policy_task_selection"].visibility
+    assert "lingbot_eef_servo_compensation" not in settings
+    assert "pi05_eef_servo_compensation" not in settings
+    assert "eef_policy_ik" in settings
+    assert "bounded IK" in settings["safe_command_path"].path
+    assert "position_tolerance=0.002m" in settings["eef_policy_ik"].default
+    assert "max_joint_delta=1.5rad" in settings["eef_policy_ik"].default
     assert "lingbot_cache_actual_feedback" in settings
     assert settings["lingbot_cache_actual_feedback"].default
     assert "eef_policy_relay_status_guard" in settings
     assert settings["gripper_position_jump_compatibility"].default == "mask=8"
-    assert settings["lingbot_execution_gate"].default.startswith("execute=false")
-    assert settings["pi05_execution_gate"].default.startswith("execute=false")
+    assert settings["lingbot_execution_gate"].default == (
+        "execute=true, step_mode=false, step_actions=false, max_model_calls=66"
+    )
+    assert settings["pi05_execution_gate"].default == (
+        "execute=true, step_mode=false, step_actions=false, max_model_calls=53"
+    )
+    for name in ("lingbot_execution_gate", "pi05_execution_gate"):
+        assert "rollout cadence" in settings[name].operator_note
+        assert "finite model-call cap" in settings[name].operator_note
     assert settings["teleop_gripper_mapping"].default == (
         "leader=[0,53.16], invert=false"
-    )
-    assert settings["lingbot_eef_servo_compensation"].default == (
-        "gain=1, max_extra=0.04m"
-    )
-    assert settings["pi05_eef_servo_compensation"].default == (
-        "gain=1, max_extra=0.04m"
     )
     assert settings["lingbot_cache_actual_feedback"].default == "false"
     assert settings["gripper_scale_mapping"].default.startswith("continuous 0..1")

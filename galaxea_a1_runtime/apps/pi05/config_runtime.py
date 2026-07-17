@@ -24,6 +24,7 @@ def bash_config(config: Pi05Config) -> str:
         ("MODEL_CHECKOUT", str(config.backend.source.checkout)),
         ("MODEL_PYTHON", str(config.backend.environment.python)),
         ("MODEL_ROOT", str(config.model.artifact_root)),
+        ("TASK_CATALOG_PATH", str(config.task_catalog.path)),
         ("MODEL_HOST", config.server.host),
         ("MODEL_PORT", str(config.server.port)),
         ("MODEL_CONNECT_TIMEOUT", number(config.server.connect_timeout_s)),

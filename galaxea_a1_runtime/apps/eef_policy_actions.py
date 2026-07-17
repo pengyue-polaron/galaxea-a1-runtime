@@ -3,14 +3,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal, Sequence
+from typing import Sequence
 
 import numpy as np
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_stroke
-
-OrientationMode = Literal["hold-current", "model-quat"]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -18,18 +16,13 @@ class EefActionTransformConfig:
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
     min_quat_norm: float
-    orientation_mode: OrientationMode
     gripper_stroke_min: float
     gripper_stroke_max: float
-    eef_servo_gain: float
-    eef_servo_max_extra: float
 
 
 def build_action_transform_config(
     *,
     system: SystemConfig,
-    servo_gain: float,
-    servo_max_extra_m: float,
 ) -> EefActionTransformConfig:
     """Derive the pure action transform from its exclusive config owners."""
 
@@ -37,11 +30,8 @@ def build_action_transform_config(
         xyz_min=system.eef.xyz_min,
         xyz_max=system.eef.xyz_max,
         min_quat_norm=system.eef.min_quat_norm,
-        orientation_mode=system.eef.orientation_mode,
         gripper_stroke_min=system.gripper.stroke_min_mm,
         gripper_stroke_max=system.gripper.stroke_max_mm,
-        eef_servo_gain=servo_gain,
-        eef_servo_max_extra=servo_max_extra_m,
     )
 
 
@@ -71,69 +61,6 @@ def sanitize_policy_action(
     )
     action[7] = _command_gripper(action[7], config)
     return action
-
-
-def apply_orientation_mode(
-    action8: Sequence[float],
-    config: EefActionTransformConfig,
-    *,
-    current_quat: Sequence[float] | None,
-    require_current: bool,
-) -> np.ndarray:
-    """Apply the app's explicit orientation policy."""
-
-    action = _as_action8(action8, label="EEF policy action")
-    if config.orientation_mode == "model-quat":
-        return action
-    if config.orientation_mode != "hold-current":
-        raise ValueError(f"unsupported orientation mode: {config.orientation_mode}")
-    if current_quat is None:
-        if require_current:
-            raise RuntimeError("No valid current EE orientation; refusing to publish")
-        return action
-    action[3:7] = normalize_quat(
-        current_quat, min_norm=config.min_quat_norm, label="current EE orientation"
-    )
-    return action
-
-
-def prepare_policy_action(
-    raw8: Sequence[float],
-    config: EefActionTransformConfig,
-    *,
-    current_quat: Sequence[float] | None,
-    require_current_orientation: bool,
-) -> np.ndarray:
-    action = sanitize_policy_action(raw8, config)
-    return apply_orientation_mode(
-        action,
-        config,
-        current_quat=current_quat,
-        require_current=require_current_orientation,
-    )
-
-
-def tracker_command_action(
-    policy_action8: Sequence[float],
-    config: EefActionTransformConfig,
-    *,
-    current_xyz: Sequence[float] | None,
-) -> np.ndarray:
-    """Optionally amplify the tracker target when servo compensation is enabled."""
-
-    command = _as_action8(policy_action8, label="policy action")
-    if current_xyz is None or config.eef_servo_gain <= 1.0:
-        return command
-
-    cur = _as_xyz(current_xyz, label="current_xyz")
-    residual = command[:3] - cur
-    extra = (config.eef_servo_gain - 1.0) * residual
-    if config.eef_servo_max_extra > 0:
-        extra_norm = float(np.linalg.norm(extra))
-        if extra_norm > config.eef_servo_max_extra:
-            extra *= config.eef_servo_max_extra / extra_norm
-    command[:3] = _clamp_xyz(command[:3] + extra, config)
-    return command
 
 
 def gripper_norm_from_stroke(

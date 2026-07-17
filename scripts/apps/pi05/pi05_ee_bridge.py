@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Operator entrypoint for the OpenPI pi0.5 staged EEF bridge."""
+"""Operator entrypoint for the OpenPI pi0.5 EEF-to-IK bridge."""
 
 from galaxea_a1_runtime.apps.pi05.cli import main
 

@@ -42,6 +42,7 @@ def _gradient_rgb(height: int, width: int) -> np.ndarray:
 def run_smoke(config: LingBotConfig) -> np.ndarray:
     """Exercise inference, temporal cache, and reinference without hardware I/O."""
     server = config.server
+    prompt = config.task_catalog.default.prompt
     client = LingBotClient(
         server.host,
         server.port,
@@ -51,10 +52,10 @@ def run_smoke(config: LingBotConfig) -> np.ndarray:
     )
     try:
         step("Resetting the LingBot episode cache")
-        client.reset(server.prompt)
+        client.reset(prompt)
         packet = {
             "obs": [synthetic_observation(config)],
-            "prompt": server.prompt,
+            "prompt": prompt,
         }
         step("Running the first synthetic, hardware-free LingBot inference")
         started = time.monotonic()

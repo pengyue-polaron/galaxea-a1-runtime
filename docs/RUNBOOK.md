@@ -56,6 +56,10 @@ Optional EEF acceptance **MOVES HARDWARE**:
 just eef-test
 ```
 
+This step-gated check sends each accepted Cartesian nudge through the same
+bounded URDF IK, named joint target, isolated jointTracker, and fail-closed relay
+used by both policy bridges. Targets outside the tracked workspace are skipped.
+
 Run it only with a clear workspace. After any partial startup failure, use
 `just stop` before retrying.
 
@@ -262,10 +266,44 @@ enabled:
 
 ```bash
 just lingbot
-tmux attach -t lingbot-a1
 
 just pi05
 tmux attach -t pi05-a1
 ```
 
+`just lingbot` starts the complete pipeline and attaches the `lingbot-a1` tmux
+session automatically. Its single `[RUN]` line updates in place with inference,
+execution, EEF, and AgentView recording progress. Detach without stopping with
+`Ctrl+B`, then `D`; reattach with `tmux attach -t lingbot-a1`.
+
+While LingBot is running, open the AgentView/wrist dashboard at
+`http://0.0.0.0:8088` (replace `0.0.0.0` with this host's LAN address from
+another machine). The bridge records the full, unoverlaid AgentView stream from
+the already-owned camera reader. Normal completion, an execution error, and
+`Ctrl+C` all lock the relay before closing the camera and atomically publishing
+`agent_view.mp4` under
+`outputs/inference/lingbot-fruit-placement-eef/recordings/`. The final absolute
+video path and frame count are printed after the MP4 is finalized.
+
 Run one live app at a time and use `just stop` when switching.
+
+Both commands first display the six approved prompts from
+`configs/tasks/fruit_placement.toml`: five training prompts and the explicitly
+marked OOD `lemon_bowl` evaluation prompt. Select by number, tracked task id, or
+the exact prompt; `q` cancels before the model server, ROS, cameras, or hardware
+are opened. The selected task id, train/OOD provenance, and exact prompt are
+printed again by the bridge.
+
+The reviewed fruit-placement deployments are currently live-enabled. After
+task selection, they start their first inference automatically when fresh
+observations are available. Each deployment reads its operator-selected rollout
+cadence directly from its tracked `[execution]` table; edit that owning config
+when changing how much model output is consumed before replanning. Both solve
+EEF targets with the tracked first-party IK and publish named joint targets
+through jointTracker. Neither deployment waits for inference or action
+confirmation. Their tracked finite call budgets cover the longest 526-step
+training episode. Use `Ctrl+C` in the attached LingBot session when its rollout
+should end, or `just stop` from another terminal; normal completion and manual
+stop both lock the relay, finalize AgentView recording, and end successfully. A
+genuine feedback or safety failure remains a nonzero error and identifies the
+stale feedback source.

@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
+from galaxea_a1_runtime.configuration.tasks import TaskCatalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig
 from galaxea_a1_runtime.models.config import ModelArtifactConfig
 
@@ -27,7 +28,6 @@ class LingBotServerConfig:
     port: int
     connect_timeout_s: float
     close_timeout_s: float
-    prompt: str
 
 
 @dataclass(frozen=True)
@@ -93,12 +93,16 @@ class LingBotActionModeConfig:
 
 @dataclass(frozen=True)
 class LingBotServoConfig:
-    gain: float
-    max_extra_m: float
     settle_s: float
     tolerance_m: float
     corrections: int
     cache_actual_feedback: bool
+
+
+@dataclass(frozen=True)
+class LingBotRecordingConfig:
+    agent_view_enabled: bool
+    output_root: Path
 
 
 @dataclass(frozen=True)
@@ -107,8 +111,10 @@ class LingBotConfig:
     system: SystemConfig
     session: LingBotSessionConfig
     server: LingBotServerConfig
+    task_catalog: TaskCatalog
     policy_server: LingBotPolicyServerConfig
     execution: LingBotExecutionConfig
     observations: LingBotObservationConfig
     action: LingBotActionModeConfig
     servo: LingBotServoConfig
+    recording: LingBotRecordingConfig

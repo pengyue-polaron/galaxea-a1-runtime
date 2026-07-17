@@ -126,16 +126,15 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             "lingbot_config",
             lingbot_config.system.path == teleop_config.system.path
             and 1 <= lingbot_config.server.port <= 65535
-            and lingbot_config.system.eef.orientation_mode
-            in {"hold-current", "model-quat"},
+            and lingbot_config.policy_server.deployment_ready
+            and lingbot_config.system.eef.min_quat_norm > 0,
             str(lingbot_config.path),
         )
         add(
             "pi05_config",
             pi05_config.system.path == teleop_config.system.path
             and 1 <= pi05_config.server.port <= 65535
-            and pi05_config.deployment_ready
-            and not pi05_config.execution.execute,
+            and pi05_config.deployment_ready,
             str(pi05_config.path),
         )
     except Exception as exc:

@@ -16,6 +16,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
     LingBotExecutionConfig,
     LingBotObservationConfig,
     LingBotPolicyServerConfig,
+    LingBotRecordingConfig,
     LingBotServerConfig,
     LingBotServoConfig,
     LingBotSessionConfig,
@@ -34,11 +35,11 @@ from galaxea_a1_runtime.configuration.base import (
     repo_path,
     required_table,
     string,
-    text,
 )
 from galaxea_a1_runtime.configuration.cli import run_config_renderer
 from galaxea_a1_runtime.configuration.paths import LINGBOT_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.configuration.tasks import load_task_catalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
 from galaxea_a1_runtime.schema import LINGBOT_EEF_ACTION_CHANNEL_IDS
@@ -91,12 +92,14 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             "system",
             "backend",
             "model",
+            "tasks",
             "deployment",
             "session",
             "server",
             "observations",
             "execution",
             "action",
+            "recording",
         },
         label="LingBot deployment config",
     )
@@ -116,6 +119,9 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     if model.artifact_format != "diffusers":
         raise ValueError("LingBot model artifact_format must be 'diffusers'")
     contract = _load_model_contract(model)
+    task_catalog = load_task_catalog(
+        _config_reference(data, "tasks", repo_root), repo_root=repo_root
+    )
 
     deployment = required_table(data, "deployment")
     session = required_table(data, "session")
@@ -123,6 +129,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     observations = required_table(data, "observations")
     execution = required_table(data, "execution")
     action = required_table(data, "action")
+    recording = required_table(data, "recording")
     require_exact_keys(deployment, required={"id", "ready"}, label="LingBot deployment")
     require_exact_keys(
         session,
@@ -136,7 +143,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     )
     require_exact_keys(
         server,
-        required={"host", "port", "connect_timeout_s", "close_timeout_s", "prompt"},
+        required={"host", "port", "connect_timeout_s", "close_timeout_s"},
         label="server",
     )
     require_exact_keys(
@@ -163,8 +170,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     require_exact_keys(
         action,
         required={
-            "servo_gain",
-            "servo_max_extra_m",
             "servo_settle_s",
             "servo_tolerance_m",
             "servo_corrections",
@@ -172,12 +177,20 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
         },
         label="action",
     )
+    require_exact_keys(
+        recording,
+        required={"agent_view_enabled", "output_root"},
+        label="recording",
+    )
 
     deployment_id = _safe_id(string(deployment, "id"), label="deployment.id")
     transformer_weight = _manifest_file(
         model, "transformer/diffusion_pytorch_model.safetensors"
     )
     transformer_config = _manifest_file(model, "transformer/config.json")
+    recording_output_root = repo_path(repo_root, string(recording, "output_root"))
+    if not recording_output_root.is_relative_to((repo_root / "outputs").resolve()):
+        raise ValueError("recording.output_root must remain under outputs/")
     deployment_ready = boolean(deployment, "ready")
     config = LingBotConfig(
         path=path,
@@ -188,8 +201,8 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             port=integer(server, "port"),
             connect_timeout_s=floating(server, "connect_timeout_s"),
             close_timeout_s=floating(server, "close_timeout_s"),
-            prompt=text(server, "prompt").strip(),
         ),
+        task_catalog=task_catalog,
         policy_server=LingBotPolicyServerConfig(
             backend=backend,
             model=model,
@@ -246,12 +259,14 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             pose_mode=contract.pose_mode,
         ),
         servo=LingBotServoConfig(
-            gain=floating(action, "servo_gain"),
-            max_extra_m=floating(action, "servo_max_extra_m"),
             settle_s=floating(action, "servo_settle_s"),
             tolerance_m=floating(action, "servo_tolerance_m"),
             corrections=integer(action, "servo_corrections"),
             cache_actual_feedback=boolean(action, "cache_actual_feedback"),
+        ),
+        recording=LingBotRecordingConfig(
+            agent_view_enabled=boolean(recording, "agent_view_enabled"),
+            output_root=recording_output_root,
         ),
     )
     validate_lingbot_config(config)
@@ -397,8 +412,6 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
             "LingBot checkpoint action_channel_ids do not match the shared A1 EEF schema"
         )
     if policy.deployment_ready:
-        if not config.server.prompt:
-            raise ValueError("deployment-ready LingBot config requires a real prompt")
         if not policy.q01_source or not policy.q99_source:
             raise ValueError(
                 "deployment-ready LingBot config requires q01/q99 statistics"
@@ -423,6 +436,10 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         <= 0
     ):
         raise ValueError("LingBot execution frame counts must be positive")
+    if config.execution.execute_frames > policy.frame_chunk_size:
+        raise ValueError(
+            "execution.execute_frames cannot exceed the model frame_chunk_size"
+        )
     if policy.action_per_frame % config.execution.kv_observations_per_frame:
         raise ValueError(
             "LingBot action_per_frame must be divisible by kv_observations_per_frame"
@@ -440,10 +457,10 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("execution.execute requires deployment.ready=true")
     if config.system.cameras.front.backend != "realsense":
         raise ValueError("LingBot front camera must use the RealSense backend")
-    if config.servo.gain <= 0 or config.servo.tolerance_m <= 0:
-        raise ValueError("servo gain and tolerance must be positive")
-    if config.servo.max_extra_m < 0 or config.servo.settle_s < 0:
-        raise ValueError("servo max_extra_m and settle_s must be non-negative")
+    if config.servo.tolerance_m <= 0:
+        raise ValueError("servo tolerance must be positive")
+    if config.servo.settle_s < 0:
+        raise ValueError("servo settle_s must be non-negative")
     if config.servo.corrections < 0:
         raise ValueError("servo.corrections must be >= 0")
     if config.servo.corrections and config.servo.settle_s <= 0:

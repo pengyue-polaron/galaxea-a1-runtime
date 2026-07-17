@@ -3,14 +3,14 @@ set -eo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
-BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
+BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CONFIG_PATH=""
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if [[ "${1:-}" == "--config" ]]; then
   if [[ -z "${2:-}" ]]; then
     a1_fail "--config requires a path."
-    a1_usage "$0 --config <path> <setup|verify|start|server|smoke|server-stop|server-logs|services|tmux|stop|doctor|status|logs>" >&2
+    a1_usage "$0 --config <path> <setup|verify|start|run|server|smoke|server-stop|server-logs|services|tmux|stop|doctor|status|logs>" >&2
     exit 2
   fi
   CONFIG_PATH="$2"
@@ -28,6 +28,7 @@ SMOKE_SCRIPT="${ROOT}/scripts/apps/lingbot/smoke_lingbot_inference.py"
 VERIFY_SCRIPT="${ROOT}/scripts/apps/lingbot/verify_lingbot_inference.py"
 PROBE_SCRIPT="${ROOT}/scripts/apps/lingbot/probe_lingbot_server.py"
 BRIDGE_ENVIRONMENT_CHECKED=false
+SELECTED_TASK_ID=""
 
 config_args=(--repo-root "${ROOT}" --shell)
 if [[ -n "${CONFIG_PATH}" ]]; then
@@ -149,13 +150,32 @@ start_services() {
   "${BASE_RUNTIME}" services
 }
 
+select_task() {
+  if [[ -n "${SELECTED_TASK_ID}" ]]; then
+    return
+  fi
+  local selected
+  if ! selected="$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.task_selection \
+      --catalog "${TASK_CATALOG_PATH}"
+  )"; then
+    a1_fail "LingBot task selection cancelled; no model or hardware was started."
+    return 2
+  fi
+  SELECTED_TASK_ID="${selected}"
+  a1_info "Selected LingBot task: ${SELECTED_TASK_ID}"
+}
+
 start_tmux() {
+  select_task
   check_bridge_environment
   check_lingbot_app
   a1_info "Config: ${CONFIG_PATH}"
   local bridge_command=(
     "${PYTHON_BIN}" "${BRIDGE_SCRIPT}"
     --config "${CONFIG_PATH}"
+    --task-id "${SELECTED_TASK_ID}"
   )
   local guarded_command=(
     "${BRIDGE_GUARD}" "${BASE_RUNTIME}" "${MODEL_SESSION}" --
@@ -173,6 +193,7 @@ start_tmux() {
 }
 
 start_pipeline() {
+  select_task
   cleanup_failed_pipeline() {
     local status=$?
     if [[ "${status}" != "0" ]]; then
@@ -229,6 +250,13 @@ case "${1:-help}" in
     a1_success "LingBot runtime started."
     a1_info "Attach with: tmux attach -t ${SESSION}"
     ;;
+  run)
+    start_pipeline
+    echo
+    a1_success "LingBot runtime started; attaching concise live status."
+    a1_info "AgentView dashboard: http://${WEB_PREVIEW_BIND}:${WEB_PREVIEW_PORT}"
+    exec tmux attach-session -t "${SESSION}"
+    ;;
   services)
     start_services
     ;;
@@ -261,11 +289,12 @@ case "${1:-help}" in
     "${BASE_RUNTIME}" logs
     ;;
   *)
-    a1_usage "$0 [--config PATH] <setup|verify|start|server|smoke|server-stop|server-logs|services|tmux|stop|doctor|status|logs>"
+    a1_usage "$0 [--config PATH] <setup|verify|start|run|server|smoke|server-stop|server-logs|services|tmux|stop|doctor|status|logs>"
     cat <<EOF
   setup     Clone, pin, install, download, and verify LingBot
   verify    Hash-check registered LingBot inputs without opening hardware
   start     Start the deployment server, A1 base runtime, and bridge
+  run       Start everything and attach the concise live runtime status
   server    Start only the managed deployment policy server
   smoke     Start the server and run one synthetic inference (no ROS/cameras)
   server-stop  Stop only the managed policy server

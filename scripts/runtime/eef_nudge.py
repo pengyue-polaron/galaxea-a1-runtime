@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: E402
-"""Interactive safe EEF nudge tool for hardware acceptance tests."""
+"""Interactive EEF-to-IK nudge tool for staged hardware acceptance tests."""
 
 from __future__ import annotations
 
@@ -21,14 +21,16 @@ configure_ros1_python(ROOT_DIR)
 
 import rospy
 from geometry_msgs.msg import PoseStamped
-from signal_arm.msg import gripper_position_control
+from sensor_msgs.msg import JointState
+from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
 from galaxea_a1_runtime.apps.eef_bridge import (
-    EefCommandPublisher,
+    EefIkCommandPublisher,
     pose_msg_to_xyz_quat,
 )
-from galaxea_a1_runtime.console import ArgumentParser, info, step, success
+from galaxea_a1_runtime.console import ArgumentParser, info, step, success, warning
+from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 from galaxea_a1_runtime.configuration.system import (
     DEFAULT_SYSTEM_CONFIG,
@@ -40,6 +42,11 @@ from galaxea_a1_runtime.runtime.relay import (
     decode_relay_status,
     relay_state_summary,
     relay_status_is_fresh,
+)
+from galaxea_a1_runtime.runtime.ros_feedback import (
+    A1JointStateCache,
+    StagedCommandMonitor,
+    wait_for_staged_joint_alignment,
 )
 
 
@@ -57,29 +64,40 @@ class EefNudge:
         self.step_m = step_m
         self.settle_s = settle_s
         self.pose = LatestMessageCache()
+        self.joints = A1JointStateCache(system.joint_safety.names)
+        self.staged = StagedCommandMonitor()
         self.relay = LatestMessageCache()
         topics = system.topics
         rospy.init_node("a1_eef_nudge", anonymous=False, disable_signals=True)
-        pose_pub = rospy.Publisher(topics.eef_target, PoseStamped, queue_size=10)
         gripper_pub = rospy.Publisher(
             topics.gripper_target, gripper_position_control, queue_size=10
         )
         enable_pub = rospy.Publisher(
             topics.motion_enable, Bool, queue_size=1, latch=True
         )
-        self.commander = EefCommandPublisher(
+        self.commander = EefIkCommandPublisher(
             rospy=rospy,
-            pose_pub=pose_pub,
+            target_pub=rospy.Publisher(topics.joint_target, JointState, queue_size=10),
             gripper_pub=gripper_pub,
             motion_enable_pub=enable_pub,
-            pose_msg_type=PoseStamped,
+            joint_state_msg_type=JointState,
             bool_msg_type=Bool,
             gripper_msg_type=gripper_position_control,
-            command_frame=system.eef.command_frame,
+            joint_names=system.joint_safety.names,
+            current_joint_positions=lambda: self.joints.positions(
+                max_age_s=system.joint_safety.max_feedback_age_s
+            ),
+            solver=build_eef_ik_solver(system),
             gripper_to_stroke=lambda value: value,
             execute=execute,
         )
         rospy.Subscriber(topics.eef_pose, PoseStamped, self.pose.callback, queue_size=1)
+        rospy.Subscriber(
+            topics.joint_states, JointState, self.joints.callback, queue_size=1
+        )
+        rospy.Subscriber(
+            topics.staged_command, arm_control, self.staged.callback, queue_size=1
+        )
         rospy.Subscriber(topics.relay_status, String, self._relay_cb, queue_size=1)
         self.keepalive = rospy.Timer(rospy.Duration(1.0 / 25.0), self._publish_hold)
 
@@ -87,16 +105,21 @@ class EefNudge:
         self.relay.set(decode_relay_status(msg.data))
 
     def _publish_hold(self, _event=None) -> None:
-        self.commander.publish_active_pose_target()
+        self.commander.publish_active_target()
 
-    def wait_pose(self) -> PoseStamped:
+    def wait_feedback(self) -> PoseStamped:
         deadline = time.monotonic() + self.system.eef.feedback_wait_timeout_s
         while not rospy.is_shutdown() and time.monotonic() < deadline:
-            msg, _ = self.pose.snapshot()
-            if pose_msg_to_xyz_quat(msg) is not None:
+            msg = self.pose.get(max_age_s=self.system.eef.max_feedback_age_s)
+            joints = self.joints.positions(
+                max_age_s=self.system.joint_safety.max_feedback_age_s
+            )
+            if pose_msg_to_xyz_quat(msg) is not None and joints is not None:
                 return msg
             time.sleep(0.05)
-        raise RuntimeError(f"No valid {self.system.topics.eef_pose} feedback")
+        raise RuntimeError(
+            "No fresh named joint and EEF pose feedback for the IK nudge"
+        )
 
     def enable_motion(self) -> None:
         if not self.execute:
@@ -128,9 +151,24 @@ class EefNudge:
         raise RuntimeError(f"Relay did not become ACTIVE: {last}")
 
     def run(self) -> None:
-        current = self.wait_pose()
-        self.commander.set_active_pose_target_from_msg(current)
-        self.commander.publish_active_pose_target()
+        current = self.wait_feedback()
+        hold = self.joints.positions(
+            max_age_s=self.system.joint_safety.max_feedback_age_s
+        )
+        if hold is None:
+            raise RuntimeError("Fresh named joints disappeared before staging hold")
+        self.commander.hold_current_target()
+        self.commander.publish_active_target()
+        wait_for_staged_joint_alignment(
+            self.staged,
+            hold,
+            dof=len(self.system.joint_safety.names),
+            timeout_s=self.system.startup.topic_timeout_s,
+            max_age_s=self.system.relay.max_input_age_s,
+            tolerance_rad=self.system.joint_safety.initial_alignment_tolerance_rad,
+            is_shutdown=rospy.is_shutdown,
+        )
+        info("jointTracker staged a fresh initial hold aligned with joint feedback.")
         xyz, quat = pose_msg_to_xyz_quat(current)
         info(f"Current EEF xyz={np.round(xyz, 4).tolist()}")
         self.enable_motion()
@@ -145,17 +183,27 @@ class EefNudge:
                 break
             if command in {"s", "skip"}:
                 continue
-            current = self.wait_pose()
+            current = self.wait_feedback()
             xyz, quat = pose_msg_to_xyz_quat(current)
             target_xyz = xyz + delta
+            lower = np.asarray(self.system.eef.xyz_min)
+            upper = np.asarray(self.system.eef.xyz_max)
+            if np.any(target_xyz < lower) or np.any(target_xyz > upper):
+                warning(
+                    f"Skipped {label}: target_xyz="
+                    f"{np.round(target_xyz, 4).tolist()} is outside the tracked "
+                    "EEF workspace."
+                )
+                continue
             action8 = np.concatenate([target_xyz, quat, [0.0]])
             self.commander.publish_action(action8, publish_gripper=False)
             step(
-                f"Published {label} target_xyz={np.round(target_xyz, 4).tolist()} "
+                f"Published IK {label} target_xyz="
+                f"{np.round(target_xyz, 4).tolist()} "
                 f"delta_cm={np.round(delta * 100.0, 2).tolist()}"
             )
             time.sleep(self.settle_s)
-            actual = self.wait_pose()
+            actual = self.wait_feedback()
             actual_xyz, _ = pose_msg_to_xyz_quat(actual)
             info(
                 f"Observed xyz={np.round(actual_xyz, 4).tolist()} "
@@ -181,7 +229,7 @@ def sequence(step_m: float) -> tuple[tuple[str, np.ndarray], ...]:
 
 def parse_args() -> Namespace:
     parser = ArgumentParser(
-        description="Step-gated EEF nudge through the safe A1 runtime."
+        description="Step-gated EEF IK nudge through the staged joint runtime."
     )
     parser.add_argument(
         "--execute", action="store_true", help="Enable relay and publish commands."
@@ -192,10 +240,6 @@ def parse_args() -> Namespace:
 
 def main() -> int:
     args = parse_args()
-    if args.step_m <= 0:
-        raise ValueError("--step-m must be positive")
-    if args.settle_s < 0:
-        raise ValueError("--settle-s must be non-negative")
     system = load_system_config(args.config, repo_root=ROOT_DIR)
     nudge = EefNudge(
         system,

@@ -50,10 +50,12 @@ configs/system/a1.toml
   │     └── configs/datasets/<experiment>.toml
   ├── configs/deployments/lingbot/<deployment>.toml
   │     ├── configs/inference/backends/lingbot_va.toml
-  │     └── configs/models/lingbot/<model>.toml
+  │     ├── configs/models/lingbot/<model>.toml
+  │     └── configs/tasks/<catalog>.toml
   └── configs/deployments/pi05/<deployment>.toml
         ├── configs/inference/backends/openpi_pi05.toml
-        └── configs/models/pi05/<model>.toml
+        ├── configs/models/pi05/<model>.toml
+        └── configs/tasks/<catalog>.toml
 ```
 
 Ownership is exclusive:
@@ -66,7 +68,8 @@ Ownership is exclusive:
 | Dataset | source/output packaging and conversion policy |
 | Inference backend | pinned code checkout, dependency lock, and engine behavior |
 | Model descriptor and contract | immutable weight revision, full content manifest, and weight-specific tensor/action semantics |
-| Deployment | backend/model references, prompt, service lifecycle, and execution behavior |
+| Task catalog | approved exact prompt strings, stable operator-facing task ids, and train/OOD provenance |
+| Deployment | backend/model/task-catalog references, service lifecycle, execution, and run recording behavior |
 
 Schemas require all behavior-affecting keys and reject unknown ones. Python
 apps load typed owners directly; shell exports contain only values needed for
@@ -75,10 +78,11 @@ System config.
 
 ## Runtime composition
 
-Every managed motion path has four roles: an app publishes a high-level target,
-an isolated tracker produces a staged driver command, the relay validates it,
-and the A1 driver owns the hardware. Exact topics and relay gates are defined in
-[Safety](SAFETY.md).
+Every managed motion path has four roles: an app publishes a named joint target,
+the isolated jointTracker produces a staged driver command, the relay validates
+it, and the A1 driver owns the hardware. EEF-policy apps first solve their
+Cartesian target through the pure, bounded, System-configured URDF IK adapter.
+Exact topics and relay gates are defined in [Safety](SAFETY.md).
 
 The relay starts locked. An app enables it only after its own inputs and the
 shared runtime are ready. Repository-owned Docker containers and tmux sessions
@@ -88,6 +92,11 @@ processes.
 Each physical resource has one owner. An app that owns cameras shares its open
 readers with collection, inference, and embedded preview; the standalone
 preview is used only when no app owns those cameras.
+
+LingBot also shares its owned AgentView reader with an asynchronous H.264 run
+recorder; it never opens a second camera handle. Recording writes into a hidden
+staging directory and publishes the finalized MP4 plus metadata by atomic rename
+under `outputs/` during normal, interrupted, and fail-closed bridge cleanup.
 
 ## Teleop and observation contract
 
@@ -177,20 +186,33 @@ are derived outputs, never accepted as collector input.
 
 ## Deployment
 
-LingBot and OpenPI pi0.5 predict EEF targets through the staged EEF runtime.
+LingBot and OpenPI pi0.5 predict EEF targets through a shared first-party IK
+adapter and the staged joint runtime.
 Both reuse the System camera, gripper, topic, and safety contracts and refuse
 startup until their deployment is explicitly marked ready. Execution remains
-independently step-gated and disabled by default in each deployment config.
+independently owned in each deployment config. The reviewed fruit-placement
+deployments are live-enabled. Before any model, ROS, camera, or hardware process
+starts, the operator must select one prompt from their shared tracked task
+catalog. The selected session then begins inference and executes the configured
+actions without additional prompts. Each checkpoint's episode-relative
+quaternion is always composed onto the episode origin and preserved through IK;
+there is no translation-only orientation mode. Each deployment exclusively owns
+its rollout cadence under `[execution]`; cadence is an operator-reviewed runtime
+choice, not a System safety setting. LingBot renders compact run progress on one
+terminal line. Each deployment has a finite model-call budget sized to cover the
+longest episode in the training data; reaching that budget or stopping the
+bridge finalizes any owned recording, locks the relay, and tears down the
+runtime.
 
 This checkout does not train models. Reviewed weights produced or downloaded
 elsewhere are registered through the local model registry described in
 [`models/README.md`](../models/README.md).
 
 Managed model inference is a host-side GPU service separated from the ROS
-bridge. Configuration is composed from four exclusive owners:
+bridge. Configuration is composed from five exclusive owners:
 
 ```text
-System + inference backend + immutable model + deployment
+System + inference backend + immutable model + task catalog + deployment
 ```
 
 The backend pins source code and its dependency lock. The model descriptor pins
@@ -199,19 +221,24 @@ manifest, and model-specific contract. Its local directory is derived as
 `models/artifacts/<model-id>/<revision>/`; no mutable `latest` alias or
 hand-maintained weight path exists. Downloads are validated in a hidden sibling
 and exposed by atomic rename only after the exact file set, byte sizes, and
-SHA-256 digests pass. The deployment owns only prompt, service lifecycle, and
-execution choices.
+SHA-256 digests pass. The task catalog owns the approved runtime prompt set and
+explicitly records whether each prompt is from training or OOD evaluation; the
+deployment owns only its catalog reference, service lifecycle, and execution
+choices. Runtime input selects a tracked task id and cannot introduce an
+unregistered prompt.
 
 At connection time both LingBot and pi0.5 bridges validate a canonical digest
-covering code, model, camera, state/action, normalization, and engine contracts
-before accepting actions. Their shared pure EEF adapter owns episode-relative
+covering code, model, task catalog, camera, state/action, normalization, and
+engine contracts before accepting actions. Their shared pure EEF adapter owns episode-relative
 pose composition, gripper conversion, review, and explicit safety transforms.
-Their shared ROS-free execution coordinator enforces staged pose before relay
-enable, gripper publication only after `ACTIVE`, configured tracker correction,
-and fail-closed cleanup; model bridges only supply rollout behavior. Model
-services reuse the app-agnostic tmux health/exit supervisor.
-Each live bridge can publish only staged EEF/gripper targets; the isolated
-tracker and locked relay remain the sole path toward host motor commands.
+Their shared ROS-free execution coordinator enforces a staged current-joint hold
+before relay enable, gripper publication only after `ACTIVE`, configured
+feedback correction, and fail-closed cleanup; model bridges only supply rollout
+behavior. The IK adapter reads the same URDF as the runtime, uses named System
+joint limits, and rejects non-convergence or excessive joint deltas. Model
+services reuse the app-agnostic tmux health/exit supervisor. Each live bridge
+can publish only staged named-joint/gripper targets; the isolated jointTracker
+and locked relay remain the sole path toward host motor commands.
 
 ## Artifact roots
 

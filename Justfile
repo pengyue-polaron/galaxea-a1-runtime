@@ -40,6 +40,7 @@ check:
     {{vpy}} {{repo}}/scripts/apps/pi05/setup_pi05_inference.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/pi05/smoke_pi05_inference.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/pi05/verify_pi05_inference.py --help >/dev/null
+    {{vpy}} -m galaxea_a1_runtime.apps.task_selection --help >/dev/null
     {{vpy}} -m galaxea_a1_runtime.apps.eef_policy_offline --help >/dev/null
     {{vpy}} -m galaxea_a1_runtime.apps.eef_policy_teacher_forcing --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
@@ -94,8 +95,8 @@ camera-web *args:
     scripts/apps/cameras/a1_camera_web_runtime.sh {{args}}
 
 eef-test:
-    scripts/runtime/a1_runtime.sh services
-    scripts/runtime/a1_runtime.sh eef-nudge --execute
+    scripts/runtime/a1_joint_runtime.sh services
+    scripts/runtime/a1_joint_runtime.sh eef-nudge --execute
 
 teleop experiment:
     scripts/apps/teleop/a1_teleop_runtime.sh collect "{{experiment}}"
@@ -111,7 +112,7 @@ reset:
     scripts/apps/teleop/a1_teleop_runtime.sh reset
 
 lingbot:
-    scripts/apps/lingbot/a1_lingbot_runtime.sh start
+    scripts/apps/lingbot/a1_lingbot_runtime.sh run
 
 lingbot-setup:
     scripts/apps/lingbot/a1_lingbot_runtime.sh setup

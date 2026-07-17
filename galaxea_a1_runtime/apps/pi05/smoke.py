@@ -31,7 +31,7 @@ def synthetic_observation(config: Pi05Config) -> dict[str, object]:
         config.observations.front_key: _gradient_rgb(front.height, front.width),
         config.observations.wrist_key: _gradient_rgb(wrist.height, wrist.width),
         "observation/state": state,
-        "prompt": config.server.prompt,
+        "prompt": config.task_catalog.default.prompt,
     }
 
 

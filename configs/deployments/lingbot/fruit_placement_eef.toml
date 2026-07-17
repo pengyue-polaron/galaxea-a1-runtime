@@ -7,6 +7,9 @@ config = "configs/inference/backends/lingbot_va.toml"
 [model]
 config = "configs/models/lingbot/fruit_placement_eef.toml"
 
+[tasks]
+config = "configs/tasks/fruit_placement.toml"
+
 [deployment]
 id = "lingbot-fruit-placement-eef"
 ready = true
@@ -22,30 +25,33 @@ host = "127.0.0.1"
 port = 1106
 connect_timeout_s = 2.0
 close_timeout_s = 10.0
-prompt = "Put the banana into the blue plate"
 
 [observations]
 front_key = "observation.images.front"
 wrist_key = "observation.images.wrist"
 
 [execution]
-execute = false
-step_mode = true
-step_actions = true
+execute = true
+step_mode = false
+step_actions = false
 no_kv_update = false
-max_model_calls = 1
-execute_frames = 1
+# Two predicted frames produce eight actions per call. 66 calls cover the
+# longest 526-step training episode without consuming the full open-loop horizon.
+max_model_calls = 66
+execute_frames = 2
 kv_observations_per_frame = 4
 condition_on_ee_state = true
 initial_ee_pose = []
 exec_rate = 30.0
-print_actions = true
+print_actions = false
 review_deadband_m = 0.001
 
 [action]
-servo_gain = 1.0
-servo_max_extra_m = 0.04
 servo_settle_s = 0.0
 servo_tolerance_m = 0.01
 servo_corrections = 0
 cache_actual_feedback = false
+
+[recording]
+agent_view_enabled = true
+output_root = "outputs/inference/lingbot-fruit-placement-eef/recordings"

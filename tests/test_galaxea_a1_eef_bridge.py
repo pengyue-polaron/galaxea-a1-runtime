@@ -1,11 +1,12 @@
 import pytest
 
 from galaxea_a1_runtime.apps.eef_bridge import (
-    EefCommandPublisher,
+    EefIkCommandPublisher,
     condition_state_from_action8,
     format_xyz_direction,
     pose_msg_to_xyz_quat,
 )
+from galaxea_a1_runtime.hardware.eef_ik import IkSolution
 from galaxea_a1_runtime.runtime.relay import (
     decode_relay_status,
     relay_state_summary,
@@ -73,6 +74,28 @@ class FakeGripper:
         self.gripper_stroke = 0.0
 
 
+class FakeJointState:
+    def __init__(self):
+        self.header = FakeHeader()
+        self.name = []
+        self.position = []
+
+
+class FakeIkSolver:
+    def __init__(self):
+        self.calls = []
+
+    def solve(self, current, xyz, quat):
+        self.calls.append((tuple(current), tuple(xyz), tuple(quat)))
+        return IkSolution(
+            joint_positions=(0.1, 0.2),
+            iterations=3,
+            position_error_m=0.0001,
+            orientation_error_rad=0.001,
+            max_joint_delta_rad=0.2,
+        )
+
+
 def test_relay_status_helpers_are_small_and_predictable():
     status = decode_relay_status('{"state": "ACTIVE", "reason": "ok"}')
 
@@ -101,51 +124,39 @@ def test_pose_msg_and_condition_helpers():
     assert format_xyz_direction([0.0, -0.02, 0.03], deadband_m=0.001) == "y-,z+"
 
 
-def test_eef_command_publisher_publishes_pose_enable_and_gripper():
-    pose_pub = FakePublisher()
+def test_eef_joint_publisher_solves_named_target_before_gripper_publication():
+    target_pub = FakePublisher()
     gripper_pub = FakePublisher()
     enable_pub = FakePublisher()
-    publisher = EefCommandPublisher(
+    solver = FakeIkSolver()
+    publisher = EefIkCommandPublisher(
         rospy=FakeRospy,
-        pose_pub=pose_pub,
+        target_pub=target_pub,
         gripper_pub=gripper_pub,
         motion_enable_pub=enable_pub,
-        pose_msg_type=FakePoseStamped,
+        joint_state_msg_type=FakeJointState,
         bool_msg_type=FakeBool,
         gripper_msg_type=FakeGripper,
-        command_frame="world",
+        joint_names=("arm_joint1", "arm_joint2"),
+        current_joint_positions=lambda: (0.0, 0.0),
+        solver=solver,
         gripper_to_stroke=lambda value: value * 100.0,
         execute=True,
     )
 
-    publisher.publish_motion_enable(True)
-    publisher.publish_action([0.1, 0.2, 0.3, 0, 0, 0, 1, 0.5], publish_gripper=True)
+    action = [0.1, 0.2, 0.3, 0, 0, 0, 1, 0.5]
+    publisher.publish_action(action, publish_gripper=False)
+    publisher.publish_action(action, publish_gripper=True)
 
-    assert enable_pub.published[-1].data is True
-    assert pose_pub.published[-1].header.frame_id == "world"
-    assert pose_pub.published[-1].pose.position.x == pytest.approx(0.1)
-    assert gripper_pub.published[-1].gripper_stroke == pytest.approx(50.0)
-
-
-def test_eef_command_publisher_dry_run_keeps_active_target_without_publishing():
-    pose_pub = FakePublisher()
-    publisher = EefCommandPublisher(
-        rospy=FakeRospy,
-        pose_pub=pose_pub,
-        gripper_pub=FakePublisher(),
-        motion_enable_pub=FakePublisher(),
-        pose_msg_type=FakePoseStamped,
-        bool_msg_type=FakeBool,
-        gripper_msg_type=FakeGripper,
-        command_frame="world",
-        gripper_to_stroke=lambda value: value * 100.0,
-        execute=False,
+    assert solver.calls[0] == (
+        (0.0, 0.0),
+        (0.1, 0.2, 0.3),
+        (0.0, 0.0, 0.0, 1.0),
     )
-
-    publisher.publish_action([0.1, 0.2, 0.3, 0, 0, 0, 1, 0.5], publish_gripper=True)
-
-    assert publisher.active_pose_target is not None
-    assert pose_pub.published == []
+    assert target_pub.published[-1].name == ["arm_joint1", "arm_joint2"]
+    assert target_pub.published[-1].position == pytest.approx((0.1, 0.2))
+    assert len(gripper_pub.published) == 1
+    assert gripper_pub.published[0].gripper_stroke == pytest.approx(50.0)
 
 
 def test_eef_feedback_decoder_rejects_non_finite_pose():

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # ruff: noqa: E402
-"""OpenPI pi0.5 -> Galaxea A1 staged EEF bridge."""
+"""OpenPI pi0.5 -> bounded IK -> Galaxea A1 staged joint bridge."""
 
 from __future__ import annotations
 
@@ -21,10 +21,10 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from signal_arm.msg import gripper_position_control
+from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
-from galaxea_a1_runtime.apps.eef_bridge import EefCommandPublisher
+from galaxea_a1_runtime.apps.eef_bridge import EefIkCommandPublisher
 from galaxea_a1_runtime.apps.eef_policy_actions import (
     build_action_transform_config,
     gripper_stroke_from_norm,
@@ -39,25 +39,28 @@ from galaxea_a1_runtime.apps.pi05.client import Pi05Client
 from galaxea_a1_runtime.apps.pi05.config_schema import Pi05Config
 from galaxea_a1_runtime.apps.pi05.protocol import server_metadata
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
+from galaxea_a1_runtime.configuration.tasks import TaskPrompt
 from galaxea_a1_runtime.console import Tone, info, step, style, success
+from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.runtime.relay import RelayMonitor
-from galaxea_a1_runtime.runtime.ros_feedback import A1JointStateCache
+from galaxea_a1_runtime.runtime.ros_feedback import (
+    A1JointStateCache,
+    StagedCommandMonitor,
+    wait_for_staged_joint_alignment,
+)
 
 
 class A1Pi05EEBridge:
-    def __init__(self, config: Pi05Config) -> None:
+    def __init__(self, config: Pi05Config, task: TaskPrompt) -> None:
         self.config = config
+        self.task = task
         self.system = config.system
         self.execution = config.execution
         self.servo = config.servo
-        self.pose_keepalive_timer = None
+        self.target_keepalive_timer = None
         self.cameras = None
         self.client = None
-        self.action_config = build_action_transform_config(
-            system=config.system,
-            servo_gain=config.servo.gain,
-            servo_max_extra_m=config.servo.max_extra_m,
-        )
+        self.action_config = build_action_transform_config(system=config.system)
         self.state = EefPolicyState(
             action_config=self.action_config,
             pose_mode=config.model_contract.pose_mode,
@@ -67,32 +70,36 @@ class A1Pi05EEBridge:
             action_per_frame=1,
         )
         self.joints = A1JointStateCache(config.system.joint_safety.names)
+        self.staged = StagedCommandMonitor()
+        self.ik_solver = build_eef_ik_solver(config.system)
         self.relay = RelayMonitor(config.system.relay.max_status_age_s)
         self.reviewer = EefActionReviewer(
             state=self.state,
             action_config=self.action_config,
             review_deadband_m=config.execution.review_deadband_m,
-            servo_gain=config.servo.gain,
-            orientation_mode=config.system.eef.orientation_mode,
             execute=config.execution.execute,
             policy_label="OpenPI pi0.5",
         )
 
         topics = config.system.topics
         rospy.init_node("openpi_pi05_ee_bridge", anonymous=False)
-        self.commander = EefCommandPublisher(
+        self.commander = EefIkCommandPublisher(
             rospy=rospy,
-            pose_pub=rospy.Publisher(topics.eef_target, PoseStamped, queue_size=10),
+            target_pub=rospy.Publisher(topics.joint_target, JointState, queue_size=10),
             gripper_pub=rospy.Publisher(
                 topics.gripper_target, gripper_position_control, queue_size=10
             ),
             motion_enable_pub=rospy.Publisher(
                 topics.motion_enable, Bool, queue_size=1, latch=True
             ),
-            pose_msg_type=PoseStamped,
+            joint_state_msg_type=JointState,
             bool_msg_type=Bool,
             gripper_msg_type=gripper_position_control,
-            command_frame=config.system.eef.command_frame,
+            joint_names=config.system.joint_safety.names,
+            current_joint_positions=lambda: self.joints.positions(
+                max_age_s=self.system.joint_safety.max_feedback_age_s
+            ),
+            solver=self.ik_solver,
             gripper_to_stroke=lambda value: gripper_stroke_from_norm(
                 value, self.action_config
             ),
@@ -116,6 +123,9 @@ class A1Pi05EEBridge:
             topics.joint_states, JointState, self.joints.callback, queue_size=1
         )
         rospy.Subscriber(
+            topics.staged_command, arm_control, self.staged.callback, queue_size=1
+        )
+        rospy.Subscriber(
             topics.gripper_feedback,
             JointState,
             self.state.gripper_callback,
@@ -123,8 +133,8 @@ class A1Pi05EEBridge:
         )
         rospy.Subscriber(topics.relay_status, String, self.relay.callback, queue_size=1)
         try:
-            self.pose_keepalive_timer = rospy.Timer(
-                rospy.Duration(0.05), self.executor.publish_active_pose_target
+            self.target_keepalive_timer = rospy.Timer(
+                rospy.Duration(0.05), self.executor.publish_active_target
             )
             self.cameras = PolicyCameraSession(
                 config.system,
@@ -151,12 +161,42 @@ class A1Pi05EEBridge:
     def run(self) -> None:
         if self.client is None or self.cameras is None:
             raise RuntimeError("pi0.5 bridge is closed")
+        self._wait_for_feedback()
+        hold = self.joints.positions(
+            max_age_s=self.system.joint_safety.max_feedback_age_s
+        )
+        if hold is None:
+            raise RuntimeError("Fresh named joints disappeared before staging hold")
+        self.commander.hold_current_target()
+        self.executor.publish_active_target()
+        wait_for_staged_joint_alignment(
+            self.staged,
+            hold,
+            dof=len(self.system.joint_safety.names),
+            timeout_s=self.system.startup.topic_timeout_s,
+            max_age_s=self.system.relay.max_input_age_s,
+            tolerance_rad=self.system.joint_safety.initial_alignment_tolerance_rad,
+            is_shutdown=rospy.is_shutdown,
+        )
+        info("jointTracker staged a fresh initial hold aligned with joint feedback.")
+        if self.execution.execute and not self.execution.step_mode:
+            info(
+                "Continuous execution armed: "
+                f"calls={self.execution.max_model_calls or 'unbounded'} "
+                f"actions_per_call={self.execution.execute_actions_per_inference} "
+                f"rate={self.execution.exec_rate:.1f}Hz"
+            )
         call_index = 0
         while not rospy.is_shutdown():
             if (
                 self.execution.max_model_calls
                 and call_index >= self.execution.max_model_calls
             ):
+                success(
+                    "Pi0.5 rollout complete: reached configured "
+                    f"max_model_calls={self.execution.max_model_calls}; "
+                    "the bridge will lock and stop the runtime."
+                )
                 return
             if self.execution.step_mode and not self._wait_for_operator(call_index):
                 return
@@ -172,6 +212,14 @@ class A1Pi05EEBridge:
             if self._run_actions(call_index, actions):
                 return
             call_index += 1
+            if not self.execution.max_model_calls or (
+                call_index < self.execution.max_model_calls
+            ):
+                success(
+                    f"Execution #{call_index} complete: "
+                    f"executed={self.execution.execute_actions_per_inference} actions; "
+                    "capturing fresh observations for the next model call."
+                )
 
     def _read_observation(self) -> dict[str, object]:
         self._wait_for_feedback()
@@ -204,7 +252,7 @@ class A1Pi05EEBridge:
             self.config.observations.front_key: front_bgr[..., ::-1].copy(),
             self.config.observations.wrist_key: wrist_bgr[..., ::-1].copy(),
             "observation/state": state,
-            "prompt": self.config.server.prompt,
+            "prompt": self.task.prompt,
         }
 
     def _wait_for_feedback(self) -> None:
@@ -244,9 +292,7 @@ class A1Pi05EEBridge:
     def _run_actions(self, call_index: int, actions: np.ndarray) -> bool:
         count = self.execution.execute_actions_per_inference
         for action_index, raw_action in enumerate(actions[:count]):
-            safe_action = self.state.prepare(
-                raw_action, require_orientation=self.execution.execute
-            )
+            safe_action = self.state.sanitize(raw_action)
             if self.execution.print_actions:
                 self.reviewer.print_step(
                     call_index=call_index,
@@ -285,7 +331,7 @@ class A1Pi05EEBridge:
             return "q"
 
     def close(self) -> None:
-        timer, self.pose_keepalive_timer = self.pose_keepalive_timer, None
+        timer, self.target_keepalive_timer = self.target_keepalive_timer, None
         cameras, self.cameras = self.cameras, None
         client, self.client = self.client, None
         close_policy_resources(

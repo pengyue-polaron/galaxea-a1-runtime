@@ -48,3 +48,19 @@ def test_lingbot_chunk_rejects_incompatible_action_shape_and_horizon():
             execute_frames=1,
             observations_per_frame=4,
         )
+
+
+def test_two_frame_lingbot_execution_skips_only_the_conditioned_first_frame():
+    values = np.zeros((8, 4, 4), dtype=np.float32)
+
+    first = LingBotActionChunk.from_response(
+        values, first=True, execute_frames=2, observations_per_frame=4
+    )
+    subsequent = LingBotActionChunk.from_response(
+        values, first=False, execute_frames=2, observations_per_frame=4
+    )
+
+    assert first.cache_state.shape == (8, 3, 4)
+    assert first.total_steps == 8
+    assert subsequent.cache_state.shape == (8, 2, 4)
+    assert subsequent.total_steps == 8

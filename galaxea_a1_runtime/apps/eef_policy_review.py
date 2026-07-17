@@ -20,16 +20,12 @@ class EefActionReviewer:
         state: EefPolicyState,
         action_config: EefActionTransformConfig,
         review_deadband_m: float,
-        servo_gain: float,
-        orientation_mode: str,
         execute: bool,
         policy_label: str,
     ) -> None:
         self.state = state
         self.action_config = action_config
         self.review_deadband_m = review_deadband_m
-        self.servo_gain = servo_gain
-        self.orientation_mode = orientation_mode
         self.execute = execute
         self.policy_label = policy_label
 
@@ -70,18 +66,9 @@ class EefActionReviewer:
                 "direction="
                 f"{format_xyz_direction(safe_delta, deadband_m=self.review_deadband_m)}"
             )
-            tracker_command = self.state.tracker_command(safe_action)
-            if not np.allclose(tracker_command[:3], safe_action[:3], atol=1e-5):
-                tracker_delta = tracker_command[:3] - current
-                info(
-                    "tracker_cmd_xyz="
-                    f"{np.round(tracker_command[:3], 4).tolist()} "
-                    f"tracker_cmd_delta_cm={np.round(tracker_delta * 100.0, 2).tolist()} "
-                    f"servo_gain={self.servo_gain:.2f}"
-                )
         info(
             f"gripper_norm={safe_action[7]:.3f} "
             f"gripper_mm={gripper_mm:.1f} "
-            f"orientation_mode={self.orientation_mode} execute={self.execute} "
+            f"execute={self.execute} "
             f"clamp={','.join(notes) if notes else 'none'}"
         )

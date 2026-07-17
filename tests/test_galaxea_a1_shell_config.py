@@ -1,6 +1,8 @@
 import subprocess
 from pathlib import Path
 
+import pytest
+
 from galaxea_a1_runtime.configuration.system import (
     load_system_config,
     render_shell_values,
@@ -9,6 +11,7 @@ from galaxea_a1_runtime.configuration.system import (
 
 REPO = Path(__file__).resolve().parents[1]
 LOADER = REPO / "scripts/runtime/a1_config.sh"
+SYSTEM = REPO / "configs/system/a1.toml"
 
 
 def run_bash(body: str) -> subprocess.CompletedProcess[str]:
@@ -44,7 +47,7 @@ def test_shell_config_loader_applies_assignments_in_calling_shell():
 
 def test_rosbag_topic_exports_come_from_system_config():
     config = load_system_config(
-        REPO / "configs/system/a1.toml",
+        SYSTEM,
         repo_root=REPO,
     )
     names = (
@@ -68,3 +71,16 @@ def test_rosbag_topic_exports_come_from_system_config():
         "GRIPPER_COMMAND_TOPIC": config.topics.gripper_command,
         "GRIPPER_FEEDBACK_TOPIC": config.topics.gripper_feedback,
     }
+
+
+def test_system_config_rejects_removed_orientation_mode(tmp_path):
+    path = tmp_path / "a1.toml"
+    path.write_text(
+        SYSTEM.read_text().replace(
+            "[eef]\n",
+            '[eef]\norientation_mode = "hold-current"\n',
+        )
+    )
+
+    with pytest.raises(ValueError, match=r"invalid eef keys.*orientation_mode"):
+        load_system_config(path, repo_root=REPO)

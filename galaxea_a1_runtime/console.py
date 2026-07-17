@@ -9,8 +9,9 @@ from __future__ import annotations
 import argparse
 import os
 import sys
+import time
 from enum import StrEnum
-from typing import TextIO
+from typing import Callable, TextIO
 
 
 class Tone(StrEnum):
@@ -83,6 +84,53 @@ def warning(message: str, *, flush: bool = True) -> None:
 
 def failure(message: str, *, flush: bool = True) -> None:
     emit("FAIL", message, stream=sys.stderr, flush=flush)
+
+
+class LiveStatusLine:
+    """Render one replace-in-place status line, with throttled redirected output."""
+
+    def __init__(
+        self,
+        *,
+        stream: TextIO = sys.stdout,
+        redirected_interval_s: float = 5.0,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        if redirected_interval_s <= 0:
+            raise ValueError("redirected status interval must be positive")
+        self.stream = stream
+        self.redirected_interval_s = redirected_interval_s
+        self.monotonic = monotonic
+        self._tty = stream.isatty()
+        self._visible_width = 0
+        self._last_redirected_at: float | None = None
+
+    def update(self, message: str, *, force: bool = False) -> None:
+        rendered = f"[RUN] {message}"
+        if self._tty:
+            padding = " " * max(0, self._visible_width - len(rendered))
+            self.stream.write(f"\r{rendered}{padding}")
+            self.stream.flush()
+            self._visible_width = len(rendered)
+            return
+        now = self.monotonic()
+        if (
+            force
+            or self._last_redirected_at is None
+            or now - self._last_redirected_at >= self.redirected_interval_s
+        ):
+            print(rendered, file=self.stream, flush=True)
+            self._last_redirected_at = now
+
+    def break_line(self) -> None:
+        if not self._tty or self._visible_width <= 0:
+            return
+        self.stream.write("\r" + (" " * self._visible_width) + "\r")
+        self.stream.flush()
+        self._visible_width = 0
+
+    def close(self) -> None:
+        self.break_line()
 
 
 class ArgumentParser(argparse.ArgumentParser):

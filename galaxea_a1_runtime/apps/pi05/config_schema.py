@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
+from galaxea_a1_runtime.configuration.tasks import TaskCatalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig
 from galaxea_a1_runtime.models.config import ModelArtifactConfig
 
@@ -48,7 +49,6 @@ class Pi05ServerConfig:
     port: int
     connect_timeout_s: float
     close_timeout_s: float
-    prompt: str
 
 
 @dataclass(frozen=True)
@@ -71,8 +71,6 @@ class Pi05ExecutionConfig:
 
 @dataclass(frozen=True)
 class Pi05ServoConfig:
-    gain: float
-    max_extra_m: float
     settle_s: float
     tolerance_m: float
     corrections: int
@@ -88,6 +86,7 @@ class Pi05Config:
     engine: Pi05EngineConfig
     model: ModelArtifactConfig
     model_contract: Pi05ModelContract
+    task_catalog: TaskCatalog
     session: Pi05SessionConfig
     server: Pi05ServerConfig
     observations: Pi05ObservationConfig

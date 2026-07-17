@@ -6,15 +6,22 @@ the repository is open; treat every ROS publisher as live hardware.
 
 ## Managed control paths
 
-Normal EEF applications publish only:
+Normal EEF-policy applications solve their reviewed Cartesian target into a
+named joint target through the tracked first-party URDF IK contract, then
+publish only:
 
 ```text
-/a1_ee_target
-  -> isolated eeTracker
+/arm_joint_target_position
+  -> isolated jointTracker
   -> /arm_joint_command_a1_staged
   -> safe_arm_command_relay.py
   -> /arm_joint_command_host
 ```
+
+Before enabling motion, the bridge publishes the current named joints as a hold
+and waits for a fresh staged command aligned with feedback. IK rejects
+non-convergence, joint-limit violations, non-finite results, and solutions whose
+maximum joint delta exceeds the System-owned limit.
 
 Teleop publishes joint targets only:
 
@@ -50,6 +57,11 @@ only normal owner of both host command topics.
   configured startup tolerance.
 - Absolute joint, workspace, and physical gripper limits come from System
   config. No hidden tracking-error, speed, or action-step clamp is applied.
+- The complete episode-relative model pose is always composed into the absolute
+  IK target; its quaternion is never replaced with current feedback.
+- Verbose action logging reports IK residuals and maximum joint deltas when
+  enabled by the deployment; the tracked Cartesian tolerance is 2 mm and the
+  maximum single-joint IK solution delta from fresh feedback is 1.50 rad.
 - Gripper forwarding occurs only while `ACTIVE` and healthy. State/action above
   hardware is continuous `0..1`, mapped exactly once to physical stroke;
   `/gripper_stroke_host` is the only feedback source.
@@ -73,6 +85,9 @@ additional gripper bit latches `FAULT`.
   creating processes.
 - One process owns each driver, tracker, camera, serial bus, and command
   publisher.
+- Embedded preview and AgentView recording consume the policy app's existing
+  latest-frame reader; they never open competing camera handles. Bridge cleanup
+  finalizes recording before closing the owned cameras.
 - After partial startup failure, run `just stop` before retrying.
 - The configuration-independent shutdown fallback may stop only marked
   repository-owned containers and tmux sessions.
@@ -88,8 +103,15 @@ managed runtime first:
 just stop
 ```
 
-The preferred headless EEF debug launch remaps the isolated tracker back to the
-official host topic:
+The normal acceptance test uses the same IK, jointTracker, and relay route as
+the model bridges:
+
+```bash
+just eef-test
+```
+
+For explicit diagnosis of the vendor eeTracker itself, the headless debug
+launch remaps that isolated tracker back to the official host topic:
 
 ```bash
 roslaunch /workspace/scripts/runtime/ee_tracker_staged.launch \

@@ -17,10 +17,8 @@ from galaxea_a1_runtime.apps.eef_policy_actions import (
     clamp_notes,
     gripper_norm_from_stroke,
     normalize_condition_action,
-    prepare_policy_action,
     relative_action_to_absolute,
     sanitize_policy_action,
-    tracker_command_action,
 )
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 
@@ -142,23 +140,6 @@ class EefPolicyState:
         return sanitize_policy_action(
             self.model_to_absolute(model8),
             self.action_config,
-        )
-
-    def prepare(
-        self, model8: Sequence[float], *, require_orientation: bool
-    ) -> np.ndarray:
-        return prepare_policy_action(
-            self.model_to_absolute(model8),
-            self.action_config,
-            current_quat=self.current_quat(),
-            require_current_orientation=require_orientation,
-        )
-
-    def tracker_command(self, policy_action8: Sequence[float]) -> np.ndarray:
-        return tracker_command_action(
-            policy_action8,
-            self.action_config,
-            current_xyz=self.current_xyz(),
         )
 
     def measured_action(self, fallback: Sequence[float]) -> np.ndarray:

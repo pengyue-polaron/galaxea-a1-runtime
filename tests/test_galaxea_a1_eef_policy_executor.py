@@ -33,7 +33,10 @@ class FakeCommander:
     def publish_motion_enable(self, enabled: bool) -> None:
         self.events.append(("enable", enabled))
 
-    def publish_active_pose_target(self) -> None:
+    def publish_gripper(self, gripper_norm: float) -> None:
+        self.events.append(("gripper", gripper_norm))
+
+    def publish_active_target(self) -> None:
         self.events.append("keepalive")
 
 
@@ -55,22 +58,15 @@ class FakeRelay:
 
 
 class FakeState:
-    def __init__(self, commands: list[np.ndarray] | None = None) -> None:
+    def __init__(self) -> None:
         self.pose_fresh = True
         self.gripper_fresh = True
-        self.commands = list(commands or [ACTION])
-        self.command_index = 0
 
     def pose_is_fresh(self) -> bool:
         return self.pose_fresh
 
     def gripper_is_fresh(self) -> bool:
         return self.gripper_fresh
-
-    def tracker_command(self, _action: np.ndarray) -> np.ndarray:
-        index = min(self.command_index, len(self.commands) - 1)
-        self.command_index += 1
-        return self.commands[index].copy()
 
     def current_xyz(self) -> np.ndarray:
         return ACTION[:3].copy()
@@ -100,7 +96,7 @@ def _executor(
     )
 
 
-def test_executor_stages_pose_before_unlock_and_delays_gripper_until_active():
+def test_executor_stages_target_before_unlock_and_delays_gripper_until_active():
     events: list[object] = []
     executor = _executor(events=events)
 
@@ -110,18 +106,29 @@ def test_executor_stages_pose_before_unlock_and_delays_gripper_until_active():
     assert [(item[0], item[1]) for item in events if isinstance(item, tuple)] == [
         ("action", False),
         ("enable", True),
-        ("action", True),
+        ("gripper", pytest.approx(ACTION[7])),
     ]
     assert executor.motion_enabled is True
 
 
-def test_executor_rejects_stale_feedback_before_any_publication():
+@pytest.mark.parametrize(
+    ("pose_fresh", "gripper_fresh", "expected"),
+    [
+        (False, True, "EEF pose"),
+        (True, False, "gripper"),
+        (False, False, "EEF pose, gripper"),
+    ],
+)
+def test_executor_identifies_stale_feedback_before_any_publication(
+    pose_fresh: bool, gripper_fresh: bool, expected: str
+):
     events: list[object] = []
     state = FakeState()
-    state.gripper_fresh = False
+    state.pose_fresh = pose_fresh
+    state.gripper_fresh = gripper_fresh
     executor = _executor(events=events, state=state)
 
-    with pytest.raises(RuntimeError, match="missing or stale"):
+    with pytest.raises(RuntimeError, match=rf"missing or stale: {expected}"):
         executor.publish(ACTION)
 
     assert events == []
@@ -155,24 +162,22 @@ def test_executor_stops_immediately_if_an_active_relay_loses_confirmation():
     assert executor.motion_enabled is False
 
 
-def test_executor_applies_only_configured_tracker_corrections():
+def test_executor_republishes_only_configured_tracking_corrections():
     events: list[object] = []
-    first = ACTION.copy()
-    first[0] -= 0.02
-    corrected = ACTION.copy()
-    state = FakeState([first, corrected, corrected])
-    executor = _executor(events=events, state=state, settle_s=0.0, corrections=2)
+    state = FakeState()
+    state.current_xyz = lambda: ACTION[:3] + [0.02, 0.0, 0.0]
+    executor = _executor(events=events, state=state, settle_s=0.1, corrections=2)
 
     command = executor.publish(ACTION)
 
-    assert command == pytest.approx(corrected)
+    assert command == pytest.approx(ACTION)
     pose_events = [
         item for item in events if isinstance(item, tuple) and item[0] == "action"
     ]
     assert [(item[1], item[2][0]) for item in pose_events] == [
-        (False, pytest.approx(first[0])),
-        (True, pytest.approx(first[0])),
-        (False, pytest.approx(corrected[0])),
+        (False, pytest.approx(ACTION[0])),
+        (False, pytest.approx(ACTION[0])),
+        (False, pytest.approx(ACTION[0])),
     ]
 
 
@@ -232,4 +237,19 @@ def test_executor_rejects_invalid_safety_settings(name: str, value: float):
             is_shutdown=lambda: False,
             policy_label="test policy",
             **settings,
+        )
+
+
+def test_executor_rejects_corrections_without_positive_settle_time():
+    with pytest.raises(ValueError, match="corrections require a positive settle"):
+        EefPolicyExecutor(
+            state=FakeState(),
+            relay=FakeRelay(),
+            commander=FakeCommander([]),
+            relay_enable_timeout_s=0.2,
+            settle_s=0.0,
+            tolerance_m=0.005,
+            corrections=1,
+            is_shutdown=lambda: False,
+            policy_label="test policy",
         )

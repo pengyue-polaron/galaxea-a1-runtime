@@ -73,9 +73,16 @@ def build_safety_settings(
     return (
         SafetySetting(
             name="safe_command_path",
-            path=f"{topics.eef_target} -> {topics.staged_command} -> relay -> {topics.host_command}",
+            path=(
+                f"EEF policy -> bounded IK -> {topics.joint_target} -> "
+                f"jointTracker -> {topics.staged_command} -> relay -> "
+                f"{topics.host_command}"
+            ),
             default="enabled for normal apps",
-            behavior="App EE targets are staged and only forwarded by the relay after validation.",
+            behavior=(
+                "App EEF targets become named joint targets through the tracked "
+                "IK contract; only validated tracker output is forwarded by the relay."
+            ),
             visibility=f"relay status on {topics.relay_status}",
             operator_note="Direct host command publishing exists only in the direct-debug profile.",
         ),
@@ -169,12 +176,41 @@ def build_safety_settings(
             operator_note="This can make a policy look pinned at the boundary; the preview should reveal it.",
         ),
         SafetySetting(
-            name="eef_policy_orientation_mode",
-            path=f"{SYSTEM_CONFIG} [eef.orientation_mode]",
-            default=system.eef.orientation_mode,
-            behavior="EEF-policy quaternion channels are ignored unless orientation mode is model-quat.",
-            visibility="Bridge preview prints orientation_mode.",
-            operator_note="This is deliberate for translation-first EEF control.",
+            name="eef_policy_ik",
+            path=f"{SYSTEM_CONFIG} [eef_ik] -> {topics.joint_target}",
+            default=(
+                f"position_tolerance={system.eef_ik.position_tolerance_m:g}m, "
+                f"orientation_tolerance={system.eef_ik.orientation_tolerance_rad:g}rad, "
+                f"max_joint_delta={system.eef_ik.max_solution_delta_rad:g}rad"
+            ),
+            behavior=(
+                "The first-party URDF IK rejects non-convergence, non-finite values, "
+                "joint-limit violations, and solutions beyond the configured joint delta."
+            ),
+            visibility=(
+                "Each accepted action logs IK iterations, Cartesian/orientation residuals, "
+                "and maximum joint delta."
+            ),
+            operator_note=(
+                "The bridge waits for a fresh staged hold aligned with current named "
+                "joint feedback before motion can be enabled."
+            ),
+        ),
+        SafetySetting(
+            name="eef_policy_task_selection",
+            path=str(lingbot.task_catalog.path.relative_to(root)),
+            default=f"{len(lingbot.task_catalog.tasks)} tracked prompts",
+            behavior=(
+                "Live policy startup requires one tracked task selection before "
+                "model, ROS, camera, or hardware processes start."
+            ),
+            visibility=(
+                "The selector and bridge print the selected task id, train/OOD "
+                "distribution, and exact prompt."
+            ),
+            operator_note=(
+                "Cancelling selection starts nothing; unregistered prompts are rejected."
+            ),
         ),
         SafetySetting(
             name="lingbot_execution_gate",
@@ -182,11 +218,15 @@ def build_safety_settings(
             default=(
                 f"execute={str(lingbot.execution.execute).lower()}, "
                 f"step_mode={str(lingbot.execution.step_mode).lower()}, "
-                f"step_actions={str(lingbot.execution.step_actions).lower()}"
+                f"step_actions={str(lingbot.execution.step_actions).lower()}, "
+                f"max_model_calls={lingbot.execution.max_model_calls}"
             ),
             behavior="LingBot only enables the relay when execution is configured; step gates remain explicit deployment settings.",
             visibility="LingBot startup prints dry-run/live and step-gate state.",
-            operator_note="Keep execute false until the new checkpoint, quantiles, prompt, and workspace have been reviewed.",
+            operator_note=(
+                "The deployment owns rollout cadence; execution continues until its "
+                "finite model-call cap is reached or the operator stops it."
+            ),
         ),
         SafetySetting(
             name="pi05_execution_gate",
@@ -194,21 +234,15 @@ def build_safety_settings(
             default=(
                 f"execute={str(pi05.execution.execute).lower()}, "
                 f"step_mode={str(pi05.execution.step_mode).lower()}, "
-                f"step_actions={str(pi05.execution.step_actions).lower()}"
+                f"step_actions={str(pi05.execution.step_actions).lower()}, "
+                f"max_model_calls={pi05.execution.max_model_calls}"
             ),
             behavior="Pi0.5 only enables the relay when execution is configured; inference and action-step gates remain explicit deployment settings.",
             visibility="Pi0.5 startup prints dry-run/live and step-gate state.",
-            operator_note="Keep execute false until the checkpoint, prompt, action contract, and workspace have been reviewed.",
-        ),
-        SafetySetting(
-            name="lingbot_eef_servo_compensation",
-            path=f"{LINGBOT_CONFIG} [action.servo_gain]",
-            default=(
-                f"gain={lingbot.servo.gain:g}, max_extra={lingbot.servo.max_extra_m:g}m"
+            operator_note=(
+                "The deployment owns rollout cadence; execution continues until its "
+                "finite model-call cap is reached or the operator stops it."
             ),
-            behavior="When gain is greater than 1, the bridge sends an amplified tracker target toward the policy target.",
-            visibility="Bridge preview prints tracker_cmd_xyz whenever it differs from the policy target.",
-            operator_note="A gain at or below 1 disables compensation; raise it only for intentional tracker under-tracking compensation.",
         ),
         SafetySetting(
             name="lingbot_cache_actual_feedback",
@@ -217,24 +251,14 @@ def build_safety_settings(
             behavior=(
                 "The LingBot KV cache records measured EEF feedback."
                 if lingbot.servo.cache_actual_feedback
-                else "The LingBot KV cache records the tracker command."
+                else "The LingBot KV cache records the requested EEF action."
             ),
             visibility=(
                 "Bridge startup prints cache_action_source=measured-feedback."
                 if lingbot.servo.cache_actual_feedback
-                else "Bridge startup prints cache_action_source=tracker-command."
+                else "Bridge startup prints cache_action_source=requested-action."
             ),
             operator_note="Enable measured feedback only for a model trained with measured feedback as its action history.",
-        ),
-        SafetySetting(
-            name="pi05_eef_servo_compensation",
-            path=f"{PI05_CONFIG} [action.servo_gain]",
-            default=(
-                f"gain={pi05.servo.gain:g}, max_extra={pi05.servo.max_extra_m:g}m"
-            ),
-            behavior="When gain is greater than 1, the pi0.5 bridge sends an amplified tracker target toward the policy target.",
-            visibility="Bridge preview prints tracker_cmd_xyz whenever it differs from the policy target.",
-            operator_note="A gain at or below 1 disables compensation; corrections additionally require a positive tracked settle time.",
         ),
         SafetySetting(
             name="eef_policy_relay_status_guard",
@@ -310,7 +334,7 @@ def build_architecture_findings() -> tuple[str, ...]:
         "Managed Teleop, LingBot, and pi0.5 apps own every supported live ROS path; no generic package adapter publishes implicitly.",
         "Teleop joint-space control is implemented as an app runtime that stages jointTracker output through the relay.",
         "The relay no longer applies joint tracking-error or velocity clamps; staged tracker output is forwarded unchanged once validation passes.",
-        "LingBot and pi0.5 episode-relative targets are composed onto the startup pose before using the staged EEF target route.",
+        "LingBot and pi0.5 episode-relative targets are composed onto the startup pose, solved by bounded first-party IK, and sent through the staged joint route.",
         "The direct-debug profile deliberately bypasses the relay and should remain isolated from normal app commands.",
     )
 

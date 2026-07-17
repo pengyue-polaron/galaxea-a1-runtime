@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-set -uo pipefail
+set -euo pipefail
 
-ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
 
 if (( $# < 4 )) || [[ "$3" != "--" ]]; then
@@ -28,8 +28,11 @@ cleanup() {
 
 trap cleanup EXIT HUP INT TERM
 
-"$@"
-rc=$?
+if "$@"; then
+  rc=0
+else
+  rc=$?
+fi
 cleanup
 trap - EXIT HUP INT TERM
 echo "BRIDGE_EXIT=${rc}"

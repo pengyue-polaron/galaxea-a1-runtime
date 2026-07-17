@@ -352,7 +352,7 @@ header{display:flex;justify-content:space-between;align-items:baseline;gap:16px}
 figure{margin:0;background:#1c1c1c;border:1px solid #333;border-radius:10px;overflow:hidden}img{display:block;width:100%;height:auto;background:#000}
 figcaption{padding:9px 12px;font-weight:600}.note{margin-top:12px;color:#aaa;font-size:12px}
 </style></head><body><header><h1>Galaxea A1 · Live Cameras</h1><span id="status">connecting…</span></header>
-<main class="grid"><figure><img src="/agent.mjpg" alt="Agent view"><figcaption>Agent view · D455 · red box = recorded area</figcaption></figure>
+<main class="grid"><figure><img src="/agent.mjpg" alt="Agent view"><figcaption>Agent view · D455 · red box = policy input</figcaption></figure>
 <figure><img src="/wrist.mjpg" alt="Wrist view"><figcaption>Wrist view · D405</figcaption></figure></main>
 <p class="note">Read-only preview. This service has no robot-control endpoints.</p><script>
 async function health(){try{const r=await fetch('/healthz',{cache:'no-store'}),d=await r.json();

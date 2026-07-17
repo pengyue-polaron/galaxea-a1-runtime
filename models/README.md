@@ -5,14 +5,15 @@ live under `configs/models/`, not beside downloaded files.
 
 ## Ownership
 
-Inference is composed from four independently reusable layers:
+Inference is composed from five independently reusable layers:
 
 | Layer | Owns |
 | --- | --- |
 | System | cameras, ROS topics, physical limits, and relay safety |
 | Backend | exact code revision, dependency lock, environment, and engine |
 | Model | immutable source revision, checkpoint step, complete content manifest, and weight-specific contract |
-| Deployment | references to the other layers, prompt, server lifecycle, and execution choices |
+| Task catalog | approved runtime prompts plus explicit train/OOD provenance |
+| Deployment | references to the other layers, task catalog, server lifecycle, and execution choices |
 
 A model's local root is always derived from its tracked identity:
 
@@ -70,7 +71,7 @@ camera/state inputs. It does not initialize ROS, open cameras, or publish robot
 commands.
 
 The service and client exchange an exact startup handshake. It covers source and
-model revisions, manifest digest, prompt, camera keys and shapes, state/action
+model revisions, manifest digest, the complete task catalog, camera keys and shapes, state/action
 layout, normalization, coordinate mode, and engine settings. A mismatch fails
 before any action can be accepted.
 
@@ -78,8 +79,8 @@ Current managed models are:
 
 | Model | Source label | Checkpoint step | Execution default |
 | --- | --- | ---: | --- |
-| LingBot VA fruit placement EEF | `step-1000` | 1000 | dry-run |
-| OpenPI pi0.5 fruit placement EEF | `step-14999` | 14999 | dry-run |
+| LingBot VA fruit placement EEF | `step-1000` | 1000 | live, finite closed-loop rollout after task selection |
+| OpenPI pi0.5 fruit placement EEF | `step-14999` | 14999 | live, finite closed-loop rollout after task selection |
 
 Do not commit weights and do not add Git LFS. Do not delete artifacts or staging
 directories without explicit review and authorization.

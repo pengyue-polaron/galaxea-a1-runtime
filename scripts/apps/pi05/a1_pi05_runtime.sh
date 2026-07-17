@@ -4,7 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
-BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
+BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CONFIG_PATH=""
 
 if [[ "${1:-}" == "--config" ]]; then
@@ -27,6 +27,7 @@ PROBE_SCRIPT="${ROOT}/scripts/apps/pi05/probe_pi05_server.py"
 SERVER_SCRIPT="${ROOT}/scripts/apps/pi05/pi05_policy_server.py"
 BRIDGE_SCRIPT="${ROOT}/scripts/apps/pi05/pi05_ee_bridge.py"
 BRIDGE_GUARD="${ROOT}/scripts/apps/a1_eef_policy_bridge_guard.sh"
+SELECTED_TASK_ID=""
 
 config_args=(--repo-root "${ROOT}" --shell)
 if [[ -n "${CONFIG_PATH}" ]]; then
@@ -97,12 +98,34 @@ start_services() {
   "${BASE_RUNTIME}" services
 }
 
+select_task() {
+  if [[ -n "${SELECTED_TASK_ID}" ]]; then
+    return
+  fi
+  local selected
+  if ! selected="$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.task_selection \
+      --catalog "${TASK_CATALOG_PATH}"
+  )"; then
+    a1_fail "Pi0.5 task selection cancelled; no model or hardware was started."
+    return 2
+  fi
+  SELECTED_TASK_ID="${selected}"
+  a1_info "Selected Pi0.5 task: ${SELECTED_TASK_ID}"
+}
+
 start_bridge() {
+  select_task
   if [[ ! -x "${BRIDGE_GUARD}" ]]; then
     a1_fail "EEF bridge guard is missing: ${BRIDGE_GUARD}"
     exit 2
   fi
-  local bridge_command=("${PYTHON_BIN}" "${BRIDGE_SCRIPT}" --config "${CONFIG_PATH}")
+  local bridge_command=(
+    "${PYTHON_BIN}" "${BRIDGE_SCRIPT}"
+    --config "${CONFIG_PATH}"
+    --task-id "${SELECTED_TASK_ID}"
+  )
   local guarded_command=(
     "${BRIDGE_GUARD}" "${BASE_RUNTIME}" "${MODEL_SESSION}" --
     "${bridge_command[@]}"
@@ -118,6 +141,7 @@ start_bridge() {
 }
 
 start_pipeline() {
+  select_task
   cleanup_failed_pipeline() {
     local status=$?
     if [[ "${status}" != "0" ]]; then

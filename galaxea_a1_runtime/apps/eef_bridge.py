@@ -8,8 +8,11 @@ from typing import Any, Callable, Sequence
 
 import numpy as np
 
+from galaxea_a1_runtime.console import info
+from galaxea_a1_runtime.hardware.eef_ik import A1EefIkSolver, IkSolution
+
 __all__ = [
-    "EefCommandPublisher",
+    "EefIkCommandPublisher",
     "condition_state_from_action8",
     "format_xyz_direction",
     "pose_msg_to_xyz_quat",
@@ -72,73 +75,93 @@ def format_xyz_direction(delta_xyz: Sequence[float], *, deadband_m: float) -> st
 
 
 @dataclass
-class EefCommandPublisher:
-    """Publish absolute EEF targets and gripper commands through ROS-like objects."""
+class EefIkCommandPublisher:
+    """Solve absolute EEF targets and publish named joint targets."""
 
     rospy: Any
-    pose_pub: Any
+    target_pub: Any
     gripper_pub: Any
     motion_enable_pub: Any
-    pose_msg_type: Any
+    joint_state_msg_type: Any
     bool_msg_type: Any
     gripper_msg_type: Any
-    command_frame: str
+    joint_names: tuple[str, ...]
+    current_joint_positions: Callable[[], Sequence[float] | None]
+    solver: A1EefIkSolver
     gripper_to_stroke: Callable[[float], float]
     execute: bool
-    active_pose_target: Any | None = None
-    active_pose_lock: threading.Lock = field(default_factory=threading.Lock)
+    log_solutions: bool = True
+    active_joint_target: Any | None = None
+    active_target_lock: threading.Lock = field(default_factory=threading.Lock)
+    last_solution: IkSolution | None = None
 
     def publish_motion_enable(self, enabled: bool) -> None:
         if not self.execute:
             return
         self.motion_enable_pub.publish(self.bool_msg_type(data=bool(enabled)))
 
-    def set_active_pose_target_from_msg(self, msg: Any) -> None:
-        target = self.pose_msg_type()
-        target.header.frame_id = self.command_frame
-        target.pose = msg.pose
-        with self.active_pose_lock:
-            self.active_pose_target = target
+    def hold_current_target(self) -> None:
+        current = self.current_joint_positions()
+        if current is None:
+            raise RuntimeError("Cannot stage an IK hold without fresh joint feedback")
+        self._set_active_joint_target(current)
 
-    def set_active_action(self, action8: Sequence[float]) -> Any:
+    def set_active_action(self, action8: Sequence[float]) -> IkSolution:
         action = np.asarray(action8, dtype=np.float64).reshape(8)
-        msg = self.pose_msg_type()
-        msg.header.stamp = self.rospy.Time.now()
-        msg.header.frame_id = self.command_frame
-        msg.pose.position.x, msg.pose.position.y, msg.pose.position.z = map(
-            float, action[:3]
-        )
-        (
-            msg.pose.orientation.x,
-            msg.pose.orientation.y,
-            msg.pose.orientation.z,
-            msg.pose.orientation.w,
-        ) = map(float, action[3:7])
-        with self.active_pose_lock:
-            self.active_pose_target = msg
-        return msg
+        if not np.all(np.isfinite(action)):
+            raise ValueError("EEF IK action must contain only finite values")
+        current = self.current_joint_positions()
+        if current is None:
+            raise RuntimeError("Cannot solve EEF IK without fresh joint feedback")
+        solution = self.solver.solve(current, action[:3], action[3:7])
+        self._set_active_joint_target(solution.joint_positions)
+        self.last_solution = solution
+        if self.log_solutions:
+            info(
+                "EEF IK solved: "
+                f"iterations={solution.iterations} "
+                f"position_error_mm={solution.position_error_m * 1000.0:.3f} "
+                f"orientation_error_deg="
+                f"{np.degrees(solution.orientation_error_rad):.3f} "
+                f"max_joint_delta_rad={solution.max_joint_delta_rad:.4f}"
+            )
+        return solution
 
-    def publish_active_pose_target(self) -> None:
+    def publish_active_target(self) -> None:
         if not self.execute:
             return
-        with self.active_pose_lock:
-            if self.active_pose_target is None:
+        with self.active_target_lock:
+            if self.active_joint_target is None:
                 return
-            target = self.pose_msg_type()
-            target.header.frame_id = self.active_pose_target.header.frame_id
-            target.pose = self.active_pose_target.pose
+            target = self.joint_state_msg_type()
+            target.name = list(self.active_joint_target.name)
+            target.position = list(self.active_joint_target.position)
         target.header.stamp = self.rospy.Time.now()
-        self.pose_pub.publish(target)
+        self.target_pub.publish(target)
 
     def publish_action(
         self, action8: Sequence[float], *, publish_gripper: bool
     ) -> None:
-        msg = self.set_active_action(action8)
-        self.publish_active_pose_target()
-        if not self.execute or not publish_gripper:
-            return
         action = np.asarray(action8, dtype=np.float64).reshape(8)
+        self.set_active_action(action)
+        self.publish_active_target()
+        if publish_gripper:
+            self.publish_gripper(float(action[7]))
+
+    def publish_gripper(self, gripper_norm: float) -> None:
+        if not self.execute:
+            return
         grip = self.gripper_msg_type()
-        grip.header.stamp = msg.header.stamp
-        grip.gripper_stroke = self.gripper_to_stroke(float(action[7]))
+        grip.header.stamp = self.rospy.Time.now()
+        grip.gripper_stroke = self.gripper_to_stroke(gripper_norm)
         self.gripper_pub.publish(grip)
+
+    def _set_active_joint_target(self, positions: Sequence[float]) -> None:
+        values = np.asarray(positions, dtype=np.float64).reshape(-1)
+        if values.shape != (len(self.joint_names),) or not np.all(np.isfinite(values)):
+            raise ValueError("IK joint target has invalid shape or values")
+        target = self.joint_state_msg_type()
+        target.name = list(self.joint_names)
+        target.position = [float(value) for value in values]
+        with self.active_target_lock:
+            self.active_joint_target = target

@@ -27,6 +27,7 @@ def test_server_metadata_exhaustively_identifies_deployment_contract():
     assert metadata["model_artifact"]["transformer_weight_sha256"] == (
         config.policy_server.expected_weight_sha256
     )
+    assert metadata["task_catalog"] == config.task_catalog.protocol_contract()
     assert metadata["camera_keys"] == [
         "observation.images.front",
         "observation.images.wrist",

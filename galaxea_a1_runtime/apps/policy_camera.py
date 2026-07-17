@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from pathlib import Path
 
 import numpy as np
 
@@ -22,6 +23,10 @@ from galaxea_a1_runtime.hardware.web_preview import (
     CameraWebPreview,
     color_from_bgr,
     color_from_frameset,
+)
+from galaxea_a1_runtime.hardware.video_recorder import (
+    LatestFrameVideoRecorder,
+    VideoRecordingResult,
 )
 
 
@@ -44,6 +49,8 @@ class PolicyCameraSession:
         self.front_reader: LatestCameraReader | None = None
         self.wrist_reader: LatestCameraReader | None = None
         self.preview: CameraWebPreview | None = None
+        self.agent_recorder: LatestFrameVideoRecorder | None = None
+        self.recording_result: VideoRecordingResult | None = None
         try:
             opened_front = open_configured_camera(
                 front,
@@ -71,6 +78,12 @@ class PolicyCameraSession:
 
     def read_pair(self) -> tuple[np.ndarray, np.ndarray] | None:
         front_reader, wrist_reader = self._readers()
+        if self.agent_recorder is not None:
+            recording_error = self.agent_recorder.exception()
+            if recording_error is not None:
+                raise RuntimeError(
+                    "AgentView video recorder failed"
+                ) from recording_error
         for reader in (front_reader, wrist_reader):
             exc = reader.exception()
             if exc is not None:
@@ -125,6 +138,13 @@ class PolicyCameraSession:
         }
 
     def close(self) -> None:
+        errors: list[BaseException] = []
+        if self.agent_recorder is not None:
+            try:
+                self.recording_result = self.agent_recorder.close()
+            except BaseException as exc:  # Finalize other camera resources too.
+                errors.append(exc)
+            self.agent_recorder = None
         preview_error: BaseException | None = None
         if self.preview is not None:
             try:
@@ -145,9 +165,47 @@ class PolicyCameraSession:
         self.wrist_camera = None
         self.front_camera = None
         if preview_error is not None:
-            raise RuntimeError("camera web preview cleanup failed") from preview_error
+            errors.append(RuntimeError("camera web preview cleanup failed"))
+            errors[-1].__cause__ = preview_error
         if cleanup_error is not None:
-            raise cleanup_error
+            errors.append(cleanup_error)
+        if errors:
+            raise BaseExceptionGroup("policy camera cleanup failed", errors)
+
+    def start_agent_recording(
+        self,
+        *,
+        output_root: Path,
+        run_id: str,
+    ) -> Path:
+        if self.agent_recorder is not None:
+            raise RuntimeError("AgentView recording is already active")
+        if self.front_camera is None:
+            raise RuntimeError("cannot record AgentView before its camera is open")
+        front_reader, _ = self._readers()
+        front = self.system.cameras.front
+        self.agent_recorder = LatestFrameVideoRecorder(
+            reader=front_reader,
+            extract_bgr=color_from_frameset,
+            output_root=output_root,
+            run_id=run_id,
+            width=front.width,
+            height=front.height,
+            fps=front.fps,
+            source=self.front_camera.label,
+            max_source_age_s=self.system.cameras.max_age_s,
+        )
+        try:
+            self.agent_recorder.start()
+        except BaseException:
+            self.agent_recorder = None
+            raise
+        return self.agent_recorder.final_path
+
+    def recording_progress(self) -> tuple[int, float] | None:
+        if self.agent_recorder is None:
+            return None
+        return self.agent_recorder.frame_count, self.agent_recorder.elapsed_s
 
     def _start_preview(self) -> None:
         preview_config = self.system.web_preview

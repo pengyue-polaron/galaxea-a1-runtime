@@ -15,6 +15,7 @@ from galaxea_a1_runtime.configuration.base import (
     integer_tuple,
     load_toml,
     number,
+    repo_path,
     require_exact_keys,
     required_table,
     shell_assign,
@@ -54,6 +55,7 @@ __all__ = [
     "SystemConfig",
     "SystemDoctorConfig",
     "SystemEefConfig",
+    "SystemEefIkConfig",
     "SystemEefTestConfig",
     "SystemGripperConfig",
     "SystemHostConfig",
@@ -134,13 +136,23 @@ class SystemJointSafetyConfig:
 
 @dataclass(frozen=True)
 class SystemEefConfig:
-    command_frame: str
-    orientation_mode: str
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
     min_quat_norm: float
     max_feedback_age_s: float
     feedback_wait_timeout_s: float
+
+
+@dataclass(frozen=True)
+class SystemEefIkConfig:
+    urdf: Path
+    max_iterations: int
+    damping: float
+    orientation_weight: float
+    max_iteration_step_rad: float
+    position_tolerance_m: float
+    orientation_tolerance_rad: float
+    max_solution_delta_rad: float
 
 
 @dataclass(frozen=True)
@@ -165,6 +177,7 @@ class SystemConfig:
     startup: SystemStartupConfig
     joint_safety: SystemJointSafetyConfig
     eef: SystemEefConfig
+    eef_ik: SystemEefIkConfig
     eef_test: SystemEefTestConfig
     gripper: SystemGripperConfig
     cameras: SystemCamerasConfig
@@ -184,6 +197,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             "startup",
             "joint_safety",
             "eef",
+            "eef_ik",
             "eef_test",
             "gripper",
             "cameras",
@@ -199,6 +213,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     startup = required_table(data, "startup")
     joint = required_table(data, "joint_safety")
     eef = required_table(data, "eef")
+    eef_ik = required_table(data, "eef_ik")
     eef_test = required_table(data, "eef_test")
     gripper = required_table(data, "gripper")
     cameras = required_table(data, "cameras")
@@ -221,6 +236,9 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         label="joint_safety",
     )
     require_exact_keys(eef, required=set(SystemEefConfig.__annotations__), label="eef")
+    require_exact_keys(
+        eef_ik, required=set(SystemEefIkConfig.__annotations__), label="eef_ik"
+    )
     require_exact_keys(
         eef_test, required=set(SystemEefTestConfig.__annotations__), label="eef_test"
     )
@@ -277,13 +295,21 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             max_feedback_age_s=floating(joint, "max_feedback_age_s"),
         ),
         eef=SystemEefConfig(
-            command_frame=string(eef, "command_frame"),
-            orientation_mode=string(eef, "orientation_mode"),
             xyz_min=float_tuple(eef, "xyz_min", 3),
             xyz_max=float_tuple(eef, "xyz_max", 3),
             min_quat_norm=floating(eef, "min_quat_norm"),
             max_feedback_age_s=floating(eef, "max_feedback_age_s"),
             feedback_wait_timeout_s=floating(eef, "feedback_wait_timeout_s"),
+        ),
+        eef_ik=SystemEefIkConfig(
+            urdf=repo_path(repo_root, string(eef_ik, "urdf")),
+            max_iterations=integer(eef_ik, "max_iterations"),
+            damping=floating(eef_ik, "damping"),
+            orientation_weight=floating(eef_ik, "orientation_weight"),
+            max_iteration_step_rad=floating(eef_ik, "max_iteration_step_rad"),
+            position_tolerance_m=floating(eef_ik, "position_tolerance_m"),
+            orientation_tolerance_rad=floating(eef_ik, "orientation_tolerance_rad"),
+            max_solution_delta_rad=floating(eef_ik, "max_solution_delta_rad"),
         ),
         eef_test=SystemEefTestConfig(
             step_m=floating(eef_test, "step_m"),
@@ -343,8 +369,6 @@ def validate_system_config(config: SystemConfig) -> None:
     ):
         if value <= 0:
             raise ValueError(f"joint_safety.{name} must be positive")
-    if config.eef.orientation_mode not in {"hold-current", "model-quat"}:
-        raise ValueError("eef.orientation_mode must be hold-current or model-quat")
     if any(
         lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)
     ):
@@ -358,6 +382,22 @@ def validate_system_config(config: SystemConfig) -> None:
         <= 0
     ):
         raise ValueError("eef quaternion and feedback limits must be positive")
+    if not config.eef_ik.urdf.is_file():
+        raise ValueError(f"eef_ik.urdf is missing: {config.eef_ik.urdf}")
+    if config.eef_ik.max_iterations <= 0:
+        raise ValueError("eef_ik.max_iterations must be positive")
+    if (
+        min(
+            config.eef_ik.damping,
+            config.eef_ik.orientation_weight,
+            config.eef_ik.max_iteration_step_rad,
+            config.eef_ik.position_tolerance_m,
+            config.eef_ik.orientation_tolerance_rad,
+            config.eef_ik.max_solution_delta_rad,
+        )
+        <= 0
+    ):
+        raise ValueError("eef_ik numeric settings must be positive")
     if config.eef_test.step_m <= 0 or config.eef_test.settle_s < 0:
         raise ValueError("eef_test step must be positive and settle time non-negative")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
@@ -425,6 +465,8 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
             if isinstance(config.cameras.wrist, SystemV4l2CameraConfig)
             else ""
         ),
+        "WEB_PREVIEW_BIND": config.web_preview.bind,
+        "WEB_PREVIEW_PORT": str(config.web_preview.port),
         "GRIPPER_MIN_STROKE_MM": number(config.gripper.stroke_min_mm),
         "GRIPPER_MAX_STROKE_MM": number(config.gripper.stroke_max_mm),
         "ROS_MASTER_STARTUP_TIMEOUT_S": number(config.startup.ros_master_timeout_s),

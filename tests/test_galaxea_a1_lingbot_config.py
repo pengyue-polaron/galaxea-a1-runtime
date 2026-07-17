@@ -45,23 +45,28 @@ def _deployment_copy(
 def test_lingbot_deployment_composes_with_shared_system_config():
     config = load_lingbot_config(CONFIG, repo_root=REPO)
     assert config.system.path == REPO / "configs/system/a1.toml"
-    assert config.server.prompt == "Put the banana into the blue plate"
-    assert config.execution.execute is False
+    assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
+    assert len(config.task_catalog.tasks) == 6
+    assert config.task_catalog.task("lemon_bowl").distribution == "ood"
+    assert config.execution.execute is True
+    assert config.execution.step_mode is False
+    assert config.execution.step_actions is False
+    assert config.execution.max_model_calls == 66
+    assert config.execution.execute_frames == 2
+    assert config.execution.print_actions is False
     assert config.policy_server.deployment_ready is True
-    assert config.system.eef.orientation_mode == "hold-current"
     assert config.action.pose_mode == "episode-relative"
     assert config.system.gripper.stroke_min_mm == 0.0
     assert config.system.gripper.stroke_max_mm == 104.0
     assert config.execution.kv_observations_per_frame == 4
     assert config.execution.initial_ee_pose is None
-
-    transform = build_action_transform_config(
-        system=config.system,
-        servo_gain=config.servo.gain,
-        servo_max_extra_m=config.servo.max_extra_m,
+    assert config.recording.agent_view_enabled is True
+    assert config.recording.output_root == (
+        REPO / "outputs/inference/lingbot-fruit-placement-eef/recordings"
     )
+
+    transform = build_action_transform_config(system=config.system)
     assert transform.gripper_stroke_max == config.system.gripper.stroke_max_mm
-    assert transform.eef_servo_gain == config.servo.gain
     assert len(config.policy_server.q01_source) == 8
     assert len(config.policy_server.q99_source) == 8
     assert config.policy_server.vendor_config == "a1"
@@ -106,6 +111,34 @@ def test_lingbot_bridge_guard_stops_runtime_when_bridge_exits(tmp_path):
 
     assert result.returncode == 7
     assert runtime_log.read_text().splitlines() == ["stop"]
+    assert "BRIDGE_EXIT=7" in result.stdout
+    assert "No such file or directory" not in result.stderr
+
+
+def test_eef_bridge_guard_refuses_to_run_without_its_cleanup_dependency(tmp_path):
+    guard = REPO / "scripts/apps/a1_eef_policy_bridge_guard.sh"
+    relocated_guard = tmp_path / "guard.sh"
+    relocated_guard.write_text(guard.read_text())
+    relocated_guard.chmod(0o755)
+    marker = tmp_path / "bridge-ran"
+
+    result = subprocess.run(
+        [
+            str(relocated_guard),
+            "/missing/base-runtime",
+            "missing-test-session",
+            "--",
+            "touch",
+            str(marker),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode != 0
+    assert not marker.exists()
+    assert "a1_tmux.sh" in result.stderr
 
 
 def test_lingbot_app_doctor_is_independent_of_runtime_ros_checks(
@@ -170,6 +203,29 @@ def test_lingbot_requires_a_predicted_frame_after_conditioning(tmp_path):
     path = _deployment_copy(tmp_path, contract_text=text)
 
     with pytest.raises(ValueError, match="conditioned first frame"):
+        load_lingbot_config(path, repo_root=REPO)
+
+
+def test_lingbot_rejects_execution_beyond_the_predicted_horizon(tmp_path):
+    path = _deployment_copy(tmp_path)
+    path.write_text(
+        path.read_text().replace("execute_frames = 2", "execute_frames = 5")
+    )
+
+    with pytest.raises(ValueError, match="cannot exceed.*frame_chunk_size"):
+        load_lingbot_config(path, repo_root=REPO)
+
+
+def test_lingbot_recordings_must_remain_under_outputs(tmp_path):
+    path = _deployment_copy(tmp_path)
+    path.write_text(
+        path.read_text().replace(
+            'output_root = "outputs/inference/lingbot-fruit-placement-eef/recordings"',
+            'output_root = "/tmp/outside-repository"',
+        )
+    )
+
+    with pytest.raises(ValueError, match="must remain under outputs"):
         load_lingbot_config(path, repo_root=REPO)
 
 

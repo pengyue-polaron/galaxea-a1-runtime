@@ -64,7 +64,7 @@ start_services() {
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  a1_success "4/4 Joint runtime services ready"
+  a1_success "4/4 Joint runtime services ready; relay remains LOCKED"
   startup_complete=1
   trap - ERR
 }
@@ -72,7 +72,7 @@ start_services() {
 doctor() {
   local args=("$@")
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_runtime_doctor.py" \
+    uv run --frozen --project "${ROOT}" python "${ROOT}/scripts/runtime/a1_runtime_doctor.py" \
       --system-config "${SYSTEM_CONFIG_PATH}" \
       --tracker-node "${TRACKER_NODE}" \
       "${args[@]}"
@@ -93,6 +93,13 @@ logs() {
   done
 }
 
+eef_nudge() {
+  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+    uv run --frozen --project "${ROOT}" python "${ROOT}/scripts/runtime/eef_nudge.py" \
+      --config "${SYSTEM_CONFIG_PATH}" \
+      "$@"
+}
+
 case "${1:-help}" in
   start|services)
     start_services
@@ -110,8 +117,12 @@ case "${1:-help}" in
   logs)
     logs
     ;;
+  eef-nudge)
+    shift
+    eef_nudge "$@"
+    ;;
   *)
-    a1_usage "$0 <start|services|stop|doctor|status|logs>"
+    a1_usage "$0 <start|services|stop|doctor|status|logs|eef-nudge>"
     cat <<EOF
   start     Start ROS master, A1 driver, isolated joint tracker, and locked relay
   services  Alias for start
@@ -119,6 +130,7 @@ case "${1:-help}" in
   doctor    Layered health check; add --require-execution after a target is staged
   status    Containers and doctor summary
   logs      Tail runtime logs
+  eef-nudge Interactive staged EEF-to-IK nudge tool; pass --execute to move hardware
 
 Environment:
   A1_SYSTEM_CONFIG_PATH=${SYSTEM_CONFIG_PATH}

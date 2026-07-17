@@ -49,7 +49,14 @@ def test_pi05_deployment_pins_final_checkpoint_and_shared_contracts():
     assert config.model_contract.source_action_dim == 8
     assert config.model_contract.state_dim == 14
     assert config.model_contract.pose_mode == "episode-relative"
-    assert config.execution.execute is False
+    assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
+    assert len(config.task_catalog.tasks) == 6
+    assert config.task_catalog.task("lemon_bowl").distribution == "ood"
+    assert config.execution.execute is True
+    assert config.execution.step_mode is False
+    assert config.execution.step_actions is False
+    assert config.execution.max_model_calls == 53
+    assert config.execution.execute_actions_per_inference == 10
     assert config.deployment_ready is True
 
 
@@ -63,6 +70,7 @@ def test_pi05_protocol_exhaustively_identifies_model_and_io_contract():
     assert metadata["environment"]["python_version"] == "3.11"
     assert metadata["checkpoint_step"] == 14999
     assert metadata["model_revision_label"] == "step-14999"
+    assert metadata["task_catalog"] == config.task_catalog.protocol_contract()
     assert metadata["camera_shapes"] == [[480, 480, 3], [480, 640, 3]]
     assert metadata["state_shape"] == [14]
     assert metadata["state_names"] == list(EEF_DATASET_STATE_NAMES)

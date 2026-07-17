@@ -13,7 +13,7 @@ from galaxea_a1_runtime.inference.protocol import (
 from galaxea_a1_runtime.schema import EEF_ACTION_NAMES, EEF_DATASET_STATE_NAMES
 
 
-PROTOCOL_VERSION = "galaxea_a1_openpi_pi05_eef_v2"
+PROTOCOL_VERSION = "galaxea_a1_openpi_pi05_eef_v3"
 
 
 def server_metadata(config: Pi05Config) -> dict[str, Any]:
@@ -42,7 +42,7 @@ def server_metadata(config: Pi05Config) -> dict[str, Any]:
             "checkpoint_format": contract.checkpoint_format,
             "parameter_set": contract.parameter_set,
             "train_config": contract.train_config,
-            "prompt": config.server.prompt,
+            "task_catalog": config.task_catalog.protocol_contract(),
             "camera_keys": [
                 config.observations.front_key,
                 config.observations.wrist_key,
