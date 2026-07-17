@@ -34,7 +34,7 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 ```
 
 - `scripts/runtime/` owns app-agnostic ROS, driver, tracker, relay, and shared
-  process lifecycle. It must not depend on Teleop, ACT, or LingBot.
+  process lifecycle. It must not depend on Teleop, LingBot, or OpenPI.
 - `scripts/apps/` contains thin entrypoints. Stateful behavior lives under
   `galaxea_a1_runtime/apps/`; reusable runtime, hardware, collection, and policy
   logic lives in its focused package.

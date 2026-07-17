@@ -1,0 +1,32 @@
+[backend]
+schema_version = 1
+id = "lingbot_va"
+adapter = "lingbot_va"
+
+[source]
+repository = "https://github.com/pengyue-polaron/lingbot-va-galaxea-a1.git"
+revision = "e5b1ae4d032d71ef4487fd4262f818618b6f838a"
+checkout = "external/lingbot-va"
+
+[environment]
+manager = "requirements-lock"
+python_version = "3.12"
+python = "external/lingbot-va/.env312/bin/python"
+lock = "configs/inference/backends/lingbot_va.requirements.txt"
+lock_sha256 = "6d697dac3e9ea2006e8a173d2362a08516c312e8d9cf566b473668aafe4334a4"
+
+[engine]
+text_encoder_device = "cpu"
+enable_offload = false
+attention_mode = "torch"
+seed = 42
+height = 256
+width = 256
+attention_window = 30
+guidance_scale = 5.0
+action_guidance_scale = 1.0
+video_inference_steps = 5
+action_inference_steps = 10
+snr_shift = 5.0
+action_snr_shift = 1.0
+world_size = 1

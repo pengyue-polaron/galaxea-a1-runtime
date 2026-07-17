@@ -50,6 +50,17 @@ JOINT_ACTION_NAMES_RAD = (
     "gripper_normalized",
 )
 
+EEF_ACTION_NAMES = (
+    "eef_delta_x_from_episode_start",
+    "eef_delta_y_from_episode_start",
+    "eef_delta_z_from_episode_start",
+    "eef_delta_qx_from_episode_start",
+    "eef_delta_qy_from_episode_start",
+    "eef_delta_qz_from_episode_start",
+    "eef_delta_qw_from_episode_start",
+    "gripper_normalized",
+)
+
 FRONT_IMAGE_KEY = "observation.images.front"
 WRIST_IMAGE_KEY = "observation.images.wrist"
 LINGBOT_EEF_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)

@@ -6,8 +6,8 @@ import json
 
 import numpy as np
 
-from galaxea_a1_runtime.apps.act.config import load_act_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
 from galaxea_a1_runtime.hardware.cameras import CameraSample
 from galaxea_a1_runtime.hardware.web_preview import (
     CameraWebPreview,
@@ -126,16 +126,18 @@ def test_image_roi_crops_exact_pixels_and_draws_non_destructively():
 
 def test_agentview_roi_is_identical_across_collection_and_inference_configs():
     teleop = load_teleop_config(REPO / "configs/teleop/a1_so100.toml", repo_root=REPO)
-    act = load_act_config(REPO / "configs/deployments/act_joint.toml", repo_root=REPO)
     lingbot = load_lingbot_config(
-        REPO / "configs/deployments/lingbot_va.toml", repo_root=REPO
+        REPO / "configs/deployments/lingbot/fruit_placement_eef.toml", repo_root=REPO
+    )
+    pi05 = load_pi05_config(
+        REPO / "configs/deployments/pi05/fruit_placement_eef.toml", repo_root=REPO
     )
 
     assert teleop.system.cameras.front.crop is not None
-    assert act.system.cameras.front.crop is not None
     assert lingbot.system.cameras.front.crop is not None
+    assert pi05.system.cameras.front.crop is not None
     assert {
         teleop.system.cameras.front.crop.xywh,
-        act.system.cameras.front.crop.xywh,
         lingbot.system.cameras.front.crop.xywh,
+        pi05.system.cameras.front.crop.xywh,
     } == {(103, 0, 480, 480)}

@@ -1,8 +1,8 @@
 import numpy as np
 import pytest
 
-from galaxea_a1_runtime.apps.lingbot.actions import (
-    LingBotActionTransformConfig,
+from galaxea_a1_runtime.apps.eef_policy_actions import (
+    EefActionTransformConfig,
     absolute_action_to_relative,
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
@@ -14,7 +14,7 @@ from galaxea_a1_runtime.apps.lingbot.actions import (
 )
 
 
-def action_config(**overrides) -> LingBotActionTransformConfig:
+def action_config(**overrides) -> EefActionTransformConfig:
     values = {
         "xyz_min": (0.06, -0.27, 0.06),
         "xyz_max": (0.44, 0.14, 0.50),
@@ -26,7 +26,7 @@ def action_config(**overrides) -> LingBotActionTransformConfig:
         "eef_servo_max_extra": 0.04,
     }
     values.update(overrides)
-    return LingBotActionTransformConfig(**values)
+    return EefActionTransformConfig(**values)
 
 
 def test_condition_action_preserves_feedback_xyz_outside_workspace():

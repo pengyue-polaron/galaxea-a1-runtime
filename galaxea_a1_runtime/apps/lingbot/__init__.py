@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .actions import (
-    LingBotActionTransformConfig,
+from galaxea_a1_runtime.apps.eef_policy_actions import (
+    EefActionTransformConfig,
     absolute_action_to_relative,
     apply_orientation_mode,
     build_action_transform_config,
@@ -18,7 +18,7 @@ from .actions import (
 )
 
 __all__ = [
-    "LingBotActionTransformConfig",
+    "EefActionTransformConfig",
     "absolute_action_to_relative",
     "apply_orientation_mode",
     "build_action_transform_config",

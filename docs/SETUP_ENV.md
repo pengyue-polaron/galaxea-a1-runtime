@@ -50,3 +50,23 @@ Engine and compatible device/GPU drivers; it does not need native ROS packages.
 The runtime no longer uses the old OpenPI/TFP, ZMQ, or DataCoach environments.
 Collection writes the current raw-v3 contract; conversion emits generic Joint
 and EEF datasets in both v3.0 and v2.1.
+
+## Model inference environments
+
+LingBot and OpenPI pi0.5 are isolated from the first-party runtime and from each
+other because their CUDA/model stacks have different Python constraints. A
+tracked backend pins source and dependency-lock content; a separate model
+descriptor pins the exact weight revision. Setup creates the environment under
+the ignored external checkout:
+
+```bash
+just lingbot-setup
+just pi05-setup
+```
+
+The LingBot backend uses its locked Python 3.12 environment. The pinned OpenPI
+backend uses the Python 3.11 environment resolved by its committed `uv.lock`.
+Neither setup modifies the repository environment, initializes ROS, opens
+cameras, or enables arm execution. See the [model
+registry](../models/README.md) for artifact verification and the
+[Runbook](RUNBOOK.md) for deployment commands.

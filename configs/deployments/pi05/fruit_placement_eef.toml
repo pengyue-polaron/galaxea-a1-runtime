@@ -1,0 +1,45 @@
+[system]
+config = "configs/system/a1.toml"
+
+[backend]
+config = "configs/inference/backends/openpi_pi05.toml"
+
+[model]
+config = "configs/models/pi05/fruit_placement_eef.toml"
+
+[deployment]
+id = "pi05-fruit-placement-eef"
+ready = true
+
+[session]
+tmux = "pi05-a1"
+model_tmux = "pi05-policy-server"
+startup_timeout_s = 300.0
+
+[server]
+host = "127.0.0.1"
+port = 8001
+connect_timeout_s = 2.0
+close_timeout_s = 10.0
+prompt = "Put the banana into the blue plate"
+
+[observations]
+front_key = "observation/front_image"
+wrist_key = "observation/wrist_image"
+
+[execution]
+execute = false
+step_mode = true
+step_actions = true
+max_model_calls = 1
+execute_actions_per_inference = 1
+exec_rate = 30.0
+print_actions = true
+review_deadband_m = 0.001
+
+[action]
+servo_gain = 1.0
+servo_max_extra_m = 0.04
+servo_settle_s = 0.0
+servo_tolerance_m = 0.01
+servo_corrections = 0

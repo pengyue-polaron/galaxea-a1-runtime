@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "lingbot/a1_fruit_placement_eef"
+backend = "lingbot_va"
+artifact_format = "diffusers"
+checkpoint_step = 1000
+manifest = "configs/models/lingbot/fruit_placement_eef.manifest.json"
+contract = "configs/models/lingbot/fruit_placement_eef.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "pengyue-polaron/lingbot-va-galaxea-a1-fruit-placement-eef"
+revision = "90e017bdbc6afac2e441b4634c9192776bbcb8b7"
+revision_label = "step-1000"

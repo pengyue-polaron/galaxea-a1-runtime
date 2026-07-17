@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "model_id": "lingbot/a1_fruit_placement_eef",
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "pengyue-polaron/lingbot-va-galaxea-a1-fruit-placement-eef",
+    "revision": "90e017bdbc6afac2e441b4634c9192776bbcb8b7"
+  },
+  "files": {
+    ".gitattributes": {"size": 1716, "sha256": "da6c83df78d997d211188519b66c13a5ea62a2b930bec91365782fe91e3ca73e"},
+    "LICENSE.txt": {"size": 11357, "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"},
+    "README.md": {"size": 2569, "sha256": "a31c286c13b3d4e207cd6b622bb95f2568c4e4660e8901b9b3897c4e8ae3500d"},
+    "assets/fruit_placement_agent_view_labeled.png": {"size": 1859297, "sha256": "bbe5f524dd22c87d892e36523cbd7fde0c670baa8a353dbe83abca68180a57c5"},
+    "configs/va_a1_cfg.py": {"size": 2166, "sha256": "736705bfff06338b209184d3f7710f2da7ae5faab3387d06c4eb373b2d8cc8b4"},
+    "configs/va_a1_train_cfg.py": {"size": 1454, "sha256": "33b2150596f3a33ddb0955220a2d65addf49eaec318a23b50090b057f1703f68"},
+    "text_encoder/config.json": {"size": 855, "sha256": "a2bcb24699f6c009a2427432bdd483ef8b2b42a712abc9503759cdc77d171f07"},
+    "text_encoder/model-00001-of-00003.safetensors": {"size": 4935812536, "sha256": "a8e861969c7433e707cc5a74065d795d36cca07ec96eb6763eb4083df7248f58"},
+    "text_encoder/model-00002-of-00003.safetensors": {"size": 4983103192, "sha256": "d57d948ece4837d850b7a859a4415121d57cacf8b9ee1d4db200c67f592902d7"},
+    "text_encoder/model-00003-of-00003.safetensors": {"size": 1442935480, "sha256": "0da9ee284e21d1406df708788db1d502d95d75f69faa25cd26151bf8829b7c5f"},
+    "text_encoder/model.safetensors.index.json": {"size": 22476, "sha256": "31c4c7bcce679eaa0dd4667462394ddb013dc2f748e0bffc893dc9146a320dab"},
+    "tokenizer/special_tokens_map.json": {"size": 7079, "sha256": "456b58fd240a06c743a7c2cf8008bec501240d68ebd1fc4018ea569505fea270"},
+    "tokenizer/spiece.model": {"size": 4548313, "sha256": "e3909a67b780650b35cf529ac782ad2b6b26e6d1f849d3fbb6a872905f452458"},
+    "tokenizer/tokenizer.json": {"size": 16837459, "sha256": "20a46ac256746594ed7e1e3ef733b83fbc5a6f0922aa7480eda961743de080ef"},
+    "tokenizer/tokenizer_config.json": {"size": 61758, "sha256": "1d8d2a216bf8e70ac15b7ddcea566c4dd0433c024b39a58ca5e4c66bd78defbd"},
+    "training_summary.json": {"size": 1173, "sha256": "f9e8a9ed44494a6eb31d833a0699b0b7d20d38e91619a5c04986400be97f172a"},
+    "transformer/config.json": {"size": 449, "sha256": "b20b27f8728d01b1b475d1fd6b998787e05cdb3e037d8976ced0d4575ab0b27d"},
+    "transformer/diffusion_pytorch_model.safetensors": {"size": 10177831668, "sha256": "b95c3aaea3838d7dc13f77de59e233a67c3b65565b3678e71e58dedd894f26a2"},
+    "vae/config.json": {"size": 1701, "sha256": "d996c340fe9a7df5d7371f76a7d8d6956f6c98256080074d8434fa5eeac11360"},
+    "vae/diffusion_pytorch_model.safetensors": {"size": 2818777808, "sha256": "62cd18f19438e35b32ac63020e2852f566e9b02f46b6cdbd87972a356e3c6f4b"}
+  }
+}

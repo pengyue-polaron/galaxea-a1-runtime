@@ -1,46 +1,85 @@
 # Local Model Registry
 
-`models/` is the only path that tracked inference configs should use for model
-weights. Everything in this directory except this file is ignored by Git.
+`models/` contains ignored deployment weights. Tracked identity and behavior
+live under `configs/models/`, not beside downloaded files.
 
-The local layout is:
+## Ownership
+
+Inference is composed from four independently reusable layers:
+
+| Layer | Owns |
+| --- | --- |
+| System | cameras, ROS topics, physical limits, and relay safety |
+| Backend | exact code revision, dependency lock, environment, and engine |
+| Model | immutable source revision, checkpoint step, complete content manifest, and weight-specific contract |
+| Deployment | references to the other layers, prompt, server lifecycle, and execution choices |
+
+A model's local root is always derived from its tracked identity:
 
 ```text
-models/
-  base/lingbot-va-base
-  checkpoints/lingbot/a1_agentview_square/latest
-  checkpoints/act/a1_agentview_square/latest
-  runtime/lingbot/a1_agentview_square/latest
+models/artifacts/<model-id>/<40-character-source-revision>/
 ```
 
-The base and checkpoint paths may be symlinks to weights produced or downloaded
-elsewhere. This checkout does not train models. `runtime/` is disposable and is
-assembled by the LingBot launcher from the registered base and checkpoint
-components.
+There is no `latest` alias for managed artifacts and no deployment-owned weight
+path. Adding another checkpoint means adding a new model descriptor, manifest,
+and contract; existing deployments can then reference it without changing a
+backend. Multiple tasks and model families can coexist without link farms or
+copied paths.
 
-Register the current supported slots without copying their contents:
+## Integrity and publication
+
+Every managed model pins an immutable Hugging Face commit. Its tracked manifest
+lists the exact non-cache file set, byte size, and SHA-256 of every file.
+Download occurs in a hidden sibling staging directory. Only after full
+validation does an atomic rename expose the final revision directory. A crash
+leftover intentionally blocks reuse until it is inspected.
+
+Fetch or verify one descriptor directly:
 
 ```bash
-just model-link lingbot-base /path/to/lingbot-va-base
-just model-link lingbot-a1-agentview-square /path/to/new_lingbot_checkpoint
-just model-link act-a1-agentview-square /path/to/new_act_pretrained_model
+just model-fetch configs/models/pi05/fruit_placement_eef.toml
+just model-verify configs/models/pi05/fruit_placement_eef.toml
+```
+
+Validate every configured model:
+
+```bash
 just models
 ```
 
-Both deployment checkpoints must match the camera feature contract derived
-from their referenced System config. ACT also stores the front image shape in
-its checkpoint contract and refuses to load a mismatch.
+## Managed EEF policies
 
-After registering new weights, update the LingBot prompt, expected weight size,
-and q01/q99 statistics from that same training run before setting LingBot
-`deployment_ready = true`. Review the ACT checkpoint contract separately before
-setting ACT `deployment_ready = true`. Both deployments remain dry-run until
-their independent execution setting is enabled.
+The configured LingBot and OpenPI pi0.5 models use separate pinned source trees
+and dependency environments, but the same model-store and service-contract
+boundaries:
 
-There is no local training-output root. Bring a reviewed checkpoint onto this
-machine, register it with `just model-link`, and keep tracked deployment configs
-pointing only at the resulting `models/` slot.
+```bash
+just lingbot-setup
+just lingbot-verify
+just lingbot-smoke
 
-Do not commit weights and do not add Git LFS to this repository. `just models`
-fails when a configured model is missing, a file over 100 MiB is tracked, or
-Git reports garbage left by an interrupted pack operation.
+just pi05-setup
+just pi05-verify
+just pi05-smoke
+```
+
+Setup is hardware-free: it verifies the backend checkout and lock, synchronizes
+the backend-local environment, fetches the exact model revision, and validates
+all artifact hashes. Smoke starts only the GPU policy server and sends synthetic
+camera/state inputs. It does not initialize ROS, open cameras, or publish robot
+commands.
+
+The service and client exchange an exact startup handshake. It covers source and
+model revisions, manifest digest, prompt, camera keys and shapes, state/action
+layout, normalization, coordinate mode, and engine settings. A mismatch fails
+before any action can be accepted.
+
+Current managed models are:
+
+| Model | Source label | Checkpoint step | Execution default |
+| --- | --- | ---: | --- |
+| LingBot VA fruit placement EEF | `step-1000` | 1000 | dry-run |
+| OpenPI pi0.5 fruit placement EEF | `step-14999` | 14999 | dry-run |
+
+Do not commit weights and do not add Git LFS. Do not delete artifacts or staging
+directories without explicit review and authorization.

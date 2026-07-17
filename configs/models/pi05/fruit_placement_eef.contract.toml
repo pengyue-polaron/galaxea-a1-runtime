@@ -1,0 +1,10 @@
+[openpi]
+train_config = "pi05_galaxea_a1_eef"
+checkpoint_format = "orbax-ocdbt"
+parameter_set = "ema_params"
+norm_stats_path = "assets/pengyue-polaron/nyush-galaxea-a1-fruit-placement-eef-v21/norm_stats.json"
+pose_mode = "episode-relative"
+action_horizon = 10
+state_dim = 14
+source_action_dim = 8
+model_action_dim = 32

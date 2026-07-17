@@ -1,30 +1,16 @@
-"""Git-tracked LingBot-VA runtime configuration."""
+"""Composed LingBot backend, model, deployment, and System configuration."""
 
 from __future__ import annotations
 
+import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from galaxea_a1_runtime.configuration.base import (
-    boolean,
-    float_tuple,
-    floating,
-    integer,
-    load_toml,
-    referenced_config,
-    require_exact_keys,
-    repo_path as _repo_path,
-    required_table as _required_table,
-    string as _string,
-    text as _text,
-)
-from galaxea_a1_runtime.configuration.system import load_system_config
-from galaxea_a1_runtime.configuration.cli import run_config_renderer
-from galaxea_a1_runtime.configuration.paths import LINGBOT_CONFIG
-from galaxea_a1_runtime.schema import LINGBOT_EEF_ACTION_CHANNEL_IDS
 from galaxea_a1_runtime.apps.lingbot.config_runtime import bash_config
 from galaxea_a1_runtime.apps.lingbot.config_schema import (
+    AttentionMode,
     LingBotActionModeConfig,
     LingBotConfig,
     LingBotExecutionConfig,
@@ -36,10 +22,61 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
     PoseMode,
     TextEncoderDevice,
 )
+from galaxea_a1_runtime.configuration.base import (
+    boolean,
+    float_tuple,
+    floating,
+    integer,
+    integer_tuple,
+    load_toml,
+    referenced_config,
+    require_exact_keys,
+    repo_path,
+    required_table,
+    string,
+    text,
+)
+from galaxea_a1_runtime.configuration.cli import run_config_renderer
+from galaxea_a1_runtime.configuration.paths import LINGBOT_CONFIG
+from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
+from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
+from galaxea_a1_runtime.schema import LINGBOT_EEF_ACTION_CHANNEL_IDS
+
 
 DEFAULT_LINGBOT_CONFIG = LINGBOT_CONFIG
 
 __all__ = ["bash_config", "load_lingbot_config"]
+
+
+@dataclass(frozen=True)
+class _EngineConfig:
+    text_encoder_device: TextEncoderDevice
+    enable_offload: bool
+    attention_mode: AttentionMode
+    seed: int
+    height: int
+    width: int
+    attention_window: int
+    guidance_scale: float
+    action_guidance_scale: float
+    video_inference_steps: int
+    action_inference_steps: int
+    snr_shift: float
+    action_snr_shift: float
+    world_size: int
+
+
+@dataclass(frozen=True)
+class _ModelContract:
+    vendor_config: str
+    pose_mode: PoseMode
+    frame_chunk_size: int
+    action_per_frame: int
+    model_action_dim: int
+    action_channel_ids: tuple[int, ...]
+    q01_source: tuple[float, ...]
+    q99_source: tuple[float, ...]
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -52,59 +89,55 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
         data,
         required={
             "system",
+            "backend",
+            "model",
+            "deployment",
             "session",
             "server",
-            "policy_server",
             "observations",
             "execution",
             "action",
         },
-        label="LingBot config",
+        label="LingBot deployment config",
     )
     system = load_system_config(referenced_config(data, repo_root), repo_root=repo_root)
-    session = _required_table(data, "session")
-    server = _required_table(data, "server")
-    policy_server = _required_table(data, "policy_server")
-    observations = _required_table(data, "observations")
-    execution = _required_table(data, "execution")
-    action = _required_table(data, "action")
-    require_exact_keys(session, required={"tmux"}, label="session")
+    backend, engine = _load_backend(
+        _config_reference(data, "backend", repo_root), repo_root
+    )
+    model = load_model_config(
+        _config_reference(data, "model", repo_root), repo_root=repo_root
+    )
+    if backend.adapter != "lingbot_va" or model.backend != backend.backend_id:
+        raise ValueError(
+            "LingBot deployment backend/model mismatch: "
+            f"adapter={backend.adapter!r}, backend={backend.backend_id!r}, "
+            f"model.backend={model.backend!r}"
+        )
+    if model.artifact_format != "diffusers":
+        raise ValueError("LingBot model artifact_format must be 'diffusers'")
+    contract = _load_model_contract(model)
+
+    deployment = required_table(data, "deployment")
+    session = required_table(data, "session")
+    server = required_table(data, "server")
+    observations = required_table(data, "observations")
+    execution = required_table(data, "execution")
+    action = required_table(data, "action")
+    require_exact_keys(deployment, required={"id", "ready"}, label="LingBot deployment")
+    require_exact_keys(
+        session,
+        required={
+            "tmux",
+            "model_tmux",
+            "master_port",
+            "startup_timeout_s",
+        },
+        label="session",
+    )
     require_exact_keys(
         server,
         required={"host", "port", "connect_timeout_s", "close_timeout_s", "prompt"},
         label="server",
-    )
-    require_exact_keys(
-        policy_server,
-        required={
-            "tmux",
-            "checkout",
-            "python",
-            "base_model",
-            "checkpoint",
-            "model_root",
-            "save_root",
-            "master_port",
-            "startup_timeout_s",
-            "expected_weight_size_bytes",
-            "deployment_ready",
-            "text_encoder_device",
-            "seed",
-            "height",
-            "width",
-            "frame_chunk_size",
-            "action_per_frame",
-            "attention_window",
-            "guidance_scale",
-            "action_guidance_scale",
-            "video_inference_steps",
-            "action_inference_steps",
-            "snr_shift",
-            "action_snr_shift",
-            "q01_source",
-            "q99_source",
-        },
-        label="policy_server",
     )
     require_exact_keys(
         observations, required={"front_key", "wrist_key"}, label="observations"
@@ -130,7 +163,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     require_exact_keys(
         action,
         required={
-            "pose_mode",
             "servo_gain",
             "servo_max_extra_m",
             "servo_settle_s",
@@ -140,49 +172,69 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
         },
         label="action",
     )
-    deployment_ready = boolean(policy_server, "deployment_ready")
 
+    deployment_id = _safe_id(string(deployment, "id"), label="deployment.id")
+    artifact_root = model.artifact_root
+    transformer_weight = _manifest_file(
+        model, "transformer/diffusion_pytorch_model.safetensors"
+    )
+    transformer_config = _manifest_file(model, "transformer/config.json")
+    deployment_ready = boolean(deployment, "ready")
     config = LingBotConfig(
         path=path,
         system=system,
-        session=LingBotSessionConfig(tmux=_string(session, "tmux")),
+        session=LingBotSessionConfig(tmux=string(session, "tmux")),
         server=LingBotServerConfig(
-            host=_string(server, "host"),
+            host=string(server, "host"),
             port=integer(server, "port"),
             connect_timeout_s=floating(server, "connect_timeout_s"),
             close_timeout_s=floating(server, "close_timeout_s"),
-            prompt=_text(server, "prompt").strip(),
+            prompt=text(server, "prompt").strip(),
         ),
         policy_server=LingBotPolicyServerConfig(
-            tmux=_string(policy_server, "tmux"),
-            checkout=_resolved_path(policy_server, "checkout", repo_root),
-            python=_resolved_path(policy_server, "python", repo_root),
-            base_model=_resolved_path(policy_server, "base_model", repo_root),
-            checkpoint=_resolved_path(policy_server, "checkpoint", repo_root),
-            model_root=_resolved_path(policy_server, "model_root", repo_root),
-            save_root=_resolved_path(policy_server, "save_root", repo_root),
-            master_port=integer(policy_server, "master_port"),
-            startup_timeout_s=floating(policy_server, "startup_timeout_s"),
-            expected_weight_size_bytes=integer(
-                policy_server, "expected_weight_size_bytes"
+            backend=backend,
+            model=model,
+            tmux=string(session, "model_tmux"),
+            checkout=backend.source.checkout,
+            python=backend.environment.python,
+            requirements=backend.environment.lock,
+            code_repository=backend.source.repository,
+            code_revision=backend.source.revision,
+            vendor_config=contract.vendor_config,
+            model_repo_id=model.source.repo_id,
+            model_revision=model.source.revision,
+            artifact_root=artifact_root,
+            base_model=artifact_root,
+            checkpoint=artifact_root,
+            model_root=artifact_root,
+            save_root=Path(
+                os.path.abspath(repo_root / "outputs" / "inference" / deployment_id)
             ),
-            text_encoder_device=_text_encoder_device(
-                _string(policy_server, "text_encoder_device")
-            ),
-            seed=integer(policy_server, "seed"),
-            height=integer(policy_server, "height"),
-            width=integer(policy_server, "width"),
-            frame_chunk_size=integer(policy_server, "frame_chunk_size"),
-            action_per_frame=integer(policy_server, "action_per_frame"),
-            attention_window=integer(policy_server, "attention_window"),
-            guidance_scale=floating(policy_server, "guidance_scale"),
-            action_guidance_scale=floating(policy_server, "action_guidance_scale"),
-            video_inference_steps=integer(policy_server, "video_inference_steps"),
-            action_inference_steps=integer(policy_server, "action_inference_steps"),
-            snr_shift=floating(policy_server, "snr_shift"),
-            action_snr_shift=floating(policy_server, "action_snr_shift"),
-            q01_source=float_tuple(policy_server, "q01_source"),
-            q99_source=float_tuple(policy_server, "q99_source"),
+            master_port=integer(session, "master_port"),
+            world_size=engine.world_size,
+            startup_timeout_s=floating(session, "startup_timeout_s"),
+            expected_weight_size_bytes=transformer_weight.size,
+            expected_weight_sha256=transformer_weight.sha256,
+            expected_transformer_config_sha256=transformer_config.sha256,
+            model_action_dim=contract.model_action_dim,
+            action_channel_ids=contract.action_channel_ids,
+            text_encoder_device=engine.text_encoder_device,
+            enable_offload=engine.enable_offload,
+            attention_mode=engine.attention_mode,
+            seed=engine.seed,
+            height=engine.height,
+            width=engine.width,
+            frame_chunk_size=contract.frame_chunk_size,
+            action_per_frame=contract.action_per_frame,
+            attention_window=engine.attention_window,
+            guidance_scale=engine.guidance_scale,
+            action_guidance_scale=engine.action_guidance_scale,
+            video_inference_steps=engine.video_inference_steps,
+            action_inference_steps=engine.action_inference_steps,
+            snr_shift=engine.snr_shift,
+            action_snr_shift=engine.action_snr_shift,
+            q01_source=contract.q01_source,
+            q99_source=contract.q99_source,
             deployment_ready=deployment_ready,
         ),
         execution=LingBotExecutionConfig(
@@ -200,11 +252,11 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             review_deadband_m=floating(execution, "review_deadband_m"),
         ),
         observations=LingBotObservationConfig(
-            front_key=_string(observations, "front_key"),
-            wrist_key=_string(observations, "wrist_key"),
+            front_key=string(observations, "front_key"),
+            wrist_key=string(observations, "wrist_key"),
         ),
         action=LingBotActionModeConfig(
-            pose_mode=_pose_mode(_string(action, "pose_mode")),
+            pose_mode=contract.pose_mode,
         ),
         servo=LingBotServoConfig(
             gain=floating(action, "servo_gain"),
@@ -219,6 +271,103 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     return config
 
 
+def _load_backend(
+    path: Path, repo_root: Path
+) -> tuple[CodeBackendConfig, _EngineConfig]:
+    _, _, data = load_toml(path, repo_root=repo_root)
+    require_exact_keys(
+        data,
+        required={"backend", "source", "environment", "engine"},
+        label="LingBot backend config",
+    )
+    backend = parse_code_backend(
+        backend=required_table(data, "backend"),
+        source=required_table(data, "source"),
+        environment=required_table(data, "environment"),
+        repo_root=repo_root,
+    )
+    return backend, _parse_engine(required_table(data, "engine"))
+
+
+def _parse_engine(engine_data: dict[str, Any]) -> _EngineConfig:
+    require_exact_keys(
+        engine_data,
+        required={
+            "text_encoder_device",
+            "enable_offload",
+            "attention_mode",
+            "seed",
+            "height",
+            "width",
+            "attention_window",
+            "guidance_scale",
+            "action_guidance_scale",
+            "video_inference_steps",
+            "action_inference_steps",
+            "snr_shift",
+            "action_snr_shift",
+            "world_size",
+        },
+        label="LingBot backend engine",
+    )
+    return _EngineConfig(
+        text_encoder_device=_text_encoder_device(
+            string(engine_data, "text_encoder_device")
+        ),
+        enable_offload=boolean(engine_data, "enable_offload"),
+        attention_mode=_attention_mode(string(engine_data, "attention_mode")),
+        seed=integer(engine_data, "seed"),
+        height=integer(engine_data, "height"),
+        width=integer(engine_data, "width"),
+        attention_window=integer(engine_data, "attention_window"),
+        guidance_scale=floating(engine_data, "guidance_scale"),
+        action_guidance_scale=floating(engine_data, "action_guidance_scale"),
+        video_inference_steps=integer(engine_data, "video_inference_steps"),
+        action_inference_steps=integer(engine_data, "action_inference_steps"),
+        snr_shift=floating(engine_data, "snr_shift"),
+        action_snr_shift=floating(engine_data, "action_snr_shift"),
+        world_size=integer(engine_data, "world_size"),
+    )
+
+
+def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
+    _, _, data = load_toml(model.contract, repo_root=model.repo_root)
+    require_exact_keys(
+        data, required={"lingbot", "normalization"}, label="LingBot model contract"
+    )
+    lingbot = required_table(data, "lingbot")
+    normalization = required_table(data, "normalization")
+    require_exact_keys(
+        lingbot,
+        required={
+            "vendor_config",
+            "pose_mode",
+            "frame_chunk_size",
+            "action_per_frame",
+            "model_action_dim",
+            "action_channel_ids",
+        },
+        label="LingBot model contract",
+    )
+    require_exact_keys(
+        normalization,
+        required={"method", "q01_source", "q99_source"},
+        label="LingBot normalization contract",
+    )
+    if string(normalization, "method") != "quantiles":
+        raise ValueError("LingBot normalization.method must be 'quantiles'")
+    return _ModelContract(
+        vendor_config=string(lingbot, "vendor_config"),
+        pose_mode=_pose_mode(string(lingbot, "pose_mode")),
+        frame_chunk_size=integer(lingbot, "frame_chunk_size"),
+        action_per_frame=integer(lingbot, "action_per_frame"),
+        model_action_dim=integer(lingbot, "model_action_dim"),
+        action_channel_ids=integer_tuple(lingbot, "action_channel_ids", min_len=1),
+        q01_source=float_tuple(normalization, "q01_source"),
+        q99_source=float_tuple(normalization, "q99_source"),
+    )
+
+
 def validate_lingbot_config(config: LingBotConfig) -> None:
     if not 1 <= config.server.port <= 65535:
         raise ValueError("server.port must be in [1, 65535]")
@@ -227,12 +376,10 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
     policy = config.policy_server
     if not 1 <= policy.master_port <= 65535 or policy.startup_timeout_s <= 0:
         raise ValueError(
-            "policy_server master_port must be in [1, 65535] and startup timeout must be positive"
+            "model master_port must be in [1, 65535] and startup timeout must be positive"
         )
-    if policy.expected_weight_size_bytes < 0:
-        raise ValueError(
-            "policy_server.expected_weight_size_bytes must be non-negative"
-        )
+    if policy.world_size != 1:
+        raise ValueError("LingBot backend world_size must be 1")
     if (
         min(
             policy.height,
@@ -242,68 +389,68 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         )
         <= 0
     ):
-        raise ValueError("policy_server dimensions must be positive")
+        raise ValueError("LingBot backend/model dimensions must be positive")
+    if policy.frame_chunk_size < 2:
+        raise ValueError(
+            "LingBot frame_chunk_size must include the conditioned first frame and a predicted frame"
+        )
     if (
-        policy.attention_window <= 0
-        or policy.video_inference_steps <= 0
-        or policy.action_inference_steps <= 0
+        min(
+            policy.attention_window,
+            policy.video_inference_steps,
+            policy.action_inference_steps,
+        )
+        <= 0
     ):
-        raise ValueError("policy_server inference settings must be positive")
+        raise ValueError("LingBot inference settings must be positive")
+    if policy.model_action_dim <= max(policy.action_channel_ids, default=-1):
+        raise ValueError("LingBot action_channel_ids exceed model_action_dim")
+    if policy.action_channel_ids != LINGBOT_EEF_ACTION_CHANNEL_IDS:
+        raise ValueError(
+            "LingBot checkpoint action_channel_ids do not match the shared A1 EEF schema"
+        )
     if policy.deployment_ready:
         if not config.server.prompt:
-            raise ValueError(
-                "deployment-ready LingBot config requires a real server.prompt"
-            )
-        if policy.expected_weight_size_bytes <= 0:
-            raise ValueError(
-                "deployment-ready LingBot config requires expected_weight_size_bytes"
-            )
+            raise ValueError("deployment-ready LingBot config requires a real prompt")
         if not policy.q01_source or not policy.q99_source:
             raise ValueError(
-                "deployment-ready LingBot config requires real q01/q99 statistics"
+                "deployment-ready LingBot config requires q01/q99 statistics"
             )
-    elif policy.q01_source or policy.q99_source:
+    if len(policy.action_channel_ids) != len(policy.q01_source) or len(
+        policy.q01_source
+    ) != len(policy.q99_source):
         raise ValueError(
-            "unready LingBot config must keep q01_source/q99_source empty; "
-            "do not use numeric placeholders"
-        )
-    if policy.q01_source and (
-        len(LINGBOT_EEF_ACTION_CHANNEL_IDS) != len(policy.q01_source)
-        or len(policy.q01_source) != len(policy.q99_source)
-    ):
-        raise ValueError(
-            "policy_server action channels and quantiles must have equal lengths"
+            "LingBot action channels and quantiles must have equal lengths"
         )
     if any(
         lo >= hi for lo, hi in zip(policy.q01_source, policy.q99_source, strict=True)
     ):
-        raise ValueError(
-            "policy_server q01_source values must be lower than q99_source"
-        )
+        raise ValueError("LingBot q01 values must be lower than q99 values")
     if config.execution.max_model_calls < 0:
         raise ValueError("execution.max_model_calls must be >= 0")
-    if config.execution.execute_frames <= 0:
-        raise ValueError("execution.execute_frames must be positive")
-    if config.execution.kv_observations_per_frame <= 0:
-        raise ValueError("execution.kv_observations_per_frame must be positive")
+    if (
+        min(
+            config.execution.execute_frames,
+            config.execution.kv_observations_per_frame,
+        )
+        <= 0
+    ):
+        raise ValueError("LingBot execution frame counts must be positive")
     if policy.action_per_frame % config.execution.kv_observations_per_frame:
         raise ValueError(
-            "policy_server.action_per_frame must be divisible by "
-            "execution.kv_observations_per_frame"
+            "LingBot action_per_frame must be divisible by kv_observations_per_frame"
         )
     if (
         config.execution.initial_ee_pose is not None
         and len(config.execution.initial_ee_pose) != 8
     ):
         raise ValueError("execution.initial_ee_pose must contain 8 values")
-    if config.execution.exec_rate <= 0:
-        raise ValueError("execution.exec_rate must be positive")
-    if config.execution.review_deadband_m < 0:
-        raise ValueError("execution.review_deadband_m must be non-negative")
-    if config.execution.execute and not policy.deployment_ready:
+    if config.execution.exec_rate <= 0 or config.execution.review_deadband_m < 0:
         raise ValueError(
-            "execution.execute requires policy_server.deployment_ready=true"
+            "LingBot execution rate must be positive and deadband non-negative"
         )
+    if config.execution.execute and not policy.deployment_ready:
+        raise ValueError("execution.execute requires deployment.ready=true")
     if config.system.cameras.front.backend != "realsense":
         raise ValueError("LingBot front camera must use the RealSense backend")
     if config.servo.gain <= 0 or config.servo.tolerance_m <= 0:
@@ -312,22 +459,47 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("servo max_extra_m and settle_s must be non-negative")
     if config.servo.corrections < 0:
         raise ValueError("servo.corrections must be >= 0")
+    if config.servo.corrections and config.servo.settle_s <= 0:
+        raise ValueError("servo corrections require a positive settle time")
+
+
+def _config_reference(data: dict[str, Any], key: str, repo_root: Path) -> Path:
+    table = required_table(data, key)
+    require_exact_keys(table, required={"config"}, label=f"{key} reference")
+    return repo_path(repo_root, string(table, "config"))
+
+
+def _manifest_file(model: ModelArtifactConfig, path: str):
+    for item in model.manifest.files:
+        if item.path.as_posix() == path:
+            return item
+    raise ValueError(f"LingBot model manifest is missing required path: {path}")
+
+
+def _safe_id(value: str, *, label: str) -> str:
+    if not value or any(
+        not (character.isalnum() or character in {"-", "_", "."}) for character in value
+    ):
+        raise ValueError(f"{label} contains unsupported characters: {value!r}")
+    return value
 
 
 def _pose_mode(value: str) -> PoseMode:
     if value not in ("absolute", "episode-relative"):
-        raise ValueError(f"unsupported eef.action_pose_mode: {value!r}")
+        raise ValueError(f"unsupported LingBot model pose_mode: {value!r}")
     return value
 
 
 def _text_encoder_device(value: str) -> TextEncoderDevice:
     if value not in ("cpu", "cuda"):
-        raise ValueError(f"unsupported policy_server.text_encoder_device: {value!r}")
+        raise ValueError(f"unsupported engine.text_encoder_device: {value!r}")
     return value
 
 
-def _resolved_path(data: dict[str, Any], key: str, repo_root: Path) -> Path:
-    return _repo_path(repo_root, _string(data, key))
+def _attention_mode(value: str) -> AttentionMode:
+    if value not in ("torch", "flashattn"):
+        raise ValueError(f"unsupported engine.attention_mode: {value!r}")
+    return value
 
 
 def _empty_float_tuple_as_none(
@@ -340,7 +512,7 @@ def _empty_float_tuple_as_none(
 def main(argv: list[str] | None = None) -> int:
     return run_config_renderer(
         argv,
-        description="Read the tracked A1 LingBot deployment config.",
+        description="Read the composed A1 LingBot deployment config.",
         default_config=DEFAULT_LINGBOT_CONFIG,
         load_config=load_lingbot_config,
         render_shell=bash_config,

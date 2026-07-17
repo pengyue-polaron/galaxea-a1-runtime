@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "openpi_pi05/a1_fruit_placement_eef"
+backend = "openpi_pi05"
+artifact_format = "orbax-ocdbt"
+checkpoint_step = 14999
+manifest = "configs/models/pi05/fruit_placement_eef.manifest.json"
+contract = "configs/models/pi05/fruit_placement_eef.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "pengyue-polaron/pi05-galaxea-a1-fruit-placement-eef"
+revision = "e1a3e53832ce99edc188fb01e5ec303ac305d552"
+revision_label = "step-14999"

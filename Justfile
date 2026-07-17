@@ -28,10 +28,18 @@ udev:
 check:
     {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
     find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
-    {{vpy}} {{repo}}/scripts/apps/act/act_joint_policy_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/cameras/a1_camera_diagnostics.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/lingbot/a1_lingbot_doctor.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/probe_lingbot_server.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/setup_lingbot_inference.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/smoke_lingbot_inference.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/lingbot/verify_lingbot_inference.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/pi05/probe_pi05_server.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/pi05/pi05_ee_bridge.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/pi05/setup_pi05_inference.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/pi05/smoke_pi05_inference.py --help >/dev/null
+    {{vpy}} {{repo}}/scripts/apps/pi05/verify_pi05_inference.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
     {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
     {{repo}}/scripts/apps/recording/a1_rosbag.sh --help >/dev/null
@@ -61,9 +69,13 @@ test:
 models:
     {{vpy}} {{repo}}/scripts/models/model_store.py doctor --repo-root "{{repo}}"
 
-model-link slot source:
-    {{vpy}} {{repo}}/scripts/models/model_store.py register \
-        --repo-root "{{repo}}" "{{slot}}" "{{source}}"
+model-fetch config:
+    {{vpy}} {{repo}}/scripts/models/model_store.py fetch \
+        --repo-root "{{repo}}" "{{config}}"
+
+model-verify config:
+    {{vpy}} {{repo}}/scripts/models/model_store.py verify \
+        --repo-root "{{repo}}" "{{config}}"
 
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
@@ -99,20 +111,37 @@ reset:
 lingbot:
     scripts/apps/lingbot/a1_lingbot_runtime.sh start
 
-act:
-    scripts/apps/act/a1_act_joint_runtime.sh start
+lingbot-setup:
+    scripts/apps/lingbot/a1_lingbot_runtime.sh setup
+
+lingbot-verify:
+    scripts/apps/lingbot/a1_lingbot_runtime.sh verify
+
+lingbot-smoke:
+    scripts/apps/lingbot/a1_lingbot_runtime.sh smoke
+
+pi05-setup:
+    scripts/apps/pi05/a1_pi05_runtime.sh setup
+
+pi05-verify:
+    scripts/apps/pi05/a1_pi05_runtime.sh verify
+
+pi05-smoke:
+    scripts/apps/pi05/a1_pi05_runtime.sh smoke
+
+pi05:
+    scripts/apps/pi05/a1_pi05_runtime.sh start
 
 stop:
     scripts/apps/cameras/a1_camera_web_runtime.sh stop >/dev/null 2>&1 || true
-    scripts/apps/act/a1_act_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/teleop/a1_teleop_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true
+    scripts/apps/pi05/a1_pi05_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_stop_managed.sh
 
 logs:
-    scripts/apps/act/a1_act_joint_runtime.sh logs || true
     scripts/apps/teleop/a1_teleop_runtime.sh logs || true
     scripts/runtime/a1_runtime.sh logs || true
 

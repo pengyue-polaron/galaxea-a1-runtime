@@ -9,7 +9,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.base import (
-    boolean,
     float_tuple,
     floating,
     integer,
@@ -127,8 +126,6 @@ class SystemJointSafetyConfig:
     names: tuple[str, ...]
     lower_limits: tuple[float, ...]
     upper_limits: tuple[float, ...]
-    action_step_guard_enabled: bool
-    max_action_step_rad: float
     max_first_target_delta_rad: float
     initial_alignment_tolerance_rad: float
     state_timeout_s: float
@@ -272,8 +269,6 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             names=string_tuple(joint, "names", ARM_JOINT_COUNT),
             lower_limits=float_tuple(joint, "lower_limits", ARM_JOINT_COUNT),
             upper_limits=float_tuple(joint, "upper_limits", ARM_JOINT_COUNT),
-            action_step_guard_enabled=boolean(joint, "action_step_guard_enabled"),
-            max_action_step_rad=floating(joint, "max_action_step_rad"),
             max_first_target_delta_rad=floating(joint, "max_first_target_delta_rad"),
             initial_alignment_tolerance_rad=floating(
                 joint, "initial_alignment_tolerance_rad"
@@ -338,7 +333,6 @@ def validate_system_config(config: SystemConfig) -> None:
     if len(set(config.joint_safety.names)) != len(config.joint_safety.names):
         raise ValueError("joint_safety.names must not contain duplicates")
     for name, value in (
-        ("max_action_step_rad", config.joint_safety.max_action_step_rad),
         ("max_first_target_delta_rad", config.joint_safety.max_first_target_delta_rad),
         (
             "initial_alignment_tolerance_rad",

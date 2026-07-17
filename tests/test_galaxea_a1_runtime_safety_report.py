@@ -14,19 +14,21 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "generic_ros1_adapter_arm_motion" not in settings
     assert "generic_ros1_gripper_range_check" not in settings
     assert "lingbot_xyz_delta_clamp" not in settings
-    assert "lingbot_orientation_mode" in settings
+    assert "eef_policy_orientation_mode" in settings
     assert "lingbot_eef_servo_compensation" in settings
     assert "lingbot_cache_actual_feedback" in settings
     assert settings["lingbot_cache_actual_feedback"].default
-    assert "lingbot_relay_status_guard" in settings
+    assert "eef_policy_relay_status_guard" in settings
     assert settings["gripper_position_jump_compatibility"].default == "mask=8"
-    assert settings["joint_action_step_guard"].default.startswith("enabled=false")
-    assert settings["act_execution_gate"].default.startswith("execute=false")
     assert settings["lingbot_execution_gate"].default.startswith("execute=false")
+    assert settings["pi05_execution_gate"].default.startswith("execute=false")
     assert settings["teleop_gripper_mapping"].default == (
         "leader=[0,53.16], invert=false"
     )
     assert settings["lingbot_eef_servo_compensation"].default == (
+        "gain=1, max_extra=0.04m"
+    )
+    assert settings["pi05_eef_servo_compensation"].default == (
         "gain=1, max_extra=0.04m"
     )
     assert settings["lingbot_cache_actual_feedback"].default == "false"

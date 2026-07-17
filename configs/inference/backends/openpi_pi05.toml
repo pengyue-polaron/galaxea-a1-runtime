@@ -1,0 +1,22 @@
+[backend]
+schema_version = 1
+id = "openpi_pi05"
+adapter = "openpi_pi05"
+
+[source]
+repository = "https://github.com/pengyue-polaron/openpi-galaxea-a1.git"
+revision = "55f9842731bfa4aed851d068e0bb5693f6289fe9"
+checkout = "external/openpi-galaxea-a1"
+
+[environment]
+manager = "uv-lock"
+python_version = "3.11"
+python = "external/openpi-galaxea-a1/.venv/bin/python"
+lock = "external/openpi-galaxea-a1/uv.lock"
+lock_sha256 = "793488b5a55bb87200db90a61fd0af51922b686d94e1da4f4c587ab119b37d74"
+
+[engine]
+jax_platform = "cuda"
+xla_memory_fraction = 0.90
+seed = 0
+sampling_steps = 10

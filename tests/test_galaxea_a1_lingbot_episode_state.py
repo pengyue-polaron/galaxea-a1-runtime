@@ -3,12 +3,12 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from galaxea_a1_runtime.apps.lingbot.actions import LingBotActionTransformConfig
-from galaxea_a1_runtime.apps.lingbot.episode_state import LingBotEpisodeState
+from galaxea_a1_runtime.apps.eef_policy_actions import EefActionTransformConfig
+from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 
 
-def _config() -> LingBotActionTransformConfig:
-    return LingBotActionTransformConfig(
+def _config() -> EefActionTransformConfig:
+    return EefActionTransformConfig(
         xyz_min=(0.0, -1.0, 0.0),
         xyz_max=(1.0, 1.0, 1.0),
         min_quat_norm=0.25,
@@ -29,8 +29,8 @@ def _pose(x: float, y: float, z: float):
     )
 
 
-def _state(*, pose_mode: str = "episode-relative") -> LingBotEpisodeState:
-    return LingBotEpisodeState(
+def _state(*, pose_mode: str = "episode-relative") -> EefPolicyState:
+    return EefPolicyState(
         action_config=_config(),
         pose_mode=pose_mode,
         max_feedback_age_s=1.0,
@@ -67,7 +67,7 @@ def test_episode_state_owns_relative_world_transform_and_condition_shape():
 
 
 def test_episode_state_falls_back_to_explicit_initial_action():
-    state = LingBotEpisodeState(
+    state = EefPolicyState(
         action_config=_config(),
         pose_mode="absolute",
         max_feedback_age_s=1.0,

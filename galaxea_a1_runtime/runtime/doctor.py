@@ -12,8 +12,8 @@ from pathlib import Path
 
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.configuration.paths import (
-    ACT_CONFIG,
     LINGBOT_CONFIG,
+    PI05_CONFIG,
     SYSTEM_CONFIG,
     TELEOP_CONFIG,
 )
@@ -70,7 +70,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
         from galaxea_a1_runtime.collection import state_names_for_mode
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
-        from galaxea_a1_runtime.apps.act.config import load_act_config
+        from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
         from galaxea_a1_runtime.teleop.config import load_teleop_config
 
         settings = build_safety_settings(
@@ -88,8 +88,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / LINGBOT_CONFIG,
             repo_root=repo_root,
         )
-        act_config = load_act_config(
-            repo_root / ACT_CONFIG,
+        pi05_config = load_pi05_config(
+            repo_root / PI05_CONFIG,
             repo_root=repo_root,
         )
         decision = validate_relay_inputs(
@@ -130,14 +130,13 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             in {"hold-current", "model-quat"},
             str(lingbot_config.path),
         )
-        crop = act_config.system.cameras.front.crop
         add(
-            "act_config",
-            act_config.system.path == teleop_config.system.path
-            and crop is not None
-            and crop.width == crop.height
-            and not act_config.execution.execute,
-            str(act_config.path),
+            "pi05_config",
+            pi05_config.system.path == teleop_config.system.path
+            and 1 <= pi05_config.server.port <= 65535
+            and pi05_config.deployment_ready
+            and not pi05_config.execution.execute,
+            str(pi05_config.path),
         )
     except Exception as exc:
         add("pure_imports", False, repr(exc))

@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "model_id": "openpi_pi05/a1_fruit_placement_eef",
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "pengyue-polaron/pi05-galaxea-a1-fruit-placement-eef",
+    "revision": "e1a3e53832ce99edc188fb01e5ec303ac305d552"
+  },
+  "files": {
+    ".gitattributes": {"size": 2165, "sha256": "20d3b36195bbbfbfe25c9119afbd9897eddc602f5ce3817a3c28a779cf09a3b9"},
+    "LICENSE_GEMMA.txt": {"size": 8431, "sha256": "3e2c24001f9ef57bf7ec959a3658fbb49cdad113cdf394c264da9d16f9bdd132"},
+    "NOTICE": {"size": 308, "sha256": "bb2437a450f82fde34f3cf1d4e705b6fe41cd3ae3059ce75ef727c1610113901"},
+    "README.md": {"size": 3188, "sha256": "1e0f9d4504bf8ba775f7ec24486e82a4f7a0270ee64d3923edc8d2c18dc4eef4"},
+    "assets/fruit_placement_agent_view_labeled.png": {"size": 1859297, "sha256": "bbe5f524dd22c87d892e36523cbd7fde0c670baa8a353dbe83abca68180a57c5"},
+    "assets/pengyue-polaron/nyush-galaxea-a1-fruit-placement-eef-v21/norm_stats.json": {"size": 2797, "sha256": "7eafac4b9d33ad9a5c872853dbb2e92b37f5962c135d96b13e6c76b766b32ead"},
+    "checkpoint_manifest.json": {"size": 621, "sha256": "52f312b0ee145f3e0c0787062a0f67ce849848eaa5658ddbcf52549456c512e0"},
+    "configs/pi05_galaxea_a1_eef.json": {"size": 1636, "sha256": "3b05bf6c1f58ab6e777744f6f2349c794ca8aae40f7a7869d888d7322266d86e"},
+    "params/_METADATA": {"size": 23512, "sha256": "45c1bdc939ee0476d7756f1fb8ea785678c6901334337c0c633a2b4742c3ecb5"},
+    "params/_sharding": {"size": 13974, "sha256": "4349436f3db37d46112a110b7bb05a41187626fe82f98e6b171369b9f1c310a7"},
+    "params/array_metadatas/process_0": {"size": 9100, "sha256": "97756b936d81acae1b4b71791e1182f9e3bb5e178e4a8602601f9f00e9641b8f"},
+    "params/d/504497200062c9b8105c075d943639fb": {"size": 2585, "sha256": "61fda77486262990c268d3c5605445eceb16f738df8fddbe7035167b9147cdde"},
+    "params/manifest.ocdbt": {"size": 118, "sha256": "dffeb0050c99e8a26d9589de69e162a14edc960d4bb83b2b7a1d5bab0acb1169"},
+    "params/ocdbt.process_0/d/0b9aee65b75571850464dee487300495": {"size": 3219071339, "sha256": "8ccbba757ac0e00f4ea50daea718c95909e21112df30f9554aea7c3631a473e6"},
+    "params/ocdbt.process_0/d/190c2f1dc02c3d676a079e175163951d": {"size": 5480, "sha256": "f7d5ef429aeb98604bd1a015902e95fe466f68ff02490b4940e69b2343d60d64"},
+    "params/ocdbt.process_0/d/7cada4a29434bfa38cff55af72ef7d50": {"size": 2283332623, "sha256": "f2441a73e97ff5415b2d95fa9a9564e264098a3688414f3f1f2706fe63b5cce4"},
+    "params/ocdbt.process_0/d/a55b97ef0d1eb3e209390103a431c2b9": {"size": 2570, "sha256": "9bda73971fca714a644c5b79c17ba729c0ad26d3d18d800c09b639b591870012"},
+    "params/ocdbt.process_0/d/b2b9084e9c889b934481fe69a7c98a89": {"size": 1149, "sha256": "53c01cad4580bfebe88dcfbe38d58a1e943b40a2bb37233aed88bdb6db7a2e70"},
+    "params/ocdbt.process_0/d/b8ea0565dc4485eb5fd64b223a2fe399": {"size": 219, "sha256": "2291c82a77115e1b38a94d245570ce162f40c50e1fafa3deaeb6c6f6ae1c499c"},
+    "params/ocdbt.process_0/d/d06fe7629139609074639c3ff824bbd0": {"size": 2153082547, "sha256": "a63e340f46639d333c94a260fc80e5ecb60d1783dc1f8949131db8a0af09c5a8"},
+    "params/ocdbt.process_0/d/dacb228d967f3ec855be8ab066ae50b5": {"size": 2240292819, "sha256": "b0a7fa82ea5e76f56517404890d5edc4843f6fcb3fac288ef5975896440b57f6"},
+    "params/ocdbt.process_0/d/ea8347417a6746637aaa21970b528471": {"size": 305144678, "sha256": "2aa480e8d22ec87a8568c8f06543319bb80c43574326f98d8c1f2dae24a6ed59"},
+    "params/ocdbt.process_0/d/f93e6c3b7ec03c4bd8e5848209de55f7": {"size": 2240294047, "sha256": "a8bca8bb747e8b205335dbdbf2e0d43dbdbe901dc47ab72b749a30b9266b1583"},
+    "params/ocdbt.process_0/manifest.ocdbt": {"size": 358, "sha256": "ecd2facfbb988ca173de90e2c1f780d44c479de59204963801f892d424a63c97"},
+    "training_summary.json": {"size": 1384, "sha256": "cbccc8e755ee3e8e3521f3da7a3ca5ce20e2fc7163cb3376562fc5e01cb6afd7"}
+  }
+}

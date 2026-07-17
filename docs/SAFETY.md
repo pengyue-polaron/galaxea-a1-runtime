@@ -16,7 +16,7 @@ Normal EEF applications publish only:
   -> /arm_joint_command_host
 ```
 
-Teleop and ACT publish joint targets only:
+Teleop publishes joint targets only:
 
 ```text
 /arm_joint_target_position

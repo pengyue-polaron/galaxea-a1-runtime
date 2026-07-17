@@ -203,27 +203,37 @@ only in [Safety](SAFETY.md).
 
 ## 7. Policy deployment
 
-Bring reviewed weights onto this machine and register them without copying:
+Set up either pinned EEF-policy backend and its immutable Hugging Face artifact,
+then exercise the complete model-service protocol without ROS, cameras, or arm
+I/O:
 
 ```bash
-just model-link act-a1-agentview-square /path/to/act_checkpoint
-just model-link lingbot-a1-agentview-square /path/to/lingbot_checkpoint
-just models
+just lingbot-setup
+just lingbot-smoke
+scripts/apps/lingbot/a1_lingbot_runtime.sh server-stop
+
+just pi05-setup
+just pi05-smoke
+scripts/apps/pi05/a1_pi05_runtime.sh server-stop
 ```
 
-Follow [Model registry](../models/README.md) to verify the input and action
-contract. Update the owning deployment config and review it before marking the
-checkpoint ready or enabling execution.
+LingBot smoke validates reset, inference, temporal-cache synchronization, and
+reinference. Pi0.5 smoke runs one synthetic two-camera/state inference and
+validates the returned horizon. Both leave the managed GPU server available for
+log inspection; the matching `server-stop` command releases it. Follow [Model
+registry](../models/README.md) to review the exact input/action contract. A new
+weight revision gets a new model descriptor and manifest; do not repoint a
+mutable alias or edit an existing revision in place.
 
 Starting either app may **MOVE THE A1** when its tracked execution setting is
 enabled:
 
 ```bash
-just act
-tmux attach -t act-a1
-
 just lingbot
 tmux attach -t lingbot-a1
+
+just pi05
+tmux attach -t pi05-a1
 ```
 
 Run one live app at a time and use `just stop` when switching.

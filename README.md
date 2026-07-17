@@ -22,10 +22,10 @@
   and continuous gripper control.
 - **Collect** synchronized joint, EEF, action, gripper, and paired-camera data
   into atomically validated raw episodes.
-- **Convert** current raw-v3 experiments into deterministic LeRobotDataset v2.1
-  and v3.0 outputs, plus LingBot and ACT packages.
-- **Deploy** ACT joint and LingBot EEF policies through isolated trackers and a
-  locked, validating command relay.
+- **Convert** current raw-v3 experiments into model-agnostic Joint and EEF
+  LeRobotDataset v2.1 and v3.0 outputs.
+- **Deploy** LingBot EEF and OpenPI pi0.5 EEF policies through
+  isolated trackers and a locked, validating command relay.
 - **Run on modern Ubuntu hosts** with ROS Noetic and the A1 SDK isolated inside
   a Focal-based Docker runtime—no native Ubuntu 20.04 or ROS installation
   required.
@@ -85,7 +85,7 @@ experiments reported in:
 | --- | --- |
 | `galaxea_a1_runtime/` | first-party runtime, hardware, collection, policy, and conversion logic |
 | `scripts/` | thin lifecycle and operator entrypoints |
-| `configs/` | tracked system, Teleop, pose, dataset, and deployment contracts |
+| `configs/` | tracked system, data, backend, model, and deployment contracts |
 | `docker/` | Ubuntu 20.04 / ROS Noetic execution environment |
 | `assets/` | setup images and versioned mechanical files |
 | `data/`, `outputs/`, `models/` | ignored local datasets, durable run results, and deployment weights |
@@ -100,5 +100,5 @@ experiments reported in:
 | [Architecture](docs/ARCHITECTURE.md) | layers, configuration ownership, data contracts, and artifact layout |
 | [Environment setup](docs/SETUP_ENV.md) | Python environment and dependency baseline |
 | [udev setup](docs/SETUP_UDEV.md) | persistent A1 serial permissions and device alias |
-| [Model registry](models/README.md) | registering local deployment weights |
+| [Model registry](models/README.md) | immutable model artifacts and inference backends |
 | [Agent guide](AGENTS.md) | constraints for code-writing agents |

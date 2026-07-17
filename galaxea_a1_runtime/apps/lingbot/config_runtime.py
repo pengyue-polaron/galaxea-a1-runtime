@@ -27,16 +27,11 @@ def bash_config(config: LingBotConfig) -> str:
         ("MODEL_SESSION", config.policy_server.tmux),
         ("MODEL_CHECKOUT", str(config.policy_server.checkout)),
         ("MODEL_PYTHON", str(config.policy_server.python)),
-        ("BASE_MODEL", str(config.policy_server.base_model)),
-        ("MODEL_CHECKPOINT", str(config.policy_server.checkpoint)),
         ("MODEL_ROOT", str(config.policy_server.model_root)),
         ("MODEL_SAVE_ROOT", str(config.policy_server.save_root)),
         ("MODEL_MASTER_PORT", str(config.policy_server.master_port)),
+        ("MODEL_WORLD_SIZE", str(config.policy_server.world_size)),
         ("MODEL_STARTUP_TIMEOUT", number(config.policy_server.startup_timeout_s)),
-        (
-            "MODEL_EXPECTED_WEIGHT_SIZE",
-            str(config.policy_server.expected_weight_size_bytes),
-        ),
         (
             "DEPLOYMENT_READY",
             "1" if config.policy_server.deployment_ready else "0",

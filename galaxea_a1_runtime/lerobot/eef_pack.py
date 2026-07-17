@@ -34,20 +34,11 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
 from galaxea_a1_runtime.schema import (
     DEFAULT_RGB_IMAGE_KEYS,
     DEFAULT_STATE_NAMES,
+    EEF_ACTION_NAMES,
     JOINT_ACTION_NAMES,
     JOINT_ACTION_NAMES_RAD,
 )
 
-EEF_ACTION_NAMES = (
-    "eef_delta_x_from_episode_start",
-    "eef_delta_y_from_episode_start",
-    "eef_delta_z_from_episode_start",
-    "eef_delta_qx_from_episode_start",
-    "eef_delta_qy_from_episode_start",
-    "eef_delta_qz_from_episode_start",
-    "eef_delta_qw_from_episode_start",
-    "gripper_normalized",
-)
 SOURCE_ACTION_NAMES = JOINT_ACTION_NAMES
 SOURCE_STATE_NAMES = DEFAULT_STATE_NAMES
 TARGET_STATE_NAMES = (*DEFAULT_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)

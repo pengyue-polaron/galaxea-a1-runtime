@@ -23,7 +23,11 @@ galaxea_a1_runtime.apps
 - `scripts/runtime/` owns app-agnostic ROS, driver, staged tracker, relay, and
   process lifecycle.
 - `scripts/apps/` contains thin operator entrypoints.
-- `galaxea_a1_runtime/apps/` implements Teleop, ACT, and LingBot orchestration.
+- `galaxea_a1_runtime/apps/` implements Teleop, LingBot, and OpenPI
+  orchestration. Shared EEF-policy state and transforms live directly under
+  `apps/`; model-specific packages remain adapters.
+- `models/` owns backend-independent artifact identity, provenance, manifests,
+  download, and validation. `inference/` owns the shared wire protocol.
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
@@ -44,8 +48,12 @@ configs/system/a1.toml
   ├── configs/teleop/a1_so100.toml
   │     ├── configs/poses/a1_so100_collection_start.toml
   │     └── configs/datasets/<experiment>.toml
-  ├── configs/deployments/act_joint.toml
-  └── configs/deployments/lingbot_va.toml
+  ├── configs/deployments/lingbot/<deployment>.toml
+  │     ├── configs/inference/backends/lingbot_va.toml
+  │     └── configs/models/lingbot/<model>.toml
+  └── configs/deployments/pi05/<deployment>.toml
+        ├── configs/inference/backends/openpi_pi05.toml
+        └── configs/models/pi05/<model>.toml
 ```
 
 Ownership is exclusive:
@@ -56,7 +64,9 @@ Ownership is exclusive:
 | Teleop | leader identity/mapping and collection behavior |
 | Pose | reset targets and reset motion behavior |
 | Dataset | source/output packaging and conversion policy |
-| Deployment | model references and inference/execution behavior |
+| Inference backend | pinned code checkout, dependency lock, and engine behavior |
+| Model descriptor and contract | immutable weight revision, full content manifest, and weight-specific tensor/action semantics |
+| Deployment | backend/model references, prompt, service lifecycle, and execution behavior |
 
 Schemas require all behavior-affecting keys and reject unknown ones. Python
 apps load typed owners directly; shell exports contain only values needed for
@@ -167,15 +177,37 @@ are derived outputs, never accepted as collector input.
 
 ## Deployment
 
-ACT predicts joint targets through the staged joint runtime. LingBot predicts
-EEF targets through the staged EEF runtime. Both reuse the System camera,
-gripper, topic, and safety contracts and refuse startup until their registered
-checkpoint is explicitly marked ready. Execution remains independently
-step-gated in each deployment config.
+LingBot and OpenPI pi0.5 predict EEF targets through the staged EEF runtime.
+Both reuse the System camera, gripper, topic, and safety contracts and refuse
+startup until their deployment is explicitly marked ready. Execution remains
+independently step-gated and disabled by default in each deployment config.
 
 This checkout does not train models. Reviewed weights produced or downloaded
 elsewhere are registered through the local model registry described in
 [`models/README.md`](../models/README.md).
+
+Managed model inference is a host-side GPU service separated from the ROS
+bridge. Configuration is composed from four exclusive owners:
+
+```text
+System + inference backend + immutable model + deployment
+```
+
+The backend pins source code and its dependency lock. The model descriptor pins
+one Hugging Face commit, checkpoint step, artifact format, complete file
+manifest, and model-specific contract. Its local directory is derived as
+`models/artifacts/<model-id>/<revision>/`; no mutable `latest` alias or
+hand-maintained weight path exists. Downloads are validated in a hidden sibling
+and exposed by atomic rename only after the exact file set, byte sizes, and
+SHA-256 digests pass. The deployment owns only prompt, service lifecycle, and
+execution choices.
+
+At connection time both LingBot and pi0.5 bridges validate a canonical digest
+covering code, model, camera, state/action, normalization, and engine contracts
+before accepting actions. Their shared pure EEF adapter owns episode-relative
+pose composition, gripper conversion, review, and explicit safety transforms.
+Each live bridge can publish only staged EEF/gripper targets; the isolated
+tracker and locked relay remain the sole path toward host motor commands.
 
 ## Artifact roots
 
@@ -183,7 +215,7 @@ elsewhere are registered through the local model registry described in
 | --- | --- |
 | `data/` | raw episodes, processed datasets, exports, and quarantined legacy data |
 | `outputs/` | durable diagnostics, logs, evaluations, and run results |
-| `models/` | deployment references and generated runtime assemblies |
+| `models/` | immutable, content-verified deployment artifacts |
 | `external/` | machine-local external source checkouts |
 | `.cache/` | reproducible disposable caches only |
 | `/tmp` | PID files, sockets, and process-lifecycle state |

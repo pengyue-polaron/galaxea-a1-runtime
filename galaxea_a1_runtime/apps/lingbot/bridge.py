@@ -26,14 +26,15 @@ import rospy
 from galaxea_a1_runtime.apps.eef_bridge import (
     EefCommandPublisher,
 )
-from galaxea_a1_runtime.apps.lingbot.actions import (
+from galaxea_a1_runtime.apps.eef_policy_actions import (
     build_action_transform_config,
     gripper_stroke_from_norm,
 )
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
-from galaxea_a1_runtime.apps.lingbot.episode_state import LingBotEpisodeState
-from galaxea_a1_runtime.apps.lingbot.review import LingBotActionReviewer
+from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
+from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
 from galaxea_a1_runtime.apps.lingbot.rollout import LingBotActionChunk
+from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
 from galaxea_a1_runtime.console import Tone, info, step, style, success, warning
 from geometry_msgs.msg import PoseStamped
@@ -59,8 +60,12 @@ class A1LingBotEEBridge:
         self.pose_keepalive_timer = None
         self.cameras = None
         self.client = None
-        self.action_config = build_action_transform_config(config)
-        self.state = LingBotEpisodeState(
+        self.action_config = build_action_transform_config(
+            system=config.system,
+            servo_gain=config.servo.gain,
+            servo_max_extra_m=config.servo.max_extra_m,
+        )
+        self.state = EefPolicyState(
             action_config=self.action_config,
             pose_mode=config.action.pose_mode,
             max_feedback_age_s=self.eef.max_feedback_age_s,
@@ -69,13 +74,14 @@ class A1LingBotEEBridge:
             action_per_frame=config.policy_server.action_per_frame,
         )
         self.relay = RelayMonitor(self.system.relay.max_status_age_s)
-        self.reviewer = LingBotActionReviewer(
+        self.reviewer = EefActionReviewer(
             state=self.state,
             action_config=self.action_config,
             review_deadband_m=self.execution.review_deadband_m,
             servo_gain=self.servo.gain,
             orientation_mode=self.eef.orientation_mode,
             execute=self.execution.execute,
+            policy_label="LingBot",
         )
         topics = self.system.topics
         rospy.init_node("lingbot_va_ee_bridge", anonymous=False)
@@ -124,6 +130,7 @@ class A1LingBotEEBridge:
                 self.server.port,
                 connect_timeout_s=self.server.connect_timeout_s,
                 close_timeout_s=self.server.close_timeout_s,
+                expected_metadata=server_metadata(config),
             )
             self.client.reset(self.server.prompt)
         except BaseException as init_error:

@@ -34,6 +34,7 @@ def test_static_doctor_has_no_failures_for_repo_root():
         "teleop_runtime_script",
         "teleop_config",
         "lingbot_config",
+        "pi05_config",
         "teleop_bridge_script",
         "teleop_collect_script",
         "lingbot_runtime_script",
