@@ -56,6 +56,8 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.cameras.max_age_s == 0.5
     assert config.system.joint_safety.max_feedback_age_s == 0.5
     assert config.system.eef.max_feedback_age_s == 0.5
+    assert config.system.eef.xyz_min == pytest.approx((0.04, -0.27, 0.06))
+    assert config.system.eef.xyz_max == pytest.approx((0.47, 0.17, 0.50))
     assert config.collection.auto_reset_after_save is True
     assert config.collection.auto_reset_after_discard is True
     assert config.collection.max_joint_action_step_rad == 0.35

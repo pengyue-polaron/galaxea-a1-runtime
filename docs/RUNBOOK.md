@@ -272,10 +272,13 @@ just pi05
 tmux attach -t pi05-a1
 ```
 
-`just lingbot` starts the complete pipeline and attaches the `lingbot-a1` tmux
-session automatically. Its single `[RUN]` line updates in place with inference,
-execution, EEF, and AgentView recording progress. Detach without stopping with
-`Ctrl+B`, then `D`; reattach with `tmux attach -t lingbot-a1`.
+`just lingbot` starts its marked policy-server process and the A1 services, then
+runs the bridge directly in the invoking terminal. Its single `[RUN]` line
+updates in place with inference, execution, EEF, and AgentView recording
+progress. `Ctrl+C` stops the foreground bridge, locks the relay, and tears down
+the policy server and A1 services. The policy-server log is written to
+`outputs/inference/lingbot-fruit-placement-eef/policy_server.log`; LingBot has no
+tmux attach/detach lifecycle.
 
 While LingBot is running, open the AgentView/wrist dashboard at
 `http://0.0.0.0:8088` (replace `0.0.0.0` with this host's LAN address from
@@ -303,8 +306,9 @@ when changing how much model output is consumed before replanning. Both solve
 EEF targets with the tracked first-party IK and publish named joint targets
 through jointTracker. Neither deployment waits for inference or action
 confirmation. Their tracked finite call budgets cover the longest 526-step
-training episode. Use `Ctrl+C` in the attached LingBot session when its rollout
-should end, or `just stop` from another terminal; normal completion and manual
-stop both lock the relay, finalize AgentView recording, and end successfully. A
+training episode. Use `Ctrl+C` in the foreground LingBot terminal when its
+rollout should end, or `just stop` from another terminal; normal completion and
+manual stop both lock the relay, finalize AgentView recording, and end
+successfully. A
 genuine feedback or safety failure remains a nonzero error and identifies the
 stale feedback source.

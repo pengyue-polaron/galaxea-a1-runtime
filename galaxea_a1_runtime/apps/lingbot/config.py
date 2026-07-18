@@ -18,7 +18,6 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
     LingBotPolicyServerConfig,
     LingBotRecordingConfig,
     LingBotServerConfig,
-    LingBotSessionConfig,
     PoseMode,
     TextEncoderDevice,
 )
@@ -131,10 +130,9 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     require_exact_keys(
         session,
         required={
-            "tmux",
-            "model_tmux",
             "master_port",
             "startup_timeout_s",
+            "shutdown_timeout_s",
         },
         label="session",
     )
@@ -179,7 +177,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     config = LingBotConfig(
         path=path,
         system=system,
-        session=LingBotSessionConfig(tmux=string(session, "tmux")),
         server=LingBotServerConfig(
             host=string(server, "host"),
             port=integer(server, "port"),
@@ -190,7 +187,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
         policy_server=LingBotPolicyServerConfig(
             backend=backend,
             model=model,
-            tmux=string(session, "model_tmux"),
             vendor_config=contract.vendor_config,
             save_root=Path(
                 os.path.abspath(repo_root / "outputs" / "inference" / deployment_id)
@@ -198,6 +194,7 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             master_port=integer(session, "master_port"),
             world_size=engine.world_size,
             startup_timeout_s=floating(session, "startup_timeout_s"),
+            shutdown_timeout_s=floating(session, "shutdown_timeout_s"),
             expected_weight_sha256=transformer_weight.sha256,
             expected_transformer_config_sha256=transformer_config.sha256,
             model_action_dim=contract.model_action_dim,
@@ -351,9 +348,12 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
     if min(config.server.connect_timeout_s, config.server.close_timeout_s) <= 0:
         raise ValueError("server connection timeouts must be positive")
     policy = config.policy_server
-    if not 1 <= policy.master_port <= 65535 or policy.startup_timeout_s <= 0:
+    if (
+        not 1 <= policy.master_port <= 65535
+        or min(policy.startup_timeout_s, policy.shutdown_timeout_s) <= 0
+    ):
         raise ValueError(
-            "model master_port must be in [1, 65535] and startup timeout must be positive"
+            "model master_port must be in [1, 65535] and process timeouts must be positive"
         )
     if policy.world_size != 1:
         raise ValueError("LingBot backend world_size must be 1")

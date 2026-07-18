@@ -100,11 +100,11 @@ class EefIkCommandPublisher:
             return
         self.motion_enable_pub.publish(self.bool_msg_type(data=bool(enabled)))
 
-    def hold_current_target(self) -> None:
+    def hold_current_target(self) -> tuple[float, ...]:
         current = self.current_joint_positions()
         if current is None:
             raise RuntimeError("Cannot stage an IK hold without fresh joint feedback")
-        self._set_active_joint_target(current)
+        return self._set_active_joint_target(current)
 
     def set_active_action(self, action8: Sequence[float]) -> IkSolution:
         action = np.asarray(action8, dtype=np.float64).reshape(8)
@@ -156,12 +156,14 @@ class EefIkCommandPublisher:
         grip.gripper_stroke = self.gripper_to_stroke(gripper_norm)
         self.gripper_pub.publish(grip)
 
-    def _set_active_joint_target(self, positions: Sequence[float]) -> None:
+    def _set_active_joint_target(self, positions: Sequence[float]) -> tuple[float, ...]:
         values = np.asarray(positions, dtype=np.float64).reshape(-1)
         if values.shape != (len(self.joint_names),) or not np.all(np.isfinite(values)):
             raise ValueError("IK joint target has invalid shape or values")
+        ordered = tuple(float(value) for value in values)
         target = self.joint_state_msg_type()
         target.name = list(self.joint_names)
-        target.position = [float(value) for value in values]
+        target.position = list(ordered)
         with self.active_target_lock:
             self.active_joint_target = target
+        return ordered

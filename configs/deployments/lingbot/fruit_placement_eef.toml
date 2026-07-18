@@ -15,10 +15,9 @@ id = "lingbot-fruit-placement-eef"
 ready = true
 
 [session]
-tmux = "lingbot-a1"
-model_tmux = "lingbot-va-server"
 master_port = 29501
 startup_timeout_s = 300.0
+shutdown_timeout_s = 10.0
 
 [server]
 host = "127.0.0.1"

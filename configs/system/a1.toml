@@ -53,8 +53,11 @@ max_feedback_age_s = 0.5
 [eef]
 # Both reviewed EEF checkpoints were trained on full episode-relative pose.
 # Preserve their quaternion channel through absolute composition and IK.
-xyz_min = [0.06, -0.27, 0.06]
-xyz_max = [0.44, 0.14, 0.50]
+# fruit_placement_eef_v21 recorded absolute EEF x from 0.043889 to
+# 0.459098 m and y up to 0.166501 m. Round outward to cover that
+# demonstrated range without removing the explicit workspace boundary.
+xyz_min = [0.04, -0.27, 0.06]
+xyz_max = [0.47, 0.17, 0.50]
 min_quat_norm = 0.25
 max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
@@ -68,7 +71,10 @@ max_iteration_step_rad = 0.08
 # A live LingBot rollout reached a numerically valid solution with 1.417 mm
 # Cartesian residual; accept up to 2 mm while retaining fail-closed IK checks.
 position_tolerance_m = 0.002
-orientation_tolerance_rad = 0.01
+# A red_mango_bowl rollout reached 1.141 mm position residual with a
+# 0.012650 rad orientation residual. Allow practical headroom to 0.02 rad
+# (about 1.15 degrees) while preserving an explicit pose convergence check.
+orientation_tolerance_rad = 0.02
 # Live pi0.5 and two-frame LingBot rollouts observed continuous valid IK
 # solutions up to 0.924255 rad. Allow practical headroom while still rejecting
 # larger branch jumps; absolute named-joint limits remain independently enforced.

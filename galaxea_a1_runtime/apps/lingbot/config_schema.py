@@ -18,11 +18,6 @@ TextEncoderDevice = Literal["cpu", "cuda"]
 
 
 @dataclass(frozen=True)
-class LingBotSessionConfig:
-    tmux: str
-
-
-@dataclass(frozen=True)
 class LingBotServerConfig:
     host: str
     port: int
@@ -34,12 +29,12 @@ class LingBotServerConfig:
 class LingBotPolicyServerConfig:
     backend: CodeBackendConfig
     model: ModelArtifactConfig
-    tmux: str
     vendor_config: str
     save_root: Path
     master_port: int
     world_size: int
     startup_timeout_s: float
+    shutdown_timeout_s: float
     expected_weight_sha256: str
     expected_transformer_config_sha256: str
     model_action_dim: int
@@ -98,7 +93,6 @@ class LingBotRecordingConfig:
 class LingBotConfig:
     path: Path
     system: SystemConfig
-    session: LingBotSessionConfig
     server: LingBotServerConfig
     task_catalog: TaskCatalog
     policy_server: LingBotPolicyServerConfig

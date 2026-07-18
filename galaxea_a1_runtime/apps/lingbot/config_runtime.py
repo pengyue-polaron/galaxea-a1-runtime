@@ -15,18 +15,15 @@ def bash_config(config: LingBotConfig) -> str:
             "SYSTEM_CONFIG_PATH",
             "WRIST_BACKEND",
             "WRIST_CAMERA",
-            "TMUX_STARTUP_GRACE_S",
             "WEB_PREVIEW_BIND",
             "WEB_PREVIEW_PORT",
         ),
     )
     values = (
         ("CONFIG_PATH", str(config.path)),
-        ("SESSION", config.session.tmux),
         ("LINGBOT_HOST", config.server.host),
         ("LINGBOT_PORT", str(config.server.port)),
         ("LINGBOT_CONNECT_TIMEOUT", number(config.server.connect_timeout_s)),
-        ("MODEL_SESSION", config.policy_server.tmux),
         ("MODEL_CHECKOUT", str(config.policy_server.backend.source.checkout)),
         ("MODEL_PYTHON", str(config.policy_server.backend.environment.python)),
         ("MODEL_ROOT", str(config.policy_server.model.artifact_root)),
@@ -35,6 +32,7 @@ def bash_config(config: LingBotConfig) -> str:
         ("MODEL_MASTER_PORT", str(config.policy_server.master_port)),
         ("MODEL_WORLD_SIZE", str(config.policy_server.world_size)),
         ("MODEL_STARTUP_TIMEOUT", number(config.policy_server.startup_timeout_s)),
+        ("MODEL_SHUTDOWN_TIMEOUT", number(config.policy_server.shutdown_timeout_s)),
         (
             "DEPLOYMENT_READY",
             "1" if config.policy_server.deployment_ready else "0",

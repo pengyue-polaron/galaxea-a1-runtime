@@ -15,6 +15,7 @@ from typing import Any
 import numpy as np
 
 from galaxea_a1_runtime.console import success
+from galaxea_a1_runtime.runtime.ros_feedback import wait_for_staged_joint_alignment
 
 
 class EefPolicyExecutor:
@@ -25,7 +26,11 @@ class EefPolicyExecutor:
         *,
         relay: Any,
         commander: Any,
+        staged_monitor: Any,
         relay_enable_timeout_s: float,
+        staged_wait_timeout_s: float,
+        staged_max_age_s: float,
+        staged_alignment_tolerance_rad: float,
         is_shutdown: Callable[[], bool],
         policy_label: str,
         monotonic: Callable[[], float] = time.monotonic,
@@ -33,9 +38,29 @@ class EefPolicyExecutor:
     ) -> None:
         if not math.isfinite(relay_enable_timeout_s) or relay_enable_timeout_s <= 0:
             raise ValueError("EEF executor relay timeout must be finite and positive")
+        staged_settings = (
+            staged_wait_timeout_s,
+            staged_max_age_s,
+            staged_alignment_tolerance_rad,
+        )
+        if not all(math.isfinite(value) for value in staged_settings):
+            raise ValueError("EEF executor staged-hold settings must be finite")
+        if (
+            staged_wait_timeout_s <= 0
+            or staged_max_age_s <= 0
+            or staged_alignment_tolerance_rad < 0
+        ):
+            raise ValueError(
+                "EEF executor staged-hold timeouts must be positive and "
+                "alignment tolerance must be non-negative"
+            )
         self.relay = relay
         self.commander = commander
+        self.staged_monitor = staged_monitor
         self.relay_enable_timeout_s = relay_enable_timeout_s
+        self.staged_wait_timeout_s = staged_wait_timeout_s
+        self.staged_max_age_s = staged_max_age_s
+        self.staged_alignment_tolerance_rad = staged_alignment_tolerance_rad
         self.is_shutdown = is_shutdown
         self.policy_label = policy_label
         self.monotonic = monotonic
@@ -68,8 +93,19 @@ class EefPolicyExecutor:
         if self.motion_enabled:
             self.enable_motion()
             return
-        self.commander.hold_current_target()
+        hold = self.commander.hold_current_target()
         self.commander.publish_active_target()
+        wait_for_staged_joint_alignment(
+            self.staged_monitor,
+            hold,
+            dof=len(hold),
+            timeout_s=self.staged_wait_timeout_s,
+            max_age_s=self.staged_max_age_s,
+            tolerance_rad=self.staged_alignment_tolerance_rad,
+            is_shutdown=self.is_shutdown,
+            sleep=self.sleep,
+            monotonic=self.monotonic,
+        )
         self.enable_motion()
 
     def enable_motion(self) -> None:

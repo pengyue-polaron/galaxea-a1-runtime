@@ -258,6 +258,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("safe_relay_script", relay_script.is_file(), str(relay_script))
     runtime_services = repo_root / "scripts" / "runtime" / "a1_services.sh"
     add("runtime_services_lib", runtime_services.is_file(), str(runtime_services))
+    runtime_processes = repo_root / "scripts" / "runtime" / "a1_processes.sh"
+    add("runtime_processes_lib", runtime_processes.is_file(), str(runtime_processes))
     runtime_tmux = repo_root / "scripts" / "runtime" / "a1_tmux.sh"
     add("runtime_tmux_lib", runtime_tmux.is_file(), str(runtime_tmux))
     joint_tracker_launch = (

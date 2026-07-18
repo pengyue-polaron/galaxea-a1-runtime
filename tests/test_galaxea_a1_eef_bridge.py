@@ -144,10 +144,12 @@ def test_eef_joint_publisher_solves_named_target_before_gripper_publication():
         execute=True,
     )
 
+    hold = publisher.hold_current_target()
     action = [0.1, 0.2, 0.3, 0, 0, 0, 1, 0.5]
     publisher.publish_action(action, publish_gripper=False)
     publisher.publish_action(action, publish_gripper=True)
 
+    assert hold == pytest.approx((0.0, 0.0))
     assert solver.calls[0] == (
         (0.0, 0.0),
         (0.1, 0.2, 0.3),

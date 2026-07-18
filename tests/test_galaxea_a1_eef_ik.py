@@ -27,6 +27,7 @@ def test_tracked_a1_ik_reaches_cartesian_target_with_named_joint_limits():
     start_xyz, start_quat = solver.forward(RESET_JOINTS)
 
     assert system.eef_ik.position_tolerance_m == pytest.approx(0.002)
+    assert system.eef_ik.orientation_tolerance_rad == pytest.approx(0.02)
     assert system.eef_ik.max_solution_delta_rad == pytest.approx(1.50)
     solution = solver.solve(
         RESET_JOINTS,

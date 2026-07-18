@@ -29,6 +29,7 @@ def test_static_doctor_has_no_failures_for_repo_root():
         "vendored_so_leader_unpatched",
         "safe_relay_script",
         "runtime_services_lib",
+        "runtime_processes_lib",
         "runtime_tmux_lib",
         "joint_tracker_staged_launch",
         "teleop_runtime_script",

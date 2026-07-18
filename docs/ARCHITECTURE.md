@@ -85,9 +85,11 @@ Cartesian target through the pure, bounded, System-configured URDF IK adapter.
 Exact topics and relay gates are defined in [Safety](SAFETY.md).
 
 The relay starts locked. An app enables it only after its own inputs and the
-shared runtime are ready. Repository-owned Docker containers and tmux sessions
-are marked so emergency cleanup can stop them without touching unrelated user
-processes.
+shared runtime are ready. Repository-owned Docker containers, host process
+groups, and tmux sessions are marked so emergency cleanup can stop them without
+touching unrelated user processes. LingBot runs its bridge in the invoking
+terminal and uses a marked host process group only for its background policy
+server.
 
 Each physical resource has one owner. An app that owns cameras shares its open
 readers with collection, inference, and embedded preview; the standalone

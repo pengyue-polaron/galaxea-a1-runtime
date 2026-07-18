@@ -21,7 +21,7 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from signal_arm.msg import gripper_position_control
+from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
 from galaxea_a1_runtime.apps.eef_bridge import EefIkCommandPublisher
@@ -43,7 +43,10 @@ from galaxea_a1_runtime.configuration.tasks import TaskPrompt
 from galaxea_a1_runtime.console import Tone, info, step, style, success
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.runtime.relay import RelayMonitor
-from galaxea_a1_runtime.runtime.ros_feedback import A1JointStateCache
+from galaxea_a1_runtime.runtime.ros_feedback import (
+    A1JointStateCache,
+    StagedCommandMonitor,
+)
 
 
 class A1Pi05EEBridge:
@@ -62,6 +65,7 @@ class A1Pi05EEBridge:
             max_feedback_age_s=config.system.eef.max_feedback_age_s,
         )
         self.joints = A1JointStateCache(config.system.joint_safety.names)
+        self.staged = StagedCommandMonitor()
         self.ik_solver = build_eef_ik_solver(config.system)
         self.relay = RelayMonitor(config.system.relay.max_status_age_s)
         self.reviewer = EefActionReviewer(
@@ -99,7 +103,13 @@ class A1Pi05EEBridge:
         self.executor = EefPolicyExecutor(
             relay=self.relay,
             commander=self.commander,
+            staged_monitor=self.staged,
             relay_enable_timeout_s=self.system.relay.enable_timeout_s,
+            staged_wait_timeout_s=self.system.startup.topic_timeout_s,
+            staged_max_age_s=self.system.relay.max_input_age_s,
+            staged_alignment_tolerance_rad=(
+                self.system.joint_safety.initial_alignment_tolerance_rad
+            ),
             is_shutdown=rospy.is_shutdown,
             policy_label="OpenPI pi0.5",
         )
@@ -108,6 +118,9 @@ class A1Pi05EEBridge:
         )
         rospy.Subscriber(
             topics.joint_states, JointState, self.joints.callback, queue_size=1
+        )
+        rospy.Subscriber(
+            topics.staged_command, arm_control, self.staged.callback, queue_size=1
         )
         rospy.Subscriber(
             topics.gripper_feedback,

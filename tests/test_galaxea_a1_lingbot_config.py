@@ -8,6 +8,7 @@ import pytest
 
 from galaxea_a1_runtime.apps.eef_policy_actions import build_action_transform_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.apps.lingbot.config_runtime import bash_config
 from galaxea_a1_runtime.apps.lingbot import doctor as doctor_module
 from galaxea_a1_runtime.apps.lingbot.verify import validate_training_summary
 
@@ -72,6 +73,7 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.policy_server.attention_mode == "torch"
     assert config.policy_server.enable_offload is False
     assert config.policy_server.world_size == 1
+    assert config.policy_server.shutdown_timeout_s == 10.0
     assert config.policy_server.backend.environment.python == (
         REPO / "external/lingbot-va/.env312/bin/python"
     )
@@ -82,6 +84,40 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     )
     assert config.system.cameras.front.crop is not None
     assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
+
+    shell_values = bash_config(config)
+    assert "MODEL_SHUTDOWN_TIMEOUT=10" in shell_values
+    assert "MODEL_SESSION=" not in shell_values
+    assert "TMUX_" not in shell_values
+
+
+def test_lingbot_runtime_is_foreground_and_has_no_tmux_entrypoints():
+    runtime = REPO / "scripts/apps/lingbot/a1_lingbot_runtime.sh"
+    source = runtime.read_text()
+
+    assert "a1_tmux" not in source
+    assert "attach-session" not in source
+    result = subprocess.run(
+        [str(runtime), "--help"],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, result.stderr
+    usage = result.stdout
+    assert "run       Run the complete deployment in the current terminal" in usage
+    assert "<setup|verify|start|" not in usage
+    assert "|tmux|" not in usage
+
+
+def test_lingbot_rejects_removed_tmux_session_keys(tmp_path):
+    path = _deployment_copy(tmp_path)
+    path.write_text(
+        path.read_text().replace("[session]\n", '[session]\ntmux = "old"\n')
+    )
+
+    with pytest.raises(ValueError, match="tmux"):
+        load_lingbot_config(path, repo_root=REPO)
 
 
 def test_lingbot_rejects_removed_action_rewrite_settings(tmp_path):
