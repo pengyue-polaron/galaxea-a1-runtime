@@ -13,7 +13,6 @@ from galaxea_a1_runtime.apps.pi05.config_schema import (
     Pi05ModelContract,
     Pi05ObservationConfig,
     Pi05ServerConfig,
-    Pi05ServoConfig,
     Pi05SessionConfig,
     PoseMode,
 )
@@ -57,7 +56,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
             "server",
             "observations",
             "execution",
-            "action",
         },
         label="pi0.5 deployment config",
     )
@@ -86,7 +84,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     server = required_table(data, "server")
     observations = required_table(data, "observations")
     execution = required_table(data, "execution")
-    action = required_table(data, "action")
     require_exact_keys(deployment, required={"id", "ready"}, label="pi0.5 deployment")
     require_exact_keys(
         session,
@@ -114,15 +111,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
             "review_deadband_m",
         },
         label="pi0.5 execution",
-    )
-    require_exact_keys(
-        action,
-        required={
-            "servo_settle_s",
-            "servo_tolerance_m",
-            "servo_corrections",
-        },
-        label="pi0.5 action",
     )
     config = Pi05Config(
         path=path,
@@ -160,11 +148,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
             exec_rate=floating(execution, "exec_rate"),
             print_actions=boolean(execution, "print_actions"),
             review_deadband_m=floating(execution, "review_deadband_m"),
-        ),
-        servo=Pi05ServoConfig(
-            settle_s=floating(action, "servo_settle_s"),
-            tolerance_m=floating(action, "servo_tolerance_m"),
-            corrections=integer(action, "servo_corrections"),
         ),
     )
     validate_pi05_config(config)
@@ -295,14 +278,6 @@ def validate_pi05_config(config: Pi05Config) -> None:
         )
     if config.system.cameras.front.backend != "realsense":
         raise ValueError("pi0.5 front camera must use the RealSense backend")
-    if config.servo.tolerance_m <= 0:
-        raise ValueError("pi0.5 servo tolerance must be positive")
-    if config.servo.settle_s < 0:
-        raise ValueError("pi0.5 servo settle_s must be non-negative")
-    if config.servo.corrections < 0:
-        raise ValueError("pi0.5 servo.corrections must be >= 0")
-    if config.servo.corrections and config.servo.settle_s <= 0:
-        raise ValueError("pi0.5 servo corrections require a positive settle time")
 
 
 def _config_reference(data: dict[str, Any], key: str, repo_root: Path) -> Path:

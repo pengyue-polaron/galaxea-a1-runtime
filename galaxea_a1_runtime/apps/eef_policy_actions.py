@@ -38,7 +38,7 @@ def build_action_transform_config(
 def normalize_condition_action(
     action8: Sequence[float], config: EefActionTransformConfig
 ) -> np.ndarray:
-    """Normalize observed/initial EE state without workspace-clamping feedback."""
+    """Normalize observed EE state without applying command workspace bounds."""
 
     action = _as_action8(action8, label="EE state condition")
     action[3:7] = normalize_quat(
@@ -48,18 +48,18 @@ def normalize_condition_action(
     return action
 
 
-def sanitize_policy_action(
+def validate_policy_action(
     raw8: Sequence[float],
     config: EefActionTransformConfig,
 ) -> np.ndarray:
-    """Normalize a model action and apply explicit output-side bounds."""
+    """Normalize a model action and reject values outside explicit bounds."""
 
     action = _as_action8(raw8, label="EEF policy action")
-    action[:3] = _clamp_xyz(action[:3], config)
+    _validate_xyz(action[:3], config)
     action[3:7] = normalize_quat(
         action[3:7], min_norm=config.min_quat_norm, label="EEF policy action"
     )
-    action[7] = _command_gripper(action[7], config)
+    action[7] = _continuous_gripper(action[7])
     return action
 
 
@@ -83,14 +83,14 @@ def gripper_stroke_from_norm(norm: float, config: EefActionTransformConfig) -> f
 
 def relative_action_to_absolute(
     relative8: Sequence[float],
-    origin8: Sequence[float],
+    origin_pose7: Sequence[float],
     *,
     min_quat_norm: float,
 ) -> np.ndarray:
     """Compose an episode-relative xyz+xyzw action onto the episode origin."""
 
     relative = _as_action8(relative8, label="relative EEF policy action")
-    origin = _as_action8(origin8, label="episode origin")
+    origin = _as_pose7(origin_pose7, label="episode origin")
     relative_quat = normalize_quat(
         relative[3:7], min_norm=min_quat_norm, label="relative quaternion"
     )
@@ -109,14 +109,14 @@ def relative_action_to_absolute(
 
 def absolute_action_to_relative(
     absolute8: Sequence[float],
-    origin8: Sequence[float],
+    origin_pose7: Sequence[float],
     *,
     min_quat_norm: float,
 ) -> np.ndarray:
     """Express an absolute xyz+xyzw action relative to the episode origin."""
 
     absolute = _as_action8(absolute8, label="absolute A1 action")
-    origin = _as_action8(origin8, label="episode origin")
+    origin = _as_pose7(origin_pose7, label="episode origin")
     absolute_quat = normalize_quat(
         absolute[3:7], min_norm=min_quat_norm, label="absolute quaternion"
     )
@@ -133,16 +133,13 @@ def absolute_action_to_relative(
     return relative
 
 
-def _command_gripper(value: float, config: EefActionTransformConfig) -> float:
-    del config
-    return _continuous_gripper(value)
-
-
 def _continuous_gripper(value: float) -> float:
     result = float(value)
     if not np.isfinite(result):
         raise ValueError(f"Non-finite gripper value: {result}")
-    return float(np.clip(result, 0.0, 1.0))
+    if result < 0.0 or result > 1.0:
+        raise ValueError(f"Gripper value must be in [0, 1], got {result:g}")
+    return result
 
 
 def _quat_inverse(quat: Sequence[float]) -> np.ndarray:
@@ -162,26 +159,6 @@ def _quat_multiply(left: Sequence[float], right: Sequence[float]) -> np.ndarray:
         ],
         dtype=np.float64,
     )
-
-
-def clamp_notes(
-    raw8: Sequence[float],
-    config: EefActionTransformConfig,
-) -> list[str]:
-    raw = _as_action8(raw8, label="EEF policy action")
-    notes: list[str] = []
-    xyz_min = np.asarray(config.xyz_min, dtype=np.float64)
-    xyz_max = np.asarray(config.xyz_max, dtype=np.float64)
-    axes = [
-        axis
-        for axis, value, lo_i, hi_i in zip(("x", "y", "z"), raw[:3], xyz_min, xyz_max)
-        if value < lo_i or value > hi_i
-    ]
-    if axes:
-        notes.append("workspace:" + ",".join(axes))
-    if raw[7] < 0.0 or raw[7] > 1.0:
-        notes.append("gripper:0..1")
-    return notes
 
 
 def normalize_quat(quat: Sequence[float], *, min_norm: float, label: str) -> np.ndarray:
@@ -208,9 +185,27 @@ def _as_xyz(values: Sequence[float], *, label: str) -> np.ndarray:
     return xyz
 
 
-def _clamp_xyz(xyz: Sequence[float], config: EefActionTransformConfig) -> np.ndarray:
+def _as_pose7(values: Sequence[float], *, label: str) -> np.ndarray:
+    pose = np.asarray(values, dtype=np.float64).reshape(7).copy()
+    if not np.all(np.isfinite(pose)):
+        raise ValueError(f"Non-finite {label}: {pose}")
+    return pose
+
+
+def _validate_xyz(xyz: Sequence[float], config: EefActionTransformConfig) -> None:
     values = _as_xyz(xyz, label="xyz")
-    return np.minimum(
-        np.maximum(values, np.asarray(config.xyz_min, dtype=np.float64)),
-        np.asarray(config.xyz_max, dtype=np.float64),
-    )
+    lower = np.asarray(config.xyz_min, dtype=np.float64)
+    upper = np.asarray(config.xyz_max, dtype=np.float64)
+    axes = [
+        axis
+        for axis, value, lo_i, hi_i in zip(
+            ("x", "y", "z"), values, lower, upper, strict=True
+        )
+        if value < lo_i or value > hi_i
+    ]
+    if axes:
+        raise ValueError(
+            "EEF policy action is outside the configured workspace on "
+            f"{','.join(axes)}: xyz={values.tolist()} "
+            f"min={lower.tolist()} max={upper.tolist()}"
+        )

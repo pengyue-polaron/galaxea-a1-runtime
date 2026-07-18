@@ -230,10 +230,10 @@ unregistered prompt.
 At connection time both LingBot and pi0.5 bridges validate a canonical digest
 covering code, model, task catalog, camera, state/action, normalization, and
 engine contracts before accepting actions. Their shared pure EEF adapter owns episode-relative
-pose composition, gripper conversion, review, and explicit safety transforms.
+pose composition, gripper conversion, review, and explicit bounds validation.
 Their shared ROS-free execution coordinator enforces a staged current-joint hold
-before relay enable, gripper publication only after `ACTIVE`, configured
-feedback correction, and fail-closed cleanup; model bridges only supply rollout
+before relay enable, gripper publication only after `ACTIVE`, and fail-closed
+cleanup; model bridges only supply rollout
 behavior. The IK adapter reads the same URDF as the runtime, uses named System
 joint limits, and rejects non-convergence or excessive joint deltas. Model
 services reuse the app-agnostic tmux health/exit supervisor. Each live bridge

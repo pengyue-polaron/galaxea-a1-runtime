@@ -31,7 +31,7 @@ def lingbot_observation(
     absolute = np.concatenate(
         [episode.states[frame_index, :7], episode.states[frame_index, -1:]]
     )
-    origin = np.concatenate([episode.states[0, :7], episode.states[0, -1:]])
+    origin = episode.states[0, :7]
     relative = absolute_action_to_relative(
         absolute,
         origin,

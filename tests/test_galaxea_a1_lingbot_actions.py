@@ -8,7 +8,7 @@ from galaxea_a1_runtime.apps.eef_policy_actions import (
     gripper_stroke_from_norm,
     normalize_condition_action,
     relative_action_to_absolute,
-    sanitize_policy_action,
+    validate_policy_action,
 )
 
 
@@ -27,32 +27,36 @@ def action_config(**overrides) -> EefActionTransformConfig:
 def test_condition_action_preserves_feedback_xyz_outside_workspace():
     cfg = action_config(xyz_min=(0.0, 0.0, 0.0), xyz_max=(1.0, 1.0, 1.0))
 
-    action = normalize_condition_action([2.0, -1.0, 0.5, 0.0, 0.0, 0.0, 2.0, 1.2], cfg)
+    action = normalize_condition_action([2.0, -1.0, 0.5, 0.0, 0.0, 0.0, 2.0, 0.8], cfg)
 
     assert action[:3] == pytest.approx((2.0, -1.0, 0.5))
     assert action[3:7] == pytest.approx((0.0, 0.0, 0.0, 1.0))
-    assert action[7] == pytest.approx(1.0)
+    assert action[7] == pytest.approx(0.8)
 
 
-def test_policy_action_applies_workspace_without_per_step_delta_clamp():
+def test_policy_action_rejects_workspace_and_gripper_violations():
     cfg = action_config(
         xyz_min=(0.0, 0.0, 0.0),
         xyz_max=(1.0, 1.0, 1.0),
     )
 
-    action = sanitize_policy_action(
-        [0.3, -0.2, 2.0, 0.0, 0.0, 0.0, 1.0, -0.5],
-        cfg,
-    )
+    with pytest.raises(ValueError, match="outside.*workspace.*y,z"):
+        validate_policy_action(
+            [0.3, -0.2, 2.0, 0.0, 0.0, 0.0, 1.0, 0.5],
+            cfg,
+        )
 
-    assert action[:3] == pytest.approx((0.3, 0.0, 1.0))
-    assert action[7] == pytest.approx(0.0)
+    with pytest.raises(ValueError, match=r"Gripper value must be in \[0, 1\]"):
+        validate_policy_action(
+            [0.3, 0.2, 0.2, 0.0, 0.0, 0.0, 1.0, -0.5],
+            cfg,
+        )
 
 
 def test_policy_action_preserves_model_quaternion():
     cfg = action_config()
 
-    action = sanitize_policy_action(
+    action = validate_policy_action(
         [0.1, 0.1, 0.1, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5), 0.5],
         cfg,
     )
@@ -69,13 +73,13 @@ def test_gripper_mapping_is_continuous_across_shared_stroke():
     assert gripper_norm_from_stroke(100.0, cfg) == pytest.approx(1.0)
 
 
-def test_gripper_mapping_clips_to_configured_stroke():
+def test_gripper_mapping_uses_configured_stroke():
     cfg = action_config(
         gripper_stroke_min=0.0,
         gripper_stroke_max=80.0,
     )
 
-    action = sanitize_policy_action(
+    action = validate_policy_action(
         [0.1, 0.1, 0.1, 0.0, 0.0, 0.0, 1.0, 0.25],
         cfg,
     )
@@ -87,7 +91,7 @@ def test_gripper_mapping_clips_to_configured_stroke():
 
 
 def test_episode_relative_action_roundtrips_xyz_and_quaternion():
-    origin = [0.2, -0.1, 0.3, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5), 1.0]
+    origin = [0.2, -0.1, 0.3, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5)]
     relative = [0.1, 0.02, -0.03, 0.0, 0.0, np.sqrt(0.5), np.sqrt(0.5), 0.25]
 
     absolute = relative_action_to_absolute(relative, origin, min_quat_norm=0.25)

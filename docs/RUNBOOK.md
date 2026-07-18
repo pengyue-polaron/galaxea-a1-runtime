@@ -58,7 +58,8 @@ just eef-test
 
 This step-gated check sends each accepted Cartesian nudge through the same
 bounded URDF IK, named joint target, isolated jointTracker, and fail-closed relay
-used by both policy bridges. Targets outside the tracked workspace are skipped.
+used by both policy bridges. A target outside the tracked workspace stops the
+rollout before that target is published and reports the offending axes and bounds.
 
 Run it only with a clear workspace. After any partial startup failure, use
 `just stop` before retrying.

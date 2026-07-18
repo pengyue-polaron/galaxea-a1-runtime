@@ -60,6 +60,17 @@ def test_pi05_deployment_pins_final_checkpoint_and_shared_contracts():
     assert config.deployment_ready is True
 
 
+def test_pi05_rejects_removed_action_rewrite_settings(tmp_path):
+    path = _deployment_copy(tmp_path, CONTRACT.read_text())
+    path.write_text(
+        path.read_text()
+        + "\n[action]\nservo_settle_s = 0.0\nservo_tolerance_m = 0.01\n"
+    )
+
+    with pytest.raises(ValueError, match="action"):
+        load_pi05_config(path, repo_root=REPO)
+
+
 def test_pi05_protocol_exhaustively_identifies_model_and_io_contract():
     config = load_pi05_config(CONFIG, repo_root=REPO)
 

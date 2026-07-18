@@ -117,7 +117,10 @@ def build_safety_settings(
             name="initial_command_alignment",
             path=SAFE_RELAY_SCRIPT,
             default=f"{system.joint_safety.initial_alignment_tolerance_rad:.2f}rad",
-            behavior="Only the first staged tracker command is checked against current joint feedback.",
+            behavior=(
+                "The relay checks the staged current-joint hold against current "
+                "joint feedback before becoming ACTIVE."
+            ),
             visibility="FAULT with initial command error values if exceeded.",
             operator_note="This check does not modify commands; after validation the relay forwards staged joint commands unchanged.",
         ),
@@ -164,16 +167,16 @@ def build_safety_settings(
             operator_note="This changes the requested target if the leader moves beyond the configured A1 range.",
         ),
         SafetySetting(
-            name="eef_policy_workspace_clamp",
+            name="eef_policy_workspace_bounds",
             path=f"{SYSTEM_CONFIG} [eef.xyz_min / eef.xyz_max]",
             default=(
                 f"x=[{system.eef.xyz_min[0]:g},{system.eef.xyz_max[0]:g}], "
                 f"y=[{system.eef.xyz_min[1]:g},{system.eef.xyz_max[1]:g}], "
                 f"z=[{system.eef.xyz_min[2]:g},{system.eef.xyz_max[2]:g}]"
             ),
-            behavior="Absolute LingBot and pi0.5 targets outside the configured workspace are clamped.",
-            visibility="Bridge preview prints clamp=workspace:<axis>.",
-            operator_note="This can make a policy look pinned at the boundary; the preview should reveal it.",
+            behavior="Absolute LingBot and pi0.5 targets outside the configured workspace are rejected without publication.",
+            visibility="The bridge error names the offending axes, target, and configured bounds.",
+            operator_note="Model outputs are never projected onto the workspace boundary.",
         ),
         SafetySetting(
             name="eef_policy_ik",
@@ -188,12 +191,12 @@ def build_safety_settings(
                 "joint-limit violations, and solutions beyond the configured joint delta."
             ),
             visibility=(
-                "Each accepted action logs IK iterations, Cartesian/orientation residuals, "
-                "and maximum joint delta."
+                "Verbose deployment logging reports IK iterations, Cartesian/orientation "
+                "residuals, and maximum joint delta when enabled."
             ),
             operator_note=(
-                "The bridge waits for a fresh staged hold aligned with current named "
-                "joint feedback before motion can be enabled."
+                "The bridge stages fresh named joint feedback as a hold; the relay "
+                "is the sole owner of alignment validation and activation."
             ),
         ),
         SafetySetting(
@@ -243,22 +246,6 @@ def build_safety_settings(
                 "The deployment owns rollout cadence; execution continues until its "
                 "finite model-call cap is reached or the operator stops it."
             ),
-        ),
-        SafetySetting(
-            name="lingbot_cache_actual_feedback",
-            path=f"{LINGBOT_CONFIG} [action.cache_actual_feedback]",
-            default=str(lingbot.servo.cache_actual_feedback).lower(),
-            behavior=(
-                "The LingBot KV cache records measured EEF feedback."
-                if lingbot.servo.cache_actual_feedback
-                else "The LingBot KV cache records the requested EEF action."
-            ),
-            visibility=(
-                "Bridge startup prints cache_action_source=measured-feedback."
-                if lingbot.servo.cache_actual_feedback
-                else "Bridge startup prints cache_action_source=requested-action."
-            ),
-            operator_note="Enable measured feedback only for a model trained with measured feedback as its action history.",
         ),
         SafetySetting(
             name="eef_policy_relay_status_guard",
@@ -320,8 +307,8 @@ def build_safety_settings(
                 f"{system.gripper.stroke_max_mm:g}]mm"
             ),
             behavior=(
-                "Feedback outside the physical range is rejected. EEF policies apply "
-                "their named output bound before the strict physical unit conversion."
+                "Feedback outside the physical range is rejected. EEF policy targets "
+                "must satisfy the normalized bound before physical unit conversion."
             ),
             visibility="Bridge preview and publish log print gripper_norm and gripper_mm.",
             operator_note="Changing this range changes the data and checkpoint contract; collect and train a new run after changing it.",

@@ -39,8 +39,3 @@ execute_actions_per_inference = 10
 exec_rate = 30.0
 print_actions = true
 review_deadband_m = 0.001
-
-[action]
-servo_settle_s = 0.5
-servo_tolerance_m = 0.01
-servo_corrections = 1

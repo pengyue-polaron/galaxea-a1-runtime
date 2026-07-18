@@ -7,6 +7,22 @@ from dataclasses import dataclass
 import numpy as np
 
 
+def validated_action_tensor(
+    action: np.ndarray,
+    *,
+    expected_shape: tuple[int, int, int],
+) -> np.ndarray:
+    values = np.asarray(action, dtype=np.float32)
+    if values.shape != expected_shape:
+        raise RuntimeError(
+            f"Expected LingBot action shape {expected_shape}, got {values.shape}. "
+            "Restart the server with the corrected Galaxea A1 config."
+        )
+    if not np.isfinite(values).all():
+        raise RuntimeError("LingBot returned non-finite actions")
+    return values
+
+
 @dataclass
 class LingBotActionChunk:
     values: np.ndarray
@@ -21,16 +37,12 @@ class LingBotActionChunk:
         cls,
         action: np.ndarray,
         *,
+        expected_shape: tuple[int, int, int],
         first: bool,
         execute_frames: int,
         observations_per_frame: int,
     ) -> "LingBotActionChunk":
-        values = np.asarray(action, dtype=np.float32)
-        if values.ndim != 3 or values.shape[0] != 8:
-            raise RuntimeError(
-                f"Expected LingBot action shape (8, F, H), got {values.shape}. "
-                "Restart the server with the corrected Galaxea A1 config."
-            )
+        values = validated_action_tensor(action, expected_shape=expected_shape)
         horizon = values.shape[2]
         if horizon % observations_per_frame != 0:
             raise RuntimeError(

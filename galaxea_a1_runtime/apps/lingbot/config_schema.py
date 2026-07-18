@@ -69,12 +69,9 @@ class LingBotExecutionConfig:
     execute: bool
     step_mode: bool
     step_actions: bool
-    no_kv_update: bool
     max_model_calls: int
     execute_frames: int
     kv_observations_per_frame: int
-    condition_on_ee_state: bool
-    initial_ee_pose: tuple[float, ...] | None
     exec_rate: float
     print_actions: bool
     review_deadband_m: float
@@ -89,14 +86,6 @@ class LingBotObservationConfig:
 @dataclass(frozen=True)
 class LingBotActionModeConfig:
     pose_mode: PoseMode
-
-
-@dataclass(frozen=True)
-class LingBotServoConfig:
-    settle_s: float
-    tolerance_m: float
-    corrections: int
-    cache_actual_feedback: bool
 
 
 @dataclass(frozen=True)
@@ -116,5 +105,4 @@ class LingBotConfig:
     execution: LingBotExecutionConfig
     observations: LingBotObservationConfig
     action: LingBotActionModeConfig
-    servo: LingBotServoConfig
     recording: LingBotRecordingConfig

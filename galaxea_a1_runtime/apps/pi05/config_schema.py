@@ -70,13 +70,6 @@ class Pi05ExecutionConfig:
 
 
 @dataclass(frozen=True)
-class Pi05ServoConfig:
-    settle_s: float
-    tolerance_m: float
-    corrections: int
-
-
-@dataclass(frozen=True)
 class Pi05Config:
     path: Path
     deployment_id: str
@@ -91,4 +84,3 @@ class Pi05Config:
     server: Pi05ServerConfig
     observations: Pi05ObservationConfig
     execution: Pi05ExecutionConfig
-    servo: Pi05ServoConfig

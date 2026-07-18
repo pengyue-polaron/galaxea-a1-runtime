@@ -13,6 +13,7 @@ from galaxea_a1_runtime.apps.lingbot.config import (
     load_lingbot_config,
 )
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
+from galaxea_a1_runtime.apps.lingbot.rollout import validated_action_tensor
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.configuration.base import discover_repo_root
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
@@ -93,20 +94,13 @@ def run_smoke(config: LingBotConfig) -> np.ndarray:
 def _validated_action(response: dict, config: LingBotConfig) -> np.ndarray:
     if set(response) != {"action", "server_timing"}:
         raise RuntimeError(f"Unexpected LingBot response keys: {sorted(response)}")
-    action = np.asarray(response["action"], dtype=np.float32)
     policy = config.policy_server
     expected_shape = (
         8,
         policy.frame_chunk_size,
         policy.action_per_frame,
     )
-    if action.shape != expected_shape:
-        raise RuntimeError(
-            f"Expected LingBot action shape {expected_shape}, got {action.shape}"
-        )
-    if not np.isfinite(action).all():
-        raise RuntimeError("LingBot returned non-finite actions")
-    return action
+    return validated_action_tensor(response["action"], expected_shape=expected_shape)
 
 
 def main(argv: list[str] | None = None) -> int:

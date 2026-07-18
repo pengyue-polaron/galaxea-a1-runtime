@@ -21,7 +21,7 @@ import numpy as np
 import rospy
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from signal_arm.msg import arm_control, gripper_position_control
+from signal_arm.msg import gripper_position_control
 from std_msgs.msg import Bool, String
 
 from galaxea_a1_runtime.apps.eef_bridge import EefIkCommandPublisher
@@ -43,11 +43,7 @@ from galaxea_a1_runtime.configuration.tasks import TaskPrompt
 from galaxea_a1_runtime.console import Tone, info, step, style, success
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.runtime.relay import RelayMonitor
-from galaxea_a1_runtime.runtime.ros_feedback import (
-    A1JointStateCache,
-    StagedCommandMonitor,
-    wait_for_staged_joint_alignment,
-)
+from galaxea_a1_runtime.runtime.ros_feedback import A1JointStateCache
 
 
 class A1Pi05EEBridge:
@@ -56,7 +52,6 @@ class A1Pi05EEBridge:
         self.task = task
         self.system = config.system
         self.execution = config.execution
-        self.servo = config.servo
         self.target_keepalive_timer = None
         self.cameras = None
         self.client = None
@@ -65,12 +60,8 @@ class A1Pi05EEBridge:
             action_config=self.action_config,
             pose_mode=config.model_contract.pose_mode,
             max_feedback_age_s=config.system.eef.max_feedback_age_s,
-            initial_action8=None,
-            frame_chunk_size=1,
-            action_per_frame=1,
         )
         self.joints = A1JointStateCache(config.system.joint_safety.names)
-        self.staged = StagedCommandMonitor()
         self.ik_solver = build_eef_ik_solver(config.system)
         self.relay = RelayMonitor(config.system.relay.max_status_age_s)
         self.reviewer = EefActionReviewer(
@@ -106,13 +97,9 @@ class A1Pi05EEBridge:
             execute=config.execution.execute,
         )
         self.executor = EefPolicyExecutor(
-            state=self.state,
             relay=self.relay,
             commander=self.commander,
             relay_enable_timeout_s=self.system.relay.enable_timeout_s,
-            settle_s=self.servo.settle_s,
-            tolerance_m=self.servo.tolerance_m,
-            corrections=self.servo.corrections,
             is_shutdown=rospy.is_shutdown,
             policy_label="OpenPI pi0.5",
         )
@@ -121,9 +108,6 @@ class A1Pi05EEBridge:
         )
         rospy.Subscriber(
             topics.joint_states, JointState, self.joints.callback, queue_size=1
-        )
-        rospy.Subscriber(
-            topics.staged_command, arm_control, self.staged.callback, queue_size=1
         )
         rospy.Subscriber(
             topics.gripper_feedback,
@@ -161,31 +145,7 @@ class A1Pi05EEBridge:
     def run(self) -> None:
         if self.client is None or self.cameras is None:
             raise RuntimeError("pi0.5 bridge is closed")
-        self._wait_for_feedback()
-        hold = self.joints.positions(
-            max_age_s=self.system.joint_safety.max_feedback_age_s
-        )
-        if hold is None:
-            raise RuntimeError("Fresh named joints disappeared before staging hold")
-        self.commander.hold_current_target()
-        self.executor.publish_active_target()
-        wait_for_staged_joint_alignment(
-            self.staged,
-            hold,
-            dof=len(self.system.joint_safety.names),
-            timeout_s=self.system.startup.topic_timeout_s,
-            max_age_s=self.system.relay.max_input_age_s,
-            tolerance_rad=self.system.joint_safety.initial_alignment_tolerance_rad,
-            is_shutdown=rospy.is_shutdown,
-        )
-        info("jointTracker staged a fresh initial hold aligned with joint feedback.")
-        if self.execution.execute and not self.execution.step_mode:
-            info(
-                "Continuous execution armed: "
-                f"calls={self.execution.max_model_calls or 'unbounded'} "
-                f"actions_per_call={self.execution.execute_actions_per_inference} "
-                f"rate={self.execution.exec_rate:.1f}Hz"
-            )
+        self._prepare_execution()
         call_index = 0
         while not rospy.is_shutdown():
             if (
@@ -220,6 +180,20 @@ class A1Pi05EEBridge:
                     f"executed={self.execution.execute_actions_per_inference} actions; "
                     "capturing fresh observations for the next model call."
                 )
+
+    def _prepare_execution(self) -> None:
+        if not self.execution.execute:
+            return
+        self._wait_for_feedback()
+        self.executor.activate_current_hold()
+        info("Relay activated on a fresh current-joint hold.")
+        if not self.execution.step_mode:
+            info(
+                "Continuous execution armed: "
+                f"calls={self.execution.max_model_calls or 'unbounded'} "
+                f"actions_per_call={self.execution.execute_actions_per_inference} "
+                f"rate={self.execution.exec_rate:.1f}Hz"
+            )
 
     def _read_observation(self) -> dict[str, object]:
         self._wait_for_feedback()
@@ -269,7 +243,6 @@ class A1Pi05EEBridge:
                 joints is not None
                 and self.state.pose_is_fresh()
                 and self.state.gripper_is_fresh()
-                and self.state.current_quat() is not None
             ):
                 return
             time.sleep(0.02)
@@ -292,14 +265,14 @@ class A1Pi05EEBridge:
     def _run_actions(self, call_index: int, actions: np.ndarray) -> bool:
         count = self.execution.execute_actions_per_inference
         for action_index, raw_action in enumerate(actions[:count]):
-            safe_action = self.state.sanitize(raw_action)
+            validated_action = self.state.validate(raw_action)
             if self.execution.print_actions:
                 self.reviewer.print_step(
                     call_index=call_index,
                     frame_index=0,
                     step_index=action_index,
                     model_action=raw_action,
-                    safe_action=safe_action,
+                    validated_action=validated_action,
                 )
             if self.execution.step_actions:
                 command = self._ask("Next=publish this EEF action, s=skip, q=quit: ")
@@ -308,7 +281,7 @@ class A1Pi05EEBridge:
                 if command in {"s", "skip"}:
                     continue
             if self.execution.execute:
-                self._publish_ee_action(safe_action)
+                self._publish_ee_action(validated_action)
             time.sleep(1.0 / self.execution.exec_rate)
         return False
 

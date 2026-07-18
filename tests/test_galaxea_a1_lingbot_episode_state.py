@@ -31,9 +31,6 @@ def _state(*, pose_mode: str = "episode-relative") -> EefPolicyState:
         action_config=_config(),
         pose_mode=pose_mode,
         max_feedback_age_s=1.0,
-        initial_action8=None,
-        frame_chunk_size=4,
-        action_per_frame=20,
     )
 
 
@@ -48,34 +45,29 @@ def test_episode_state_uses_fresh_pose_and_continuous_gripper_feedback():
     assert action == pytest.approx((0.2, -0.1, 0.3, 0.0, 0.0, 0.0, 1.0, 0.25))
 
 
-def test_episode_state_owns_relative_world_transform_and_condition_shape():
+def test_episode_state_owns_relative_world_transform():
     state = _state()
     state.pose_callback(_pose(0.2, -0.1, 0.3))
-    state.gripper_callback(SimpleNamespace(position=[50.0]))
     origin = state.ensure_episode_origin()
     assert origin is not None
+    assert origin.shape == (7,)
 
     model = np.array([0.1, 0.02, -0.03, 0.0, 0.0, 0.0, 1.0, 0.25])
     absolute = state.model_to_absolute(model)
 
     assert absolute[:3] == pytest.approx((0.3, -0.08, 0.27))
     assert state.absolute_to_model(absolute) == pytest.approx(model)
-    assert state.model_condition().shape == (8, 4, 20)
 
 
-def test_episode_state_falls_back_to_explicit_initial_action():
+def test_episode_state_requires_fresh_feedback_without_a_fallback():
     state = EefPolicyState(
         action_config=_config(),
         pose_mode="absolute",
         max_feedback_age_s=1.0,
-        initial_action8=(0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, 0.75),
-        frame_chunk_size=4,
-        action_per_frame=20,
     )
 
-    assert state.current_absolute_action() == pytest.approx(
-        (0.1, 0.2, 0.3, 0.0, 0.0, 0.0, 1.0, 0.75)
-    )
+    assert state.current_absolute_action() is None
+    assert state.ensure_episode_origin() is None
 
 
 def test_invalid_gripper_feedback_clears_the_previous_sample():
@@ -86,3 +78,25 @@ def test_invalid_gripper_feedback_clears_the_previous_sample():
     state.gripper_callback(SimpleNamespace(position=[float("nan")]))
 
     assert not state.gripper_is_fresh()
+
+
+@pytest.mark.parametrize(
+    "pose",
+    [
+        _pose(float("nan"), 0.0, 0.0),
+        SimpleNamespace(
+            pose=SimpleNamespace(
+                position=SimpleNamespace(x=0.2, y=0.0, z=0.3),
+                orientation=SimpleNamespace(x=0.0, y=0.0, z=0.0, w=0.0),
+            )
+        ),
+    ],
+)
+def test_invalid_pose_feedback_clears_the_previous_sample(pose):
+    state = _state()
+    state.pose_callback(_pose(0.2, 0.0, 0.3))
+    assert state.pose_is_fresh()
+
+    state.pose_callback(pose)
+
+    assert not state.pose_is_fresh()

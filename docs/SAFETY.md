@@ -18,8 +18,9 @@ publish only:
   -> /arm_joint_command_host
 ```
 
-Before enabling motion, the bridge publishes the current named joints as a hold
-and waits for a fresh staged command aligned with feedback. IK rejects
+Before enabling motion, the bridge publishes the current named joints as a hold;
+the relay alone validates the resulting fresh staged command against feedback.
+IK rejects
 non-convergence, joint-limit violations, non-finite results, and solutions whose
 maximum joint delta exceeds the System-owned limit.
 
@@ -48,15 +49,18 @@ only normal owner of both host command topics.
 
 - The relay starts `LOCKED`; an app must explicitly enable
   `/a1_arm_motion_enable`.
-- Joint feedback, staged tracker commands, gripper targets, and motor status
-  must be fresh.
+- Joint feedback, staged tracker commands, and motor status must be fresh before
+  arm forwarding. A gripper target is forwarded only while it is fresh; its
+  absence does not block arm activation.
 - Every named driver vector is reordered against configured joint names and
   must have the expected DOF and finite values. Gains must be non-negative and
   control mode must be allowed by System config.
-- The first staged command must align with current joint feedback within the
-  configured startup tolerance.
+- The relay validates the staged current-joint hold against fresh joint feedback
+  within the configured startup tolerance before becoming `ACTIVE`.
 - Absolute joint, workspace, and physical gripper limits come from System
-  config. No hidden tracking-error, speed, or action-step clamp is applied.
+  config. EEF policy targets outside workspace or normalized gripper bounds are
+  rejected without publication; no target is clamped onto a boundary. No hidden
+  tracking-error, speed, or action-step clamp is applied.
 - The complete episode-relative model pose is always composed into the absolute
   IK target; its quaternion is never replaced with current feedback.
 - Verbose action logging reports IK residuals and maximum joint deltas when

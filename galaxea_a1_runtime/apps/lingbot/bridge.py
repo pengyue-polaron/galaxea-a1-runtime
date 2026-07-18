@@ -50,14 +50,10 @@ from galaxea_a1_runtime.console import (
 )
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.hardware.video_recorder import recording_run_id
-from galaxea_a1_runtime.runtime.ros_feedback import (
-    A1JointStateCache,
-    StagedCommandMonitor,
-    wait_for_staged_joint_alignment,
-)
+from galaxea_a1_runtime.runtime.ros_feedback import A1JointStateCache
 from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
-from signal_arm.msg import arm_control, gripper_position_control
+from signal_arm.msg import gripper_position_control
 from std_msgs.msg import Bool, String
 
 
@@ -71,28 +67,21 @@ class A1LingBotEEBridge:
         self.task = task
         self.system = config.system
         self.execution = config.execution
-        self.servo = config.servo
         self.server = config.server
         self.eef = config.system.eef
-        self.reported_condition_state = False
         self.target_keepalive_timer = None
         self.cameras = None
         self.client = None
         self.live_status = LiveStatusLine()
         self.actions_executed = 0
         self.last_inference_s = 0.0
-        self.last_clamp: str | None = None
         self.action_config = build_action_transform_config(system=config.system)
         self.state = EefPolicyState(
             action_config=self.action_config,
             pose_mode=config.action.pose_mode,
             max_feedback_age_s=self.eef.max_feedback_age_s,
-            initial_action8=self.execution.initial_ee_pose,
-            frame_chunk_size=config.policy_server.frame_chunk_size,
-            action_per_frame=config.policy_server.action_per_frame,
         )
         self.joints = A1JointStateCache(config.system.joint_safety.names)
-        self.staged = StagedCommandMonitor()
         self.ik_solver = build_eef_ik_solver(config.system)
         self.relay = RelayMonitor(self.system.relay.max_status_age_s)
         self.reviewer = EefActionReviewer(
@@ -130,13 +119,9 @@ class A1LingBotEEBridge:
             log_solutions=self.execution.print_actions,
         )
         self.executor = EefPolicyExecutor(
-            state=self.state,
             relay=self.relay,
             commander=self.commander,
             relay_enable_timeout_s=self.system.relay.enable_timeout_s,
-            settle_s=self.servo.settle_s,
-            tolerance_m=self.servo.tolerance_m,
-            corrections=self.servo.corrections,
             is_shutdown=rospy.is_shutdown,
             policy_label="LingBot",
         )
@@ -145,9 +130,6 @@ class A1LingBotEEBridge:
         )
         rospy.Subscriber(
             topics.joint_states, JointState, self.joints.callback, queue_size=1
-        )
-        rospy.Subscriber(
-            topics.staged_command, arm_control, self.staged.callback, queue_size=1
         )
         rospy.Subscriber(
             topics.gripper_feedback,
@@ -189,52 +171,13 @@ class A1LingBotEEBridge:
                 ) from None
             raise
 
-    def _stage_current_joint_hold(self) -> None:
-        hold = self.joints.positions(
-            max_age_s=self.system.joint_safety.max_feedback_age_s
-        )
-        if hold is None:
-            raise RuntimeError("Fresh named joints disappeared before staging hold")
-        self.commander.hold_current_target()
-        self.executor.publish_active_target()
-        wait_for_staged_joint_alignment(
-            self.staged,
-            hold,
-            dof=len(self.system.joint_safety.names),
-            timeout_s=self.system.startup.topic_timeout_s,
-            max_age_s=self.system.relay.max_input_age_s,
-            tolerance_rad=self.system.joint_safety.initial_alignment_tolerance_rad,
-            is_shutdown=rospy.is_shutdown,
-        )
-        info("jointTracker staged a fresh initial hold aligned with joint feedback.")
-
     def _read_lingbot_obs(self) -> dict | None:
         if self.cameras is None:
             raise RuntimeError("LingBot cameras are closed")
         obs = self.cameras.read_observation()
         if obs is None:
             return None
-        packet = {"obs": [obs], "prompt": self.task.prompt}
-        if self.execution.condition_on_ee_state:
-            state = self.state.model_condition()
-            if state is not None:
-                packet["state"] = state
-                if not self.reported_condition_state:
-                    first = state[:, 0, 0]
-                    info(
-                        "Conditioning LingBot on EE state: "
-                        f"xyz={np.round(first[:3], 4).tolist()} "
-                        f"quat={np.round(first[3:7], 4).tolist()} "
-                        f"gripper_norm={first[7]:.3f}"
-                    )
-                    self.reported_condition_state = True
-            elif not self.reported_condition_state:
-                warning(
-                    "EE state conditioning requested, but no fresh/current or "
-                    "initial_ee_pose is available."
-                )
-                self.reported_condition_state = True
-        return packet
+        return {"obs": [obs], "prompt": self.task.prompt}
 
     def _wait_for_fresh_feedback(self) -> None:
         deadline = time.monotonic() + self.eef.feedback_wait_timeout_s
@@ -242,16 +185,11 @@ class A1LingBotEEBridge:
             joints = self.joints.positions(
                 max_age_s=self.system.joint_safety.max_feedback_age_s
             )
-            if (
-                joints is not None
-                and self.state.pose_is_fresh()
-                and self.state.gripper_is_fresh()
-                and self.state.current_quat() is not None
-            ):
+            if joints is not None and self.state.pose_is_fresh():
                 return
             time.sleep(0.05)
         raise RuntimeError(
-            f"No fresh named joint, pose, and gripper feedback within "
+            f"No fresh named joint and pose feedback within "
             f"{self.eef.feedback_wait_timeout_s:.1f}s; check "
             f"{self.system.host.a1_serial} and the A1 driver"
         )
@@ -284,11 +222,7 @@ class A1LingBotEEBridge:
                 f"quat={np.round(policy_action[3:7], 4).tolist()} "
                 f"gripper_mm={round(float(grip_mm), 3)}"
             )
-        return (
-            self.state.measured_action(policy_action)
-            if self.servo.cache_actual_feedback
-            else last_command
-        )
+        return last_command
 
     @staticmethod
     def _ask_next(prompt: str) -> str:
@@ -317,8 +251,6 @@ class A1LingBotEEBridge:
                 return
             if not self._wait_for_inference_request(call_index):
                 return
-            if self.execution.no_kv_update and not first:
-                self.client.reset(self.task.prompt)
             chunk = self._infer_chunk(call_index, first=first)
             if chunk is None:
                 return
@@ -332,7 +264,7 @@ class A1LingBotEEBridge:
                 cache_eligible=cache_eligible,
             )
             if self.execution.execute:
-                first = not (self.execution.no_kv_update or cache_updated)
+                first = not cache_updated
             call_index += 1
             if not self.execution.max_model_calls or (
                 call_index < self.execution.max_model_calls
@@ -345,22 +277,17 @@ class A1LingBotEEBridge:
         self._wait_for_fresh_feedback()
         if self._ensure_episode_origin() is None:
             raise RuntimeError("Cannot establish the episode EEF origin")
-        self._stage_current_joint_hold()
-        rospy.sleep(1.0)
+        self.executor.activate_current_hold()
+        info("Relay activated on a fresh current-joint hold.")
         if self.execution.step_mode:
             info("Holding the current EE pose while waiting for Enter.")
             return
-        cache_source = (
-            "measured-feedback"
-            if self.servo.cache_actual_feedback
-            else "requested-action"
-        )
         info(
             "Continuous execution armed: "
             f"calls={self.execution.max_model_calls or 'unbounded'} "
             f"frames_per_call={self.execution.execute_frames} "
             f"rate={self.execution.exec_rate:.1f}Hz "
-            f"cache_action_source={cache_source}"
+            "cache_action_source=requested-action"
         )
         self._update_live_status(0, phase="READY", force=True)
 
@@ -389,13 +316,17 @@ class A1LingBotEEBridge:
         if rospy.is_shutdown():
             return None
         self._update_live_status(call_index, phase="INFER")
-        self.last_clamp = None
         started = time.monotonic()
         response = self.client.infer(observation)
         elapsed = time.monotonic() - started
         self.last_inference_s = elapsed
         chunk = LingBotActionChunk.from_response(
             response["action"],
+            expected_shape=(
+                len(self.config.policy_server.action_channel_ids),
+                self.config.policy_server.frame_chunk_size,
+                self.config.policy_server.action_per_frame,
+            ),
             first=first,
             execute_frames=self.execution.execute_frames,
             observations_per_frame=self.execution.kv_observations_per_frame,
@@ -418,12 +349,9 @@ class A1LingBotEEBridge:
         key_frames: list = []
         cache_eligible = True
         for frame_index, step_index, cache_frame_index, raw_action in chunk.steps():
-            clamp_notes = self.state.clamp_notes(raw_action)
-            if clamp_notes:
-                self.last_clamp = ",".join(clamp_notes)
-            safe_action = self.state.sanitize(raw_action)
+            validated_action = self.state.validate(raw_action)
             chunk.cache_state[:, cache_frame_index, step_index] = (
-                self.state.absolute_to_model(safe_action)
+                self.state.absolute_to_model(validated_action)
             )
             if self.execution.print_actions and (
                 step_index == 0 or self.execution.step_actions
@@ -433,7 +361,7 @@ class A1LingBotEEBridge:
                     frame_index=frame_index,
                     step_index=step_index,
                     model_action=raw_action,
-                    safe_action=safe_action,
+                    validated_action=validated_action,
                 )
             if self.execution.step_actions:
                 command = self._ask_next(
@@ -447,7 +375,7 @@ class A1LingBotEEBridge:
             if self.execution.execute:
                 if not self.executor.motion_enabled:
                     self.live_status.break_line()
-                executed = self._publish_ee_action(safe_action)
+                executed = self._publish_ee_action(validated_action)
                 chunk.cache_state[:, cache_frame_index, step_index] = (
                     self.state.absolute_to_model(executed)
                 )
@@ -455,8 +383,7 @@ class A1LingBotEEBridge:
                 self._update_live_status(
                     call_index,
                     phase="EXECUTE",
-                    target=safe_action[:3],
-                    clamp=self.last_clamp,
+                    target=validated_action[:3],
                 )
             time.sleep(1.0 / self.execution.exec_rate)
             if chunk.needs_observation_after(step_index):
@@ -478,12 +405,7 @@ class A1LingBotEEBridge:
     ) -> bool:
         if self.client is None:
             raise RuntimeError("LingBot client is closed")
-        if (
-            self.execution.execute
-            and key_frames
-            and cache_eligible
-            and not self.execution.no_kv_update
-        ):
+        if self.execution.execute and key_frames and cache_eligible:
             try:
                 self._update_live_status(call_index, phase="CACHE")
                 self.client.infer(
@@ -501,11 +423,7 @@ class A1LingBotEEBridge:
                 warning(f"compute_kv_cache failed: {exc}")
                 self.client.reset(self.task.prompt)
                 info("Server reset after KV-cache failure.")
-        elif (
-            self.execution.execute
-            and not cache_eligible
-            and not self.execution.no_kv_update
-        ):
+        elif self.execution.execute and not cache_eligible:
             self.client.reset(self.task.prompt)
             info("Server reset because one or more actions were skipped.")
         return False
@@ -526,7 +444,6 @@ class A1LingBotEEBridge:
         *,
         phase: str,
         target: np.ndarray | None = None,
-        clamp: str | None = None,
         force: bool = False,
     ) -> None:
         call_total = self.execution.max_model_calls or "∞"
@@ -549,8 +466,6 @@ class A1LingBotEEBridge:
         if target is not None and current is not None:
             delta_cm = float(np.linalg.norm(np.asarray(target) - current) * 100.0)
             parts.append(f"target_delta={delta_cm:.1f}cm")
-        if clamp is not None:
-            parts.append(f"clamp={clamp}")
         if self.last_inference_s > 0:
             parts.append(f"infer={self.last_inference_s:.2f}s")
         if self.cameras is not None:

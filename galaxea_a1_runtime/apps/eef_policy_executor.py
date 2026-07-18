@@ -1,7 +1,7 @@
 """Shared fail-closed EEF policy command execution.
 
-The executor is ROS-free: bridge modules inject their state cache, relay monitor,
-command publisher, shutdown predicate, and clocks. This keeps the safety sequence
+The executor is ROS-free: bridge modules inject their relay monitor, command
+publisher, shutdown predicate, and clocks. This keeps the activation sequence
 identical across policy backends and directly unit-testable without hardware.
 """
 
@@ -14,7 +14,7 @@ from typing import Any
 
 import numpy as np
 
-from galaxea_a1_runtime.console import info, success
+from galaxea_a1_runtime.console import success
 
 
 class EefPolicyExecutor:
@@ -23,43 +23,19 @@ class EefPolicyExecutor:
     def __init__(
         self,
         *,
-        state: Any,
         relay: Any,
         commander: Any,
         relay_enable_timeout_s: float,
-        settle_s: float,
-        tolerance_m: float,
-        corrections: int,
         is_shutdown: Callable[[], bool],
         policy_label: str,
         monotonic: Callable[[], float] = time.monotonic,
         sleep: Callable[[float], None] = time.sleep,
     ) -> None:
-        numeric = {
-            "relay_enable_timeout_s": relay_enable_timeout_s,
-            "settle_s": settle_s,
-            "tolerance_m": tolerance_m,
-        }
-        invalid = [name for name, value in numeric.items() if not math.isfinite(value)]
-        if invalid:
-            raise ValueError(f"non-finite EEF executor settings: {invalid}")
-        if relay_enable_timeout_s <= 0 or settle_s < 0 or tolerance_m <= 0:
-            raise ValueError("invalid EEF executor timeout/tolerance settings")
-        if (
-            isinstance(corrections, bool)
-            or not isinstance(corrections, int)
-            or corrections < 0
-        ):
-            raise ValueError("EEF executor corrections must be a non-negative integer")
-        if corrections and settle_s <= 0:
-            raise ValueError("EEF executor corrections require a positive settle time")
-        self.state = state
+        if not math.isfinite(relay_enable_timeout_s) or relay_enable_timeout_s <= 0:
+            raise ValueError("EEF executor relay timeout must be finite and positive")
         self.relay = relay
         self.commander = commander
         self.relay_enable_timeout_s = relay_enable_timeout_s
-        self.settle_s = settle_s
-        self.tolerance_m = tolerance_m
-        self.corrections = corrections
         self.is_shutdown = is_shutdown
         self.policy_label = policy_label
         self.monotonic = monotonic
@@ -72,41 +48,29 @@ class EefPolicyExecutor:
         self.commander.publish_active_target()
 
     def publish(self, policy_action: np.ndarray) -> np.ndarray:
-        """Stage, unlock, publish, and track one already-sanitized action."""
+        """Publish one validated action after deterministic hold activation."""
 
-        stale_sources = []
-        if not self.state.pose_is_fresh():
-            stale_sources.append("EEF pose")
-        if not self.state.gripper_is_fresh():
-            stale_sources.append("gripper")
-        if stale_sources:
+        if not self.motion_enabled:
             raise RuntimeError(
-                f"{self.policy_label} feedback is missing or stale: "
-                f"{', '.join(stale_sources)}; "
-                "refusing to publish"
+                f"{self.policy_label} current-joint hold is not ACTIVE; "
+                "refusing to publish a policy action"
             )
-
-        started = self.monotonic()
-        target = np.asarray(policy_action, dtype=np.float64).reshape(8).copy()
-
-        # The joint target is staged while the relay remains locked. Gripper
-        # publication is delayed until ACTIVE so no pre-gate target can pass through.
-        self.commander.publish_action(target, publish_gripper=False)
         self.enable_motion()
-        self.commander.publish_gripper(float(target[7]))
 
-        error = self._wait_for_target_tracking(policy_action, started)
-        for correction_index in range(self.corrections):
-            if error <= self.tolerance_m:
-                break
-            info(
-                f"{self.policy_label} tracking correction "
-                f"{correction_index + 1}/{self.corrections}: "
-                f"target_xyz={np.round(target[:3], 4).tolist()}"
-            )
-            self.commander.publish_action(target, publish_gripper=False)
-            error = self._wait_for_target_tracking(policy_action, started)
+        target = np.asarray(policy_action, dtype=np.float64).reshape(8).copy()
+        self.commander.publish_action(target, publish_gripper=False)
+        self.commander.publish_gripper(float(target[7]))
         return target
+
+    def activate_current_hold(self) -> None:
+        """Stage current named joints and activate the relay on that hold."""
+
+        if self.motion_enabled:
+            self.enable_motion()
+            return
+        self.commander.hold_current_target()
+        self.commander.publish_active_target()
+        self.enable_motion()
 
     def enable_motion(self) -> None:
         """Open the relay only after a fresh ACTIVE acknowledgement."""
@@ -145,39 +109,6 @@ class EefPolicyExecutor:
             self.commander.publish_motion_enable(False)
         finally:
             self.motion_enabled = False
-
-    def _wait_for_target_tracking(
-        self, policy_action: np.ndarray, started: float
-    ) -> float:
-        if self.settle_s <= 0:
-            return float("nan")
-        deadline = self.monotonic() + self.settle_s
-        error = float("inf")
-        while not self.is_shutdown() and self.monotonic() < deadline:
-            current = self.state.current_xyz()
-            if current is not None:
-                error = float(
-                    np.linalg.norm(
-                        np.asarray(policy_action[:3], dtype=np.float64) - current
-                    )
-                )
-                if error <= self.tolerance_m:
-                    break
-            self.sleep(0.03)
-        current = self.state.current_xyz()
-        if current is not None:
-            error = float(
-                np.linalg.norm(
-                    np.asarray(policy_action[:3], dtype=np.float64) - current
-                )
-            )
-            info(
-                f"{self.policy_label} tracking: "
-                f"waited={self.monotonic() - started:.2f}s "
-                f"actual_xyz={np.round(current, 4).tolist()} "
-                f"target_err_cm={error * 100.0:.2f}"
-            )
-        return error
 
 
 def close_policy_resources(

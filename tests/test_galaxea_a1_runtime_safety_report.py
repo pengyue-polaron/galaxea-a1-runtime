@@ -14,6 +14,11 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "generic_ros1_adapter_arm_motion" not in settings
     assert "generic_ros1_gripper_range_check" not in settings
     assert "lingbot_xyz_delta_clamp" not in settings
+    assert "eef_policy_workspace_bounds" in settings
+    assert (
+        "rejected without publication"
+        in settings["eef_policy_workspace_bounds"].behavior
+    )
     assert settings["eef_policy_task_selection"].default == "6 tracked prompts"
     assert "before model" in settings["eef_policy_task_selection"].behavior
     assert "train/OOD" in settings["eef_policy_task_selection"].visibility
@@ -23,8 +28,6 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "bounded IK" in settings["safe_command_path"].path
     assert "position_tolerance=0.002m" in settings["eef_policy_ik"].default
     assert "max_joint_delta=1.5rad" in settings["eef_policy_ik"].default
-    assert "lingbot_cache_actual_feedback" in settings
-    assert settings["lingbot_cache_actual_feedback"].default
     assert "eef_policy_relay_status_guard" in settings
     assert settings["gripper_position_jump_compatibility"].default == "mask=8"
     assert settings["lingbot_execution_gate"].default == (
@@ -39,12 +42,13 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert settings["teleop_gripper_mapping"].default == (
         "leader=[0,53.16], invert=false"
     )
-    assert settings["lingbot_cache_actual_feedback"].default == "false"
     assert settings["gripper_scale_mapping"].default.startswith("continuous 0..1")
     assert (
         "does not modify commands"
         in settings["initial_command_alignment"].operator_note
     )
+    assert "staged current-joint hold" in settings["initial_command_alignment"].behavior
+    assert "sole owner" in settings["eef_policy_ik"].operator_note
 
 
 def test_safety_report_has_text_and_json_forms():

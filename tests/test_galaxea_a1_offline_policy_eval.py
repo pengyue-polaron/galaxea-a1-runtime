@@ -77,10 +77,9 @@ def test_offline_action_metrics_handle_quaternion_sign_and_workspace():
     assert result["xyz_error_m"]["max"] == 0.0
     assert result["quaternion_angle_deg"]["max"] == 0.0
     assert result["runtime_rejected_steps"] == 0
-    assert result["raw_output_rewrite_steps"] == 0
 
 
-def test_offline_action_metrics_distinguish_rewrites_from_rejections():
+def test_offline_action_metrics_count_all_runtime_rejections():
     state = np.asarray(
         [[0.1, 0.0, 0.2, 0.0, 0.0, 0.0, 1.0, 0, 0, 0, 0, 0, 0, 0.5]],
         dtype=np.float32,
@@ -91,7 +90,7 @@ def test_offline_action_metrics_distinguish_rewrites_from_rejections():
     prediction[0, 7] = 1.01
     episode = EpisodeRecord(0, 0, "task", state, target.astype(np.float32), np.zeros(1))
 
-    rewritten = case_metrics(
+    bounds_rejected = case_metrics(
         model="test",
         scope="first",
         episode=episode,
@@ -117,8 +116,9 @@ def test_offline_action_metrics_distinguish_rewrites_from_rejections():
         min_quat_norm=0.25,
     )
 
-    assert rewritten["raw_output_rewrite_steps"] == 1
-    assert rewritten["runtime_rejected_steps"] == 0
+    assert bounds_rejected["raw_workspace_violation_steps"] == 1
+    assert bounds_rejected["raw_gripper_violation_steps"] == 1
+    assert bounds_rejected["runtime_rejected_steps"] == 1
     assert rejected["runtime_rejected_steps"] == 1
 
 

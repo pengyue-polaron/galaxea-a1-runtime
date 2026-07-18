@@ -83,7 +83,7 @@ def summarize_run(config: OfflineEvalConfig, run_id: str) -> Path:
         "130-episode dataset as their training source. It validates integration and "
         "training-distribution behavior, not held-out generalization.",
         "",
-        "| Model | Cases | Action points | First-action XYZ mean / P95 | Horizon XYZ mean / P95 | Mean gripper error | P95 quaternion error | Mean latency | Raw gripper rewrites | Runtime-rejected steps |",
+        "| Model | Cases | Action points | First-action XYZ mean / P95 | Horizon XYZ mean / P95 | Mean gripper error | P95 quaternion error | Mean latency | Raw gripper violations | Runtime-rejected steps |",
         "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
     ]
     for name, report in reports.items():
@@ -115,7 +115,7 @@ def summarize_run(config: OfflineEvalConfig, run_id: str) -> Path:
                 f"raw/target-workspace="
                 f"{summary['raw_workspace_violation_steps']}/"
                 f"{summary['target_workspace_violation_steps']}, "
-                f"raw-gripper-rewrites={summary['raw_gripper_violation_steps']}, "
+                f"raw-gripper-violations={summary['raw_gripper_violation_steps']}, "
                 f"runtime-rejected={summary['runtime_rejected_steps']}"
             )
         lines.extend(
@@ -129,7 +129,7 @@ def summarize_run(config: OfflineEvalConfig, run_id: str) -> Path:
         [
             "## Interpretation limits",
             "",
-            "- Raw workspace and gripper excursions are reported; the named runtime safety transform clamps them before publication.",
+            "- Raw workspace and gripper excursions are reported; the runtime rejects them without publication.",
             "- A quaternion below the configured minimum norm is runtime-rejected rather than rewritten.",
             "- Demonstration workspace excursions are reported separately because some training targets already lie outside the current System workspace.",
             "- Teacher forcing prevents compounding state error and therefore does not measure autonomous task success.",

@@ -51,18 +51,14 @@ def case_metrics(
     absolute_xyz = origin_xyz + prediction[:, :3]
     lo = np.asarray(xyz_min, dtype=np.float64)
     hi = np.asarray(xyz_max, dtype=np.float64)
-    clamped = np.clip(absolute_xyz, lo, hi)
-    clamp_distance = np.linalg.norm(clamped - absolute_xyz, axis=1)
     workspace_violation = np.any((absolute_xyz < lo) | (absolute_xyz > hi), axis=1)
     target_absolute_xyz = origin_xyz + target[:, :3]
-    target_clamped = np.clip(target_absolute_xyz, lo, hi)
-    target_clamp_distance = np.linalg.norm(target_clamped - target_absolute_xyz, axis=1)
     target_workspace_violation = np.any(
         (target_absolute_xyz < lo) | (target_absolute_xyz > hi), axis=1
     )
     gripper_violation = (prediction[:, 7] < 0.0) | (prediction[:, 7] > 1.0)
     quat_invalid = pred_norm < min_quat_norm
-    output_rewrite = workspace_violation | gripper_violation
+    runtime_rejected = workspace_violation | gripper_violation | quat_invalid
     return {
         "model": model,
         "scope": scope,
@@ -80,15 +76,12 @@ def case_metrics(
         "gripper_abs_error_values": gripper_error.tolist(),
         "quaternion_angle_values_deg": quat_angle.tolist(),
         "raw_workspace_violation_steps": int(np.count_nonzero(workspace_violation)),
-        "workspace_clamp_distance_m": summary(clamp_distance),
         "target_workspace_violation_steps": int(
             np.count_nonzero(target_workspace_violation)
         ),
-        "target_workspace_clamp_distance_m": summary(target_clamp_distance),
         "raw_gripper_violation_steps": int(np.count_nonzero(gripper_violation)),
-        "raw_output_rewrite_steps": int(np.count_nonzero(output_rewrite)),
         "quaternion_below_min_norm_steps": int(np.count_nonzero(quat_invalid)),
-        "runtime_rejected_steps": int(np.count_nonzero(quat_invalid)),
+        "runtime_rejected_steps": int(np.count_nonzero(runtime_rejected)),
         "prediction_first": prediction[0].tolist(),
         "target_first": target[0].tolist(),
         "prediction_last": prediction[-1].tolist(),
@@ -135,9 +128,6 @@ def aggregate_cases(cases: list[dict[str, Any]]) -> dict[str, Any]:
             ),
             "raw_gripper_violation_steps": int(
                 sum(item["raw_gripper_violation_steps"] for item in selected)
-            ),
-            "raw_output_rewrite_steps": int(
-                sum(item["raw_output_rewrite_steps"] for item in selected)
             ),
             "runtime_rejected_steps": int(
                 sum(item["runtime_rejected_steps"] for item in selected)

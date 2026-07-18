@@ -34,23 +34,14 @@ wrist_key = "observation.images.wrist"
 execute = true
 step_mode = false
 step_actions = false
-no_kv_update = false
 # Two predicted frames produce eight actions per call. 66 calls cover the
 # longest 526-step training episode without consuming the full open-loop horizon.
 max_model_calls = 66
 execute_frames = 2
 kv_observations_per_frame = 4
-condition_on_ee_state = true
-initial_ee_pose = []
 exec_rate = 30.0
 print_actions = false
 review_deadband_m = 0.001
-
-[action]
-servo_settle_s = 0.0
-servo_tolerance_m = 0.01
-servo_corrections = 0
-cache_actual_feedback = false
 
 [recording]
 agent_view_enabled = true

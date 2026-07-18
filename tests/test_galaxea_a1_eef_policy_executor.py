@@ -39,6 +39,9 @@ class FakeCommander:
     def publish_active_target(self) -> None:
         self.events.append("keepalive")
 
+    def hold_current_target(self) -> None:
+        self.events.append("hold")
+
 
 class FakeRelay:
     def __init__(self, *, activates: bool = True) -> None:
@@ -57,38 +60,16 @@ class FakeRelay:
         return "ACTIVE" if self.active else "LOCKED"
 
 
-class FakeState:
-    def __init__(self) -> None:
-        self.pose_fresh = True
-        self.gripper_fresh = True
-
-    def pose_is_fresh(self) -> bool:
-        return self.pose_fresh
-
-    def gripper_is_fresh(self) -> bool:
-        return self.gripper_fresh
-
-    def current_xyz(self) -> np.ndarray:
-        return ACTION[:3].copy()
-
-
 def _executor(
     *,
     events: list[object],
-    state: FakeState | None = None,
     relay: FakeRelay | None = None,
-    settle_s: float = 0.1,
-    corrections: int = 2,
 ) -> EefPolicyExecutor:
     clock = FakeClock()
     return EefPolicyExecutor(
-        state=state or FakeState(),
         relay=relay or FakeRelay(),
         commander=FakeCommander(events),
         relay_enable_timeout_s=0.2,
-        settle_s=settle_s,
-        tolerance_m=0.005,
-        corrections=corrections,
         is_shutdown=lambda: False,
         policy_label="test policy",
         monotonic=clock.monotonic,
@@ -96,39 +77,28 @@ def _executor(
     )
 
 
-def test_executor_stages_target_before_unlock_and_delays_gripper_until_active():
+def test_executor_activates_current_hold_before_publishing_policy_action():
     events: list[object] = []
     executor = _executor(events=events)
 
+    executor.activate_current_hold()
     command = executor.publish(ACTION)
 
     assert command == pytest.approx(ACTION)
     assert [(item[0], item[1]) for item in events if isinstance(item, tuple)] == [
-        ("action", False),
         ("enable", True),
+        ("action", False),
         ("gripper", pytest.approx(ACTION[7])),
     ]
+    assert events[:3] == ["hold", "keepalive", ("enable", True)]
     assert executor.motion_enabled is True
 
 
-@pytest.mark.parametrize(
-    ("pose_fresh", "gripper_fresh", "expected"),
-    [
-        (False, True, "EEF pose"),
-        (True, False, "gripper"),
-        (False, False, "EEF pose, gripper"),
-    ],
-)
-def test_executor_identifies_stale_feedback_before_any_publication(
-    pose_fresh: bool, gripper_fresh: bool, expected: str
-):
+def test_executor_refuses_policy_action_before_current_hold_activation():
     events: list[object] = []
-    state = FakeState()
-    state.pose_fresh = pose_fresh
-    state.gripper_fresh = gripper_fresh
-    executor = _executor(events=events, state=state)
+    executor = _executor(events=events)
 
-    with pytest.raises(RuntimeError, match=rf"missing or stale: {expected}"):
+    with pytest.raises(RuntimeError, match="current-joint hold is not ACTIVE"):
         executor.publish(ACTION)
 
     assert events == []
@@ -139,13 +109,13 @@ def test_executor_locks_after_relay_enable_timeout():
     executor = _executor(events=events, relay=FakeRelay(activates=False))
 
     with pytest.raises(RuntimeError, match="did not become ACTIVE"):
-        executor.publish(ACTION)
+        executor.activate_current_hold()
 
     assert [(item[0], item[1]) for item in events if isinstance(item, tuple)] == [
-        ("action", False),
         ("enable", True),
         ("enable", False),
     ]
+    assert events[:3] == ["hold", "keepalive", ("enable", True)]
     assert executor.motion_enabled is False
 
 
@@ -160,25 +130,6 @@ def test_executor_stops_immediately_if_an_active_relay_loses_confirmation():
 
     assert events[-1] == ("enable", False)
     assert executor.motion_enabled is False
-
-
-def test_executor_republishes_only_configured_tracking_corrections():
-    events: list[object] = []
-    state = FakeState()
-    state.current_xyz = lambda: ACTION[:3] + [0.02, 0.0, 0.0]
-    executor = _executor(events=events, state=state, settle_s=0.1, corrections=2)
-
-    command = executor.publish(ACTION)
-
-    assert command == pytest.approx(ACTION)
-    pose_events = [
-        item for item in events if isinstance(item, tuple) and item[0] == "action"
-    ]
-    assert [(item[1], item[2][0]) for item in pose_events] == [
-        (False, pytest.approx(ACTION[0])),
-        (False, pytest.approx(ACTION[0])),
-        (False, pytest.approx(ACTION[0])),
-    ]
 
 
 def test_cleanup_locks_first_and_continues_after_an_error():
@@ -211,45 +162,13 @@ def test_cleanup_locks_first_and_continues_after_an_error():
     assert len(caught.value.exceptions) == 1
 
 
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [
-        ("relay_enable_timeout_s", 0.0),
-        ("settle_s", -0.1),
-        ("tolerance_m", 0.0),
-        ("corrections", -1),
-    ],
-)
-def test_executor_rejects_invalid_safety_settings(name: str, value: float):
-    settings = {
-        "relay_enable_timeout_s": 0.2,
-        "settle_s": 0.1,
-        "tolerance_m": 0.005,
-        "corrections": 2,
-    }
-    settings[name] = value
-
-    with pytest.raises(ValueError, match="invalid|non-negative"):
+@pytest.mark.parametrize("value", [0.0, -0.1, float("inf")])
+def test_executor_rejects_invalid_relay_timeout(value: float):
+    with pytest.raises(ValueError, match="finite and positive"):
         EefPolicyExecutor(
-            state=FakeState(),
             relay=FakeRelay(),
             commander=FakeCommander([]),
-            is_shutdown=lambda: False,
-            policy_label="test policy",
-            **settings,
-        )
-
-
-def test_executor_rejects_corrections_without_positive_settle_time():
-    with pytest.raises(ValueError, match="corrections require a positive settle"):
-        EefPolicyExecutor(
-            state=FakeState(),
-            relay=FakeRelay(),
-            commander=FakeCommander([]),
-            relay_enable_timeout_s=0.2,
-            settle_s=0.0,
-            tolerance_m=0.005,
-            corrections=1,
+            relay_enable_timeout_s=value,
             is_shutdown=lambda: False,
             policy_label="test policy",
         )

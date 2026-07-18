@@ -18,7 +18,6 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
     LingBotPolicyServerConfig,
     LingBotRecordingConfig,
     LingBotServerConfig,
-    LingBotServoConfig,
     LingBotSessionConfig,
     PoseMode,
     TextEncoderDevice,
@@ -98,7 +97,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             "server",
             "observations",
             "execution",
-            "action",
             "recording",
         },
         label="LingBot deployment config",
@@ -128,7 +126,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     server = required_table(data, "server")
     observations = required_table(data, "observations")
     execution = required_table(data, "execution")
-    action = required_table(data, "action")
     recording = required_table(data, "recording")
     require_exact_keys(deployment, required={"id", "ready"}, label="LingBot deployment")
     require_exact_keys(
@@ -155,27 +152,14 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             "execute",
             "step_mode",
             "step_actions",
-            "no_kv_update",
             "max_model_calls",
             "execute_frames",
             "kv_observations_per_frame",
-            "condition_on_ee_state",
-            "initial_ee_pose",
             "exec_rate",
             "print_actions",
             "review_deadband_m",
         },
         label="execution",
-    )
-    require_exact_keys(
-        action,
-        required={
-            "servo_settle_s",
-            "servo_tolerance_m",
-            "servo_corrections",
-            "cache_actual_feedback",
-        },
-        label="action",
     )
     require_exact_keys(
         recording,
@@ -241,12 +225,9 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
             execute=boolean(execution, "execute"),
             step_mode=boolean(execution, "step_mode"),
             step_actions=boolean(execution, "step_actions"),
-            no_kv_update=boolean(execution, "no_kv_update"),
             max_model_calls=integer(execution, "max_model_calls"),
             execute_frames=integer(execution, "execute_frames"),
             kv_observations_per_frame=integer(execution, "kv_observations_per_frame"),
-            condition_on_ee_state=boolean(execution, "condition_on_ee_state"),
-            initial_ee_pose=_empty_float_tuple_as_none(execution, "initial_ee_pose"),
             exec_rate=floating(execution, "exec_rate"),
             print_actions=boolean(execution, "print_actions"),
             review_deadband_m=floating(execution, "review_deadband_m"),
@@ -257,12 +238,6 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
         ),
         action=LingBotActionModeConfig(
             pose_mode=contract.pose_mode,
-        ),
-        servo=LingBotServoConfig(
-            settle_s=floating(action, "servo_settle_s"),
-            tolerance_m=floating(action, "servo_tolerance_m"),
-            corrections=integer(action, "servo_corrections"),
-            cache_actual_feedback=boolean(action, "cache_actual_feedback"),
         ),
         recording=LingBotRecordingConfig(
             agent_view_enabled=boolean(recording, "agent_view_enabled"),
@@ -444,11 +419,6 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError(
             "LingBot action_per_frame must be divisible by kv_observations_per_frame"
         )
-    if (
-        config.execution.initial_ee_pose is not None
-        and len(config.execution.initial_ee_pose) != 8
-    ):
-        raise ValueError("execution.initial_ee_pose must contain 8 values")
     if config.execution.exec_rate <= 0 or config.execution.review_deadband_m < 0:
         raise ValueError(
             "LingBot execution rate must be positive and deadband non-negative"
@@ -457,14 +427,6 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("execution.execute requires deployment.ready=true")
     if config.system.cameras.front.backend != "realsense":
         raise ValueError("LingBot front camera must use the RealSense backend")
-    if config.servo.tolerance_m <= 0:
-        raise ValueError("servo tolerance must be positive")
-    if config.servo.settle_s < 0:
-        raise ValueError("servo settle_s must be non-negative")
-    if config.servo.corrections < 0:
-        raise ValueError("servo.corrections must be >= 0")
-    if config.servo.corrections and config.servo.settle_s <= 0:
-        raise ValueError("servo corrections require a positive settle time")
 
 
 def _config_reference(data: dict[str, Any], key: str, repo_root: Path) -> Path:
@@ -504,13 +466,6 @@ def _attention_mode(value: str) -> AttentionMode:
     if value not in ("torch", "flashattn"):
         raise ValueError(f"unsupported engine.attention_mode: {value!r}")
     return value
-
-
-def _empty_float_tuple_as_none(
-    data: dict[str, Any], key: str
-) -> tuple[float, ...] | None:
-    values = float_tuple(data, key)
-    return values or None
 
 
 def main(argv: list[str] | None = None) -> int:

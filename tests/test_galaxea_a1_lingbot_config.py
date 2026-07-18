@@ -59,7 +59,6 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.system.gripper.stroke_min_mm == 0.0
     assert config.system.gripper.stroke_max_mm == 104.0
     assert config.execution.kv_observations_per_frame == 4
-    assert config.execution.initial_ee_pose is None
     assert config.recording.agent_view_enabled is True
     assert config.recording.output_root == (
         REPO / "outputs/inference/lingbot-fruit-placement-eef/recordings"
@@ -83,6 +82,31 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     )
     assert config.system.cameras.front.crop is not None
     assert config.system.cameras.front.crop.xywh == (103, 0, 480, 480)
+
+
+def test_lingbot_rejects_removed_action_rewrite_settings(tmp_path):
+    path = _deployment_copy(tmp_path)
+    path.write_text(
+        path.read_text()
+        + "\n[action]\nservo_settle_s = 0.0\nservo_tolerance_m = 0.01\n"
+    )
+
+    with pytest.raises(ValueError, match="action"):
+        load_lingbot_config(path, repo_root=REPO)
+
+
+@pytest.mark.parametrize("removed_key", ["no_kv_update", "condition_on_ee_state"])
+def test_lingbot_rejects_removed_execution_branches(tmp_path, removed_key):
+    path = _deployment_copy(tmp_path)
+    path.write_text(
+        path.read_text().replace(
+            "step_actions = false\n",
+            f"step_actions = false\n{removed_key} = false\n",
+        )
+    )
+
+    with pytest.raises(ValueError, match=removed_key):
+        load_lingbot_config(path, repo_root=REPO)
 
 
 def test_lingbot_bridge_guard_stops_runtime_when_bridge_exits(tmp_path):
