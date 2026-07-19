@@ -60,14 +60,11 @@ def test_pi05_deployment_pins_final_checkpoint_and_shared_contracts():
     assert config.deployment_ready is True
 
 
-def test_pi05_rejects_removed_action_rewrite_settings(tmp_path):
+def test_pi05_config_rejects_unknown_keys(tmp_path):
     path = _deployment_copy(tmp_path, CONTRACT.read_text())
-    path.write_text(
-        path.read_text()
-        + "\n[action]\nservo_settle_s = 0.0\nservo_tolerance_m = 0.01\n"
-    )
+    path.write_text(path.read_text() + "\n[unknown]\nvalue = true\n")
 
-    with pytest.raises(ValueError, match="action"):
+    with pytest.raises(ValueError, match="unknown"):
         load_pi05_config(path, repo_root=REPO)
 
 

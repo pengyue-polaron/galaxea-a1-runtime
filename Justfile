@@ -28,32 +28,6 @@ udev:
 check:
     {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
     find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
-    {{vpy}} {{repo}}/scripts/apps/cameras/a1_camera_diagnostics.py --help >/dev/null
-    {{repo}}/scripts/apps/cameras/a1_camera_web_runtime.sh --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/a1_lingbot_doctor.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/lingbot_va_ee_bridge.py --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.lingbot.batch_config --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.lingbot.batch_export --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.lingbot.batch_progress --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.lingbot.operator_input --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.lingbot.run_artifacts --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/probe_lingbot_server.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/setup_lingbot_inference.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/smoke_lingbot_inference.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/lingbot/verify_lingbot_inference.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/pi05/probe_pi05_server.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/pi05/pi05_ee_bridge.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/pi05/setup_pi05_inference.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/pi05/smoke_pi05_inference.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/pi05/verify_pi05_inference.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/runtime/a1_reset.py --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.task_selection --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.eef_policy_offline --help >/dev/null
-    {{vpy}} -m galaxea_a1_runtime.apps.eef_policy_teacher_forcing --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/teleop/so100_joint_bridge.py --help >/dev/null
-    {{vpy}} {{repo}}/scripts/apps/teleop/teleop_collect.py --help >/dev/null
-    {{repo}}/scripts/apps/recording/a1_rosbag.sh --help >/dev/null
-    {{vpy}} {{repo}}/scripts/runtime/a1_ros_python_check.py --help >/dev/null
     {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     just test

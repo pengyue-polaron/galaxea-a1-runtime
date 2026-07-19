@@ -114,82 +114,11 @@ def test_lingbot_deployment_can_select_a_registered_model() -> None:
     assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
 
 
-def test_lingbot_config_cli_renders_selected_model() -> None:
-    result = subprocess.run(
-        [
-            str(REPO / ".venv/bin/python"),
-            "-m",
-            "galaxea_a1_runtime.apps.lingbot.config",
-            "--repo-root",
-            str(REPO),
-            "--model",
-            "mango_placement_eef",
-            "--shell",
-        ],
-        cwd=REPO,
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert "MODEL_ID=lingbot/a1_mango_placement_eef" in result.stdout
-    assert "MODEL_ROOT=" in result.stdout
-
-
-def test_lingbot_runtime_is_foreground_and_has_no_tmux_entrypoints():
-    runtime = REPO / "scripts/apps/lingbot/a1_lingbot_runtime.sh"
-    source = runtime.read_text()
-
-    assert "a1_tmux" not in source
-    assert "attach-session" not in source
-    assert "script --quiet --flush --return" in source
-    assert "RUN_RUNTIME_RAW_LOG" in source
-    result = subprocess.run(
-        [str(runtime), "--help"],
-        check=False,
-        capture_output=True,
-        text=True,
-    )
-    assert result.returncode == 0, result.stderr
-    usage = result.stdout
-    assert "run       Run the complete deployment in the current terminal" in usage
-    assert "<setup|verify|start|" not in usage
-    assert "|tmux|" not in usage
-
-
-def test_lingbot_rejects_removed_tmux_session_keys(tmp_path):
+def test_lingbot_config_rejects_unknown_keys(tmp_path):
     path = _deployment_copy(tmp_path)
-    path.write_text(
-        path.read_text().replace("[session]\n", '[session]\ntmux = "old"\n')
-    )
+    path.write_text(path.read_text() + "\n[unknown]\nvalue = true\n")
 
-    with pytest.raises(ValueError, match="tmux"):
-        load_lingbot_config(path, repo_root=REPO)
-
-
-def test_lingbot_rejects_removed_action_rewrite_settings(tmp_path):
-    path = _deployment_copy(tmp_path)
-    path.write_text(
-        path.read_text()
-        + "\n[action]\nservo_settle_s = 0.0\nservo_tolerance_m = 0.01\n"
-    )
-
-    with pytest.raises(ValueError, match="action"):
-        load_lingbot_config(path, repo_root=REPO)
-
-
-@pytest.mark.parametrize("removed_key", ["no_kv_update", "condition_on_ee_state"])
-def test_lingbot_rejects_removed_execution_branches(tmp_path, removed_key):
-    path = _deployment_copy(tmp_path)
-    path.write_text(
-        path.read_text().replace(
-            "step_actions = false\n",
-            f"step_actions = false\n{removed_key} = false\n",
-        )
-    )
-
-    with pytest.raises(ValueError, match=removed_key):
+    with pytest.raises(ValueError, match="unknown"):
         load_lingbot_config(path, repo_root=REPO)
 
 

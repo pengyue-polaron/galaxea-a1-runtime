@@ -28,42 +28,6 @@ class RelayInputs:
     motor_error_codes: tuple[int, ...]
 
 
-@dataclass(frozen=True)
-class SafetyDecision:
-    """Result of a fail-closed safety check."""
-
-    allowed: bool
-    reason: str | None = None
-
-    @classmethod
-    def allow(cls) -> "SafetyDecision":
-        return cls(True, None)
-
-    @classmethod
-    def block(cls, reason: str) -> "SafetyDecision":
-        return cls(False, reason)
-
-
-def validate_relay_inputs(
-    inputs: RelayInputs,
-    *,
-    arm_joints: int = ARM_JOINT_COUNT,
-    max_input_age: float,
-    max_status_age: float,
-) -> SafetyDecision:
-    """Return a fail-closed decision for one staged joint command."""
-
-    reason = relay_block_reason(
-        inputs,
-        arm_joints=arm_joints,
-        max_input_age=max_input_age,
-        max_status_age=max_status_age,
-    )
-    if reason is not None:
-        return SafetyDecision.block(reason)
-    return SafetyDecision.allow()
-
-
 def relay_block_reason(
     inputs: RelayInputs,
     *,

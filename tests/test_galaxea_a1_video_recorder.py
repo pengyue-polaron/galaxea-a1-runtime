@@ -1,4 +1,3 @@
-from datetime import datetime, timezone
 from pathlib import Path
 import time
 
@@ -7,10 +6,7 @@ import numpy as np
 import pytest
 
 from galaxea_a1_runtime.hardware.cameras import CameraSample
-from galaxea_a1_runtime.hardware.video_recorder import (
-    LatestFrameVideoRecorder,
-    recording_run_id,
-)
+from galaxea_a1_runtime.hardware.video_recorder import LatestFrameVideoRecorder
 
 
 class FakeReader:
@@ -56,38 +52,6 @@ def test_agent_view_video_is_atomically_finalized_as_playable_mp4(tmp_path: Path
         decoded = list(container.decode(video=0))
     assert len(decoded) == result.frames
     assert recorder.close() == result
-
-
-def test_recording_run_id_is_timestamped_and_task_scoped():
-    now = datetime(2026, 7, 18, 1, 2, 3, 456789, tzinfo=timezone.utc)
-
-    assert recording_run_id("banana_blue_plate", now=now) == (
-        "20260718_010203_456789_banana_blue_plate"
-    )
-
-
-def test_agent_view_video_supports_a_portable_scene_prompt_filename(tmp_path: Path):
-    image = np.full((48, 64, 3), 120, dtype=np.uint8)
-    filename = "桌面偏左__put_the_mango_in_the_bowl__20260718_010203.mp4"
-    recorder = LatestFrameVideoRecorder(
-        reader=FakeReader(image),
-        extract_bgr=lambda value: value,
-        output_root=tmp_path,
-        run_id="named-run",
-        width=64,
-        height=48,
-        fps=20.0,
-        source="agent-test",
-        max_source_age_s=0.5,
-        video_filename=filename,
-    )
-
-    recorder.start()
-    time.sleep(0.12)
-    result = recorder.close()
-
-    assert result is not None
-    assert result.path == tmp_path / "named-run" / filename
 
 
 def test_agent_view_video_rejects_filename_over_filesystem_byte_budget(

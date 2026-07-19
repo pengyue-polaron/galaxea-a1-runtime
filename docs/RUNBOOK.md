@@ -13,8 +13,9 @@ just setup
 just check
 ```
 
-`just check` validates tracked configuration, shell syntax, formatting, and
-unit tests without opening hardware. `just models` is an optional deployment
+`just check` runs one static doctor, shell syntax and style checks, then the
+hardware-free test suite. Individual app preflights stay with their app command
+instead of being repeated here. `just models` is an optional deployment
 preflight; missing checkpoints do not block Teleop collection.
 
 Install serial rules once per machine with `just udev`, then start a new login

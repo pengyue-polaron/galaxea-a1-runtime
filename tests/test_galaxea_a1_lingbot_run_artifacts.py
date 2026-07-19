@@ -275,10 +275,5 @@ def test_lingbot_video_name_is_scene_prompt_date_and_portable():
         "桌面偏左_光照正常__put_the_red_mango_into_the_bowl__20260718_010203.mp4"
     )
     assert "/" not in filename
-
-
-def test_lingbot_video_name_stays_below_filesystem_byte_limit():
-    filename = lingbot_video_filename("场" * 120, "动" * 200)
-
-    assert len(filename.encode("utf-8")) <= 240
-    assert filename.endswith(".mp4")
+    long_filename = lingbot_video_filename("场" * 120, "动" * 200)
+    assert len(long_filename.encode("utf-8")) <= 240

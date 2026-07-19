@@ -134,8 +134,14 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 - Inspect `git status` and `git diff` first. Preserve unrelated dirty changes;
   never reset or rewrite user work.
 - Use `rg` for search and `apply_patch` for manual edits.
-- Add the smallest regression test at the purest boundary. Tests should assert
-  behavior or public contracts, not source layout. CI must not require hardware.
+- Keep one authoritative test at the purest boundary for each public contract.
+  Higher layers get one wiring smoke test instead of repeating lower-layer edge
+  cases. Tests assert behavior or public contracts, not source layout.
+- Ordinary features default to one happy-path test and one meaningful failure;
+  bug fixes add one minimal regression, and behavior-preserving refactors add no
+  tests. Extend an existing table or test module before creating a new file.
+- Do not retain tests for removed options or legacy behavior unless that
+  compatibility is an explicit current requirement. CI must not require hardware.
 - A tracked contract change includes its loader, validation, consumers,
   metadata, behavioral tests, and affected documentation in the same change.
 - Keep commits reviewable; separate behavior, configuration migration,

@@ -66,7 +66,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             camera_specs_from_system,
             default_dataset_contract,
         )
-        from galaxea_a1_runtime.safety import RelayInputs, validate_relay_inputs
+        from galaxea_a1_runtime.safety import RelayInputs, relay_block_reason
         from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
         from galaxea_a1_runtime.collection import state_names_for_mode
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
@@ -92,7 +92,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / PI05_CONFIG,
             repo_root=repo_root,
         )
-        decision = validate_relay_inputs(
+        relay_reason = relay_block_reason(
             RelayInputs(
                 enabled=False,
                 joint_age=0.0,
@@ -108,7 +108,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         add(
             "pure_imports",
             contract.dataset_format == "v3.0"
-            and not decision.allowed
+            and relay_reason == "locked"
             and len(settings) > 0
             and len(teleop_state_names) == len(contract.state_names)
             and len(teleop_config.bridge.mapping.sign)
