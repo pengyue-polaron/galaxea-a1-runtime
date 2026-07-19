@@ -21,9 +21,9 @@
 - **Teleoperate** a Galaxea A1 follower with a modified six-axis SO-101 leader
   and continuous gripper control.
 - **Collect** synchronized joint, EEF, action, gripper, and paired-camera data
-  into atomically validated raw episodes.
-- **Convert** current raw-v3 experiments into model-agnostic Joint and EEF
-  LeRobotDataset v2.1 and v3.0 outputs.
+  directly into atomically committed LeRobotDataset v3.0 datasets.
+- **Migrate** existing raw-v3 experiments into model-agnostic Joint and EEF
+  LeRobotDataset v2.1 and v3.0 outputs without using Raw v3 for new recordings.
 - **Deploy** LingBot EEF and OpenPI pi0.5 EEF policies through
   isolated trackers and a locked, validating command relay.
 - **Operate** collection, live evaluation, tracked batch plans, resets, and the
@@ -34,7 +34,8 @@
   required.
 
 The current baseline is Python 3.12, ROS 1 Noetic, and LeRobot 0.6, with
-first-party LeRobotDataset v2.1 and v3.0 conversion. Hardware, safety,
+first-party direct LeRobotDataset v3.0 recording and legacy v2.1/v3.0 migration.
+Hardware, safety,
 collection, and deployment behavior is owned by strict tracked configuration
 rather than per-run overrides.
 

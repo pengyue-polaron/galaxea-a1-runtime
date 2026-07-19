@@ -1,16 +1,13 @@
-"""Fresh, atomic frame recording for a raw teleoperation episode."""
+"""Fresh frame capture into a pending direct LeRobot episode."""
 
 from __future__ import annotations
 
-import csv
 import select
 import sys
 import time
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
-import cv2
 import rospy
 
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
@@ -18,13 +15,11 @@ from galaxea_a1_runtime.collection import (
     EpisodeDecision,
     StateMode,
     normalize_episode_decision,
-    state_names_for_mode,
-    teleop_frame_header,
 )
+from galaxea_a1_runtime.collection.lerobot_frame import build_lerobot_frame
 from galaxea_a1_runtime.hardware.cameras import CameraReader, CameraSample
 from galaxea_a1_runtime.hardware.image_geometry import crop_image
 from galaxea_a1_runtime.configuration.image import ImageRoi
-from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES
 
 
 @dataclass(frozen=True)
@@ -36,23 +31,21 @@ class RecordedEpisode:
 
 @dataclass(frozen=True)
 class CapturedFrame:
-    row: tuple[Any, ...]
+    values: dict[str, Any]
     action: tuple[float, ...]
     camera_seq: dict[str, int]
 
 
 @dataclass(frozen=True)
 class _FrameRecorder:
-    episode_dir: Path
     front_reader: CameraReader
     wrist_reader: CameraReader
     ros_state: RosTeleopState
-    state_mode: StateMode
+    task: str
     depth_enabled: bool
     front_crop: ImageRoi | None
     max_camera_age_s: float
     max_camera_pair_skew_s: float
-    jpeg_params: list[int]
 
     def capture(
         self, frame_index: int, last_camera_seq: dict[str, int]
@@ -80,7 +73,7 @@ class _FrameRecorder:
             )
         frameset = front_sample.value
         wrist_image = wrist_sample.value
-        state_sample = self.ros_state.state_sample(self.state_mode)
+        state_sample = self.ros_state.state_sample(StateMode.EEF_JOINT)
         action = self.ros_state.action_values()
         if frameset is None or wrist_image is None:
             raise RuntimeError("camera reader returned an empty frame")
@@ -91,45 +84,26 @@ class _FrameRecorder:
         if self.depth_enabled and frameset.depth_mm is None:
             return None
 
-        filename = f"{frame_index:06d}.jpg"
         front_image = _crop_if_needed(
             frameset.color_bgr, self.front_crop, label="AgentView color"
         )
-        if not cv2.imwrite(
-            str(self.episode_dir / "cam0" / filename),
-            front_image,
-            self.jpeg_params,
-        ) or not cv2.imwrite(
-            str(self.episode_dir / "cam1" / filename),
-            wrist_image,
-            self.jpeg_params,
-        ):
-            raise RuntimeError(f"failed to write camera frame {filename}")
-        row: list[Any] = [
-            frame_index,
-            time.time_ns(),
-            f"{state_sample.ros_stamp_s:.9f}",
-            front_sample.seq,
-            f"{front_sample.monotonic_s:.9f}",
-            wrist_sample.seq,
-            f"{wrist_sample.monotonic_s:.9f}",
-            f"cam0/{filename}",
-            f"cam1/{filename}",
-        ]
+        depth = None
         if self.depth_enabled:
-            depth_filename = f"{frame_index:06d}.png"
             depth = _crop_if_needed(
                 frameset.depth_mm,
                 self.front_crop,
                 label="AgentView aligned depth",
             )
-            if not cv2.imwrite(
-                str(self.episode_dir / "cam0_depth" / depth_filename), depth
-            ):
-                raise RuntimeError(f"failed to write depth frame {depth_filename}")
-            row.append(f"cam0_depth/{depth_filename}")
+        values = build_lerobot_frame(
+            state=state_sample.values,
+            action=action,
+            front_bgr=front_image,
+            wrist_bgr=wrist_image,
+            task=self.task,
+            front_depth_mm=depth,
+        )
         return CapturedFrame(
-            row=(*row, *state_sample.values, *action),
+            values=values,
             action=tuple(float(value) for value in action),
             camera_seq={
                 self.front_reader.name: front_sample.seq,
@@ -140,33 +114,19 @@ class _FrameRecorder:
 
 def record_episode(
     *,
-    episode_dir: Path,
+    dataset: Any,
+    task: str,
     front_reader: CameraReader,
     wrist_reader: CameraReader,
     ros_state: RosTeleopState,
-    state_mode: StateMode,
     fps: float,
     max_duration_s: float,
-    jpeg_quality: int,
     depth_enabled: bool,
     front_crop: ImageRoi | None,
     camera_ready_timeout_s: float,
     max_camera_age_s: float,
     max_camera_pair_skew_s: float,
 ) -> RecordedEpisode:
-    (episode_dir / "cam0").mkdir(parents=True)
-    (episode_dir / "cam1").mkdir(parents=True)
-    if depth_enabled:
-        (episode_dir / "cam0_depth").mkdir(parents=True)
-    state_names = state_names_for_mode(state_mode)
-    action_names = JOINT_ACTION_NAMES
-    camera_dirs = ("cam0", "cam1", *(("cam0_depth",) if depth_enabled else ()))
-    header = teleop_frame_header(
-        state_names=state_names,
-        action_names=action_names,
-        camera_dirs=camera_dirs,
-    )
-
     frame_index = 0
     wait_for_new_camera_samples(
         (front_reader, wrist_reader),
@@ -180,47 +140,40 @@ def record_episode(
     next_frame_t = t0
     period = 1.0 / fps
     recorder = _FrameRecorder(
-        episode_dir=episode_dir,
         front_reader=front_reader,
         wrist_reader=wrist_reader,
         ros_state=ros_state,
-        state_mode=state_mode,
+        task=task,
         depth_enabled=depth_enabled,
         front_crop=front_crop,
         max_camera_age_s=max_camera_age_s,
         max_camera_pair_skew_s=max_camera_pair_skew_s,
-        jpeg_params=[int(cv2.IMWRITE_JPEG_QUALITY), int(jpeg_quality)],
     )
     user_input: str | None = None
     last_camera_seq = {front_reader.name: -1, wrist_reader.name: -1}
     actions: list[tuple[float, ...]] = []
 
-    with (episode_dir / "frames.csv").open("w", newline="") as handle:
-        writer = csv.writer(handle)
-        writer.writerow(header)
-        while not rospy.is_shutdown():
-            loop_t = time.perf_counter()
-            user_input = _poll_stdin_line()
-            if user_input is not None:
-                break
-            if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
-                break
+    while not rospy.is_shutdown():
+        loop_t = time.perf_counter()
+        user_input = _poll_stdin_line()
+        if user_input is not None:
+            break
+        if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
+            break
 
-            captured = recorder.capture(frame_index, last_camera_seq)
-            if captured is None:
-                time.sleep(0.005)
-                continue
-            writer.writerow(captured.row)
-            last_camera_seq = captured.camera_seq
-            actions.append(captured.action)
-            if frame_index % 30 == 0:
-                handle.flush()
-            frame_index += 1
+        captured = recorder.capture(frame_index, last_camera_seq)
+        if captured is None:
+            time.sleep(0.005)
+            continue
+        dataset.add_frame(captured.values)
+        last_camera_seq = captured.camera_seq
+        actions.append(captured.action)
+        frame_index += 1
 
-            next_frame_t += period
-            sleep_s = next_frame_t - time.perf_counter()
-            if sleep_s > 0:
-                time.sleep(sleep_s)
+        next_frame_t += period
+        sleep_s = next_frame_t - time.perf_counter()
+        if sleep_s > 0:
+            time.sleep(sleep_s)
 
     return RecordedEpisode(
         frame_count=frame_index,

@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
 
@@ -51,13 +50,13 @@ class TeleopGripperConfig:
 
 @dataclass(frozen=True)
 class TeleopCollectionConfig:
-    data_root: Path
-    state_mode: StateMode
+    dataset_root: Path
+    repo_id_prefix: str
+    use_videos: bool
     fps: float
     max_duration_s: float
     auto_reset_after_save: bool
     auto_reset_after_discard: bool
-    jpeg_quality: int
     ready_timeout_s: float
     max_joint_action_step_rad: float
 

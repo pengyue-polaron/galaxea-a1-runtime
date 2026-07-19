@@ -251,7 +251,7 @@ PY
   "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
   start_services
   start_bridge
-  a1_step "Collecting uncompressed frames from the persistent Camera Bridge."
+  a1_step "Recording a canonical LeRobotDataset v3 from the persistent Camera Bridge."
   local collector_args=(
     --experiment "${experiment}"
     --config "${CONFIG_PATH}"

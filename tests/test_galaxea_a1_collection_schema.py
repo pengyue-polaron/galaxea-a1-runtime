@@ -41,6 +41,9 @@ def test_collection_task_is_created_once_and_cannot_drift(tmp_path: Path):
     experiment_dir = tmp_path / "fruit_v1"
 
     assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
+    provenance = experiment_dir / "meta/galaxea_a1.json"
+    provenance.parent.mkdir(parents=True)
+    provenance.write_text('{"task": "pick fruit"}')
     assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
     with pytest.raises(ValueError, match="task mismatch"):
         prepare_collection_task(experiment_dir, "place fruit")

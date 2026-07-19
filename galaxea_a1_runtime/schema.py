@@ -62,6 +62,7 @@ EEF_ACTION_NAMES = (
 )
 
 EEF_DATASET_STATE_NAMES = (*DEFAULT_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)
+CANONICAL_STATE_NAMES = EEF_DATASET_STATE_NAMES
 
 FRONT_IMAGE_KEY = "observation.images.front"
 WRIST_IMAGE_KEY = "observation.images.wrist"
@@ -133,6 +134,21 @@ def default_dataset_contract(
         action_mode=ActionMode.JOINT_ABSOLUTE,
         state_names=DEFAULT_STATE_NAMES,
         action_names=JOINT_ACTION_NAMES,
+        camera_specs=cameras,
+    )
+
+
+def canonical_dataset_contract(
+    *,
+    cameras: tuple[CameraSpec, ...],
+) -> DatasetContract:
+    """Return the directly recorded, model-agnostic A1 LeRobot contract."""
+
+    return DatasetContract(
+        dataset_format=LEROBOT_DATASET_FORMAT,
+        action_mode=ActionMode.JOINT_ABSOLUTE,
+        state_names=CANONICAL_STATE_NAMES,
+        action_names=JOINT_ACTION_NAMES_RAD,
         camera_specs=cameras,
     )
 

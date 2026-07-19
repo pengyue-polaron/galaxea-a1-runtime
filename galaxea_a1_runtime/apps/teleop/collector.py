@@ -33,16 +33,20 @@ from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
-    next_episode_index,
     normalize_episode_decision,
-    validate_existing_camera_shape,
-    validate_episode_layout,
     validate_experiment_name,
-    validate_existing_schema,
 )
-from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
-from galaxea_a1_runtime.schema import ActionMode
+from galaxea_a1_runtime.lerobot.direct_recording import (
+    dataset_repo_id,
+    inspect_direct_dataset,
+)
+from galaxea_a1_runtime.schema import (
+    ActionMode,
+    camera_specs_from_system,
+    canonical_dataset_contract,
+)
+from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -60,19 +64,27 @@ def load_or_prompt_task(
 
 def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> int:
     experiment = validate_experiment_name(experiment)
-    state_mode = config.collection.state_mode
+    state_mode = StateMode.EEF_JOINT
     front_crop = required_front_roi(config.system.cameras)
-    front = config.system.cameras.front
-    experiment_dir = config.collection.data_root / experiment
-    validate_episode_layout(experiment_dir)
-    validate_existing_schema(experiment_dir, expected=TELEOP_RAW_SCHEMA_VERSION)
-    validate_existing_camera_shape(
-        experiment_dir,
-        camera_name="front",
-        width=front.width if front_crop is None else front_crop.width,
-        height=front.height if front_crop is None else front_crop.height,
+    dataset_root = config.collection.dataset_root / experiment
+    repo_id = dataset_repo_id(config.collection.repo_id_prefix, experiment)
+    contract = canonical_dataset_contract(
+        cameras=camera_specs_from_system(config.system)
     )
-    task = load_or_prompt_task(experiment_dir, provided_task=task)
+    existing = inspect_direct_dataset(
+        dataset_root,
+        repo_id=repo_id,
+        fps=int(config.collection.fps),
+        contract=contract,
+        use_videos=config.collection.use_videos,
+        experiment=experiment,
+    )
+    task = load_or_prompt_task(dataset_root, provided_task=task)
+    if existing.task is not None and existing.task != task:
+        raise ValueError(
+            f"collection task mismatch for {experiment}: "
+            f"existing={existing.task!r}, requested={task!r}"
+        )
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(config)
@@ -82,7 +94,7 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     )
     success("ROS state ready.")
 
-    episode_index = next_episode_index(experiment_dir)
+    episode_index = existing.total_episodes
     cameras = TeleopCameraSession(config)
     try:
         step("Starting cameras")
@@ -92,16 +104,17 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             experiment=experiment,
             task=task,
             state_mode=state_mode,
-            experiment_dir=experiment_dir,
+            dataset_root=dataset_root,
+            repo_id=repo_id,
             front_crop=front_crop,
             episode_index=episode_index,
         )
         episodes = TeleopEpisodeSession(
             config=config,
             experiment=experiment,
-            experiment_dir=experiment_dir,
+            dataset_root=dataset_root,
+            repo_id=repo_id,
             task=task,
-            state_mode=state_mode,
             front_crop=front_crop,
             ros_state=ros_state,
             cameras=cameras,
@@ -142,7 +155,8 @@ def _print_collection_summary(
     experiment: str,
     task: str,
     state_mode,
-    experiment_dir: Path,
+    dataset_root: Path,
+    repo_id: str,
     front_crop,
     episode_index: int,
 ) -> None:
@@ -152,7 +166,8 @@ def _print_collection_summary(
     info(
         f"Contract: state={state_mode.value}, action={ActionMode.JOINT_ABSOLUTE.value}"
     )
-    info(f"Output: {experiment_dir}")
+    info(f"LeRobot repo ID: {repo_id}")
+    info(f"Output: {dataset_root}")
     info(f"AgentView ROI: {'full frame' if front_crop is None else front_crop.xywh}")
     info(f"Next episode: {episode_index}; Ctrl+C quits.")
     print()

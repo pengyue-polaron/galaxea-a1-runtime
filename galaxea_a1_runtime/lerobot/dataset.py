@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
@@ -40,12 +41,17 @@ def build_dataset_create_kwargs(
             f"unsupported dataset format: {contract.dataset_format}; "
             f"expected {LEROBOT_DATASET_FORMAT}"
         )
+    features = deepcopy(contract.features())
+    if not config.use_videos:
+        for feature in features.values():
+            if feature["dtype"] == "video":
+                feature["dtype"] = "image"
     return {
         "repo_id": config.repo_id,
         "root": config.root,
         "fps": config.fps,
         "robot_type": config.robot_type,
-        "features": contract.features(),
+        "features": features,
         "use_videos": config.use_videos,
     }
 
@@ -62,3 +68,11 @@ def create_lerobot_dataset(
     return LeRobotDataset.create(
         **build_dataset_create_kwargs(config=config, contract=contract)
     )
+
+
+def resume_lerobot_dataset(*, repo_id: str, root: Path) -> Any:
+    """Resume a local LeRobotDataset lazily for one atomic episode append."""
+
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+
+    return LeRobotDataset.resume(repo_id=repo_id, root=root)

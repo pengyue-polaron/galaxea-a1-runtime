@@ -3,27 +3,28 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime
 from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.metadata import (
-    EpisodeMetadataRequest,
-    write_metadata,
+    DatasetProvenanceRequest,
+    build_dataset_provenance,
 )
 from galaxea_a1_runtime.apps.teleop.recording import record_episode
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
-    StateMode,
     find_joint_action_step_violation,
     reset_required_after_episode,
 )
-from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.console import failure, info, success, warning
-from galaxea_a1_runtime.filesystem import OutputDirectoryTransaction
-from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES
+from galaxea_a1_runtime.lerobot.direct_recording import DirectLeRobotEpisode
+from galaxea_a1_runtime.schema import (
+    JOINT_ACTION_NAMES_RAD,
+    camera_specs_from_system,
+    canonical_dataset_contract,
+)
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -39,9 +40,9 @@ class TeleopEpisodeSession:
         *,
         config: TeleopConfig,
         experiment: str,
-        experiment_dir: Path,
+        dataset_root: Path,
+        repo_id: str,
         task: str,
-        state_mode: StateMode,
         front_crop: ImageRoi | None,
         ros_state: Any,
         cameras: TeleopCameraSession,
@@ -49,37 +50,42 @@ class TeleopEpisodeSession:
     ) -> None:
         self.config = config
         self.experiment = experiment
-        self.experiment_dir = experiment_dir
+        self.dataset_root = dataset_root
+        self.repo_id = repo_id
         self.task = task
-        self.state_mode = state_mode
         self.front_crop = front_crop
         self.ros_state = ros_state
         self.cameras = cameras
         self.repo_root = repo_root
+        self.contract = canonical_dataset_contract(
+            cameras=camera_specs_from_system(config.system)
+        )
 
     def record(self, episode_index: int) -> EpisodeCompletion:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        episode_name = f"episode_{episode_index:03d}_{timestamp}"
-        episode_dir = self.experiment_dir / episode_name
         warning(
             f"Episode {episode_index} recording: "
             "Enter=save, d+Enter=discard, q+Enter=quit"
         )
         front_reader, wrist_reader = self.cameras.readers
         try:
-            with OutputDirectoryTransaction(episode_dir) as transaction:
-                staging_dir = transaction.path
-                if staging_dir is None:
-                    raise RuntimeError("episode output transaction did not start")
+            with DirectLeRobotEpisode(
+                target_root=self.dataset_root,
+                repo_id=self.repo_id,
+                fps=int(self.config.collection.fps),
+                contract=self.contract,
+                use_videos=self.config.collection.use_videos,
+                experiment=self.experiment,
+                task=self.task,
+                provenance=self._provenance(),
+            ) as output:
                 recording = record_episode(
-                    episode_dir=staging_dir,
+                    dataset=output,
+                    task=self.task,
                     front_reader=front_reader,
                     wrist_reader=wrist_reader,
                     ros_state=self.ros_state,
-                    state_mode=self.state_mode,
                     fps=self.config.collection.fps,
                     max_duration_s=self.config.collection.max_duration_s,
-                    jpeg_quality=self.config.collection.jpeg_quality,
                     depth_enabled=self.config.system.cameras.front.depth,
                     front_crop=self.front_crop,
                     camera_ready_timeout_s=self.config.collection.ready_timeout_s,
@@ -111,7 +117,7 @@ class TeleopEpisodeSession:
 
                 violation = find_joint_action_step_violation(
                     recording.actions,
-                    action_names=JOINT_ACTION_NAMES,
+                    action_names=JOINT_ACTION_NAMES_RAD,
                     max_step_rad=self.config.collection.max_joint_action_step_rad,
                 )
                 if violation is not None:
@@ -134,28 +140,18 @@ class TeleopEpisodeSession:
                         ),
                     )
 
-                self._write_metadata(
-                    episode_dir=staging_dir,
-                    episode_index=episode_index,
-                    frame_count=recording.frame_count,
-                )
-                validate_staged_episode(
-                    staging_dir,
-                    frame_count=recording.frame_count,
-                    depth_enabled=self.config.system.cameras.front.depth,
-                )
-                transaction.commit()
+                output.commit()
         except BaseException:
             failure(
                 f"Episode {episode_index}: recording or commit failed; "
-                f"no episode was committed -> {episode_name}"
+                "the previous complete dataset remains authoritative"
             )
             raise
         fps = self.config.collection.fps
         nominal_s = recording.frame_count / fps
         success(
             f"Episode {episode_index} saved: {recording.frame_count} frames "
-            f"(~{nominal_s:.1f}s @ {fps:g}fps) -> {episode_name}"
+            f"(~{nominal_s:.1f}s @ {fps:g}fps) -> {self.dataset_root}"
         )
         print()
         return EpisodeCompletion(
@@ -167,21 +163,11 @@ class TeleopEpisodeSession:
             ),
         )
 
-    def _write_metadata(
-        self,
-        *,
-        episode_dir: Path,
-        episode_index: int,
-        frame_count: int,
-    ) -> None:
-        write_metadata(
-            EpisodeMetadataRequest(
-                episode_dir=episode_dir,
+    def _provenance(self) -> dict:
+        return build_dataset_provenance(
+            DatasetProvenanceRequest(
                 task=self.task,
                 experiment=self.experiment,
-                episode_index=episode_index,
-                frame_count=frame_count,
-                state_mode=self.state_mode,
                 front_crop=self.front_crop,
                 wrist_label=self.cameras.wrist_label,
                 config_path=self._config_reference(),

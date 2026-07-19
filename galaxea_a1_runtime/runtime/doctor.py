@@ -64,11 +64,10 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     try:
         from galaxea_a1_runtime.schema import (
             camera_specs_from_system,
-            default_dataset_contract,
+            canonical_dataset_contract,
         )
         from galaxea_a1_runtime.safety import RelayInputs, relay_block_reason
         from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
-        from galaxea_a1_runtime.collection import state_names_for_mode
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
         from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
         from galaxea_a1_runtime.teleop.config import load_teleop_config
@@ -77,11 +76,10 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / SYSTEM_CONFIG,
             repo_root=repo_root,
         )
-        teleop_state_names = state_names_for_mode("eef_joint")
         teleop_config = load_teleop_config(
             repo_root / TELEOP_CONFIG, repo_root=repo_root
         )
-        contract = default_dataset_contract(
+        contract = canonical_dataset_contract(
             cameras=camera_specs_from_system(teleop_config.system)
         )
         lingbot_config = load_lingbot_config(
@@ -110,14 +108,14 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             contract.dataset_format == "v3.0"
             and relay_reason == "locked"
             and len(settings) > 0
-            and len(teleop_state_names) == len(contract.state_names)
+            and len(contract.state_names) == 14
             and len(teleop_config.bridge.mapping.sign)
             == len(teleop_config.system.joint_safety.names),
             "schema, safety, collection, teleop, and safety report imported without ROS",
         )
         add(
             "teleop_config",
-            teleop_config.collection.state_mode.value == "eef_joint"
+            teleop_config.collection.use_videos
             and teleop_config.system.gripper.stroke_max_mm
             > teleop_config.system.gripper.stroke_min_mm,
             str(teleop_config.path),

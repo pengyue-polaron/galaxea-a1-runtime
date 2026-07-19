@@ -17,11 +17,11 @@ from galaxea_a1_runtime.configuration.base import (
     string,
 )
 from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
-from galaxea_a1_runtime.collection import state_names_for_mode
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.datasets.raw_package import load_raw_package_config
 from galaxea_a1_runtime.schema import (
     ActionMode,
+    DEFAULT_STATE_NAMES,
     JOINT_ACTION_NAMES,
     DatasetContract,
     camera_specs_from_system,
@@ -123,7 +123,7 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
         source_contract=DatasetContract(
             dataset_format=LEROBOT_DATASET_FORMAT,
             action_mode=ActionMode.JOINT_ABSOLUTE,
-            state_names=state_names_for_mode(teleop.collection.state_mode),
+            state_names=DEFAULT_STATE_NAMES,
             action_names=JOINT_ACTION_NAMES,
             camera_specs=camera_specs_from_system(system),
         ),

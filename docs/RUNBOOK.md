@@ -193,27 +193,44 @@ Enter the natural-language task once. At the episode prompt:
 - `Ctrl+C`: stop immediately.
 
 Every frame requires fresh joint, EEF, gripper, action, and paired-camera data.
-Save validates continuity and exact files, then atomically installs the episode
-under `data/raw/EXPERIMENT/`. A rejected save is deleted, reuses its index, and
-resets before retry when configured. A successful save resets before the next
-episode when configured.
+Save validates continuity and finalizes a standard LeRobotDataset v3 episode in
+a hidden sibling snapshot, then atomically installs the complete dataset under
+`data/datasets/EXPERIMENT/`. A rejected save removes only its snapshot, reuses
+its index, and resets before retry when configured. A successful save resets
+before the next episode when configured.
 
-Do not mix manually edited or older-schema episodes into a current experiment.
-The exact raw contract and commit behavior are documented in
+Do not hand-edit a dataset while collecting. The exact feature contract and
+atomic append behavior are documented in
 [Architecture](ARCHITECTURE.md).
 
-## 5. Inspect and convert
+## 5. Inspect the direct LeRobot dataset
 
 After quitting:
 
 ```bash
 just stop
-find data/raw/EXPERIMENT -maxdepth 2 -type f | sort | head
+find data/datasets/EXPERIMENT -maxdepth 3 -type f | sort | head
+.venv/bin/python - <<'PY'
+from pathlib import Path
+from lerobot.datasets import LeRobotDatasetMetadata
+
+root = Path("data/datasets/EXPERIMENT")
+meta = LeRobotDatasetMetadata("OWNER/REPO-ID", root=root)
+print(meta)
+print(meta.features)
+PY
 ```
 
-Each episode contains metadata, frame records, and configured camera folders.
-Hidden sibling staging directories indicate an interrupted commit; inspect them
-before removal.
+Replace `OWNER/REPO-ID` with the ID printed by the collector. Joint-action
+training can consume this v3 dataset directly; it already contains canonical
+state/action vectors, paired cameras, per-frame task text, stats, and episode
+metadata. Hidden sibling staging directories indicate an interrupted append;
+inspect them before removal.
+
+### Legacy Raw v3 migration
+
+The commands below exist for the recordings already under `data/raw/`; they are
+not a post-processing requirement for new collection.
 
 Create a tracked `configs/datasets/EXPERIMENT.toml`, then run the complete
 conversion pipeline:
@@ -232,7 +249,7 @@ just convert EXPERIMENT eef-v3
 just convert EXPERIMENT eef-v2.1
 ```
 
-The dataset config references the tracked Raw-package config that owns the
+The legacy dataset config references the tracked Raw-package config that owns the
 logical Raw v3 identity and its non-empty task-root list; it owns processed
 packaging paths, overwrite policy, and the explicit boundary-trim policy. A
 multi-task output preserves each root's `task.txt` on its episodes. Observation
@@ -252,7 +269,7 @@ max_trim_fraction = 0.20
 min_kept_duration_s = 5.0
 ```
 
-Conversion rejects incomplete or mismatched raw data and preserves an existing
+Legacy migration rejects incomplete or mismatched raw data and preserves an existing
 complete output if replacement fails. It removes only stable stationary
 episode boundaries, never interior pauses; uncertain or over-large candidates
 remain untrimmed. Inspect `meta/trim.json` in any output for the exact source

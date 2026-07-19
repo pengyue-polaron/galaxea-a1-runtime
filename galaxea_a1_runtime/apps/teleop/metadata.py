@@ -1,126 +1,114 @@
-"""Reproducible raw-episode metadata for teleoperation collection."""
+"""Reproducible provenance for directly recorded LeRobot datasets."""
 
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass
-from pathlib import Path
 
-from galaxea_a1_runtime.collection import (
-    CameraMetadata,
-    StateMode,
-    TeleopRawEpisodeMetadata,
-    metadata_to_json_dict,
-    state_names_for_mode,
-)
-from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
-from galaxea_a1_runtime.filesystem import atomic_write_text
 from galaxea_a1_runtime.schema import (
-    ActionMode,
-    JOINT_ACTION_NAMES,
+    CANONICAL_STATE_NAMES,
+    JOINT_ACTION_NAMES_RAD,
     camera_specs_from_system,
 )
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
 @dataclass(frozen=True)
-class EpisodeMetadataRequest:
-    episode_dir: Path
+class DatasetProvenanceRequest:
     task: str
     experiment: str
-    episode_index: int
-    frame_count: int
-    state_mode: StateMode
     front_crop: ImageRoi | None
     wrist_label: str
     config_path: str
     config: TeleopConfig
 
 
-def write_metadata(request: EpisodeMetadataRequest) -> None:
+def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
+    """Build the A1-specific metadata stored beside standard LeRobot metadata."""
+
     config = request.config
     system = config.system
     front = system.cameras.front
     crop = request.front_crop
     specs = {spec.name: spec for spec in camera_specs_from_system(system)}
-    front_spec = specs["front"]
-    wrist_spec = specs["wrist"]
-    crop_xywh = None if crop is None else crop.xywh
-
+    crop_xywh = None if crop is None else list(crop.xywh)
     cameras = [
-        CameraMetadata(
-            "front",
-            "cam0",
-            front_spec.width,
-            front_spec.height,
-            front.serial,
-            source_width=front.width,
-            source_height=front.height,
-            crop_xywh=crop_xywh,
-        ),
-        CameraMetadata(
-            "wrist",
-            "cam1",
-            wrist_spec.width,
-            wrist_spec.height,
-            request.wrist_label,
-        ),
+        {
+            "name": "front",
+            "feature_key": specs["front"].feature_key(),
+            "width": specs["front"].width,
+            "height": specs["front"].height,
+            "source": front.serial,
+            "source_width": front.width,
+            "source_height": front.height,
+            "crop_xywh": crop_xywh,
+            "modality": "rgb",
+        },
+        {
+            "name": "wrist",
+            "feature_key": specs["wrist"].feature_key(),
+            "width": specs["wrist"].width,
+            "height": specs["wrist"].height,
+            "source": request.wrist_label,
+            "modality": "rgb",
+        },
     ]
     if front.depth:
-        depth_spec = specs["front_depth"]
+        depth = specs["front_depth"]
         cameras.append(
-            CameraMetadata(
-                "front_depth",
-                "cam0_depth",
-                depth_spec.width,
-                depth_spec.height,
-                front.serial,
-                modality="depth",
-                dtype="uint16",
-                encoding=(
-                    "z16_mm_aligned_to_color"
-                    if front.align_depth_to_color
-                    else "z16_mm"
-                ),
-                source_width=front.width,
-                source_height=front.height,
-                crop_xywh=crop_xywh,
-            )
+            {
+                "name": "front_depth",
+                "feature_key": depth.feature_key(),
+                "width": depth.width,
+                "height": depth.height,
+                "source": front.serial,
+                "source_width": front.width,
+                "source_height": front.height,
+                "crop_xywh": crop_xywh,
+                "modality": "depth",
+                "dtype": "uint16",
+                "depth_unit": "millimeter",
+                "alignment": ("color" if front.align_depth_to_color else "unaligned"),
+            }
         )
 
-    metadata = TeleopRawEpisodeMetadata(
-        schema_version=TELEOP_RAW_SCHEMA_VERSION,
-        collection_mode="teleop",
-        task=request.task,
-        experiment=request.experiment,
-        episode_index=request.episode_index,
-        frame_count=request.frame_count,
-        fps_target=config.collection.fps,
-        state_mode=request.state_mode,
-        action_mode=ActionMode.JOINT_ABSOLUTE,
-        state_names=state_names_for_mode(request.state_mode),
-        action_names=JOINT_ACTION_NAMES,
-        state_topics={
+    return {
+        "collection_mode": "teleop",
+        "dataset_format": "LeRobotDataset v3.0",
+        "experiment": request.experiment,
+        "task": request.task,
+        "config_path": request.config_path,
+        "robot_type": "galaxea_a1",
+        "image_storage": "video" if config.collection.use_videos else "image",
+        "observation": {
+            "feature": "observation.state",
+            "names": list(CANONICAL_STATE_NAMES),
+            "semantics": "absolute EEF pose, measured joints in radians, normalized gripper",
+        },
+        "action": {
+            "feature": "action",
+            "names": list(JOINT_ACTION_NAMES_RAD),
+            "semantics": "absolute joint targets in radians plus normalized gripper target",
+        },
+        "state_topics": {
             "joint": system.topics.joint_states,
             "eef": system.topics.eef_pose,
             "gripper_feedback": system.topics.gripper_feedback,
         },
-        action_topics={
+        "action_topics": {
             "joint_target": system.topics.joint_target,
             "gripper_target": system.topics.gripper_target,
         },
-        control_path=(
+        "control_path": [
             system.topics.joint_target,
             JOINT_TRACKER_NODE_NAME,
             system.topics.staged_command,
             SAFE_RELAY_SCRIPT,
             system.topics.host_command,
-        ),
-        cameras=tuple(cameras),
-        config_path=request.config_path,
-        quality_checks={
+        ],
+        "cameras": cameras,
+        "quality_checks": {
             "max_joint_action_step_rad": config.collection.max_joint_action_step_rad,
             "max_camera_age_s": system.cameras.max_age_s,
             "max_camera_pair_skew_s": system.cameras.max_pair_skew_s,
@@ -133,8 +121,4 @@ def write_metadata(request: EpisodeMetadataRequest) -> None:
             "gripper_continuous_stroke_min_mm": system.gripper.stroke_min_mm,
             "gripper_continuous_stroke_max_mm": system.gripper.stroke_max_mm,
         },
-    )
-    atomic_write_text(
-        request.episode_dir / "metadata.json",
-        json.dumps(metadata_to_json_dict(metadata), indent=2) + "\n",
-    )
+    }

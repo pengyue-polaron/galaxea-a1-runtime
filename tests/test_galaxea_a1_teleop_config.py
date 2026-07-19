@@ -2,7 +2,6 @@ from pathlib import Path
 
 import pytest
 
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.gripper import (
     denormalize_stroke,
     normalize_source_position,
@@ -26,7 +25,9 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.reset.config == REPO / "configs/poses/a1_so100_collection_start.toml"
     assert config.runtime.bridge_startup_timeout_s == 65.0
     assert config.runtime.bridge_stop_timeout_s == 5.0
-    assert config.collection.state_mode == StateMode.EEF_JOINT
+    assert config.collection.dataset_root == REPO / "data/datasets"
+    assert config.collection.repo_id_prefix == "pengyue-polaron/galaxea-a1"
+    assert config.collection.use_videos is True
     assert config.bridge.dof == 6
     assert config.system.joint_safety.names == (
         "arm_joint1",
@@ -127,7 +128,17 @@ def test_teleop_config_rejects_fractional_collection_fps(tmp_path: Path):
     path = tmp_path / "teleop.toml"
     path.write_text(CONFIG.read_text().replace("fps = 30.0", "fps = 29.97"))
 
-    with pytest.raises(ValueError, match="integer for LeRobot conversion"):
+    with pytest.raises(ValueError, match="integer for LeRobot recording"):
+        load_teleop_config(path, repo_root=REPO)
+
+
+def test_teleop_config_requires_canonical_video_dataset_storage(tmp_path: Path):
+    path = tmp_path / "teleop.toml"
+    path.write_text(
+        CONFIG.read_text().replace("use_videos = true", "use_videos = false")
+    )
+
+    with pytest.raises(ValueError, match="canonical collection contract"):
         load_teleop_config(path, repo_root=REPO)
 
 

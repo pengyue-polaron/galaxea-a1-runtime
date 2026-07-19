@@ -1,4 +1,7 @@
-# Hugging Face Raw Data Packaging
+# Legacy Hugging Face Raw Data Packaging
+
+This workflow packages existing Raw v3 recordings only. New formal collection
+writes LeRobotDataset v3 directly and does not use this format.
 
 The tracked raw-data package config is
 `configs/datasets/fruit_placement_raw.toml`. It identifies immutable raw v3

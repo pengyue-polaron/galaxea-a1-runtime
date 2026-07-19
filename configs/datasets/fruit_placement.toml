@@ -1,4 +1,4 @@
-# Five-task fruit-placement dataset converted directly from current Raw v3.
+# Legacy migration of the existing five-task fruit-placement Raw v3 recordings.
 
 [teleop]
 config = "configs/teleop/a1_so100.toml"

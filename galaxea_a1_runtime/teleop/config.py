@@ -6,7 +6,6 @@ import re
 import sys
 from pathlib import Path
 
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.configuration.base import (
     boolean,
     float_tuple as _float_tuple,
@@ -110,13 +109,13 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     require_exact_keys(
         collection,
         required={
-            "data_root",
-            "state_mode",
+            "dataset_root",
+            "repo_id_prefix",
+            "use_videos",
             "fps",
             "max_duration_s",
             "auto_reset_after_save",
             "auto_reset_after_discard",
-            "jpeg_quality",
             "ready_timeout_s",
             "max_joint_action_step_rad",
         },
@@ -168,13 +167,13 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             saturate_out_of_range=boolean(gripper, "saturate_out_of_range"),
         ),
         collection=TeleopCollectionConfig(
-            data_root=_repo_path(repo_root, _string(collection, "data_root")),
-            state_mode=StateMode(_string(collection, "state_mode")),
+            dataset_root=_repo_path(repo_root, _string(collection, "dataset_root")),
+            repo_id_prefix=_string(collection, "repo_id_prefix"),
+            use_videos=boolean(collection, "use_videos"),
             fps=floating(collection, "fps"),
             max_duration_s=floating(collection, "max_duration_s"),
             auto_reset_after_save=boolean(collection, "auto_reset_after_save"),
             auto_reset_after_discard=boolean(collection, "auto_reset_after_discard"),
-            jpeg_quality=integer(collection, "jpeg_quality"),
             ready_timeout_s=floating(collection, "ready_timeout_s"),
             max_joint_action_step_rad=floating(collection, "max_joint_action_step_rad"),
         ),
@@ -233,11 +232,18 @@ def validate_teleop_config(config: TeleopConfig) -> None:
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
     if not config.collection.fps.is_integer():
-        raise ValueError("collection.fps must be an integer for LeRobot conversion")
+        raise ValueError("collection.fps must be an integer for LeRobot recording")
     if config.collection.max_duration_s < 0:
         raise ValueError("collection.max_duration_s must be non-negative")
-    if not 1 <= config.collection.jpeg_quality <= 100:
-        raise ValueError("collection.jpeg_quality must be in [1, 100]")
+    if not config.collection.use_videos:
+        raise ValueError(
+            "collection.use_videos must be true for the canonical collection contract"
+        )
+    prefix = config.collection.repo_id_prefix
+    if prefix.count("/") != 1 or any(character.isspace() for character in prefix):
+        raise ValueError(
+            "collection.repo_id_prefix must be a whitespace-free 'owner/name' prefix"
+        )
     if config.collection.ready_timeout_s <= 0:
         raise ValueError("collection.ready_timeout_s must be positive")
     if config.collection.max_joint_action_step_rad <= 0:
