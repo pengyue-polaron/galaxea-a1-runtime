@@ -22,8 +22,8 @@ from galaxea_a1_runtime.lerobot.pipeline import build_datasets
 from galaxea_a1_runtime.lerobot.pipeline_config import load_pipeline_config
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 from galaxea_a1_runtime.schema import (
-    DEFAULT_STATE_NAMES,
-    JOINT_ACTION_NAMES,
+    LEGACY_RAW_ACTION_NAMES,
+    LEGACY_RAW_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
 )
 
@@ -78,8 +78,8 @@ def make_raw_episode(
                 "action_mode": "joint_absolute",
                 "frame_count": frame_count,
                 "fps_target": 30.0,
-                "state_names": list(DEFAULT_STATE_NAMES),
-                "action_names": list(JOINT_ACTION_NAMES),
+                "state_names": list(LEGACY_RAW_STATE_NAMES),
+                "action_names": list(LEGACY_RAW_ACTION_NAMES),
                 "cameras": cameras,
             }
         )
@@ -111,10 +111,16 @@ def make_raw_episode(
             action = [0.02 * (joint + frame_index) for joint in range(6)]
             action.append(0.2 + frame_index * 0.6)
         row.update(
-            {f"state.{name}": value for name, value in zip(DEFAULT_STATE_NAMES, state)}
+            {
+                f"state.{name}": value
+                for name, value in zip(LEGACY_RAW_STATE_NAMES, state)
+            }
         )
         row.update(
-            {f"action.{name}": value for name, value in zip(JOINT_ACTION_NAMES, action)}
+            {
+                f"action.{name}": value
+                for name, value in zip(LEGACY_RAW_ACTION_NAMES, action)
+            }
         )
         rows.append(row)
         for directory in ("cam0", "cam1"):
@@ -136,8 +142,8 @@ def test_discover_current_raw_dataset(tmp_path):
 
     assert summary.task == "pick cube"
     assert summary.total_frames == 2
-    assert summary.episodes[0].state_names == DEFAULT_STATE_NAMES
-    assert summary.episodes[0].action_names == JOINT_ACTION_NAMES
+    assert summary.episodes[0].state_names == LEGACY_RAW_STATE_NAMES
+    assert summary.episodes[0].action_names == LEGACY_RAW_ACTION_NAMES
     assert [camera.name for camera in summary.episodes[0].camera_specs] == [
         "front",
         "wrist",
@@ -278,7 +284,8 @@ def test_raw_conversion_applies_one_audited_boundary_trim(tmp_path, monkeypatch)
         def add_frame(self, frame):
             self.frames.append(frame)
 
-        def save_episode(self):
+        def save_episode(self, *, parallel_encoding):
+            assert parallel_encoding is False
             return None
 
         def finalize(self):
@@ -333,7 +340,8 @@ def test_raw_conversion_combines_task_roots_without_losing_task_text(
         def add_frame(self, frame):
             self.frames.append(frame)
 
-        def save_episode(self):
+        def save_episode(self, *, parallel_encoding):
+            assert parallel_encoding is False
             self.saved_episodes += 1
 
         def finalize(self):
@@ -477,7 +485,7 @@ def test_joint_and_eef_outputs_are_model_agnostic_lerobot_datasets(tmp_path):
     assert str(URDF.parent) not in json.dumps(eef_manifest)
     eef_info = json.loads((eef_v3 / "meta/info.json").read_text())
     assert eef_info["features"]["observation.state"]["names"] == [
-        *DEFAULT_STATE_NAMES[:7],
+        *LEGACY_RAW_STATE_NAMES[:7],
         *JOINT_ACTION_NAMES_RAD,
     ]
     serialized_manifest = json.dumps(eef_manifest).lower()

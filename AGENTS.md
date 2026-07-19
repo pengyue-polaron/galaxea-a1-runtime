@@ -77,7 +77,7 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 - Gripper state/actions are continuous normalized `0..1` above hardware and map
   exactly once to the System-owned physical stroke. Use
   `/gripper_stroke_host` as feedback; never reinterpret joint-state element 7.
-- Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v1`
+- Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v2`
   contract directly. Raw v3 is a read-only legacy migration source and must
   never be reintroduced as a new-collection intermediate.
 - Collection must record reproducibility metadata and fresh joint, EEF, action,

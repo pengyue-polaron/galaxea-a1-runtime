@@ -111,7 +111,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         required={
             "dataset_root",
             "repo_id_prefix",
-            "use_videos",
             "fps",
             "max_duration_s",
             "auto_reset_after_save",
@@ -169,7 +168,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         collection=TeleopCollectionConfig(
             dataset_root=_repo_path(repo_root, _string(collection, "dataset_root")),
             repo_id_prefix=_string(collection, "repo_id_prefix"),
-            use_videos=boolean(collection, "use_videos"),
             fps=floating(collection, "fps"),
             max_duration_s=floating(collection, "max_duration_s"),
             auto_reset_after_save=boolean(collection, "auto_reset_after_save"),
@@ -235,10 +233,6 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("collection.fps must be an integer for LeRobot recording")
     if config.collection.max_duration_s < 0:
         raise ValueError("collection.max_duration_s must be non-negative")
-    if not config.collection.use_videos:
-        raise ValueError(
-            "collection.use_videos must be true for the canonical collection contract"
-        )
     prefix = config.collection.repo_id_prefix
     if prefix.count("/") != 1 or any(character.isspace() for character in prefix):
         raise ValueError(

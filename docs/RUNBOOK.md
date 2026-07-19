@@ -209,6 +209,7 @@ After quitting:
 
 ```bash
 just stop
+just dataset-doctor EXPERIMENT
 find data/datasets/EXPERIMENT -maxdepth 3 -type f | sort | head
 .venv/bin/python - <<'PY'
 from pathlib import Path
@@ -227,6 +228,56 @@ state/action vectors, paired cameras, per-frame task text, stats, and episode
 metadata. Hidden sibling staging directories indicate an interrupted append;
 inspect them before removal.
 
+### Derive EEF or LeRobot v2.1 from canonical v3
+
+Joint-action v3 training consumes the recorded dataset directly. For EEF action
+semantics or an older LeRobot reader, create a strict tracked config such as
+`configs/datasets/EXPERIMENT_derivatives.toml` with these owners:
+
+```toml
+[system]
+config = "configs/system/a1.toml"
+
+[derivation]
+overwrite = false
+
+[source]
+root = "data/datasets/EXPERIMENT"
+
+[outputs.joint_v21]
+target_root = "data/processed/EXPERIMENT_joint_v21"
+archive_path = "data/exports/EXPERIMENT_joint_v21.tar.gz"
+repo_id = "OWNER/EXPERIMENT-joint-v21"
+
+[outputs.eef_v3]
+target_root = "data/processed/EXPERIMENT_eef_v3"
+archive_path = "data/exports/EXPERIMENT_eef_v3.tar.gz"
+repo_id = "OWNER/EXPERIMENT-eef-v3"
+
+[outputs.eef_v21]
+target_root = "data/processed/EXPERIMENT_eef_v21"
+archive_path = "data/exports/EXPERIMENT_eef_v21.tar.gz"
+repo_id = "OWNER/EXPERIMENT-eef-v21"
+
+[kinematics]
+urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+base_link = "base_link"
+tip_link = "arm_seg6"
+```
+
+Then build all derivatives, or one independently:
+
+```bash
+just derive configs/datasets/EXPERIMENT_derivatives.toml
+just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v3
+just derive configs/datasets/EXPERIMENT_derivatives.toml joint-v2.1
+just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
+```
+
+The source repo ID and task are read from its committed provenance instead of
+being duplicated in the derivative config. Every final output derives from the
+canonical v3 root; temporary v3 workspaces used for v2.1 export are removed.
+
 ### Legacy Raw v3 migration
 
 The commands below exist for the recordings already under `data/raw/`; they are
@@ -236,17 +287,17 @@ Create a tracked `configs/datasets/EXPERIMENT.toml`, then run the complete
 conversion pipeline:
 
 ```bash
-just convert EXPERIMENT
+just legacy-convert EXPERIMENT
 ```
 
 The default builds all four outputs. Build one independently when only one
 training format is needed:
 
 ```bash
-just convert EXPERIMENT joint-v3
-just convert EXPERIMENT joint-v2.1
-just convert EXPERIMENT eef-v3
-just convert EXPERIMENT eef-v2.1
+just legacy-convert EXPERIMENT joint-v3
+just legacy-convert EXPERIMENT joint-v2.1
+just legacy-convert EXPERIMENT eef-v3
+just legacy-convert EXPERIMENT eef-v2.1
 ```
 
 The legacy dataset config references the tracked Raw-package config that owns the

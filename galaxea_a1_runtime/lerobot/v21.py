@@ -123,6 +123,9 @@ def _build_v21_dataset(
         source_file = source_root / filename
         if source_file.is_file():
             shutil.copy2(source_file, target_root / filename)
+    source_provenance = source_root / "meta/source_galaxea_a1.json"
+    if source_provenance.is_file():
+        shutil.copy2(source_provenance, target_root / "meta/source_galaxea_a1.json")
     representation_manifests = [
         path
         for path in (source_root / "meta/eef.json", source_root / "meta/joint.json")

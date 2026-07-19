@@ -6,6 +6,7 @@ from dataclasses import dataclass
 
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
+from galaxea_a1_runtime.lerobot.dataset import CANONICAL_IMAGE_STORAGE
 from galaxea_a1_runtime.schema import (
     CANONICAL_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
@@ -80,16 +81,23 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
         "task": request.task,
         "config_path": request.config_path,
         "robot_type": "galaxea_a1",
-        "image_storage": "video" if config.collection.use_videos else "image",
+        "image_storage": CANONICAL_IMAGE_STORAGE.value,
         "observation": {
             "feature": "observation.state",
             "names": list(CANONICAL_STATE_NAMES),
             "semantics": "absolute EEF pose, measured joints in radians, normalized gripper",
+            "eef_reference_frame": "base_link",
+            "eef_position_unit": "meter",
+            "eef_quaternion_order": "xyzw",
+            "joint_unit": "radian",
+            "gripper_range": [0.0, 1.0],
         },
         "action": {
             "feature": "action",
             "names": list(JOINT_ACTION_NAMES_RAD),
             "semantics": "absolute joint targets in radians plus normalized gripper target",
+            "joint_unit": "radian",
+            "gripper_range": [0.0, 1.0],
         },
         "state_topics": {
             "joint": system.topics.joint_states,
@@ -108,6 +116,7 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
             system.topics.host_command,
         ],
         "cameras": cameras,
+        "image_color_space": "RGB",
         "quality_checks": {
             "max_joint_action_step_rad": config.collection.max_joint_action_step_rad,
             "max_camera_age_s": system.cameras.max_age_s,

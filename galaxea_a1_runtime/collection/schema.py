@@ -11,15 +11,15 @@ from pathlib import Path
 from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
 from galaxea_a1_runtime.schema import (
     ActionMode,
-    DEFAULT_STATE_NAMES,
+    LEGACY_RAW_STATE_NAMES,
 )
 
 TELEOP_RAW_SCHEMA_VERSION = "galaxea_a1_teleop_raw_v3"
 EXPERIMENT_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
 
-EEF_STATE_NAMES = DEFAULT_STATE_NAMES[:7]
-JOINT_STATE_NAMES = DEFAULT_STATE_NAMES[7:]
-GRIPPER_STATE_NAME = DEFAULT_STATE_NAMES[-1:]
+EEF_STATE_NAMES = LEGACY_RAW_STATE_NAMES[:7]
+JOINT_STATE_NAMES = LEGACY_RAW_STATE_NAMES[7:]
+GRIPPER_STATE_NAME = LEGACY_RAW_STATE_NAMES[-1:]
 
 
 class StateMode(StrEnum):
@@ -102,7 +102,7 @@ def state_names_for_mode(mode: StateMode | str) -> tuple[str, ...]:
     if mode == StateMode.JOINT:
         return JOINT_STATE_NAMES
     if mode == StateMode.EEF_JOINT:
-        return DEFAULT_STATE_NAMES
+        return LEGACY_RAW_STATE_NAMES
     raise ValueError(f"unsupported state mode: {mode}")
 
 

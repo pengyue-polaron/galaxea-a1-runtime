@@ -7,16 +7,16 @@ import json
 
 from galaxea_a1_runtime.collection import validate_experiment_name
 from galaxea_a1_runtime.console import ArgumentParser
-from galaxea_a1_runtime.lerobot.direct_recording import PROVENANCE_PATH
+from galaxea_a1_runtime.lerobot.direct_recording import (
+    PROVENANCE_PATH,
+    normalize_dataset_task,
+)
 
 
 def normalize_collection_task(value: str) -> str:
-    task = value.strip()
-    if not task:
-        raise ValueError("collection task must not be empty")
-    if "\n" in task or "\r" in task:
-        raise ValueError("collection task must be a single line")
-    return task
+    """Normalize through the authoritative direct-dataset task contract."""
+
+    return normalize_dataset_task(value)
 
 
 def read_collection_task(experiment_dir: Path) -> str | None:
@@ -51,15 +51,11 @@ def prepare_collection_task(experiment_dir: Path, value: str) -> str:
 
 
 def main(argv: list[str] | None = None) -> int:
+    from galaxea_a1_runtime.apps.teleop.dataset_contract import (
+        direct_dataset_identity,
+    )
     from galaxea_a1_runtime.teleop.config import load_teleop_config
-    from galaxea_a1_runtime.lerobot.direct_recording import (
-        dataset_repo_id,
-        inspect_direct_dataset,
-    )
-    from galaxea_a1_runtime.schema import (
-        camera_specs_from_system,
-        canonical_dataset_contract,
-    )
+    from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
 
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, required=True)
@@ -70,17 +66,10 @@ def main(argv: list[str] | None = None) -> int:
     root = args.repo_root.resolve()
     config = load_teleop_config(args.config, repo_root=root)
     experiment = validate_experiment_name(args.experiment)
-    dataset_root = config.collection.dataset_root / experiment
-    task = prepare_collection_task(dataset_root, args.task)
+    identity = direct_dataset_identity(config, experiment)
+    task = prepare_collection_task(identity.target_root, args.task)
     inspect_direct_dataset(
-        dataset_root,
-        repo_id=dataset_repo_id(config.collection.repo_id_prefix, experiment),
-        fps=int(config.collection.fps),
-        contract=canonical_dataset_contract(
-            cameras=camera_specs_from_system(config.system)
-        ),
-        use_videos=config.collection.use_videos,
-        experiment=experiment,
+        identity,
         expected_task=task,
     )
     print(task)

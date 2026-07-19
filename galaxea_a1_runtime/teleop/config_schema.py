@@ -52,7 +52,6 @@ class TeleopGripperConfig:
 class TeleopCollectionConfig:
     dataset_root: Path
     repo_id_prefix: str
-    use_videos: bool
     fps: float
     max_duration_s: float
     auto_reset_after_save: bool

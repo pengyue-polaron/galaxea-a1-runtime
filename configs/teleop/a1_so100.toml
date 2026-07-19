@@ -45,7 +45,6 @@ saturate_out_of_range = true
 [collection]
 dataset_root = "data/datasets"
 repo_id_prefix = "pengyue-polaron/galaxea-a1"
-use_videos = true
 fps = 30.0
 max_duration_s = 0.0
 auto_reset_after_save = true

@@ -3,24 +3,27 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
-
-from huggingface_hub.utils import HFValidationError, validate_repo_id
 
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.filesystem import OutputDirectoryTransaction, atomic_write_text
 from galaxea_a1_runtime.lerobot.dataset import (
+    CANONICAL_IMAGE_STORAGE,
     DatasetConfig,
+    ImageStorage,
+    LEROBOT_GENERATED_FEATURES,
     build_dataset_create_kwargs,
     create_lerobot_dataset,
     resume_lerobot_dataset,
+    validate_dataset_repo_id,
 )
 from galaxea_a1_runtime.lerobot.dataset_package import copy_dataset_tree
+from galaxea_a1_runtime.lerobot.integrity import validate_lerobot_v3_payloads
 from galaxea_a1_runtime.schema import DatasetContract
 
-DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v1"
+DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v2"
 PROVENANCE_PATH = Path("meta/galaxea_a1.json")
 
 
@@ -29,6 +32,37 @@ class DirectDatasetState:
     total_episodes: int
     total_frames: int
     task: str | None
+
+
+@dataclass(frozen=True)
+class DirectDatasetIdentity:
+    """Stable identity and feature contract for one directly recorded dataset."""
+
+    target_root: Path
+    repo_id: str
+    fps: int
+    contract: DatasetContract
+    experiment: str
+    image_storage: ImageStorage = CANONICAL_IMAGE_STORAGE
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "target_root", self.target_root.expanduser().resolve())
+        DatasetConfig(
+            repo_id=self.repo_id,
+            root=self.target_root,
+            fps=self.fps,
+            image_storage=self.image_storage,
+        ).validate()
+        if not self.experiment or self.experiment.strip() != self.experiment:
+            raise ValueError("direct dataset experiment must be a non-empty identity")
+
+
+@dataclass(frozen=True)
+class InspectedDirectDataset:
+    """A discovered direct dataset whose complete local graph was validated."""
+
+    identity: DirectDatasetIdentity
+    state: DirectDatasetState
 
 
 def dataset_repo_id(prefix: str, experiment: str) -> str:
@@ -40,13 +74,19 @@ def dataset_repo_id(prefix: str, experiment: str) -> str:
             "collection.repo_id_prefix must be a whitespace-free 'owner/name' prefix"
         )
     repo_id = f"{prefix}-{experiment}"
-    try:
-        validate_repo_id(repo_id)
-    except HFValidationError as exc:
-        raise ValueError(
-            f"invalid collection dataset repo_id {repo_id!r}: {exc}"
-        ) from exc
+    validate_dataset_repo_id(repo_id, label="collection dataset repo_id")
     return repo_id
+
+
+def normalize_dataset_task(value: str) -> str:
+    """Return one canonical single-line task or reject ambiguous text."""
+
+    task = value.strip()
+    if not task:
+        raise ValueError("dataset task must not be empty")
+    if "\n" in task or "\r" in task:
+        raise ValueError("dataset task must be a single line")
+    return task
 
 
 def validate_no_staging_outputs(target_root: Path) -> None:
@@ -63,18 +103,13 @@ def validate_no_staging_outputs(target_root: Path) -> None:
 
 
 def inspect_direct_dataset(
-    target_root: Path,
+    identity: DirectDatasetIdentity,
     *,
-    repo_id: str,
-    fps: int,
-    contract: DatasetContract,
-    use_videos: bool,
-    experiment: str,
     expected_task: str | None = None,
 ) -> DirectDatasetState:
-    """Validate an existing direct dataset without importing LeRobot."""
+    """Validate the metadata and every referenced payload without importing LeRobot."""
 
-    target_root = target_root.expanduser().resolve()
+    target_root = identity.target_root
     validate_no_staging_outputs(target_root)
     if not target_root.exists():
         return DirectDatasetState(0, 0, None)
@@ -91,27 +126,38 @@ def inspect_direct_dataset(
         )
     if info.get("robot_type") != "galaxea_a1":
         raise ValueError("direct dataset robot_type must be 'galaxea_a1'")
-    if info.get("fps") != fps:
+    if info.get("fps") != identity.fps:
         raise ValueError(
-            f"direct dataset FPS changed: existing={info.get('fps')}, configured={fps}"
+            "direct dataset FPS changed: "
+            f"existing={info.get('fps')}, configured={identity.fps}"
         )
-    _validate_features(info.get("features"), contract=contract, use_videos=use_videos)
+    _validate_features(
+        info.get("features"),
+        contract=identity.contract,
+        image_storage=identity.image_storage,
+    )
     if provenance.get("schema_version") != DIRECT_DATASET_SCHEMA_VERSION:
         raise ValueError("direct dataset has an unsupported Galaxea schema")
-    if provenance.get("repo_id") != repo_id:
+    if provenance.get("repo_id") != identity.repo_id:
         raise ValueError(
             "direct dataset repo_id does not match the tracked collection config"
         )
-    if provenance.get("experiment") != experiment:
+    if provenance.get("experiment") != identity.experiment:
         raise ValueError(
             "direct dataset experiment identity does not match its directory"
         )
     task = provenance.get("task")
-    if not isinstance(task, str) or not task.strip():
+    if not isinstance(task, str):
         raise ValueError("direct dataset provenance has no valid task")
+    try:
+        normalized_task = normalize_dataset_task(task)
+    except ValueError as exc:
+        raise ValueError("direct dataset provenance has no valid task") from exc
+    if normalized_task != task:
+        raise ValueError("direct dataset provenance task is not normalized")
     if expected_task is not None and task != expected_task:
         raise ValueError(
-            f"collection task mismatch for {experiment}: "
+            f"collection task mismatch for {identity.experiment}: "
             f"existing={task!r}, requested={expected_task!r}"
         )
     total_episodes = _non_negative_int(info, "total_episodes")
@@ -122,7 +168,41 @@ def inspect_direct_dataset(
         raise ValueError("Galaxea provenance episode count does not match LeRobot info")
     if provenance.get("total_frames") != total_frames:
         raise ValueError("Galaxea provenance frame count does not match LeRobot info")
+    validate_lerobot_v3_payloads(
+        target_root,
+        info=info,
+        total_episodes=total_episodes,
+        total_frames=total_frames,
+        expected_task=task,
+    )
     return DirectDatasetState(total_episodes, total_frames, task)
+
+
+def discover_direct_dataset(
+    target_root: Path,
+    *,
+    contract: DatasetContract,
+) -> InspectedDirectDataset:
+    """Discover identity from canonical provenance, then validate the complete dataset."""
+
+    target_root = target_root.expanduser().resolve()
+    if not target_root.is_dir():
+        raise ValueError(f"direct dataset source does not exist: {target_root}")
+    info = _read_json(target_root / "meta/info.json", label="LeRobot info")
+    provenance = _read_json(
+        target_root / PROVENANCE_PATH, label="Galaxea collection provenance"
+    )
+    repo_id = _non_empty_string(provenance, "repo_id")
+    experiment = _non_empty_string(provenance, "experiment")
+    fps = _positive_int(info.get("fps"), label="fps")
+    identity = DirectDatasetIdentity(
+        target_root=target_root,
+        repo_id=repo_id,
+        fps=fps,
+        contract=contract,
+        experiment=experiment,
+    )
+    return InspectedDirectDataset(identity, inspect_direct_dataset(identity))
 
 
 class DirectLeRobotEpisode:
@@ -131,22 +211,12 @@ class DirectLeRobotEpisode:
     def __init__(
         self,
         *,
-        target_root: Path,
-        repo_id: str,
-        fps: int,
-        contract: DatasetContract,
-        use_videos: bool,
-        experiment: str,
+        identity: DirectDatasetIdentity,
         task: str,
         provenance: dict[str, Any],
     ) -> None:
-        self.target_root = target_root.expanduser().resolve()
-        self.repo_id = repo_id
-        self.fps = fps
-        self.contract = contract
-        self.use_videos = use_videos
-        self.experiment = experiment
-        self.task = task
+        self.identity = identity
+        self.task = normalize_dataset_task(task)
         self.provenance = dict(provenance)
         self._transaction: OutputDirectoryTransaction | None = None
         self._dataset: Any | None = None
@@ -155,18 +225,13 @@ class DirectLeRobotEpisode:
 
     def __enter__(self) -> "DirectLeRobotEpisode":
         state = inspect_direct_dataset(
-            self.target_root,
-            repo_id=self.repo_id,
-            fps=self.fps,
-            contract=self.contract,
-            use_videos=self.use_videos,
-            experiment=self.experiment,
+            self.identity,
             expected_task=self.task,
         )
         exists = state.total_episodes > 0
         if exists:
             existing_provenance = _read_json(
-                self.target_root / PROVENANCE_PATH,
+                self.identity.target_root / PROVENANCE_PATH,
                 label="Galaxea collection provenance",
             )
             differences = sorted(
@@ -180,7 +245,7 @@ class DirectLeRobotEpisode:
                     f"experiment identity (fields={differences})"
                 )
         transaction = OutputDirectoryTransaction(
-            self.target_root,
+            self.identity.target_root,
             overwrite=exists,
             precreate_staging=False,
         )
@@ -189,24 +254,27 @@ class DirectLeRobotEpisode:
         assert transaction.path is not None
         try:
             if exists:
+                # LeRobot resume starts fresh data/video files. Keep older
+                # payloads immutable and make that scalable contract explicit.
                 copy_dataset_tree(
-                    self.target_root,
+                    self.identity.target_root,
                     transaction.path,
                     skip_roots=(),
                     hardlink_roots=("data", "videos", "images"),
+                    require_hardlinks=True,
                 )
                 self._dataset = resume_lerobot_dataset(
-                    repo_id=self.repo_id, root=transaction.path
+                    repo_id=self.identity.repo_id, root=transaction.path
                 )
             else:
                 self._dataset = create_lerobot_dataset(
                     config=DatasetConfig(
-                        repo_id=self.repo_id,
+                        repo_id=self.identity.repo_id,
                         root=transaction.path,
-                        fps=self.fps,
-                        use_videos=self.use_videos,
+                        fps=self.identity.fps,
+                        image_storage=self.identity.image_storage,
                     ),
-                    contract=self.contract,
+                    contract=self.identity.contract,
                 )
         except BaseException as error:
             transaction.__exit__(type(error), error, error.__traceback__)
@@ -236,8 +304,8 @@ class DirectLeRobotEpisode:
         payload = {
             **self.provenance,
             "schema_version": DIRECT_DATASET_SCHEMA_VERSION,
-            "repo_id": self.repo_id,
-            "experiment": self.experiment,
+            "repo_id": self.identity.repo_id,
+            "experiment": self.identity.experiment,
             "task": self.task,
             "total_episodes": _non_negative_int(info, "total_episodes"),
             "total_frames": _non_negative_int(info, "total_frames"),
@@ -247,12 +315,7 @@ class DirectLeRobotEpisode:
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
         )
         inspect_direct_dataset(
-            self._transaction.path,
-            repo_id=self.repo_id,
-            fps=self.fps,
-            contract=self.contract,
-            use_videos=self.use_videos,
-            experiment=self.experiment,
+            replace(self.identity, target_root=self._transaction.path),
             expected_task=self.task,
         )
         result = self._transaction.commit()
@@ -285,19 +348,25 @@ class DirectLeRobotEpisode:
 
 
 def _validate_features(
-    actual: Any, *, contract: DatasetContract, use_videos: bool
+    actual: Any, *, contract: DatasetContract, image_storage: ImageStorage
 ) -> None:
     if not isinstance(actual, dict):
         raise ValueError("direct dataset info.features must be a table")
-    expected = build_dataset_create_kwargs(
+    configured = build_dataset_create_kwargs(
         config=DatasetConfig(
             repo_id="validation/dataset",
             root=Path("validation-only"),
             fps=1,
-            use_videos=use_videos,
+            image_storage=image_storage,
         ),
         contract=contract,
     )["features"]
+    expected = {**configured, **LEROBOT_GENERATED_FEATURES}
+    if set(actual) != set(expected):
+        raise ValueError(
+            "direct dataset feature keys do not match the canonical contract: "
+            f"expected={sorted(expected)}, actual={sorted(actual)}"
+        )
     for key, feature in expected.items():
         value = actual.get(key)
         if not isinstance(value, dict):
@@ -329,4 +398,17 @@ def _non_negative_int(data: dict[str, Any], key: str) -> int:
     value = data.get(key)
     if isinstance(value, bool) or not isinstance(value, int) or value < 0:
         raise ValueError(f"{key} must be a non-negative integer")
+    return value
+
+
+def _non_empty_string(data: dict[str, Any], key: str) -> str:
+    value = data.get(key)
+    if not isinstance(value, str) or not value or value.strip() != value:
+        raise ValueError(f"{key} must be a non-empty string")
+    return value
+
+
+def _positive_int(value: Any, *, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ValueError(f"{label} must be a positive integer")
     return value

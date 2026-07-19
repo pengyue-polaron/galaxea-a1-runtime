@@ -11,6 +11,7 @@ from galaxea_a1_runtime.configuration.base import (
     floating,
     integer,
     load_toml,
+    paths_overlap,
     repo_path,
     require_exact_keys,
     required_table,
@@ -21,8 +22,8 @@ from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.datasets.raw_package import load_raw_package_config
 from galaxea_a1_runtime.schema import (
     ActionMode,
-    DEFAULT_STATE_NAMES,
-    JOINT_ACTION_NAMES,
+    LEGACY_RAW_ACTION_NAMES,
+    LEGACY_RAW_STATE_NAMES,
     DatasetContract,
     camera_specs_from_system,
 )
@@ -123,8 +124,8 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
         source_contract=DatasetContract(
             dataset_format=LEROBOT_DATASET_FORMAT,
             action_mode=ActionMode.JOINT_ABSOLUTE,
-            state_names=DEFAULT_STATE_NAMES,
-            action_names=JOINT_ACTION_NAMES,
+            state_names=LEGACY_RAW_STATE_NAMES,
+            action_names=LEGACY_RAW_ACTION_NAMES,
             camera_specs=camera_specs_from_system(system),
         ),
         joint_v3_target_root=repo_path(repo_root, string(joint_v3, "target_root")),
@@ -188,7 +189,21 @@ def _validate_pack_paths(config: DatasetPipelineConfig) -> None:
     )
     if len(set(targets)) != len(targets):
         raise ValueError("dataset output target roots must be unique")
+    if any(
+        paths_overlap(left, right)
+        for index, left in enumerate(targets)
+        for right in targets[index + 1 :]
+    ):
+        raise ValueError("dataset output target roots must not overlap")
     if len(set(archives)) != len(archives):
         raise ValueError("dataset output archive paths must be unique")
-    if any(source_root in targets for source_root in config.raw_source_roots):
-        raise ValueError("raw source must differ from every processed dataset root")
+    if any(
+        paths_overlap(source_root, target)
+        for source_root in config.raw_source_roots
+        for target in targets
+    ):
+        raise ValueError("raw source must not overlap a processed dataset root")
+    if any(
+        archive.is_relative_to(target) for archive in archives for target in targets
+    ):
+        raise ValueError("dataset archives must be outside processed dataset roots")

@@ -16,6 +16,7 @@ from galaxea_a1_runtime.filesystem import (
 from galaxea_a1_runtime.lerobot.dataset_package import (
     copy_dataset_tree,
     dataset_digest,
+    namespace_source_provenance,
     portable_metadata_id,
     read_json,
     rewrite_episode_vector_stats,
@@ -24,9 +25,10 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_tar_archive,
 )
 from galaxea_a1_runtime.schema import (
+    CANONICAL_STATE_NAMES,
     DEFAULT_RGB_IMAGE_KEYS,
-    DEFAULT_STATE_NAMES,
-    JOINT_ACTION_NAMES as SOURCE_ACTION_NAMES,
+    LEGACY_RAW_ACTION_NAMES as SOURCE_ACTION_NAMES,
+    LEGACY_RAW_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD as TARGET_ACTION_NAMES,
 )
 
@@ -37,6 +39,7 @@ def pack_joint_v3_dataset(
     target_root: Path,
     repo_id: str,
     source_dataset: str,
+    source_format: str = TELEOP_RAW_SCHEMA_VERSION,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -50,6 +53,7 @@ def pack_joint_v3_dataset(
             final_target_root=final_target_root,
             repo_id=repo_id,
             source_dataset=source_dataset,
+            source_format=source_format,
             archive_path=archive_path,
         )
 
@@ -61,6 +65,7 @@ def _build_joint_v3_dataset(
     final_target_root: Path,
     repo_id: str,
     source_dataset: str,
+    source_format: str,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
@@ -68,6 +73,7 @@ def _build_joint_v3_dataset(
     info = read_json(source_root / "meta/info.json")
     _validate_source(info)
     copy_dataset_tree(source_root, target_root)
+    namespace_source_provenance(target_root)
 
     episode_actions: dict[int, np.ndarray] = {}
     episode_states: dict[int, np.ndarray] = {}
@@ -109,12 +115,14 @@ def _build_joint_v3_dataset(
         "representation": "joint",
         "repo_id": repo_id,
         "source_dataset": source_dataset,
-        "source_format": TELEOP_RAW_SCHEMA_VERSION,
+        "source_format": portable_metadata_id(
+            source_format, label="source dataset format"
+        ),
         "episodes": int(info["total_episodes"]),
         "frames": int(info["total_frames"]),
         "fps": int(info["fps"]),
         "observation": {
-            "shape": [len(DEFAULT_STATE_NAMES)],
+            "shape": [len(LEGACY_RAW_STATE_NAMES)],
             "semantics": "EEF pose (xyz+quaternion), six measured joints, continuous normalized gripper",
             "joint_unit": "radian",
         },
@@ -167,9 +175,21 @@ def _validate_source(info: dict[str, Any]) -> None:
     if info.get("codebase_version") != "v3.0":
         raise ValueError("joint package source must be a LeRobot v3.0 dataset")
     action = info.get("features", {}).get("action", {})
-    if action.get("names") != list(SOURCE_ACTION_NAMES):
+    action_names = action.get("names")
+    if action_names not in (
+        list(SOURCE_ACTION_NAMES),
+        list(TARGET_ACTION_NAMES),
+    ):
         raise ValueError(
             "joint package source must contain six A1 joint actions and gripper"
+        )
+    state_names = info.get("features", {}).get("observation.state", {}).get("names")
+    if state_names not in (
+        list(LEGACY_RAW_STATE_NAMES),
+        list(CANONICAL_STATE_NAMES),
+    ):
+        raise ValueError(
+            "joint package source must contain canonical A1 EEF, joints, and gripper state"
         )
 
 
@@ -177,13 +197,14 @@ def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
     info = json.loads(json.dumps(source_info))
     info["robot_type"] = "galaxea_a1_joint"
     info["features"]["action"]["names"] = list(TARGET_ACTION_NAMES)
-    state_names = info["features"]["observation.state"]["names"]
-    eef_state_dof = len(DEFAULT_STATE_NAMES) - len(SOURCE_ACTION_NAMES)
+    state_names = list(info["features"]["observation.state"]["names"])
+    eef_state_dof = len(LEGACY_RAW_STATE_NAMES) - len(SOURCE_ACTION_NAMES)
     arm_dof = len(SOURCE_ACTION_NAMES) - 1
     state_names[eef_state_dof : eef_state_dof + arm_dof] = list(
         TARGET_ACTION_NAMES[:-1]
     )
     state_names[-1] = "gripper_normalized"
+    info["features"]["observation.state"]["names"] = state_names
     write_json(target_root / "meta/info.json", info)
 
 

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
@@ -19,12 +18,11 @@ from galaxea_a1_runtime.collection import (
 )
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.console import failure, info, success, warning
-from galaxea_a1_runtime.lerobot.direct_recording import DirectLeRobotEpisode
-from galaxea_a1_runtime.schema import (
-    JOINT_ACTION_NAMES_RAD,
-    camera_specs_from_system,
-    canonical_dataset_contract,
+from galaxea_a1_runtime.lerobot.direct_recording import (
+    DirectDatasetIdentity,
+    DirectLeRobotEpisode,
 )
+from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -39,27 +37,20 @@ class TeleopEpisodeSession:
         self,
         *,
         config: TeleopConfig,
-        experiment: str,
-        dataset_root: Path,
-        repo_id: str,
+        identity: DirectDatasetIdentity,
         task: str,
         front_crop: ImageRoi | None,
         ros_state: Any,
         cameras: TeleopCameraSession,
-        repo_root: Path,
+        config_reference: str,
     ) -> None:
         self.config = config
-        self.experiment = experiment
-        self.dataset_root = dataset_root
-        self.repo_id = repo_id
+        self.identity = identity
         self.task = task
         self.front_crop = front_crop
         self.ros_state = ros_state
         self.cameras = cameras
-        self.repo_root = repo_root
-        self.contract = canonical_dataset_contract(
-            cameras=camera_specs_from_system(config.system)
-        )
+        self.config_reference = config_reference
 
     def record(self, episode_index: int) -> EpisodeCompletion:
         warning(
@@ -69,12 +60,7 @@ class TeleopEpisodeSession:
         front_reader, wrist_reader = self.cameras.readers
         try:
             with DirectLeRobotEpisode(
-                target_root=self.dataset_root,
-                repo_id=self.repo_id,
-                fps=int(self.config.collection.fps),
-                contract=self.contract,
-                use_videos=self.config.collection.use_videos,
-                experiment=self.experiment,
+                identity=self.identity,
                 task=self.task,
                 provenance=self._provenance(),
             ) as output:
@@ -151,7 +137,7 @@ class TeleopEpisodeSession:
         nominal_s = recording.frame_count / fps
         success(
             f"Episode {episode_index} saved: {recording.frame_count} frames "
-            f"(~{nominal_s:.1f}s @ {fps:g}fps) -> {self.dataset_root}"
+            f"(~{nominal_s:.1f}s @ {fps:g}fps) -> {self.identity.target_root}"
         )
         print()
         return EpisodeCompletion(
@@ -167,17 +153,10 @@ class TeleopEpisodeSession:
         return build_dataset_provenance(
             DatasetProvenanceRequest(
                 task=self.task,
-                experiment=self.experiment,
+                experiment=self.identity.experiment,
                 front_crop=self.front_crop,
                 wrist_label=self.cameras.wrist_label,
-                config_path=self._config_reference(),
+                config_path=self.config_reference,
                 config=self.config,
             )
         )
-
-    def _config_reference(self) -> str:
-        resolved = self.config.path.resolve()
-        try:
-            return resolved.relative_to(self.repo_root).as_posix()
-        except ValueError:
-            return str(resolved)

@@ -22,6 +22,8 @@
   and continuous gripper control.
 - **Collect** synchronized joint, EEF, action, gripper, and paired-camera data
   directly into atomically committed LeRobotDataset v3.0 datasets.
+- **Derive** EEF-action v3.0 or Joint/EEF v2.1 packages directly from the
+  canonical dataset without chaining final outputs.
 - **Migrate** existing raw-v3 experiments into model-agnostic Joint and EEF
   LeRobotDataset v2.1 and v3.0 outputs without using Raw v3 for new recordings.
 - **Deploy** LingBot EEF and OpenPI pi0.5 EEF policies through

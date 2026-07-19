@@ -1,0 +1,30 @@
+# Test-only canonical LeRobotDataset derivative contract.
+
+[system]
+config = "configs/system/a1.toml"
+
+[derivation]
+overwrite = true
+
+[source]
+root = "data/datasets/direct-test"
+
+[outputs.joint_v21]
+target_root = "data/processed/direct_test_joint_v21"
+archive_path = "data/exports/direct_test_joint_v21.tar.gz"
+repo_id = "galaxea-a1/direct-test-joint-v21"
+
+[outputs.eef_v3]
+target_root = "data/processed/direct_test_eef_v3"
+archive_path = "data/exports/direct_test_eef_v3.tar.gz"
+repo_id = "galaxea-a1/direct-test-eef-v3"
+
+[outputs.eef_v21]
+target_root = "data/processed/direct_test_eef_v21"
+archive_path = "data/exports/direct_test_eef_v21.tar.gz"
+repo_id = "galaxea-a1/direct-test-eef-v21"
+
+[kinematics]
+urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+base_link = "base_link"
+tip_link = "arm_seg6"

@@ -115,8 +115,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         )
         add(
             "teleop_config",
-            teleop_config.collection.use_videos
-            and teleop_config.system.gripper.stroke_max_mm
+            teleop_config.system.gripper.stroke_max_mm
             > teleop_config.system.gripper.stroke_min_mm,
             str(teleop_config.path),
         )

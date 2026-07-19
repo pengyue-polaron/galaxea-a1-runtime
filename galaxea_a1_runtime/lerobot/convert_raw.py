@@ -263,7 +263,9 @@ def convert_raw_datasets(
                         end=decision.end,
                     ):
                         dataset.add_frame(frame)
-                    dataset.save_episode()
+                    # The writer already has image threads; never fork that
+                    # multithreaded process just to encode two camera streams.
+                    dataset.save_episode(parallel_encoding=False)
             dataset.finalize()
             manifest = trim_manifest(
                 decisions=tuple(

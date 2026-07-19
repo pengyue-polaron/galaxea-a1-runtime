@@ -230,6 +230,13 @@ PY
   then
     exit 2
   fi
+  if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.teleop.dataset_doctor \
+    --repo-root "${ROOT}" \
+    --config "${CONFIG_PATH}" \
+    --experiment "${experiment}" >/dev/null; then
+    exit 2
+  fi
   if [[ -n "${COLLECTION_TASK}" ]]; then
     if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
       -m galaxea_a1_runtime.apps.teleop.collection_task \

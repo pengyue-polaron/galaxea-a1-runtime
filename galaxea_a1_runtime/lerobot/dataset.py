@@ -2,13 +2,37 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
 from copy import deepcopy
+from dataclasses import dataclass
+from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from huggingface_hub.utils import HFValidationError, validate_repo_id
+
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.schema import DatasetContract
+
+
+class ImageStorage(StrEnum):
+    """LeRobot image persistence mode.
+
+    Production A1 collection always uses ``VIDEO``. ``IMAGE`` remains available
+    only to small, hardware-free writer tests and generic conversion helpers.
+    """
+
+    VIDEO = "video"
+    IMAGE = "image"
+
+
+CANONICAL_IMAGE_STORAGE = ImageStorage.VIDEO
+LEROBOT_GENERATED_FEATURES = {
+    "timestamp": {"dtype": "float32", "shape": (1,), "names": None},
+    "frame_index": {"dtype": "int64", "shape": (1,), "names": None},
+    "episode_index": {"dtype": "int64", "shape": (1,), "names": None},
+    "index": {"dtype": "int64", "shape": (1,), "names": None},
+    "task_index": {"dtype": "int64", "shape": (1,), "names": None},
+}
 
 
 @dataclass(frozen=True)
@@ -19,13 +43,29 @@ class DatasetConfig:
     root: Path
     fps: int
     robot_type: str = "galaxea_a1"
-    use_videos: bool = True
+    image_storage: ImageStorage = CANONICAL_IMAGE_STORAGE
 
     def validate(self) -> None:
-        if "/" not in self.repo_id:
-            raise ValueError("repo_id should be namespaced, for example 'user/a1_task'")
+        validate_dataset_repo_id(self.repo_id)
         if self.fps <= 0:
             raise ValueError(f"fps must be positive, got {self.fps}")
+        if not isinstance(self.image_storage, ImageStorage):
+            raise ValueError("image_storage must be an ImageStorage value")
+
+    @property
+    def use_videos(self) -> bool:
+        return self.image_storage is ImageStorage.VIDEO
+
+
+def validate_dataset_repo_id(value: str, *, label: str = "repo_id") -> None:
+    """Validate the shared Hugging Face dataset identity contract."""
+
+    if value.count("/") != 1:
+        raise ValueError(f"{label} must be namespaced, for example 'user/a1_task'")
+    try:
+        validate_repo_id(value)
+    except HFValidationError as exc:
+        raise ValueError(f"invalid {label} {value!r}: {exc}") from exc
 
 
 def build_dataset_create_kwargs(
@@ -42,7 +82,7 @@ def build_dataset_create_kwargs(
             f"expected {LEROBOT_DATASET_FORMAT}"
         )
     features = deepcopy(contract.features())
-    if not config.use_videos:
+    if config.image_storage is ImageStorage.IMAGE:
         for feature in features.values():
             if feature["dtype"] == "video":
                 feature["dtype"] = "image"

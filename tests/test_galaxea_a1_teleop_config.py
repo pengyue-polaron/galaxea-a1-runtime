@@ -1,7 +1,9 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
+from galaxea_a1_runtime.apps.teleop.dataset_contract import tracked_config_reference
 from galaxea_a1_runtime.gripper import (
     denormalize_stroke,
     normalize_source_position,
@@ -27,7 +29,6 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.runtime.bridge_stop_timeout_s == 5.0
     assert config.collection.dataset_root == REPO / "data/datasets"
     assert config.collection.repo_id_prefix == "pengyue-polaron/galaxea-a1"
-    assert config.collection.use_videos is True
     assert config.bridge.dof == 6
     assert config.system.joint_safety.names == (
         "arm_joint1",
@@ -132,14 +133,25 @@ def test_teleop_config_rejects_fractional_collection_fps(tmp_path: Path):
         load_teleop_config(path, repo_root=REPO)
 
 
-def test_teleop_config_requires_canonical_video_dataset_storage(tmp_path: Path):
+def test_teleop_config_rejects_removed_image_storage_override(tmp_path: Path):
     path = tmp_path / "teleop.toml"
-    path.write_text(
-        CONFIG.read_text().replace("use_videos = true", "use_videos = false")
-    )
+    path.write_text(CONFIG.read_text() + "\nuse_videos = false\n")
 
-    with pytest.raises(ValueError, match="canonical collection contract"):
+    with pytest.raises(ValueError, match="collection"):
         load_teleop_config(path, repo_root=REPO)
+
+
+def test_formal_collection_config_reference_must_be_portable(tmp_path: Path):
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+
+    assert tracked_config_reference(config, repo_root=REPO) == (
+        "configs/teleop/a1_so100.toml"
+    )
+    with pytest.raises(ValueError, match="tracked inside the repository"):
+        tracked_config_reference(
+            replace(config, path=tmp_path / "external.toml"),
+            repo_root=REPO,
+        )
 
 
 @pytest.mark.parametrize(

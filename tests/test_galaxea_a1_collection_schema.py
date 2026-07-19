@@ -24,7 +24,7 @@ from galaxea_a1_runtime.collection import (
 )
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
-from galaxea_a1_runtime.schema import ActionMode, JOINT_ACTION_NAMES
+from galaxea_a1_runtime.schema import ActionMode, LEGACY_RAW_ACTION_NAMES
 
 
 @pytest.mark.parametrize("name", ["../escape", "nested/name", "", ".", ".."])
@@ -95,7 +95,7 @@ def test_teleop_frame_header_prefixes_state_and_action_columns():
         "action.gripper",
     )
     assert state_columns(("joint_1",)) == ("state.joint_1",)
-    assert action_columns(JOINT_ACTION_NAMES[:1]) == ("action.joint_1",)
+    assert action_columns(LEGACY_RAW_ACTION_NAMES[:1]) == ("action.joint_1",)
 
 
 def test_episode_decision_matches_old_teleop_interaction():

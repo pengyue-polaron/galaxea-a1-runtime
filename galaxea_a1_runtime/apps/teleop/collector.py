@@ -25,6 +25,10 @@ from operator_panel.protocol import announce_input
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.collector_episode import TeleopEpisodeSession
+from galaxea_a1_runtime.apps.teleop.dataset_contract import (
+    direct_dataset_identity,
+    tracked_config_reference,
+)
 from galaxea_a1_runtime.apps.teleop.collection_task import (
     prepare_collection_task,
     read_collection_task,
@@ -37,15 +41,8 @@ from galaxea_a1_runtime.collection import (
     validate_experiment_name,
 )
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
-from galaxea_a1_runtime.lerobot.direct_recording import (
-    dataset_repo_id,
-    inspect_direct_dataset,
-)
-from galaxea_a1_runtime.schema import (
-    ActionMode,
-    camera_specs_from_system,
-    canonical_dataset_contract,
-)
+from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
+from galaxea_a1_runtime.schema import ActionMode
 from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
@@ -66,20 +63,12 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     experiment = validate_experiment_name(experiment)
     state_mode = StateMode.EEF_JOINT
     front_crop = required_front_roi(config.system.cameras)
-    dataset_root = config.collection.dataset_root / experiment
-    repo_id = dataset_repo_id(config.collection.repo_id_prefix, experiment)
-    contract = canonical_dataset_contract(
-        cameras=camera_specs_from_system(config.system)
-    )
+    identity = direct_dataset_identity(config, experiment)
+    config_reference = tracked_config_reference(config, repo_root=ROOT_DIR)
     existing = inspect_direct_dataset(
-        dataset_root,
-        repo_id=repo_id,
-        fps=int(config.collection.fps),
-        contract=contract,
-        use_videos=config.collection.use_videos,
-        experiment=experiment,
+        identity,
     )
-    task = load_or_prompt_task(dataset_root, provided_task=task)
+    task = load_or_prompt_task(identity.target_root, provided_task=task)
     if existing.task is not None and existing.task != task:
         raise ValueError(
             f"collection task mismatch for {experiment}: "
@@ -104,21 +93,19 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             experiment=experiment,
             task=task,
             state_mode=state_mode,
-            dataset_root=dataset_root,
-            repo_id=repo_id,
+            dataset_root=identity.target_root,
+            repo_id=identity.repo_id,
             front_crop=front_crop,
             episode_index=episode_index,
         )
         episodes = TeleopEpisodeSession(
             config=config,
-            experiment=experiment,
-            dataset_root=dataset_root,
-            repo_id=repo_id,
+            identity=identity,
             task=task,
             front_crop=front_crop,
             ros_state=ros_state,
             cameras=cameras,
-            repo_root=ROOT_DIR,
+            config_reference=config_reference,
         )
         while not rospy.is_shutdown():
             announce_input(("enter", "quit"))

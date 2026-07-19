@@ -56,7 +56,8 @@ configs/system/a1.toml
   ├── configs/teleop/a1_so100.toml
   │     ├── configs/poses/a1_so100_collection_start.toml
   │     │     └── configs/poses/a1_collection_start.toml
-  │     └── configs/datasets/<experiment>.toml
+  │     └── configs/datasets/<legacy_raw_migration>.toml
+  ├── configs/datasets/<experiment>_derivatives.toml
   ├── configs/deployments/lingbot/<deployment>.toml
   │     ├── configs/inference/backends/lingbot_va.toml
   │     ├── configs/models/lingbot/<default-model>.toml
@@ -180,6 +181,13 @@ requests the relay. The previous in-app joint mapping and ROS publishers are not
 retained as a second control path. Generic LeRobot 0.6 CLI entrypoints use
 identity processors and are not valid for this degree-to-radian hardware pair.
 
+The Robot plugin intentionally exposes the control observation required by the
+pair (six measured joints and gripper), rather than making joint Teleop depend
+on EEF tracking or cameras. Formal collection is a Runtime composition because
+it also observes the command actually sent, EEF feedback, and the sole-owner
+Camera Bridge. Both paths consume the same canonical feature-name/schema
+module; neither duplicates a physical owner or command publisher.
+
 The default collection contract contains:
 
 - configured AgentView and wrist RGB observations, plus optional aligned depth;
@@ -202,7 +210,7 @@ System limit.
 
 ## Episode and dataset commit
 
-Formal collection writes `galaxea_a1_lerobot_dataset_v3_v1` directly under
+Formal collection writes `galaxea_a1_lerobot_dataset_v3_v2` directly under
 `data/datasets/EXPERIMENT/`. The standard LeRobot v3 contract is immediately
 usable by LeRobot readers:
 
@@ -222,13 +230,21 @@ mapping. It supplements rather than forks LeRobot's `info.json`, tasks, episode
 metadata, stats, Parquet, and image/video layout.
 
 Each episode records into a hidden sibling snapshot of the complete dataset.
-Existing immutable `data/`, `videos/`, and `images/` payloads are hard-linked
-when the filesystem supports it; mutable metadata is copied. LeRobot finalizes
-the new episode, then the runtime validates format, robot type, FPS, feature
-names/shapes/storage, experiment/task identity, and frame/episode counts before
-an atomic directory replacement. Failure or discard preserves the previous
-complete dataset. Rejected saves reuse the episode index, and crash leftovers
-block the next run for inspection.
+Existing immutable `data/`, `videos/`, and `images/` payloads are hard-linked;
+the sibling transaction fails clearly if its filesystem cannot preserve those
+links instead of silently copying the complete dataset. Mutable metadata is
+copied. LeRobot resume starts new payload files, finalizes the new episode, then
+the runtime validates format, robot type, FPS, the exact feature contract,
+experiment/task identity, and frame/episode counts before an atomic directory
+replacement. Failure or discard preserves the previous complete dataset.
+Rejected saves reuse the episode index, and crash leftovers block the next run
+for inspection.
+
+Canonical image storage is always video and is therefore not an operator
+configuration option. Before ROS or cameras start, dataset preflight validates
+the task table, contiguous episode graph, Parquet row counts and schemas, and
+every referenced data/video payload. `just dataset-doctor EXPERIMENT` exposes
+the same hardware-free validation explicitly.
 
 This canonical dataset intentionally stores the richest model-agnostic A1
 observation and the command actually sent by Teleop. A training adapter can
@@ -236,7 +252,17 @@ select channels without rewriting the recording. An EEF-action or old-version
 package is an explicit derivative because it changes action semantics or file
 format; it is not part of collection.
 
-Raw v3 is now a legacy, read-only migration source for the recordings already
+The direct-derivation pipeline accepts only a validated canonical dataset as
+its source. It can produce Joint v2.1, EEF v3.0, and EEF v2.1. Each output starts
+from the canonical source; v2.1 builders may use disposable v3 workspaces but
+never another final derivative. Source identity comes from
+`meta/galaxea_a1.json`, while output paths, repository IDs, overwrite policy,
+and kinematics remain in one tracked Dataset config.
+The derivative namespaces the immutable recording provenance as
+`meta/source_galaxea_a1.json`; it never leaves a stale direct-dataset manifest
+claiming to describe the rewritten action representation.
+
+Raw v3 is a legacy, read-only migration source for the recordings already
 under `data/raw/`. Its importer still validates the historical contract and can
 apply the tracked stationary-boundary trim before producing Joint/EEF v3.0 or
 v2.1 packages. This compatibility path never accepts new collector output and
