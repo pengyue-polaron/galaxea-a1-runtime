@@ -193,10 +193,12 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("leader.port must be a whitespace-free path under /dev")
     if not config.leader.use_degrees:
         raise ValueError(
-            "leader.use_degrees must be true for the A1SOLeader degree mapping contract"
+            "leader.use_degrees must be true for the GalaxeaA1SOLeader degree mapping contract"
         )
     if config.gripper.source_key != "gripper.pos":
-        raise ValueError("gripper.source_key must be 'gripper.pos' for A1SOLeader")
+        raise ValueError(
+            "gripper.source_key must be 'gripper.pos' for GalaxeaA1SOLeader"
+        )
     if config.gripper.source_max <= config.gripper.source_min:
         raise ValueError("gripper source_max must be greater than source_min")
     if config.bridge.hz <= 0:

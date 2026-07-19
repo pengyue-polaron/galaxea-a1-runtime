@@ -30,6 +30,13 @@ galaxea_a1_runtime.apps
   download, and validation. `inference/` owns the shared wire protocol.
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
+- The pinned `external/embodied-ops` package owns framework-neutral capability,
+  manifest, lifecycle, health, and backend-discovery protocols. It has no ROS or
+  LeRobot dependency.
+- The pinned `external/lerobot-robot-galaxea-a1` and
+  `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
+  LeRobot adapters. A1-Research registers the `galaxea_a1_runtime` embodied-ops
+  backend and remains the ROS/safety/process composition root.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
 - `lerobot/` owns current raw conversion and deterministic derived packages.
 - `third_party/` contains pinned vendor snapshots, not A1-specific behavior.
@@ -155,10 +162,13 @@ export implicitly.
 
 ## Teleop and observation contract
 
-The first-party `A1SOLeader` exposes six arm axes, `joint0..joint5`, plus an
-independent `gripper`. Leader joint motion is mapped relative to both startup
-poses using the tracked signs and limits; unknown layouts fail instead of being
-sorted heuristically.
+The first-party `GalaxeaA1SOLeader` plugin exposes six arm axes,
+`joint0..joint5`, plus an independent `gripper`. Leader joint motion is mapped
+relative to both startup poses using the tracked signs and limits; unknown
+layouts fail instead of being sorted heuristically. The plugin reports truthful
+leader units; pair-specific degree-to-radian, gripper, sign, scale, bias, and
+limit mapping is a LeRobot processor derived from this repository's tracked
+Teleop and System configs.
 
 The default collection contract contains:
 
@@ -312,7 +322,7 @@ and locked relay remain the sole path toward host motor commands.
 | `data/` | raw episodes, processed datasets, exports, and quarantined legacy data |
 | `outputs/` | durable diagnostics, logs, evaluations, and run results |
 | `models/` | immutable, content-verified deployment artifacts |
-| `external/` | machine-local external source checkouts |
+| `external/` | three pinned first-party SDK/plugin submodules plus ignored machine-local external checkouts |
 | `.cache/` | reproducible disposable caches only |
 | `/tmp` | PID files, sockets, and process-lifecycle state |
 

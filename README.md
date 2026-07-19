@@ -48,6 +48,7 @@ Create the Python environment, build the ROS runtime image, and run the
 hardware-free validation suite:
 
 ```bash
+git submodule update --init --recursive
 just setup
 docker compose -f docker-compose.a1-noetic.yml build a1-noetic
 just check
@@ -92,7 +93,27 @@ experiments reported in:
 | `docker/` | Ubuntu 20.04 / ROS Noetic execution environment |
 | `assets/` | setup images and versioned mechanical files |
 | `data/`, `outputs/`, `models/` | ignored local datasets, durable run results, and deployment weights |
+| `external/` | pinned `embodied-ops`, A1 Robot, and A1 SO-Leader plugin submodules plus ignored local model checkouts |
 | `third_party/` | pinned vendor snapshots; no A1-specific behavior |
+
+## Embodied SDK and LeRobot plugins
+
+The framework-neutral contracts and both hardware adapters are independently
+versioned public repositories:
+
+- [`embodied-ops`](https://github.com/pengyue-polaron/embodied-ops) defines
+  capability, manifest, health, lifecycle, and backend-discovery protocols.
+- [`lerobot-robot-galaxea-a1`](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1)
+  provides the auto-discovered `galaxea_a1` LeRobot Robot and its pair-specific
+  relative-anchor processor.
+- [`lerobot-teleoperator-galaxea-a1-so-leader`](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader)
+  provides the auto-discovered `galaxea_a1_so_leader` Teleoperator.
+
+This repository supplies the `galaxea_a1_runtime` embodied-ops backend. It owns
+ROS and attaches to an already supervised runtime; construction and `connect()`
+never move the arm. The first command stages the current named-joint hold and
+opens the locked relay only after fresh alignment. LeRobot plugins never publish
+host motor topics directly.
 
 ## Documentation
 

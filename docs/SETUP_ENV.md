@@ -8,12 +8,16 @@ setup and operation are covered by the [Runbook](RUNBOOK.md).
 The repository uses one `uv`-managed Python 3.12 environment:
 
 ```bash
+git submodule update --init --recursive
 just setup
 ```
 
 This installs the locked project from `pyproject.toml` and `uv.lock`. Use `just`
 recipes or `${PWD}/.venv/bin/python` for first-party tools; do not invoke app
 entrypoints with the older system Python.
+
+The three reviewed submodules under `external/` are normal Python packages and
+are installed editable by `uv`. All other `external/` checkouts remain ignored.
 
 Verify the environment without opening hardware:
 
@@ -43,6 +47,8 @@ Engine and compatible device/GPU drivers; it does not need native ROS packages.
 
 - Python `>=3.12,<3.13`
 - LeRobot v0.6.0 at `30da8e687a6dfc617fcd94afc367ac7071c376ce`
+- embodied-ops `v0.1.0`, Galaxea A1 Robot `v0.1.1`, and A1 SO-Leader
+  `v0.1.0` at their pinned submodule commits
 - LeRobotDataset v3.0 writer and reader
 - first-party LeRobotDataset v2.1 exporter, validated through LeRobot's
   official v2.1-to-v3.0 migrator

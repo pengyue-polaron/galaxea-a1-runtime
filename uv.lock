@@ -350,6 +350,20 @@ wheels = [
 ]
 
 [[package]]
+name = "embodied-ops"
+version = "0.1.0"
+source = { editable = "external/embodied-ops" }
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = ">=1.2" },
+    { name = "pytest", specifier = ">=8.3" },
+    { name = "ruff", specifier = ">=0.11" },
+]
+
+[[package]]
 name = "executing"
 version = "2.2.1"
 source = { registry = "https://pypi.tuna.tsinghua.edu.cn/simple" }
@@ -431,8 +445,11 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "catkin-pkg", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "embodied-ops", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "huggingface-hub", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "lerobot", extra = ["dataset", "feetech"], marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "lerobot-robot-galaxea-a1", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "lerobot-teleoperator-galaxea-a1-so-leader", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "msgpack", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "numpy", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
     { name = "pandas", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
@@ -462,8 +479,11 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "catkin-pkg", specifier = ">=1.0.0" },
+    { name = "embodied-ops", editable = "external/embodied-ops" },
     { name = "huggingface-hub", specifier = ">=1.0.0,<2.0.0" },
     { name = "lerobot", extras = ["dataset", "feetech"], editable = "third_party/lerobot" },
+    { name = "lerobot-robot-galaxea-a1", editable = "external/lerobot-robot-galaxea-a1" },
+    { name = "lerobot-teleoperator-galaxea-a1-so-leader", editable = "external/lerobot-teleoperator-galaxea-a1-so-leader" },
     { name = "msgpack", specifier = ">=1.1.0,<2.0.0" },
     { name = "numpy", specifier = ">=2.2.0" },
     { name = "pandas", specifier = ">=2.3.3" },
@@ -1026,6 +1046,46 @@ requires-dist = [
     { name = "wandb", marker = "extra == 'training'", specifier = ">=0.24.0,<0.28.0" },
 ]
 provides-extras = ["dataset", "training", "hardware", "viz", "core-scripts", "evaluation", "dataset-viz", "av-dep", "pygame-dep", "placo-dep", "transformers-dep", "grpcio-dep", "accelerate-dep", "can-dep", "peft-dep", "scipy-dep", "diffusers-dep", "qwen-vl-utils-dep", "matplotlib-dep", "pyserial-dep", "deepdiff-dep", "pynput-dep", "pyzmq-dep", "motorbridge-dep", "motorbridge-smart-servo-dep", "timm-dep", "feetech", "dynamixel", "damiao", "robstride", "openarms", "gamepad", "hopejr", "lekiwi", "unitree-g1", "reachy2", "rebot", "kinematics", "intelrealsense", "phone", "diffusion", "wallx", "pi", "molmoact2", "smolvla", "multi-task-dit", "groot", "sarm", "robometer", "topreward", "xvla", "eo1", "fastwam", "evo1", "hilserl", "vla-jepa", "lingbot-va", "async", "peft", "annotations", "dev", "notebook", "test", "video-benchmark", "aloha", "pusht", "libero", "metaworld", "all"]
+
+[[package]]
+name = "lerobot-robot-galaxea-a1"
+version = "0.1.1"
+source = { editable = "external/lerobot-robot-galaxea-a1" }
+dependencies = [
+    { name = "embodied-ops", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+    { name = "lerobot", marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "embodied-ops", specifier = ">=0.1,<0.2" },
+    { name = "lerobot", specifier = ">=0.6.0,<0.7" },
+]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = ">=1.2" },
+    { name = "pytest", specifier = ">=9.0" },
+    { name = "ruff", specifier = ">=0.14" },
+]
+
+[[package]]
+name = "lerobot-teleoperator-galaxea-a1-so-leader"
+version = "0.1.0"
+source = { editable = "external/lerobot-teleoperator-galaxea-a1-so-leader" }
+dependencies = [
+    { name = "lerobot", extra = ["feetech"], marker = "(platform_machine == 'aarch64' and sys_platform == 'linux') or (platform_machine == 'arm64' and sys_platform == 'linux') or (platform_machine == 'x86_64' and sys_platform == 'linux')" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "lerobot", extras = ["feetech"], specifier = ">=0.6.0,<0.7" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "build", specifier = ">=1.2" },
+    { name = "pytest", specifier = ">=9.0" },
+    { name = "ruff", specifier = ">=0.14" },
+]
 
 [[package]]
 name = "markdown-it-py"

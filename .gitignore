@@ -213,8 +213,12 @@ __marimo__/
 # Canonical local model registry. Keep only its tracked documentation.
 /models/*
 !/models/README.md
-# Machine-local external source checkouts and symlinks.
-/external/
+# Machine-local external source checkouts and symlinks. The three reviewed SDK
+# integrations are pinned submodules; every other external checkout stays ignored.
+/external/*
+!/external/embodied-ops
+!/external/lerobot-robot-galaxea-a1
+!/external/lerobot-teleoperator-galaxea-a1-so-leader
 
 __MACOSX
 .DS_Store

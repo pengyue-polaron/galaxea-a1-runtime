@@ -1,10 +1,17 @@
+from pathlib import Path
+
 import pytest
 
+from galaxea_a1_runtime.lerobot.hardware import make_a1_teleop_processors
 from galaxea_a1_runtime.teleop import (
     JointMappingConfig,
     detect_leader_joint_keys,
     map_leader_joints_to_a1,
 )
+from galaxea_a1_runtime.teleop.config import load_teleop_config
+
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def test_detect_leader_joint_keys_supports_current_so_leader_names():
@@ -76,3 +83,19 @@ def test_joint_mapping_rejects_non_finite_hardware_input():
             a1_start=(0.0,),
             config=config,
         )
+
+
+def test_plugin_processor_mapping_is_derived_from_the_tracked_teleop_config():
+    config = load_teleop_config(
+        REPO / "configs/teleop/a1_so100.toml",
+        repo_root=REPO,
+    )
+
+    teleop_processor, _, _ = make_a1_teleop_processors(config)
+    step = teleop_processor.steps[0]
+
+    assert step.mapping.sign == config.bridge.mapping.sign
+    assert step.mapping.lower_limits_rad == config.system.joint_safety.lower_limits
+    assert step.mapping.upper_limits_rad == config.system.joint_safety.upper_limits
+    assert step.mapping.gripper_source_min == config.gripper.source_min
+    assert step.mapping.gripper_source_max == config.gripper.source_max

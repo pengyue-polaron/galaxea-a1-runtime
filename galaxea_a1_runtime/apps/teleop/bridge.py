@@ -32,7 +32,10 @@ from galaxea_a1_runtime.runtime.ros_feedback import (
     StagedCommandMonitor,
 )
 from galaxea_a1_runtime.teleop import detect_leader_joint_keys, map_leader_joints_to_a1
-from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
+from lerobot_teleoperator_galaxea_a1_so_leader import (
+    GalaxeaA1SOLeader,
+    GalaxeaA1SOLeaderConfig,
+)
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -70,11 +73,10 @@ def run(config: TeleopConfig) -> int:
         topics.gripper_target, gripper_position_control, queue_size=10
     )
 
-    leader = A1SOLeader(
-        SOLeaderTeleopConfig(
+    leader = GalaxeaA1SOLeader(
+        GalaxeaA1SOLeaderConfig(
             id=config.leader.id,
             port=config.leader.port,
-            use_degrees=config.leader.use_degrees,
         )
     )
     leader.connect(calibrate=False)

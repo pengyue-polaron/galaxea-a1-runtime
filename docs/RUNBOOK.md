@@ -9,6 +9,7 @@ can move the arm are labeled **MOVES HARDWARE**.
 On a new checkout:
 
 ```bash
+git submodule update --init --recursive
 just setup
 just check
 ```

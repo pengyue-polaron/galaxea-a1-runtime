@@ -45,6 +45,12 @@ Normal gripper applications publish only:
 App and policy code must never publish host commands directly. The relay is the
 only normal owner of both host command topics.
 
+The `galaxea_a1_runtime` embodied-ops backend follows the same path. It attaches
+only when fresh feedback is available and the relay is `LOCKED`, refuses a
+competing `ACTIVE`/`ARMING` owner, stages the current named-joint hold before its
+first command, and disables the relay on disconnect. The out-of-tree LeRobot
+Robot and Teleoperator plugins never import ROS or publish host commands.
+
 ## Relay gates
 
 - The relay starts `LOCKED`; an app must explicitly enable

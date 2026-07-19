@@ -4,8 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
+    "embodied-ops>=0.1,<0.2",
     "huggingface-hub>=1.0.0,<2.0.0",
     "lerobot[dataset,feetech]",
+    "lerobot_robot_galaxea_a1>=0.1,<0.2",
+    "lerobot_teleoperator_galaxea_a1_so_leader>=0.1,<0.2",
     "msgpack>=1.1.0,<2.0.0",
     "numpy>=2.2.0",
     "pandas>=2.3.3",
@@ -24,6 +27,9 @@ dependencies = [
 [project.scripts]
 galaxea-a1-runtime = "galaxea_a1_runtime.cli:main"
 
+[project.entry-points."embodied_ops.backends"]
+galaxea_a1_runtime = "galaxea_a1_runtime.embodied_ops_backend:create_backend"
+
 [build-system]
 requires = ["setuptools"]
 build-backend = "setuptools.build_meta"
@@ -39,7 +45,10 @@ operator_panel = ["assets/*", "README.md"]
 environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64')"]
 
 [tool.uv.sources]
+embodied-ops = { path = "external/embodied-ops", editable = true }
 lerobot = { path = "third_party/lerobot", editable = true }
+lerobot-robot-galaxea-a1 = { path = "external/lerobot-robot-galaxea-a1", editable = true }
+lerobot-teleoperator-galaxea-a1-so-leader = { path = "external/lerobot-teleoperator-galaxea-a1-so-leader", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

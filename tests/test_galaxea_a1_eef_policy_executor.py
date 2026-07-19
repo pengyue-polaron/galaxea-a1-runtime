@@ -74,6 +74,11 @@ class FakeRelay:
         return "ACTIVE" if self.active else "LOCKED"
 
 
+class FailingRelay(FakeRelay):
+    def status(self):
+        raise RuntimeError("relay read failed")
+
+
 def _executor(
     *,
     events: list[object],
@@ -154,6 +159,18 @@ def test_executor_locks_after_relay_enable_timeout():
         ("enable", True),
     ]
     assert executor.motion_enabled is False
+
+
+def test_executor_locks_if_relay_confirmation_raises_unexpectedly():
+    events: list[object] = []
+    executor = _executor(events=events, relay=FailingRelay())
+
+    with pytest.raises(RuntimeError, match="relay read failed"):
+        executor.activate_current_hold()
+
+    assert events[-2:] == [("enable", True), ("enable", False)]
+    assert executor.motion_enabled is False
+    assert executor.motion_requested is False
 
 
 def test_executor_keeps_relay_locked_until_staged_hold_is_complete_and_aligned():
