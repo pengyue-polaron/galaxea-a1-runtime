@@ -21,11 +21,16 @@ configure_ros1_python(ROOT_DIR)
 
 import rospy
 
+from operator_panel.protocol import announce_input
+
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.collector_episode import TeleopEpisodeSession
+from galaxea_a1_runtime.apps.teleop.collection_task import (
+    prepare_collection_task,
+    read_collection_task,
+)
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
-from galaxea_a1_runtime.filesystem import atomic_write_text
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
     next_episode_index,
@@ -41,22 +46,19 @@ from galaxea_a1_runtime.schema import ActionMode
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
-def load_or_prompt_task(experiment_dir: Path) -> str:
-    task_path = experiment_dir / "task.txt"
-    if task_path.is_file():
-        task = task_path.read_text().strip()
-        if task:
-            return task
+def load_or_prompt_task(
+    experiment_dir: Path, *, provided_task: str | None = None
+) -> str:
+    if provided_task is not None:
+        return prepare_collection_task(experiment_dir, provided_task)
+    if existing := read_collection_task(experiment_dir):
+        return existing
     info("First run: enter the task prompt.")
     task = input(style("Task > ", Tone.STEP)).strip()
-    if not task:
-        raise RuntimeError("task prompt cannot be empty")
-    experiment_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(task_path, task + "\n")
-    return task
+    return prepare_collection_task(experiment_dir, task)
 
 
-def run(config: TeleopConfig, *, experiment: str) -> int:
+def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> int:
     experiment = validate_experiment_name(experiment)
     state_mode = config.collection.state_mode
     front_crop = required_front_roi(config.system.cameras)
@@ -70,7 +72,7 @@ def run(config: TeleopConfig, *, experiment: str) -> int:
         width=front.width if front_crop is None else front_crop.width,
         height=front.height if front_crop is None else front_crop.height,
     )
-    task = load_or_prompt_task(experiment_dir)
+    task = load_or_prompt_task(experiment_dir, provided_task=task)
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(config)
@@ -106,6 +108,7 @@ def run(config: TeleopConfig, *, experiment: str) -> int:
             repo_root=ROOT_DIR,
         )
         while not rospy.is_shutdown():
+            announce_input(("enter", "quit"))
             command = (
                 input(
                     style(
@@ -118,6 +121,7 @@ def run(config: TeleopConfig, *, experiment: str) -> int:
             )
             if normalize_episode_decision(command) == EpisodeDecision.QUIT:
                 break
+            announce_input(("enter", "discard", "quit"))
             completion = episodes.record(episode_index)
             if completion.decision == EpisodeDecision.QUIT:
                 break
@@ -173,9 +177,11 @@ def reset_for_next_episode(teleop_config: Path) -> None:
     print()
 
 
-def run_safely(config: TeleopConfig, *, experiment: str) -> int:
+def run_safely(
+    config: TeleopConfig, *, experiment: str, task: str | None = None
+) -> int:
     try:
-        return run(config, experiment=experiment)
+        return run(config, experiment=experiment, task=task)
     except (RuntimeError, ValueError) as exc:
         failure(str(exc))
         return 1

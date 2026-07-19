@@ -7,6 +7,8 @@ BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CAMERA_RUNTIME="${ROOT}/scripts/apps/cameras/a1_camera_web_runtime.sh"
 CONFIG_PATH=""
 MODEL_SELECTOR=""
+TASK_SELECTOR=""
+SCENE_NOTE_INPUT=""
 source "${ROOT}/scripts/runtime/a1_processes.sh"
 
 runtime_args=()
@@ -36,6 +38,22 @@ while (( $# > 0 )); do
       MODEL_SELECTOR="$2"
       shift 2
       ;;
+    --task)
+      if [[ -n "${TASK_SELECTOR}" || -z "${2:-}" ]]; then
+        a1_fail "--task requires one tracked task id."
+        exit 2
+      fi
+      TASK_SELECTOR="$2"
+      shift 2
+      ;;
+    --scene-note)
+      if [[ -n "${SCENE_NOTE_INPUT}" || -z "${2:-}" ]]; then
+        a1_fail "--scene-note requires one non-empty scene description."
+        exit 2
+      fi
+      SCENE_NOTE_INPUT="$2"
+      shift 2
+      ;;
     *)
       runtime_args+=("$1")
       shift
@@ -43,6 +61,23 @@ while (( $# > 0 )); do
   esac
 done
 set -- "${runtime_args[@]}"
+
+case "${1:-}" in
+  run)
+    ;;
+  batch)
+    if [[ -n "${TASK_SELECTOR}" ]]; then
+      a1_fail "--task is not valid with batch; tasks come from the selected plan."
+      exit 2
+    fi
+    ;;
+  *)
+    if [[ -n "${TASK_SELECTOR}" || -n "${SCENE_NOTE_INPUT}" ]]; then
+      a1_fail "--task and --scene-note are valid only with run or batch."
+      exit 2
+    fi
+    ;;
+esac
 
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 if [[ ! -x "${PYTHON_BIN}" ]]; then
@@ -84,6 +119,21 @@ a1_load_shell_config env \
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.apps.lingbot.config \
     "${config_args[@]}"
 export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
+if [[ -n "${TASK_SELECTOR}" ]]; then
+  SELECTED_TASK_ID="$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.task_selection \
+      --catalog "${TASK_CATALOG_PATH}" \
+      --task-id "${TASK_SELECTOR}"
+  )"
+fi
+if [[ -n "${SCENE_NOTE_INPUT}" ]]; then
+  SCENE_NOTE="$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.lingbot.operator_input \
+      --value "${SCENE_NOTE_INPUT}"
+  )"
+fi
 MODEL_PROCESS_NAME="lingbot-policy-server"
 MODEL_LOG="${MODEL_SAVE_ROOT}/policy_server.log"
 PIPELINE_CLEANED_UP=false
@@ -520,6 +570,9 @@ confirm_batch_attempt() {
   local answer
   while true; do
     a1_step "${label}"
+    if [[ "${OPERATOR_PANEL_PROTOCOL:-}" == "1" ]]; then
+      printf '%s\n' '@@OPERATOR_PANEL {"input":["enter","quit"]}'
+    fi
     if ! IFS= read -r -p "Enter=reset A1 and run, q=stop batch > " answer; then
       a1_info "Batch input closed; stopping before the next reset."
       return 1
@@ -538,6 +591,9 @@ decide_safety_stopped_attempt() {
   local answer
   a1_warn "This evaluation ended on a rejected model target; the target was not published."
   while true; do
+    if [[ "${OPERATOR_PANEL_PROTOCOL:-}" == "1" ]]; then
+      printf '%s\n' '@@OPERATOR_PANEL {"input":["enter","discard","quit"]}'
+    fi
     if ! IFS= read -r -p "Enter=count as evaluated, d=discard and retry this slot, q=stop batch > " answer; then
       a1_info "Decision input closed; leaving this evaluation pending."
       return 20
@@ -739,7 +795,7 @@ case "${1:-help}" in
     tail_model_log 160
     ;;
   *)
-    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] <setup|verify|run|batch|server|smoke|server-stop|server-logs|services|stop|doctor|status|logs>"
+    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] [--task TASK_ID] [--scene-note TEXT] <setup|verify|run|batch|server|smoke|server-stop|server-logs|services|stop|doctor|status|logs>"
     cat <<EOF
   setup     Clone, pin, install, download, and verify LingBot
   verify    Hash-check registered LingBot inputs without opening hardware

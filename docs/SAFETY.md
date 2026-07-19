@@ -115,6 +115,23 @@ additional gripper bit latches `FAULT`.
   `just camera-web stop` closes it.
 - The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
   encryption and must not be port-forwarded or gain control endpoints.
+- The operator control panel is a separate localhost-only HTTP service. It uses
+  a random per-process request token, permits one owned workflow subprocess at
+  a time, and may invoke only validated tracked Collect, LingBot, Batch, Camera,
+  and Reset entrypoints. It never imports ROS or publishes commands itself.
+- Interactive Web input is fail-closed. A child must announce the exact accepted
+  input actions at each prompt; one accepted action clears that permission until
+  the child announces another prompt. Repeated clicks cannot queue decisions for
+  a later reset or inference step.
+- Web configuration creation is create-only, same-kind validated, and
+  prohibited during a workflow. The candidate is hidden, validated with the
+  owning strict loader, and atomically linked into its allowed config directory.
+  Existing files are never edited, deleted, or overwritten.
+- Web workflow buttons have the same authority as running their displayed CLI
+  command. Reset, Collect, Evaluation, and Batch move hardware through the
+  existing staged tracker and relay path. Stop sends `SIGINT` to the owning
+  process group so normal fail-closed cleanup runs. The panel stays alive after
+  an incomplete stop and requires `just stop` before another attempt.
 
 ## Direct debug
 

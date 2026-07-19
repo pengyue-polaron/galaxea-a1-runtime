@@ -6,15 +6,38 @@ source "${ROOT}/scripts/runtime/a1_config.sh"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
 CAMERA_RUNTIME="${ROOT}/scripts/apps/cameras/a1_camera_web_runtime.sh"
 CONFIG_PATH=""
+COLLECTION_TASK=""
 
-if [[ "${1:-}" == "--config" ]]; then
-  if [[ -z "${2:-}" ]]; then
-    a1_fail "--config requires a path."
-    a1_usage "$0 --config <path> <start|services|bridge|collect|reset|stop|doctor|status|logs>" >&2
-    exit 2
-  fi
-  CONFIG_PATH="$2"
-  shift 2
+runtime_args=()
+while (( $# > 0 )); do
+  case "$1" in
+    --config)
+      if [[ -n "${CONFIG_PATH}" || -z "${2:-}" ]]; then
+        a1_fail "--config requires one path."
+        exit 2
+      fi
+      CONFIG_PATH="$2"
+      shift 2
+      ;;
+    --task)
+      if [[ -n "${COLLECTION_TASK}" || -z "${2:-}" ]]; then
+        a1_fail "--task requires one non-empty task description."
+        exit 2
+      fi
+      COLLECTION_TASK="$2"
+      shift 2
+      ;;
+    *)
+      runtime_args+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${runtime_args[@]}"
+
+if [[ -n "${COLLECTION_TASK}" && "${1:-}" != "collect" ]]; then
+  a1_fail "--task is valid only with collect."
+  exit 2
 fi
 
 PYTHON_BIN="${ROOT}/.venv/bin/python"
@@ -207,6 +230,16 @@ PY
   then
     exit 2
   fi
+  if [[ -n "${COLLECTION_TASK}" ]]; then
+    if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.teleop.collection_task \
+      --repo-root "${ROOT}" \
+      --config "${CONFIG_PATH}" \
+      --experiment "${experiment}" \
+      --task "${COLLECTION_TASK}" >/dev/null; then
+      exit 2
+    fi
+  fi
   cleanup_collect() {
     a1_info "Stopping teleop runtime after collection."
     stop_runtime >/dev/null 2>&1 || true
@@ -219,10 +252,16 @@ PY
   start_services
   start_bridge
   a1_step "Collecting uncompressed frames from the persistent Camera Bridge."
+  local collector_args=(
+    --experiment "${experiment}"
+    --config "${CONFIG_PATH}"
+  )
+  if [[ -n "${COLLECTION_TASK}" ]]; then
+    collector_args+=(--task "${COLLECTION_TASK}")
+  fi
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/teleop_collect.py" \
-      --experiment "${experiment}" \
-      --config "${CONFIG_PATH}"
+      "${collector_args[@]}"
 }
 
 reset_live() {
@@ -311,7 +350,7 @@ case "${1:-help}" in
     logs
     ;;
   *)
-    a1_usage "$0 [--config PATH] <start|services|bridge|collect|reset|stop|doctor|status|logs>"
+    a1_usage "$0 [--config PATH] [--task TEXT] <start|services|bridge|collect|reset|stop|doctor|status|logs>"
     cat <<EOF
   start     Start staged joint teleop services and SO leader bridge
   services  Start ROS master, A1 driver, staged joint tracker, locked relay

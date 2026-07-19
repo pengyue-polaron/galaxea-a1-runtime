@@ -18,10 +18,11 @@ from galaxea_a1_runtime.configuration.base import (
     string,
 )
 from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.configuration.paths import LINGBOT_BATCH_CONFIG
 
 
 ROOT = Path(__file__).resolve().parents[3]
-DEFAULT_BATCH_CONFIG = ROOT / "configs/runs/lingbot/fruit_placement.toml"
+DEFAULT_BATCH_CONFIG = ROOT / LINGBOT_BATCH_CONFIG
 
 
 @dataclass(frozen=True)

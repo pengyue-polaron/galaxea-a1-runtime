@@ -28,9 +28,15 @@ udev:
 check:
     {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
     find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
-    {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
-    {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
+    {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/operator_panel {{repo}}/scripts {{repo}}/tests
+    {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/operator_panel {{repo}}/scripts {{repo}}/tests
     just test
+
+operator-configs:
+    {{vpy}} -m galaxea_a1_runtime.cli configs --repo-root "{{repo}}"
+
+panel:
+    {{vpy}} -m galaxea_a1_runtime.cli panel --repo-root "{{repo}}"
 
 ros-python-check:
     #!/usr/bin/env bash

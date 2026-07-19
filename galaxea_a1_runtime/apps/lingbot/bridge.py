@@ -23,6 +23,8 @@ configure_ros1_python(ROOT_DIR, remove_ros2=True)
 import numpy as np
 
 import rospy
+
+from operator_panel.protocol import announce_input
 from galaxea_a1_runtime.apps.eef_bridge import EefIkCommandPublisher
 from galaxea_a1_runtime.apps.eef_policy_actions import (
     build_action_transform_config,
@@ -248,6 +250,7 @@ class A1LingBotEEBridge:
 
     @staticmethod
     def _ask_next(prompt: str) -> str:
+        announce_input(("enter", "quit"))
         try:
             return input(prompt).strip().lower()
         except EOFError:

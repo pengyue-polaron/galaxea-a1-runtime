@@ -26,6 +26,9 @@
   LeRobotDataset v2.1 and v3.0 outputs.
 - **Deploy** LingBot EEF and OpenPI pi0.5 EEF policies through
   isolated trackers and a locked, validating command relay.
+- **Operate** collection, live evaluation, tracked batch plans, resets, and the
+  two camera views from one localhost-only black-and-white control panel whose
+  reusable core is isolated from A1-specific adapters.
 - **Run on modern Ubuntu hosts** with ROS Noetic and the A1 SDK isolated inside
   a Focal-based Docker runtime—no native Ubuntu 20.04 or ROS installation
   required.

@@ -115,6 +115,25 @@ preview at its configured lower rate. Slow browsers or JPEG encoding may drop
 preview frames but cannot queue work in, rewrite, or block the raw observation
 contract. Web JPEGs are never fed back into policy, recording, or collection.
 
+The generic Operator Panel is a separate localhost-only control plane. The
+repository-independent `operator_panel/` package owns HTTP, static rendering,
+create-only configuration staging, subprocess supervision, and a small child
+input-readiness protocol. It has no Galaxea, ROS, camera, model, topic, or
+tracked-config imports and may move to a standalone repository or Git submodule
+without moving A1 behavior. The A1 adapter under
+`galaxea_a1_runtime/apps/operator_panel/` discovers and fully loads repository
+Teleop, LingBot deployment, Batch, model, and reset files, supplies the dynamic
+form catalog, and constructs argv-only commands for the existing entrypoints.
+
+One exclusive subprocess owner runs a workflow. Interactive buttons remain
+locked until the child explicitly announces its next accepted input set; one
+decision consumes that announcement, preventing Web clicks from being queued
+through a later safety gate. Configuration creation offers an existing same-kind
+template, writes the edited candidate to hidden sibling staging, runs the owning
+strict loader, and publishes the new file atomically without overwrite. It is
+prohibited while a workflow is active. The page embeds Camera Web MJPEG streams,
+while Camera Web remains a read-only service with no control routes.
+
 LingBot shares its bridged raw AgentView reader with an asynchronous H.264 run
 recorder; neither component opens another camera handle. One run identity owns hidden
 video and log staging paths before model or hardware startup. The recorder

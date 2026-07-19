@@ -68,6 +68,62 @@ Use `just camera-web status` or `just camera-web logs` for monitor diagnostics.
 The preview is unauthenticated, unencrypted, and LAN-only. Do not port-forward
 it.
 
+### Unified operator panel
+
+Start the local control panel without opening hardware:
+
+```bash
+just panel
+```
+
+Open `http://127.0.0.1:8765`. The panel lists every valid tracked Teleop,
+LingBot deployment, Batch, model, and A1 reset configuration. It embeds the
+read-only Camera Web streams and provides Collect, Evaluation, Batch, and Reset
+views. Use **Start cameras** if the persistent Camera Bridge is not already
+running.
+
+The **Configurations** view creates Teleop, LingBot deployment, Batch, or A1
+reset TOML from an existing same-kind template. Choose a template, load it,
+change the filename and content, then validate before creating it. Creation runs
+the owning strict loader and atomically exposes a new file; it never edits or
+overwrites an existing configuration and is disabled during a live workflow.
+For a new Batch, change `batch.id` as well as the filename because Batch IDs are
+unique. Review and commit a new configuration before treating it as durable
+repository state.
+
+Buttons that start Collect, Evaluation, Batch, or Reset **MOVE HARDWARE**. They
+launch the existing repository entrypoints and never publish ROS messages from
+the Web server. Only one workflow may run at a time. Input buttons appear only
+when the child is at the corresponding prompt; one click locks them until the
+next prompt, so decisions cannot queue through a later step. **Stop** sends
+`SIGINT` so the owning script can lock the relay and clean up. If cleanup does
+not finish, the panel stays available and requires `just stop` before retrying.
+
+The same configuration registry is available from the unified CLI:
+
+```bash
+.venv/bin/galaxea-a1-runtime configs
+.venv/bin/galaxea-a1-runtime config template batch \
+  configs/runs/lingbot/fruit_placement.toml > /tmp/new_batch.toml
+# Edit /tmp/new_batch.toml, including a unique batch.id, then:
+.venv/bin/galaxea-a1-runtime config validate batch new_batch /tmp/new_batch.toml
+.venv/bin/galaxea-a1-runtime config create batch new_batch /tmp/new_batch.toml
+.venv/bin/galaxea-a1-runtime collect EXPERIMENT --task "TASK"
+.venv/bin/galaxea-a1-runtime evaluate TASK_ID --scene-note "SCENE"
+.venv/bin/galaxea-a1-runtime batch configs/runs/lingbot/mango_placement.toml \
+  --scene-note "SCENE" --resume
+.venv/bin/galaxea-a1-runtime reset configs/poses/a1_collection_start.toml
+```
+
+The control panel is intentionally fixed to localhost and uses a random
+per-process request token. Do not proxy or port-forward it. The separate Camera
+Web remains read-only and has no control endpoints.
+
+The reusable Web/process/configuration core is documented in
+[`operator_panel/README.md`](../operator_panel/README.md). Another repository
+provides its own adapter and child input announcements; A1-specific loaders and
+commands are not part of that core.
+
 Optional EEF acceptance **MOVES HARDWARE**:
 
 ```bash

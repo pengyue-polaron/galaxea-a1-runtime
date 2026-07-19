@@ -30,7 +30,10 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["galaxea_a1_runtime*"]
+include = ["galaxea_a1_runtime*", "operator_panel*"]
+
+[tool.setuptools.package-data]
+operator_panel = ["assets/*", "README.md"]
 
 [tool.uv]
 environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64')"]

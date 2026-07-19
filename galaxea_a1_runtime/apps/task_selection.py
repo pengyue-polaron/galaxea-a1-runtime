@@ -56,8 +56,16 @@ def select_task(
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--catalog", type=Path, required=True)
+    parser.add_argument("--task-id")
     args = parser.parse_args(argv)
     catalog = load_task_catalog(args.catalog)
+    if args.task_id is not None:
+        try:
+            task = catalog.task(args.task_id)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(task.task_id)
+        return 0
     try:
         task = select_task(catalog)
     except TaskSelectionCancelled as exc:

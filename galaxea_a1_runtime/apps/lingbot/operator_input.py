@@ -48,7 +48,16 @@ def prompt_scene_note(
 
 
 def main(argv: list[str] | None = None) -> int:
-    ArgumentParser(description=__doc__).parse_args(argv)
+    parser = ArgumentParser(description=__doc__)
+    parser.add_argument("--value")
+    args = parser.parse_args(argv)
+    if args.value is not None:
+        try:
+            note = validate_scene_note(args.value)
+        except ValueError as exc:
+            parser.error(str(exc))
+        print(note)
+        return 0
     try:
         note = prompt_scene_note()
     except SceneNoteCancelled as exc:

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import pytest
 
+from galaxea_a1_runtime.apps.teleop.collection_task import prepare_collection_task
 from galaxea_a1_runtime.collection import (
     CameraMetadata,
     EpisodeDecision,
@@ -34,6 +35,15 @@ def test_experiment_name_rejects_path_traversal_and_empty_names(name):
 
 def test_experiment_name_accepts_operator_run_identity():
     assert validate_experiment_name("pick_cube.v2-01") == "pick_cube.v2-01"
+
+
+def test_collection_task_is_created_once_and_cannot_drift(tmp_path: Path):
+    experiment_dir = tmp_path / "fruit_v1"
+
+    assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
+    assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
+    with pytest.raises(ValueError, match="task mismatch"):
+        prepare_collection_task(experiment_dir, "place fruit")
 
 
 def test_state_names_for_modes_are_explicit():

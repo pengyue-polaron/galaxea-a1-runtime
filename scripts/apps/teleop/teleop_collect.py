@@ -18,12 +18,13 @@ from galaxea_a1_runtime.console import ArgumentParser
 def main() -> int:
     parser = ArgumentParser(description="Record Galaxea A1 teleop episodes.")
     parser.add_argument("--experiment", required=True)
+    parser.add_argument("--task")
     parser.add_argument("--config", type=Path, default=default_config_path(ROOT))
     args = parser.parse_args()
     config = load_teleop_config(args.config, repo_root=ROOT)
     from galaxea_a1_runtime.apps.teleop.collector import run_safely
 
-    return run_safely(config, experiment=args.experiment)
+    return run_safely(config, experiment=args.experiment, task=args.task)
 
 
 if __name__ == "__main__":
