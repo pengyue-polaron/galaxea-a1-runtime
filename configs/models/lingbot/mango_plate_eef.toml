@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "lingbot/a1_mango_plate_eef"
+backend = "lingbot_va"
+artifact_format = "diffusers"
+checkpoint_step = 100
+manifest = "configs/models/lingbot/mango_plate_eef.manifest.json"
+contract = "configs/models/lingbot/mango_plate_eef.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "pengyue-polaron/lingbot-va-galaxea-a1-mango-plate-eef"
+revision = "0fb7f5a46dbdeac0770ae46d6a71411171348eb6"
+revision_label = "step-100"

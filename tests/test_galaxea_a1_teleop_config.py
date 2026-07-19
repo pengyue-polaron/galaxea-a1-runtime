@@ -66,6 +66,8 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.cameras.wrist.crop is None
     assert config.system.web_preview.enabled is True
     assert config.system.web_preview.bind == "0.0.0.0"
+    assert config.system.web_preview.startup_timeout_s == 15.0
+    assert config.system.web_preview.shutdown_timeout_s == 5.0
     assert config.system.camera_diagnostics.output_root == (
         REPO / "outputs/camera_diagnostics"
     )

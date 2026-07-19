@@ -18,10 +18,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--model")
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve()
     config_path = args.config or default_config_path(repo_root)
-    config = load_lingbot_config(config_path, repo_root=repo_root)
+    config = load_lingbot_config(
+        config_path,
+        repo_root=repo_root,
+        model_selector=args.model,
+    )
     if discover_repo_root(config.path) != repo_root:
         raise ValueError("LingBot config does not belong to --repo-root")
 

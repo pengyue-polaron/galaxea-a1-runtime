@@ -73,7 +73,13 @@ def test_camera_web_serves_health_without_authentication():
         connection.request("GET", "/")
         response = connection.getresponse()
         assert response.status == 200
-        assert b"Galaxea A1" in response.read()
+        dashboard = response.read()
+        assert b'data-stream="agent"' in dashboard
+        assert b'data-stream="wrist"' in dashboard
+        assert b"setInterval(probe,2000)" in dashboard
+        assert b"<figcaption" not in dashboard
+        assert b'id="status"' not in dashboard
+        assert b"Read-only preview" not in dashboard
         connection.close()
     finally:
         preview.close()

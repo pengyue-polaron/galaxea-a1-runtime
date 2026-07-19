@@ -1,4 +1,5 @@
 from pathlib import Path
+from dataclasses import replace
 import json
 import re
 import subprocess
@@ -67,6 +68,9 @@ def test_lingbot_deployment_composes_with_shared_system_config():
 
     transform = build_action_transform_config(system=config.system)
     assert transform.gripper_stroke_max == config.system.gripper.stroke_max_mm
+    assert transform.gripper_normalized_endpoint_tolerance == (
+        config.system.gripper.normalized_endpoint_tolerance
+    )
     assert len(config.policy_server.q01_source) == 8
     assert len(config.policy_server.q99_source) == 8
     assert config.policy_server.vendor_config == "a1"
@@ -87,8 +91,50 @@ def test_lingbot_deployment_composes_with_shared_system_config():
 
     shell_values = bash_config(config)
     assert "MODEL_SHUTDOWN_TIMEOUT=10" in shell_values
+    assert f"RECORDING_OUTPUT_ROOT={config.recording.output_root}" in shell_values
     assert "MODEL_SESSION=" not in shell_values
     assert "TMUX_" not in shell_values
+
+
+def test_lingbot_deployment_can_select_a_registered_model() -> None:
+    config = load_lingbot_config(
+        CONFIG,
+        repo_root=REPO,
+        model_selector="mango_placement_eef",
+    )
+
+    assert config.path == CONFIG
+    assert config.policy_server.model.model_id == ("lingbot/a1_mango_placement_eef")
+    assert config.policy_server.model.source.revision_label == "step-200"
+    assert config.policy_server.model.artifact_root == (
+        REPO
+        / "models/artifacts/lingbot/a1_mango_placement_eef"
+        / "bf15da70c432e39c3a971c50143f4d91ff671ac1"
+    )
+    assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
+
+
+def test_lingbot_config_cli_renders_selected_model() -> None:
+    result = subprocess.run(
+        [
+            str(REPO / ".venv/bin/python"),
+            "-m",
+            "galaxea_a1_runtime.apps.lingbot.config",
+            "--repo-root",
+            str(REPO),
+            "--model",
+            "mango_placement_eef",
+            "--shell",
+        ],
+        cwd=REPO,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "MODEL_ID=lingbot/a1_mango_placement_eef" in result.stdout
+    assert "MODEL_ROOT=" in result.stdout
 
 
 def test_lingbot_runtime_is_foreground_and_has_no_tmux_entrypoints():
@@ -97,6 +143,8 @@ def test_lingbot_runtime_is_foreground_and_has_no_tmux_entrypoints():
 
     assert "a1_tmux" not in source
     assert "attach-session" not in source
+    assert "script --quiet --flush --return" in source
+    assert "RUN_RUNTIME_RAW_LOG" in source
     result = subprocess.run(
         [str(runtime), "--help"],
         check=False,
@@ -153,7 +201,6 @@ def test_lingbot_bridge_guard_stops_runtime_when_bridge_exits(tmp_path):
         f'#!/usr/bin/env bash\nprintf "%s\\n" "$*" >> "{runtime_log}"\n'
     )
     fake_runtime.chmod(0o755)
-
     result = subprocess.run(
         [
             str(guard),
@@ -309,4 +356,60 @@ def test_lingbot_training_metadata_matches_backend_and_action_contract(tmp_path)
     summary["code_revision"] = "0" * 40
     path.write_text(json.dumps(summary))
     with pytest.raises(ValueError, match="training summary contract mismatch"):
+        validate_training_summary(config, tmp_path)
+
+
+def test_lingbot_training_metadata_can_verify_embedded_inference_config(tmp_path):
+    config = load_lingbot_config(CONFIG, repo_root=REPO)
+    policy = config.policy_server
+    checkout = tmp_path / "checkout"
+    pinned = checkout / "wan_va/configs/va_a1_cfg.py"
+    pinned.parent.mkdir(parents=True)
+    pinned.write_text("compatible = True\n")
+    config = replace(
+        config,
+        policy_server=replace(
+            policy,
+            backend=replace(
+                policy.backend,
+                source=replace(policy.backend.source, checkout=checkout),
+            ),
+        ),
+    )
+    policy = config.policy_server
+    summary = {
+        "checkpoint_step": policy.model.checkpoint_step,
+        "source_action_dimension": len(policy.action_channel_ids),
+        "model_action_dimension": policy.model_action_dim,
+        "used_action_channel_ids": list(policy.action_channel_ids),
+        "includes_optimizer_state": False,
+    }
+    artifact = tmp_path / "artifact"
+    artifact.mkdir()
+    (artifact / "training_summary.json").write_text(json.dumps(summary))
+    embedded = artifact / "configs" / "va_a1_cfg.py"
+    embedded.parent.mkdir()
+    embedded.write_bytes(pinned.read_bytes())
+
+    assert validate_training_summary(config, artifact) == ("embedded-inference-config")
+
+    embedded.write_text("incompatible = True\n")
+    with pytest.raises(ValueError, match="does not match the pinned backend"):
+        validate_training_summary(config, artifact)
+
+
+def test_lingbot_training_metadata_rejects_partial_code_provenance(tmp_path):
+    config = load_lingbot_config(CONFIG, repo_root=REPO)
+    policy = config.policy_server
+    summary = {
+        "checkpoint_step": policy.model.checkpoint_step,
+        "code_repository": policy.backend.source.repository.removesuffix(".git"),
+        "source_action_dimension": len(policy.action_channel_ids),
+        "model_action_dimension": policy.model_action_dim,
+        "used_action_channel_ids": list(policy.action_channel_ids),
+        "includes_optimizer_state": False,
+    }
+    (tmp_path / "training_summary.json").write_text(json.dumps(summary))
+
+    with pytest.raises(ValueError, match="declare both code_repository"):
         validate_training_summary(config, tmp_path)

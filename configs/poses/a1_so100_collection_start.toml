@@ -1,22 +1,7 @@
-# Git-tracked A1 + SO leader collection start pose.
-# Recorded from the live hardware on 2026-07-11T18:15:40+08:00.
+# Git-tracked SO leader reset paired with the shared A1 start pose.
 
-[joints]
-position_rad = [
-  0.012999534606933594,
-  0.0010004043579101562,
-  -0.07400035858154297,
-  -1.569000244140625,
-  0.33699989318847656,
-  -0.048999786376953125,
-]
-
-[gripper]
-# A1 gripper is explicitly closed by `just reset`.
-enabled = true
-closed_stroke_mm = 0.0
-publish_hz = 10.0
-publish_s = 1.0
+[a1]
+config = "configs/poses/a1_collection_start.toml"
 
 [leader]
 enabled = true
@@ -48,13 +33,3 @@ goal_tolerance_units = 2.0
 # The leader gripper is commanded fully closed at 0.0. Its normalized feedback
 # can stop a few units above zero at the mechanical closed stop.
 gripper_goal_tolerance_units = 5.0
-
-[motion]
-hz = 30.0
-min_duration_s = 6.0
-max_velocity_rad_s = 0.30
-# Cold jointTracker startup may spend about 10 seconds compiling CppAD code.
-# Keep enough margin for the first staged command while the relay is locked.
-tracker_alignment_timeout_s = 30.0
-hold_s = 1.0
-goal_tolerance_rad = 0.08

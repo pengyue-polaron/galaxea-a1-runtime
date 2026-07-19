@@ -14,6 +14,7 @@ def _config() -> EefActionTransformConfig:
         min_quat_norm=0.25,
         gripper_stroke_min=0.0,
         gripper_stroke_max=100.0,
+        gripper_normalized_endpoint_tolerance=2e-6,
     )
 
 

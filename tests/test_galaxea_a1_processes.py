@@ -78,3 +78,22 @@ a1_process_stop_all_managed 2
     )
 
     assert result.returncode == 0, result.stderr
+
+
+def test_managed_cleanup_can_preserve_named_read_only_monitor(tmp_path: Path):
+    result = _bash(
+        tmp_path,
+        f"""
+set -euo pipefail
+for name in camera-monitor motion-service; do
+  a1_process_start "${{name}}" "{tmp_path}" "{tmp_path}/$name.log" \\
+    bash -c 'trap "exit 0" TERM; while :; do sleep 0.05; done'
+done
+a1_process_stop_all_managed 2 camera-monitor
+a1_process_is_running camera-monitor
+! a1_process_is_running motion-service
+a1_process_stop camera-monitor 2
+""",
+    )
+
+    assert result.returncode == 0, result.stderr

@@ -1,0 +1,23 @@
+# Scripted full-catalog evaluation for the registered mango-placement model.
+# Every attempt still requires Enter before the tracked A1-only reset. Tasks
+# outside the checkpoint's two training prompts intentionally test transfer.
+
+[deployment]
+config = "configs/deployments/lingbot/fruit_placement_eef.toml"
+
+[reset]
+pose = "configs/poses/a1_collection_start.toml"
+
+[batch]
+schema_version = 1
+id = "mango-placement-scripted"
+# One initial attempt plus two repetitions = three runs per prompt.
+retries_per_prompt = 2
+task_ids = [
+  "banana_blue_plate",
+  "banana_bowl",
+  "lemon_blue_plate",
+  "red_mango_blue_plate",
+  "red_mango_bowl",
+  "lemon_bowl",
+]

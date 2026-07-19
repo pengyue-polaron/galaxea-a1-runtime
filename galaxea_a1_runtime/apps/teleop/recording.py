@@ -21,7 +21,7 @@ from galaxea_a1_runtime.collection import (
     state_names_for_mode,
     teleop_frame_header,
 )
-from galaxea_a1_runtime.hardware.cameras import CameraSample, LatestCameraReader
+from galaxea_a1_runtime.hardware.cameras import CameraReader, CameraSample
 from galaxea_a1_runtime.hardware.image_geometry import crop_image
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES
@@ -44,8 +44,8 @@ class CapturedFrame:
 @dataclass(frozen=True)
 class _FrameRecorder:
     episode_dir: Path
-    front_reader: LatestCameraReader
-    wrist_reader: LatestCameraReader
+    front_reader: CameraReader
+    wrist_reader: CameraReader
     ros_state: RosTeleopState
     state_mode: StateMode
     depth_enabled: bool
@@ -141,8 +141,8 @@ class _FrameRecorder:
 def record_episode(
     *,
     episode_dir: Path,
-    front_reader: LatestCameraReader,
-    wrist_reader: LatestCameraReader,
+    front_reader: CameraReader,
+    wrist_reader: CameraReader,
     ros_state: RosTeleopState,
     state_mode: StateMode,
     fps: float,
@@ -234,7 +234,7 @@ def _crop_if_needed(image: Any, roi: ImageRoi | None, *, label: str) -> Any:
 
 
 def wait_for_new_camera_samples(
-    readers: tuple[LatestCameraReader, ...],
+    readers: tuple[CameraReader, ...],
     *,
     min_seq: dict[str, int],
     timeout_s: float,
@@ -260,7 +260,7 @@ def wait_for_new_camera_samples(
 
 
 def _fresh_camera_sample(
-    reader: LatestCameraReader, *, now_s: float, max_age_s: float
+    reader: CameraReader, *, now_s: float, max_age_s: float
 ) -> CameraSample:
     sample = reader.latest()
     if sample is None:
@@ -274,7 +274,7 @@ def _fresh_camera_sample(
     return sample
 
 
-def _raise_camera_reader_errors(readers: tuple[LatestCameraReader, ...]) -> None:
+def _raise_camera_reader_errors(readers: tuple[CameraReader, ...]) -> None:
     for reader in readers:
         exc = reader.exception()
         if exc is not None:

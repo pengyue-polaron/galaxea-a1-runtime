@@ -46,6 +46,7 @@ def websocket_open(host: str, port: int, *, timeout_s: float) -> bool:
 def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, default=default_config_path(REPO_ROOT))
+    parser.add_argument("--model")
     parser.add_argument("--json", action="store_true")
     parser.add_argument(
         "--require-execution",
@@ -53,7 +54,11 @@ def main(argv: list[str] | None = None) -> int:
         help="Accepted for compatibility with the composed runtime doctor.",
     )
     args = parser.parse_args(argv)
-    config = load_lingbot_config(args.config, repo_root=REPO_ROOT)
+    config = load_lingbot_config(
+        args.config,
+        repo_root=REPO_ROOT,
+        model_selector=args.model,
+    )
     checks: list[Check] = []
 
     wrist = config.system.cameras.wrist

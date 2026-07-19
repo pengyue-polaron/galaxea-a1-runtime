@@ -3,6 +3,7 @@ import pytest
 
 from galaxea_a1_runtime.apps.eef_policy_actions import (
     EefActionTransformConfig,
+    EefPolicyWorkspaceRejected,
     absolute_action_to_relative,
     gripper_norm_from_stroke,
     gripper_stroke_from_norm,
@@ -19,6 +20,7 @@ def action_config(**overrides) -> EefActionTransformConfig:
         "min_quat_norm": 0.25,
         "gripper_stroke_min": 0.0,
         "gripper_stroke_max": 100.0,
+        "gripper_normalized_endpoint_tolerance": 2e-6,
     }
     values.update(overrides)
     return EefActionTransformConfig(**values)
@@ -40,7 +42,7 @@ def test_policy_action_rejects_workspace_and_gripper_violations():
         xyz_max=(1.0, 1.0, 1.0),
     )
 
-    with pytest.raises(ValueError, match="outside.*workspace.*y,z"):
+    with pytest.raises(EefPolicyWorkspaceRejected, match="outside.*workspace.*y,z"):
         validate_policy_action(
             [0.3, -0.2, 2.0, 0.0, 0.0, 0.0, 1.0, 0.5],
             cfg,
@@ -50,6 +52,38 @@ def test_policy_action_rejects_workspace_and_gripper_violations():
         validate_policy_action(
             [0.3, 0.2, 0.2, 0.0, 0.0, 0.0, 1.0, -0.5],
             cfg,
+        )
+
+
+@pytest.mark.parametrize(
+    ("raw_gripper", "expected"),
+    [
+        (1.0 + 1.5e-6, 1.0),
+        (-1.5e-6, 0.0),
+    ],
+)
+def test_policy_action_accepts_only_configured_gripper_endpoint_roundoff(
+    raw_gripper, expected
+):
+    action = validate_policy_action(
+        [0.3, 0.2, 0.2, 0.0, 0.0, 0.0, 1.0, raw_gripper],
+        action_config(
+            xyz_min=(0.0, 0.0, 0.0),
+            xyz_max=(1.0, 1.0, 1.0),
+        ),
+    )
+
+    assert action[7] == expected
+
+
+def test_policy_action_rejects_material_gripper_overshoot_with_full_precision():
+    with pytest.raises(ValueError, match=r"got 1\.0001"):
+        validate_policy_action(
+            [0.3, 0.2, 0.2, 0.0, 0.0, 0.0, 1.0, 1.0001],
+            action_config(
+                xyz_min=(0.0, 0.0, 0.0),
+                xyz_max=(1.0, 1.0, 1.0),
+            ),
         )
 
 

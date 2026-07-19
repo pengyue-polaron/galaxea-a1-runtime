@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import hashlib
+import os
+import shutil
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -92,13 +94,20 @@ def fetch_artifact(config: ModelArtifactConfig) -> ArtifactValidation:
     from huggingface_hub import snapshot_download
 
     staging.parent.mkdir(parents=True, exist_ok=True)
-    snapshot_download(
-        repo_id=config.source.repo_id,
-        revision=config.source.revision,
-        local_dir=staging,
-        allow_patterns=[item.path.as_posix() for item in config.manifest.files],
-        max_workers=4,
-    )
+    _seed_from_local_artifacts(config, staging)
+    missing = [
+        item.path.as_posix()
+        for item in config.manifest.files
+        if not staging.joinpath(*item.path.parts).is_file()
+    ]
+    if missing:
+        snapshot_download(
+            repo_id=config.source.repo_id,
+            revision=config.source.revision,
+            local_dir=staging,
+            allow_patterns=missing,
+            max_workers=4,
+        )
     result = validate_artifact(config, verify_hashes=True, root=staging)
     staging.rename(root)
     return ArtifactValidation(
@@ -107,3 +116,40 @@ def fetch_artifact(config: ModelArtifactConfig) -> ArtifactValidation:
         bytes=result.bytes,
         manifest_sha256=result.manifest_sha256,
     )
+
+
+def _seed_from_local_artifacts(
+    config: ModelArtifactConfig,
+    staging: Path,
+) -> None:
+    """Reuse identical immutable files before requesting missing Hub content."""
+
+    store_root = config.repo_root / "models" / "artifacts"
+    if not store_root.is_dir():
+        return
+    for expected in config.manifest.files:
+        destination = staging.joinpath(*expected.path.parts)
+        for candidate in store_root.rglob(expected.path.name):
+            if not candidate.is_file() or candidate.is_relative_to(staging):
+                continue
+            relative = candidate.relative_to(store_root)
+            if ".cache" in relative.parts or any(
+                part.startswith(".") and part.endswith(".staging")
+                for part in relative.parts
+            ):
+                continue
+            if (
+                tuple(relative.parts[-len(expected.path.parts) :])
+                != expected.path.parts
+            ):
+                continue
+            if candidate.stat().st_size != expected.size:
+                continue
+            if sha256_file(candidate) != expected.sha256:
+                continue
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                os.link(candidate, destination)
+            except OSError:
+                shutil.copy2(candidate, destination)
+            break

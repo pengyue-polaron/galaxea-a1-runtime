@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "lingbot/a1_mango_placement_eef"
+backend = "lingbot_va"
+artifact_format = "diffusers"
+checkpoint_step = 200
+manifest = "configs/models/lingbot/mango_placement_eef.manifest.json"
+contract = "configs/models/lingbot/mango_placement_eef.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "pengyue-polaron/lingbot-va-galaxea-a1-mango-placement-eef"
+revision = "bf15da70c432e39c3a971c50143f4d91ff671ac1"
+revision_label = "step-200"

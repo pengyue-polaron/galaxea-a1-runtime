@@ -27,6 +27,7 @@ PROBE_SCRIPT="${ROOT}/scripts/apps/pi05/probe_pi05_server.py"
 SERVER_SCRIPT="${ROOT}/scripts/apps/pi05/pi05_policy_server.py"
 BRIDGE_SCRIPT="${ROOT}/scripts/apps/pi05/pi05_ee_bridge.py"
 BRIDGE_GUARD="${ROOT}/scripts/apps/a1_eef_policy_bridge_guard.sh"
+CAMERA_RUNTIME="${ROOT}/scripts/apps/cameras/a1_camera_web_runtime.sh"
 SELECTED_TASK_ID=""
 
 config_args=(--repo-root "${ROOT}" --shell)
@@ -108,7 +109,7 @@ select_task() {
       -m galaxea_a1_runtime.apps.task_selection \
       --catalog "${TASK_CATALOG_PATH}"
   )"; then
-    a1_fail "Pi0.5 task selection cancelled; no model or hardware was started."
+    a1_fail "Pi0.5 task selection cancelled; no model or motion runtime was started; the camera monitor remains available."
     return 2
   fi
   SELECTED_TASK_ID="${selected}"
@@ -117,6 +118,7 @@ select_task() {
 
 start_bridge() {
   select_task
+  "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
   if [[ ! -x "${BRIDGE_GUARD}" ]]; then
     a1_fail "EEF bridge guard is missing: ${BRIDGE_GUARD}"
     exit 2
@@ -126,14 +128,17 @@ start_bridge() {
     --config "${CONFIG_PATH}"
     --task-id "${SELECTED_TASK_ID}"
   )
+  a1_step "Reading uncompressed frames from the persistent Camera Bridge."
   local guarded_command=(
     "${BRIDGE_GUARD}" "${BASE_RUNTIME}" "${MODEL_SESSION}" --
     "${bridge_command[@]}"
   )
   local guarded_command_q
   printf -v guarded_command_q "%q " "${guarded_command[@]}"
-  a1_tmux_start "${SESSION}" "${ROOT}" \
-    "bash -lc 'export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${guarded_command_q}; exec bash'"
+  if ! a1_tmux_start "${SESSION}" "${ROOT}" \
+    "bash -lc 'export PYTHONPATH=\"${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:\${PYTHONPATH:-}\"; ${guarded_command_q}; exec bash'"; then
+    return 2
+  fi
   if ! a1_tmux_verify_startup \
     "${SESSION}" "BRIDGE_EXIT=" "OpenPI pi0.5 bridge" "${TMUX_STARTUP_GRACE_S}" 60; then
     exit 2
@@ -141,6 +146,7 @@ start_bridge() {
 }
 
 start_pipeline() {
+  "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
   select_task
   cleanup_failed_pipeline() {
     local status=$?
@@ -149,6 +155,7 @@ start_pipeline() {
       a1_tmux_stop "${SESSION}"
       a1_tmux_stop "${MODEL_SESSION}"
       "${BASE_RUNTIME}" stop >/dev/null 2>&1 || true
+      "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}" >/dev/null 2>&1 || true
     fi
   }
   trap cleanup_failed_pipeline EXIT
@@ -162,6 +169,7 @@ stop_runtime() {
   a1_tmux_stop "${SESSION}"
   a1_tmux_stop "${MODEL_SESSION}"
   "${BASE_RUNTIME}" stop
+  "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
   a1_success "OpenPI pi0.5 bridge, server, and A1 runtime stopped."
 }
 

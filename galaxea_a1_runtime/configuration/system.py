@@ -164,6 +164,7 @@ class SystemEefTestConfig:
 class SystemGripperConfig:
     stroke_min_mm: float
     stroke_max_mm: float
+    normalized_endpoint_tolerance: float
 
 
 @dataclass(frozen=True)
@@ -316,6 +317,9 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         gripper=SystemGripperConfig(
             stroke_min_mm=floating(gripper, "stroke_min_mm"),
             stroke_max_mm=floating(gripper, "stroke_max_mm"),
+            normalized_endpoint_tolerance=floating(
+                gripper, "normalized_endpoint_tolerance"
+            ),
         ),
         cameras=parse_system_cameras(cameras),
         camera_diagnostics=parse_camera_diagnostics_config(
@@ -399,6 +403,8 @@ def validate_system_config(config: SystemConfig) -> None:
         raise ValueError("eef_test step must be positive and settle time non-negative")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke range is invalid")
+    if not 0 <= config.gripper.normalized_endpoint_tolerance < 0.5:
+        raise ValueError("gripper.normalized_endpoint_tolerance must be in [0, 0.5)")
     if (
         min(
             config.relay.enable_timeout_s,
@@ -464,6 +470,8 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         ),
         "WEB_PREVIEW_BIND": config.web_preview.bind,
         "WEB_PREVIEW_PORT": str(config.web_preview.port),
+        "WEB_PREVIEW_STARTUP_TIMEOUT_S": number(config.web_preview.startup_timeout_s),
+        "WEB_PREVIEW_SHUTDOWN_TIMEOUT_S": number(config.web_preview.shutdown_timeout_s),
         "GRIPPER_MIN_STROKE_MM": number(config.gripper.stroke_min_mm),
         "GRIPPER_MAX_STROKE_MM": number(config.gripper.stroke_max_mm),
         "ROS_MASTER_STARTUP_TIMEOUT_S": number(config.startup.ros_master_timeout_s),
@@ -509,6 +517,10 @@ def bash_config(config: SystemConfig) -> str:
             "EE_TRACKER_NODE_NAME",
             "JOINT_TRACKER_NODE",
             "JOINT_TRACKER_NODE_NAME",
+            "WEB_PREVIEW_BIND",
+            "WEB_PREVIEW_PORT",
+            "WEB_PREVIEW_STARTUP_TIMEOUT_S",
+            "WEB_PREVIEW_SHUTDOWN_TIMEOUT_S",
             "ROS_MASTER_STARTUP_TIMEOUT_S",
             "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
             "TOPIC_STARTUP_TIMEOUT_S",

@@ -27,13 +27,26 @@ and contract; existing deployments can then reference it without changing a
 backend. Multiple tasks and model families can coexist without link farms or
 copied paths.
 
+LingBot deployments contain a registered default, while their command-line
+entrypoints accept `--model`. The selector resolves only an exact registered
+model id, a unique descriptor filename, or a pinned id/revision; it never
+accepts an arbitrary weight directory. For example:
+
+```bash
+just lingbot --model mango_placement_eef
+just lingbot-verify --model mango_placement_eef
+just lingbot-batch --model mango_placement_eef configs/runs/lingbot/mango_placement.toml
+```
+
 ## Integrity and publication
 
 Every managed model pins an immutable Hugging Face commit. Its tracked manifest
 lists the exact non-cache file set, byte size, and SHA-256 of every file.
-Download occurs in a hidden sibling staging directory. Only after full
-validation does an atomic rename expose the final revision directory. A crash
-leftover intentionally blocks reuse until it is inspected.
+Download occurs in a hidden sibling staging directory. Identical files from an
+already present immutable artifact are reused by verified content hash on the
+same filesystem; only missing content is requested from the Hub. Only after
+full validation does an atomic rename expose the final revision directory. A
+crash leftover intentionally blocks reuse until it is inspected.
 
 Fetch or verify one descriptor directly:
 
@@ -80,6 +93,8 @@ Current managed models are:
 | Model | Source label | Checkpoint step | Execution default |
 | --- | --- | ---: | --- |
 | LingBot VA fruit placement EEF | `step-1000` | 1000 | live, finite closed-loop rollout after task selection |
+| LingBot VA mango-to-plate EEF | `step-100` | 100 | selectable as `mango_plate_eef` |
+| LingBot VA mango placement EEF | `step-200` | 200 | selectable as `mango_placement_eef`; tracked full-catalog batch plan available |
 | OpenPI pi0.5 fruit placement EEF | `step-14999` | 14999 | live, finite closed-loop rollout after task selection |
 
 Do not commit weights and do not add Git LFS. Do not delete artifacts or staging

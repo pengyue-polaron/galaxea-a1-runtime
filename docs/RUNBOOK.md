@@ -34,18 +34,35 @@ just cameras
 System config. Resolve missing devices, stale frames, wrong image shapes, or USB
 bandwidth failures before continuing.
 
-For read-only LAN preview when no app owns the cameras:
+Start or verify the persistent read-only LAN monitor once:
 
 ```bash
 just camera-web
 ```
 
-Open the printed URL. The AgentView overlay shows the exact configured policy
-crop but is not recorded. Stop preview before another camera-owning app:
+The live app entrypoints also ensure this monitor automatically, so the command
+is only needed when monitoring without starting an app.
+
+Open the printed URL and leave the page open. It contains only the AgentView and
+wrist streams. The marked background Camera Bridge, not a tmux session, remains
+the sole camera owner while LingBot, pi0.5, or Teleop collection runs. Those apps
+consume the bridge's local uncompressed BGR/depth pairs with the original source
+sequence numbers and monotonic timestamps. Web JPEG encoding is a low-rate,
+latest-frame-only side branch and is display-only, so a slow browser drops Web
+frames instead of queuing or changing inference and collection data.
+
+`just cameras` is the one explicit exception: the direct hardware diagnostic
+temporarily stops the bridge so it can exercise camera construction and USB/FPS
+checks, then restarts it. Normal inference and collection do not perform this
+handoff.
+
+To explicitly close both cameras and the Web monitor:
 
 ```bash
 just camera-web stop
 ```
+
+Use `just camera-web status` or `just camera-web logs` for monitor diagnostics.
 
 The preview is unauthenticated, unencrypted, and LAN-only. Do not port-forward
 it.
@@ -267,27 +284,103 @@ enabled:
 
 ```bash
 just lingbot
+# select another registered LingBot checkpoint without editing a deployment
+just lingbot --model mango_placement_eef
 
 just pi05
 tmux attach -t pi05-a1
 ```
 
-`just lingbot` starts its marked policy-server process and the A1 services, then
-runs the bridge directly in the invoking terminal. Its single `[RUN]` line
+`just lingbot` first requires a non-empty scene note, then starts a fresh marked
+policy-server process and the A1 services and runs the bridge directly in the
+invoking terminal. Its single `[RUN]` line
 updates in place with inference, execution, EEF, and AgentView recording
 progress. `Ctrl+C` stops the foreground bridge, locks the relay, and tears down
-the policy server and A1 services. The policy-server log is written to
-`outputs/inference/lingbot-fruit-placement-eef/policy_server.log`; LingBot has no
-tmux attach/detach lifecycle.
+the policy server and A1 services. LingBot has no tmux attach/detach lifecycle.
 
-While LingBot is running, open the AgentView/wrist dashboard at
+The persistent AgentView/wrist dashboard remains at
 `http://0.0.0.0:8088` (replace `0.0.0.0` with this host's LAN address from
-another machine). The bridge records the full, unoverlaid AgentView stream from
-the already-owned camera reader. Normal completion, an execution error, and
-`Ctrl+C` all lock the relay before closing the camera and atomically publishing
-`agent_view.mp4` under
-`outputs/inference/lingbot-fruit-placement-eef/recordings/`. The final absolute
-video path and frame count are printed after the MP4 is finalized.
+another machine) before, during, and after a run. The bridge records the full,
+unoverlaid AgentView stream from its raw-frame channel. Normal completion, an
+execution error, and
+`Ctrl+C` all lock the relay before closing the camera and atomically publish the
+named MP4 under `outputs/inference/lingbot-fruit-placement-eef/recordings/`.
+Every selected run,
+including a startup that later fails, gets one timestamped task directory. A
+successful recorded run contains one
+`SCENE_NOTE__INPUT_PROMPT__YYYYMMDD_HHMMSS.mp4`, `runtime.log`,
+`policy_server.log`, and `metadata.json`. Filename components retain Unicode
+letters/digits and replace punctuation or whitespace with `_`. The metadata
+binds the original scene note, exact prompt, task id and distribution,
+deployment/System/model configuration, model and Git revisions, timestamps,
+exit status, and artifact names to that run. The final absolute run directory
+and video frame count are printed after finalization.
+
+For an Enter-gated sequence of multiple prompts and repeated trials:
+
+```bash
+just lingbot-batch
+# or use another tracked plan
+just lingbot-batch configs/runs/lingbot/fruit_placement.toml
+# run all six catalog tasks with the registered step-200 mango checkpoint
+just lingbot-batch --model mango_placement_eef configs/runs/lingbot/mango_placement.toml
+```
+
+Edit `retries_per_prompt` and the ordered `task_ids` in the tracked run plan.
+`retries_per_prompt=0` means one attempt per prompt; `2` means one initial
+attempt plus two repetitions. Enter one scene note for the batch. Before every
+attempt, the command displays its task/repetition index and waits: `Enter`
+starts the tracked A1-only reset and then inference, while `q` stops before the
+next reset. The SO leader is not opened. Every attempt gets its own video,
+metadata, and logs. An IK target that does not converge or exceeds the tracked
+solution-delta bound, or a finite target outside the tracked EEF workspace,
+safely locks the arm without publishing the rejected target, finalizes the
+attempt with `status=safety_stopped`, and asks for an evaluation decision.
+`Enter` counts it and advances, `d` records it as discarded and returns the same
+slot to the Enter/reset gate, and `q` stops with that slot pending. The decision
+is stored in `metadata.json`. Reset, model, ROS, camera, serial, and other
+infrastructure failures still abort the batch and remain pending.
+
+Resume the same scene without repeating durable completed slots:
+
+```bash
+just lingbot-batch-resume
+just lingbot-batch-resume --model mango_placement_eef configs/runs/lingbot/mango_placement.toml
+```
+
+Enter the exact same scene note. Resume validates the current plan's batch id,
+task position, attempt number, video, frame count, and both logs. It skips
+`completed` slots and `safety_stopped` slots explicitly counted by the operator;
+discarded, undecided, interrupted, and infrastructure-failed slots run again.
+Earlier runs made before typed safety-stop metadata are also recognized when
+their valid runtime log contains a known IK or workspace target rejection
+message and their operator decision is recorded as counted.
+
+Inspect which slots are valid at any time:
+
+```bash
+just lingbot-batch-report randomized_A
+just lingbot-batch-report randomized_A --model mango_placement_eef configs/runs/lingbot/mango_placement.toml
+```
+
+The report lists every plan slot as `VALID`, `PENDING`, or
+`DUPLICATE_VALID`, including the selected run id and evaluation decision. A
+normal completed rollout is valid automatically; a target safety stop is valid
+only after the operator counts it. Discarded and undecided runs are excluded.
+
+After all slots are valid, export exactly one run per slot:
+
+```bash
+just lingbot-batch-export randomized_A
+just lingbot-batch-export randomized_A --model mango_placement_eef configs/runs/lingbot/mango_placement.toml
+```
+
+Export refuses incomplete or duplicate-valid batches. It atomically writes one
+`.tar` under `outputs/exports/lingbot/` containing a manifest plus each selected
+run's MP4, `metadata.json`, `runtime.log`, and `policy_server.log`. The manifest
+records prompt/task provenance, attempt indices, status/decision, file sizes,
+and SHA-256 hashes. MP4s are already compressed, so the tar is intentionally not
+gzip-compressed.
 
 Run one live app at a time and use `just stop` when switching.
 

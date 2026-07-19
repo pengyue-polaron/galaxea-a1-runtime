@@ -38,7 +38,11 @@ def test_static_doctor_has_no_failures_for_repo_root():
         "pi05_config",
         "teleop_bridge_script",
         "teleop_collect_script",
+        "camera_web_runtime_script",
         "lingbot_runtime_script",
+        "lingbot_run_artifacts",
+        "lingbot_batch_config",
+        "a1_reset_script",
         "legacy_mainline_removed",
         "base_runtime_lingbot_free",
     }

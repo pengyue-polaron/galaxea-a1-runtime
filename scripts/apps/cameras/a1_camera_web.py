@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Standalone config-driven camera owner for the shared LAN web preview."""
+"""Persistent config-driven camera owner for the shared LAN Web monitor."""
 
 from __future__ import annotations
 
@@ -14,6 +14,7 @@ from galaxea_a1_runtime.configuration.system import (
     load_system_config,
 )
 from galaxea_a1_runtime.console import ArgumentParser, info, success
+from galaxea_a1_runtime.hardware.camera_bridge import CameraBridgeServer
 from galaxea_a1_runtime.hardware.cameras import (
     LatestCameraReader,
     RealSenseColorCamera,
@@ -47,6 +48,7 @@ def main() -> int:
     wrist = None
     front_reader = None
     wrist_reader = None
+    bridge = None
     preview = None
     stop = threading.Event()
 
@@ -59,21 +61,29 @@ def main() -> int:
         opened_front = open_configured_camera(
             front_config,
             warmup_frames=system.cameras.warmup_frames,
-            enable_depth=False,
+            enable_depth=front_config.depth,
         )
         front = opened_front
+        if not isinstance(front, RealSenseColorCamera):
+            raise RuntimeError("Camera Bridge AgentView must be a RealSense camera")
         wrist = open_configured_camera(
             wrist_config,
             warmup_frames=system.cameras.warmup_frames,
             enable_depth=False,
         )
-        front_is_realsense = isinstance(front, RealSenseColorCamera)
-        front_reader = LatestCameraReader(
-            "front", front.read_frameset if front_is_realsense else front.read_bgr
-        )
+        front_reader = LatestCameraReader("front", front.read_frameset)
         wrist_reader = LatestCameraReader("wrist", wrist.read_bgr)
         front_reader.start()
         wrist_reader.start()
+        bridge = CameraBridgeServer(
+            system.cameras,
+            front_reader=front_reader,
+            wrist_reader=wrist_reader,
+            front_source=front.label,
+            wrist_source=wrist.label,
+            front_usb_type=front.usb_type,
+        )
+        bridge.start()
         preview_config = (
             system.web_preview
             if system.web_preview.enabled
@@ -86,30 +96,32 @@ def main() -> int:
         preview.register_reader(
             "agent",
             front_reader,
-            extract=color_from_frameset if front_is_realsense else color_from_bgr,
+            extract=color_from_frameset,
             source=front.label,
-            overlay_roi=front_config.crop,
-            overlay_label=(
-                f"RECORDED {front_config.crop.width}x{front_config.crop.height}"
-                if front_config.crop is not None
-                else ""
-            ),
         )
         preview.register_reader(
             "wrist", wrist_reader, extract=color_from_bgr, source=wrist.label
         )
         preview.start()
-        success("Standalone camera owner is ready; Ctrl+C to stop.")
+        success("Persistent raw Camera Bridge and Web monitor are ready.")
         while not stop.wait(0.5):
             for reader in (front_reader, wrist_reader):
                 error = reader.exception()
                 if error is not None:
                     raise RuntimeError(f"{reader.name} camera reader failed") from error
+            bridge_error = bridge.exception()
+            if bridge_error is not None:
+                raise RuntimeError("raw Camera Bridge failed") from bridge_error
     finally:
         cleanup_errors: list[BaseException] = []
         if preview is not None:
             try:
                 preview.close()
+            except BaseException as exc:  # Cleanup must continue to camera close.
+                cleanup_errors.append(exc)
+        if bridge is not None:
+            try:
+                bridge.close()
             except BaseException as exc:  # Cleanup must continue to camera close.
                 cleanup_errors.append(exc)
         try:

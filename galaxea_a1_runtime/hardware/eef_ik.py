@@ -22,6 +22,10 @@ class IkSolution:
     max_joint_delta_rad: float
 
 
+class A1EefIkTargetRejected(RuntimeError):
+    """A valid policy target that cannot be executed within tracked IK bounds."""
+
+
 @dataclass(frozen=True)
 class _RevoluteJoint:
     origin: np.ndarray
@@ -139,14 +143,14 @@ class A1EefIkSolver:
             position_error > self.position_tolerance_m
             or orientation_error > self.orientation_tolerance_rad
         ):
-            raise RuntimeError(
+            raise A1EefIkTargetRejected(
                 "A1 EEF IK did not converge: "
                 f"iterations={iteration} position_error_m={position_error:.6f} "
                 f"orientation_error_rad={orientation_error:.6f}"
             )
         max_delta = float(np.max(np.abs(joints - start)))
         if max_delta > self.max_solution_delta_rad:
-            raise RuntimeError(
+            raise A1EefIkTargetRejected(
                 "A1 EEF IK solution exceeds the configured joint delta: "
                 f"{max_delta:.6f} > {self.max_solution_delta_rad:.6f} rad"
             )

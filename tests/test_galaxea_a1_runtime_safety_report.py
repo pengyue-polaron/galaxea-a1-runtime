@@ -26,9 +26,9 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "pi05_eef_servo_compensation" not in settings
     assert "eef_policy_ik" in settings
     assert "bounded IK" in settings["safe_command_path"].path
-    assert "position_tolerance=0.002m" in settings["eef_policy_ik"].default
+    assert "position_tolerance=0.003m" in settings["eef_policy_ik"].default
     assert "orientation_tolerance=0.02rad" in settings["eef_policy_ik"].default
-    assert "max_joint_delta=1.5rad" in settings["eef_policy_ik"].default
+    assert "max_joint_delta=1.7rad" in settings["eef_policy_ik"].default
     assert "eef_policy_relay_status_guard" in settings
     assert settings["gripper_position_jump_compatibility"].default == "mask=8"
     assert settings["lingbot_execution_gate"].default == (

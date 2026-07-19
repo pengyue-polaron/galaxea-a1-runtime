@@ -47,11 +47,15 @@ it instead of copying its values:
 configs/system/a1.toml
   ├── configs/teleop/a1_so100.toml
   │     ├── configs/poses/a1_so100_collection_start.toml
+  │     │     └── configs/poses/a1_collection_start.toml
   │     └── configs/datasets/<experiment>.toml
   ├── configs/deployments/lingbot/<deployment>.toml
   │     ├── configs/inference/backends/lingbot_va.toml
-  │     ├── configs/models/lingbot/<model>.toml
+  │     ├── configs/models/lingbot/<default-model>.toml
   │     └── configs/tasks/<catalog>.toml
+  ├── configs/runs/lingbot/<plan>.toml
+  │     ├── configs/deployments/lingbot/<deployment>.toml
+  │     └── configs/poses/a1_collection_start.toml
   └── configs/deployments/pi05/<deployment>.toml
         ├── configs/inference/backends/openpi_pi05.toml
         ├── configs/models/pi05/<model>.toml
@@ -70,6 +74,16 @@ Ownership is exclusive:
 | Model descriptor and contract | immutable weight revision, full content manifest, and weight-specific tensor/action semantics |
 | Task catalog | approved exact prompt strings, stable operator-facing task ids, and train/OOD provenance |
 | Deployment | backend/model/task-catalog references, service lifecycle, execution, and run recording behavior |
+| Run plan | ordered task ids, repetitions, and the shared tracked A1 reset pose |
+
+A LingBot deployment names a registered default model so its configuration is
+complete without command-line input. `--model` may replace only that model
+reference with another strict descriptor registered for the same backend; it
+never accepts an artifact path, mutable Hub label, or unregistered weights.
+Every process in one run receives the resolved full model id, and durable run
+metadata records its full source revision. Batch resume and export require that
+exact model identity, so results from two checkpoints cannot fill each other's
+slots.
 
 Schemas require all behavior-affecting keys and reject unknown ones. Python
 apps load typed owners directly; shell exports contain only values needed for
@@ -91,14 +105,34 @@ touching unrelated user processes. LingBot runs its bridge in the invoking
 terminal and uses a marked host process group only for its background policy
 server.
 
-Each physical resource has one owner. An app that owns cameras shares its open
-readers with collection, inference, and embedded preview; the standalone
-preview is used only when no app owns those cameras.
+Each physical resource has one owner. A marked persistent Camera Bridge owns
+both cameras and the read-only Web endpoint for its complete lifetime. It reads
+each physical device once and publishes exact raw BGR/depth pairs, source
+sequence numbers, and source monotonic timestamps over a per-user local socket.
+Inference and collection attach as raw consumers; they never reopen a device or
+take over the HTTP port. A separate latest-frame branch encodes the minimal Web
+preview at its configured lower rate. Slow browsers or JPEG encoding may drop
+preview frames but cannot queue work in, rewrite, or block the raw observation
+contract. Web JPEGs are never fed back into policy, recording, or collection.
 
-LingBot also shares its owned AgentView reader with an asynchronous H.264 run
-recorder; it never opens a second camera handle. Recording writes into a hidden
-staging directory and publishes the finalized MP4 plus metadata by atomic rename
-under `outputs/` during normal, interrupted, and fail-closed bridge cleanup.
+LingBot shares its bridged raw AgentView reader with an asynchronous H.264 run
+recorder; neither component opens another camera handle. One run identity owns hidden
+video and log staging paths before model or hardware startup. The recorder
+publishes a complete MP4 by atomic directory rename, after which the lifecycle
+finalizer adds the scene note, prompt/configuration/Git metadata and that run's
+foreground and policy-server logs. The MP4 filename is a portable composition
+of scene note, exact input prompt, and start date. A startup failure still
+publishes its metadata and logs without exposing an incomplete MP4. A typed IK
+or workspace target rejection records `safety_stopped`; batch resume validates
+the complete artifact set, exact scene/plan slot, and durable operator
+count/discard decision before treating it as finished.
+
+The LingBot batch exporter derives only from those finalized recording roots.
+It requires one unambiguous valid run for every tracked plan slot, then writes a
+manifest and the selected videos/metadata/logs to a hidden tar staging path
+under `outputs/exports/lingbot/` before atomically publishing the completed tar.
+Discarded, undecided, incomplete, and duplicate-valid results cannot enter an
+export implicitly.
 
 ## Teleop and observation contract
 
@@ -117,12 +151,15 @@ The default collection contract contains:
 
 Application gripper state and action are continuous normalized `0..1`. The
 leader input maps to that interval, which maps exactly once to the System-owned
-physical A1 stroke. `/gripper_stroke_host` is the only gripper feedback source.
+physical A1 stroke. The System-owned normalized endpoint tolerance absorbs only
+the documented LingBot quantile roundoff before this mapping; material
+overshoot remains invalid. `/gripper_stroke_host` is the only gripper feedback
+source.
 
-An owning app applies the configured camera crop before recording or policy
-input. Web preview may show the full image with that crop outlined, but the
-overlay is never stored. A valid observation requires fresh frames whose
-monotonic-time skew remains within the System limit.
+The raw consumer applies the configured camera crop before recording or policy
+input. The minimal Web preview shows both full unoverlaid images. A valid
+observation requires fresh frames whose monotonic-time skew remains within the
+System limit.
 
 ## Episode and dataset commit
 
@@ -228,6 +265,13 @@ explicitly records whether each prompt is from training or OOD evaluation; the
 deployment owns only its catalog reference, service lifecycle, and execution
 choices. Runtime input selects a tracked task id and cannot introduce an
 unregistered prompt.
+
+LingBot training summaries normally bind the training code repository and full
+revision. For older published artifacts that omit both fields, setup and verify
+accept the artifact only when its embedded inference configuration is
+byte-identical to the configuration in the pinned backend checkout. This proves
+inference compatibility, not the missing training-code provenance, and is
+reported explicitly during validation.
 
 At connection time both LingBot and pi0.5 bridges validate a canonical digest
 covering code, model, task catalog, camera, state/action, normalization, and

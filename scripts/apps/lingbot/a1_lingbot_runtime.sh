@@ -4,18 +4,45 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
+CAMERA_RUNTIME="${ROOT}/scripts/apps/cameras/a1_camera_web_runtime.sh"
 CONFIG_PATH=""
+MODEL_SELECTOR=""
 source "${ROOT}/scripts/runtime/a1_processes.sh"
 
-if [[ "${1:-}" == "--config" ]]; then
-  if [[ -z "${2:-}" ]]; then
-    a1_fail "--config requires a path."
-    a1_usage "$0 --config <path> <setup|verify|run|server|smoke|server-stop|server-logs|services|stop|doctor|status|logs>" >&2
-    exit 2
-  fi
-  CONFIG_PATH="$2"
-  shift 2
-fi
+runtime_args=()
+while (( $# > 0 )); do
+  case "$1" in
+    --config)
+      if [[ -n "${CONFIG_PATH}" ]]; then
+        a1_fail "--config may be provided only once."
+        exit 2
+      fi
+      if [[ -z "${2:-}" ]]; then
+        a1_fail "--config requires a path."
+        exit 2
+      fi
+      CONFIG_PATH="$2"
+      shift 2
+      ;;
+    --model)
+      if [[ -n "${MODEL_SELECTOR}" ]]; then
+        a1_fail "--model may be provided only once."
+        exit 2
+      fi
+      if [[ -z "${2:-}" ]]; then
+        a1_fail "--model requires a registered model id or descriptor name."
+        exit 2
+      fi
+      MODEL_SELECTOR="$2"
+      shift 2
+      ;;
+    *)
+      runtime_args+=("$1")
+      shift
+      ;;
+  esac
+done
+set -- "${runtime_args[@]}"
 
 PYTHON_BIN="${ROOT}/.venv/bin/python"
 if [[ ! -x "${PYTHON_BIN}" ]]; then
@@ -28,8 +55,28 @@ VERIFY_SCRIPT="${ROOT}/scripts/apps/lingbot/verify_lingbot_inference.py"
 PROBE_SCRIPT="${ROOT}/scripts/apps/lingbot/probe_lingbot_server.py"
 BRIDGE_ENVIRONMENT_CHECKED=false
 SELECTED_TASK_ID=""
+SCENE_NOTE=""
+RESET_BEFORE_RUN_PATH=""
+BATCH_ID=""
+BATCH_CONFIG_PATH=""
+BATCH_RESET_POSE=""
+BATCH_RETRIES_PER_PROMPT=0
+BATCH_ATTEMPTS_PER_PROMPT=1
+BATCH_TOTAL_ATTEMPTS=0
+BATCH_TASK_IDS_CSV=""
+BATCH_TASK_POSITION=""
+BATCH_TASK_COUNT=""
+BATCH_ATTEMPT=""
+BATCH_SEQUENCE=""
+BATCH_COMPLETED_SEQUENCES_CSV=""
+BATCH_COMPLETED_COUNT=0
+BATCH_PENDING_COUNT=0
+BATCH_LEGACY_SAFETY_STOP_COUNT=0
 
 config_args=(--repo-root "${ROOT}" --shell)
+if [[ -n "${MODEL_SELECTOR}" ]]; then
+  config_args+=(--model "${MODEL_SELECTOR}")
+fi
 if [[ -n "${CONFIG_PATH}" ]]; then
   config_args+=("${CONFIG_PATH}")
 fi
@@ -40,10 +87,22 @@ export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 MODEL_PROCESS_NAME="lingbot-policy-server"
 MODEL_LOG="${MODEL_SAVE_ROOT}/policy_server.log"
 PIPELINE_CLEANED_UP=false
+RUN_ID=""
+RUN_FINAL_DIR=""
+RUN_LOG_STAGING_DIR=""
+RUN_RUNTIME_RAW_LOG=""
+RUN_POLICY_LOG=""
+RUN_VIDEO_FILENAME=""
+RUN_ARTIFACTS_PREPARED=false
+RUN_ARTIFACTS_FINALIZED=false
+RUN_EXIT_CODE=2
+RUN_STATUS=""
+RUN_EVALUATION_DECISION=""
 
 check_lingbot_server() {
   if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-    "${PROBE_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}"; then
+    "${PROBE_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
+    --model "${MODEL_ID}"; then
     a1_fail "LingBot server contract check failed on ${LINGBOT_HOST}:${LINGBOT_PORT}."
     return 2
   fi
@@ -60,6 +119,14 @@ check_lingbot_app() {
 check_bridge_environment() {
   if [[ "${BRIDGE_ENVIRONMENT_CHECKED}" == "true" ]]; then
     return
+  fi
+  if ! command -v script >/dev/null 2>&1; then
+    a1_fail "util-linux script is required for per-run foreground logging."
+    return 2
+  fi
+  if ! command -v tee >/dev/null 2>&1; then
+    a1_fail "tee is required for per-run foreground logging."
+    return 2
   fi
   if ! PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     "${PYTHON_BIN}" "${BRIDGE_SCRIPT}" --help >/dev/null; then
@@ -118,15 +185,22 @@ wait_for_model_health() {
 }
 
 start_model_server() {
+  local force_restart="${1:-false}"
   prepare_model_root
   if ss -H -ltn "sport = :${LINGBOT_PORT}" | grep -q .; then
     if a1_process_is_running "${MODEL_PROCESS_NAME}"; then
-      check_lingbot_server
-      a1_info "LingBot policy server is already running (log: ${MODEL_LOG})."
-      return
+      if [[ "${force_restart}" == "true" ]]; then
+        a1_info "Restarting the marked policy server for an independent live run."
+        a1_process_stop "${MODEL_PROCESS_NAME}" "${MODEL_SHUTDOWN_TIMEOUT}"
+      else
+        check_lingbot_server
+        a1_info "LingBot policy server is already running (log: ${MODEL_LOG})."
+        return
+      fi
+    else
+      a1_fail "${LINGBOT_HOST}:${LINGBOT_PORT} is occupied by an unmanaged process."
+      return 2
     fi
-    a1_fail "${LINGBOT_HOST}:${LINGBOT_PORT} is occupied by an unmanaged process."
-    return 2
   fi
   if a1_process_is_running "${MODEL_PROCESS_NAME}"; then
     a1_warn "Stopping a marked LingBot server that is no longer listening."
@@ -146,6 +220,7 @@ start_model_server() {
     "${ROOT}/scripts/apps/lingbot/lingbot_va_policy_server.py"
     --repo-root "${ROOT}"
     --config "${CONFIG_PATH}"
+    --model "${MODEL_ID}"
   )
   a1_process_start \
     "${MODEL_PROCESS_NAME}" "${MODEL_CHECKOUT}" "${MODEL_LOG}" \
@@ -164,23 +239,30 @@ start_model_server() {
 
 setup_inference() {
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-    "${SETUP_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}"
+    "${SETUP_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
+    --model "${MODEL_ID}"
 }
 
 verify_inference() {
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-    "${VERIFY_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}"
+    "${VERIFY_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
+    --model "${MODEL_ID}"
 }
 
 smoke_inference() {
   start_model_server
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-    "${SMOKE_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}"
+    "${SMOKE_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
+    --model "${MODEL_ID}"
 }
 
 start_services() {
   a1_info "Config: ${CONFIG_PATH}"
   "${BASE_RUNTIME}" services
+}
+
+ensure_camera_monitor() {
+  "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
 }
 
 select_task() {
@@ -193,18 +275,37 @@ select_task() {
       -m galaxea_a1_runtime.apps.task_selection \
       --catalog "${TASK_CATALOG_PATH}"
   )"; then
-    a1_fail "LingBot task selection cancelled; no model or hardware was started."
+    a1_fail "LingBot task selection cancelled; no model or motion runtime was started; the camera monitor remains available."
     return 2
   fi
   SELECTED_TASK_ID="${selected}"
   a1_info "Selected LingBot task: ${SELECTED_TASK_ID}"
 }
 
+read_scene_note() {
+  if [[ -n "${SCENE_NOTE}" ]]; then
+    return
+  fi
+  local note
+  if ! note="$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.lingbot.operator_input
+  )"; then
+    a1_fail "Scene note cancelled; no model or motion runtime was started; the camera monitor remains available."
+    return 2
+  fi
+  SCENE_NOTE="${note}"
+}
+
 run_bridge_foreground() {
+  local run_id="$1"
   local bridge_command=(
     "${PYTHON_BIN}" "${BRIDGE_SCRIPT}"
     --config "${CONFIG_PATH}"
+    --model "${MODEL_ID}"
     --task-id "${SELECTED_TASK_ID}"
+    --run-id "${run_id}"
+    --video-filename "${RUN_VIDEO_FILENAME}"
   )
   a1_success "LingBot runtime started in the current terminal."
   a1_info "AgentView dashboard: http://${WEB_PREVIEW_BIND}:${WEB_PREVIEW_PORT}"
@@ -227,20 +328,315 @@ cleanup_pipeline() {
   if ! a1_process_stop "${MODEL_PROCESS_NAME}" "${MODEL_SHUTDOWN_TIMEOUT}"; then
     a1_fail "Cleanup failed to stop the marked LingBot policy server."
   fi
+  ensure_camera_monitor >/dev/null 2>&1 || \
+    a1_fail "Persistent Camera Bridge became unavailable during cleanup."
 }
 
-run_pipeline() {
-  select_task
+run_pipeline_foreground() {
+  local run_id="$1"
+  local reset_pose="$2"
   PIPELINE_CLEANED_UP=false
   trap cleanup_pipeline EXIT
   trap 'exit 129' HUP
   trap 'exit 130' INT
   trap 'exit 143' TERM
   check_bridge_environment
-  start_model_server
-  check_lingbot_app
+  ensure_camera_monitor
+  a1_info "LingBot run: ${run_id}"
+  a1_info "Selected LingBot task: ${SELECTED_TASK_ID}"
+  start_model_server true
   start_services
-  run_bridge_foreground
+  if [[ -n "${reset_pose}" ]]; then
+    a1_step "Resetting A1 to the tracked batch start pose before inference."
+    PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+      "${PYTHON_BIN}" "${ROOT}/scripts/runtime/a1_reset.py" \
+      --system-config "${SYSTEM_CONFIG_PATH}" \
+      --pose "${reset_pose}"
+  fi
+  check_lingbot_app
+  a1_step "Reading uncompressed frames from the persistent Camera Bridge."
+  run_bridge_foreground "${run_id}"
+}
+
+prepare_run_artifacts() {
+  local batch_args=()
+  if [[ -n "${BATCH_ID}" ]]; then
+    batch_args=(
+      --batch-id "${BATCH_ID}"
+      --task-position "${BATCH_TASK_POSITION}"
+      --task-count "${BATCH_TASK_COUNT}"
+      --attempt "${BATCH_ATTEMPT}"
+      --attempt-count "${BATCH_ATTEMPTS_PER_PROMPT}"
+      --sequence "${BATCH_SEQUENCE}"
+      --total "${BATCH_TOTAL_ATTEMPTS}"
+    )
+  fi
+  a1_load_shell_config env \
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.lingbot.run_artifacts prepare \
+    --repo-root "${ROOT}" \
+    --config "${CONFIG_PATH}" \
+    --model "${MODEL_ID}" \
+    --task-id "${SELECTED_TASK_ID}" \
+    --scene-note "${SCENE_NOTE}" \
+    "${batch_args[@]}" \
+    --shell
+}
+
+finalize_run_artifacts() {
+  local exit_code="$1"
+  local final_dir
+  if ! final_dir="$(
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+      -m galaxea_a1_runtime.apps.lingbot.run_artifacts finalize \
+      --output-root "${RECORDING_OUTPUT_ROOT}" \
+      --run-id "${RUN_ID}" \
+      --exit-code "${exit_code}"
+  )"; then
+    a1_fail "Failed to finalize LingBot run artifacts from ${RUN_LOG_STAGING_DIR}."
+    return 2
+  fi
+  RUN_ARTIFACTS_FINALIZED=true
+  a1_success "LingBot run artifacts saved: ${final_dir}"
+}
+
+load_run_result() {
+  a1_load_shell_config env \
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.lingbot.run_artifacts inspect \
+    --output-root "${RECORDING_OUTPUT_ROOT}" \
+    --run-id "${RUN_ID}" \
+    --shell
+}
+
+record_evaluation_decision() {
+  local decision="$1"
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.lingbot.run_artifacts decide \
+    --output-root "${RECORDING_OUTPUT_ROOT}" \
+    --run-id "${RUN_ID}" \
+    --decision "${decision}" >/dev/null
+  RUN_EVALUATION_DECISION="${decision}"
+}
+
+finalize_run_artifacts_on_exit() {
+  local shell_status=$?
+  if [[ "${RUN_ARTIFACTS_PREPARED}" != "true" || "${RUN_ARTIFACTS_FINALIZED}" == "true" ]]; then
+    return
+  fi
+  local exit_code="${RUN_EXIT_CODE}"
+  if [[ ! "${exit_code}" =~ ^[0-9]+$ ]] || (( exit_code > 255 )); then
+    exit_code="${shell_status}"
+  fi
+  finalize_run_artifacts "${exit_code}" || true
+}
+
+run_pipeline() {
+  ensure_camera_monitor || return $?
+  check_bridge_environment || return $?
+  a1_info "LingBot model: ${MODEL_ID}"
+  select_task || return $?
+  read_scene_note || return $?
+  prepare_run_artifacts || return $?
+  RUN_ARTIFACTS_PREPARED=true
+  RUN_ARTIFACTS_FINALIZED=false
+  RUN_EXIT_CODE=2
+  RUN_STATUS=""
+  RUN_EVALUATION_DECISION=""
+  trap finalize_run_artifacts_on_exit EXIT
+  trap 'RUN_EXIT_CODE=129; exit 129' HUP
+  trap 'RUN_EXIT_CODE=130; exit 130' INT
+  trap 'RUN_EXIT_CODE=143; exit 143' TERM
+
+  local internal_command=(
+    "$0" --config "${CONFIG_PATH}" --model "${MODEL_ID}" __run
+    "${SELECTED_TASK_ID}" "${RUN_ID}" "${RUN_POLICY_LOG}"
+    "${RUN_VIDEO_FILENAME}" "${RESET_BEFORE_RUN_PATH}"
+  )
+  local internal_command_q
+  printf -v internal_command_q "%q " "${internal_command[@]}"
+  local statuses rc
+  set +e
+  SHELL=/bin/bash script --quiet --flush --return \
+    --command "${internal_command_q}" /dev/null |
+    tee --ignore-interrupts "${RUN_RUNTIME_RAW_LOG}"
+  statuses=("${PIPESTATUS[@]}")
+  set -e
+  rc="${statuses[0]}"
+  if (( statuses[1] != 0 )); then
+    a1_fail "LingBot runtime log writer exited with status ${statuses[1]}."
+    if (( rc == 0 )); then
+      rc="${statuses[1]}"
+    fi
+  fi
+  RUN_EXIT_CODE="${rc}"
+  if ! finalize_run_artifacts "${rc}"; then
+    if (( rc == 0 )); then
+      rc=2
+    fi
+    RUN_EXIT_CODE="${rc}"
+  elif ! load_run_result; then
+    a1_fail "Failed to inspect finalized LingBot run ${RUN_ID}."
+    rc=2
+    RUN_EXIT_CODE="${rc}"
+  fi
+  if [[ "${RUN_ARTIFACTS_FINALIZED}" == "true" ]]; then
+    trap - EXIT
+  fi
+  trap - HUP INT TERM
+  return "${rc}"
+}
+
+load_batch_config() {
+  local batch_config="$1"
+  a1_load_shell_config env \
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.lingbot.batch_config \
+    --repo-root "${ROOT}" --model "${MODEL_ID}" --shell "${batch_config}"
+  if [[ "${BATCH_DEPLOYMENT_CONFIG}" != "${CONFIG_PATH}" ]]; then
+    a1_fail "Batch deployment ${BATCH_DEPLOYMENT_CONFIG} does not match ${CONFIG_PATH}."
+    return 2
+  fi
+}
+
+load_batch_progress() {
+  local batch_config="$1"
+  a1_load_shell_config env \
+    PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.lingbot.batch_progress \
+    --repo-root "${ROOT}" \
+    --model "${MODEL_ID}" \
+    --scene-note "${SCENE_NOTE}" \
+    --shell "${batch_config}"
+}
+
+batch_sequence_is_complete() {
+  local sequence="$1"
+  [[ ",${BATCH_COMPLETED_SEQUENCES_CSV}," == *",${sequence},"* ]]
+}
+
+confirm_batch_attempt() {
+  local label="$1"
+  local answer
+  while true; do
+    a1_step "${label}"
+    if ! IFS= read -r -p "Enter=reset A1 and run, q=stop batch > " answer; then
+      a1_info "Batch input closed; stopping before the next reset."
+      return 1
+    fi
+    if [[ -z "${answer}" ]]; then
+      return 0
+    fi
+    if [[ "${answer,,}" =~ ^(q|quit|exit)$ ]]; then
+      return 1
+    fi
+    a1_warn "Unknown input; press Enter to run or q to stop."
+  done
+}
+
+decide_safety_stopped_attempt() {
+  local answer
+  a1_warn "This evaluation ended on a rejected model target; the target was not published."
+  while true; do
+    if ! IFS= read -r -p "Enter=count as evaluated, d=discard and retry this slot, q=stop batch > " answer; then
+      a1_info "Decision input closed; leaving this evaluation pending."
+      return 20
+    fi
+    case "${answer,,}" in
+      ""|k|keep|count)
+        if ! record_evaluation_decision counted; then
+          a1_fail "Failed to record the counted evaluation decision."
+          return 2
+        fi
+        a1_success "Evaluation counted; the next slot will wait for Enter/reset."
+        return 0
+        ;;
+      d|discard|retry)
+        if ! record_evaluation_decision discarded; then
+          a1_fail "Failed to record the discarded evaluation decision."
+          return 2
+        fi
+        a1_info "Evaluation discarded; this same slot will wait for Enter/reset again."
+        return 10
+        ;;
+      q|quit|exit)
+        a1_info "Batch stopped; this evaluation remains pending for resume."
+        return 20
+        ;;
+      *)
+        a1_warn "Unknown input; press Enter to count, d to discard/retry, or q to stop."
+        ;;
+    esac
+  done
+}
+
+run_batch() {
+  local batch_config="${1:-${ROOT}/configs/runs/lingbot/fruit_placement.toml}"
+  local resume="${2:-false}"
+  ensure_camera_monitor
+  check_bridge_environment
+  load_batch_config "${batch_config}"
+  read_scene_note
+  if [[ "${resume}" == "true" ]]; then
+    load_batch_progress "${batch_config}"
+    a1_info "Resume found ${BATCH_COMPLETED_COUNT}/${BATCH_TOTAL_ATTEMPTS} completed slots for scene note ${SCENE_NOTE}; pending=${BATCH_PENDING_COUNT}."
+    if (( BATCH_LEGACY_SAFETY_STOP_COUNT > 0 )); then
+      a1_info "Resume recognized ${BATCH_LEGACY_SAFETY_STOP_COUNT} earlier target safety stop(s) from legacy logs."
+    fi
+  fi
+
+  local task_ids=()
+  IFS=',' read -r -a task_ids <<<"${BATCH_TASK_IDS_CSV}"
+  local task_count="${#task_ids[@]}"
+  local sequence=0 task_index attempt task_id rc decision_rc
+  a1_info "LingBot model: ${MODEL_ID}"
+  a1_info "LingBot batch ${BATCH_ID}: tasks=${task_count} retries_per_prompt=${BATCH_RETRIES_PER_PROMPT} total=${BATCH_TOTAL_ATTEMPTS}"
+  a1_info "Scene note: ${SCENE_NOTE}"
+  for (( task_index = 0; task_index < task_count; task_index++ )); do
+    task_id="${task_ids[task_index]}"
+    for (( attempt = 1; attempt <= BATCH_ATTEMPTS_PER_PROMPT; attempt++ )); do
+      sequence=$((sequence + 1))
+      if [[ "${resume}" == "true" ]] && batch_sequence_is_complete "${sequence}"; then
+        a1_success "Skipping completed ${sequence}/${BATCH_TOTAL_ATTEMPTS}: task=${task_id} attempt=${attempt}/${BATCH_ATTEMPTS_PER_PROMPT}"
+        continue
+      fi
+      while true; do
+        if ! confirm_batch_attempt \
+          "Next ${sequence}/${BATCH_TOTAL_ATTEMPTS}: task=${task_id} attempt=${attempt}/${BATCH_ATTEMPTS_PER_PROMPT}"; then
+          a1_success "LingBot batch stopped before attempt ${sequence}."
+          return 0
+        fi
+        SELECTED_TASK_ID="${task_id}"
+        RESET_BEFORE_RUN_PATH="${BATCH_RESET_POSE}"
+        BATCH_TASK_POSITION=$((task_index + 1))
+        BATCH_TASK_COUNT="${task_count}"
+        BATCH_ATTEMPT="${attempt}"
+        BATCH_SEQUENCE="${sequence}"
+        rc=0
+        run_pipeline || rc=$?
+        if (( rc != 0 )); then
+          a1_fail "Batch aborted after attempt ${sequence}/${BATCH_TOTAL_ATTEMPTS} failed with status ${rc}."
+          return "${rc}"
+        fi
+        if [[ "${RUN_STATUS}" != "safety_stopped" ]]; then
+          break
+        fi
+        decision_rc=0
+        decide_safety_stopped_attempt || decision_rc=$?
+        if (( decision_rc == 0 )); then
+          break
+        fi
+        if (( decision_rc == 10 )); then
+          continue
+        fi
+        if (( decision_rc == 20 )); then
+          return 0
+        fi
+        return "${decision_rc}"
+      done
+    done
+  done
+  a1_success "LingBot batch ${BATCH_ID} completed ${BATCH_TOTAL_ATTEMPTS} attempts."
 }
 
 doctor() {
@@ -249,6 +645,7 @@ doctor() {
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     "${PYTHON_BIN}" "${ROOT}/scripts/apps/lingbot/a1_lingbot_doctor.py" \
       --config "${CONFIG_PATH}" \
+      --model "${MODEL_ID}" \
       "${args[@]}"
 }
 
@@ -259,6 +656,7 @@ stop_runtime() {
   if (( rc == 0 )); then
     a1_success "LingBot A1 runtime and marked policy server stopped."
   fi
+  ensure_camera_monitor || rc=$?
   return "${rc}"
 }
 
@@ -280,6 +678,36 @@ case "${1:-help}" in
     ;;
   run)
     run_pipeline
+    ;;
+  batch)
+    shift
+    batch_resume=false
+    if [[ "${1:-}" == "--resume" ]]; then
+      batch_resume=true
+      shift
+    fi
+    if (( $# > 1 )); then
+      a1_fail "batch accepts [--resume] and at most one tracked plan path."
+      exit 2
+    fi
+    run_batch "${1:-}" "${batch_resume}"
+    ;;
+  __run)
+    if (( $# != 6 )); then
+      a1_fail "Internal LingBot run expects <task-id> <run-id> <policy-log> <video-filename> <reset-pose>."
+      exit 2
+    fi
+    SELECTED_TASK_ID="$2"
+    RUN_ID="$3"
+    MODEL_LOG="$4"
+    RUN_VIDEO_FILENAME="$5"
+    RESET_BEFORE_RUN_PATH="$6"
+    expected_policy_log="${RECORDING_OUTPUT_ROOT}/.${RUN_ID}.logs/policy_server.log"
+    if [[ "${MODEL_LOG}" != "${expected_policy_log}" || ! -f "${MODEL_LOG}" ]]; then
+      a1_fail "Internal LingBot policy log does not match prepared run ${RUN_ID}."
+      exit 2
+    fi
+    run_pipeline_foreground "${RUN_ID}" "${RESET_BEFORE_RUN_PATH}"
     ;;
   services)
     start_services
@@ -311,11 +739,12 @@ case "${1:-help}" in
     tail_model_log 160
     ;;
   *)
-    a1_usage "$0 [--config PATH] <setup|verify|run|server|smoke|server-stop|server-logs|services|stop|doctor|status|logs>"
+    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] <setup|verify|run|batch|server|smoke|server-stop|server-logs|services|stop|doctor|status|logs>"
     cat <<EOF
   setup     Clone, pin, install, download, and verify LingBot
   verify    Hash-check registered LingBot inputs without opening hardware
   run       Run the complete deployment in the current terminal
+  batch     Run a tracked plan; add --resume to skip finished matching slots
   server    Start only the marked background policy server (offline workflows)
   smoke     Start the server and run one synthetic inference (no ROS/cameras)
   server-stop  Stop only the managed policy server

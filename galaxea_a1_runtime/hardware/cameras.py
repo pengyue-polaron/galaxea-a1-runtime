@@ -14,6 +14,7 @@ from galaxea_a1_runtime.configuration.system import (
     SystemV4l2CameraConfig,
 )
 from galaxea_a1_runtime.hardware.camera_reader import (
+    CameraReader,
     CameraSample,
     LatestCameraReader,
     close_camera_resources,
@@ -21,6 +22,7 @@ from galaxea_a1_runtime.hardware.camera_reader import (
 
 __all__ = [
     "CameraSample",
+    "CameraReader",
     "ColorCamera",
     "LatestCameraReader",
     "OpenCVColorCamera",

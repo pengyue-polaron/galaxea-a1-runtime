@@ -49,7 +49,6 @@ from galaxea_a1_runtime.console import (
     warning,
 )
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
-from galaxea_a1_runtime.hardware.video_recorder import recording_run_id
 from galaxea_a1_runtime.runtime.ros_feedback import (
     A1JointStateCache,
     StagedCommandMonitor,
@@ -65,9 +64,18 @@ from galaxea_a1_runtime.runtime.relay import RelayMonitor
 
 
 class A1LingBotEEBridge:
-    def __init__(self, config: LingBotConfig, task: TaskPrompt):
+    def __init__(
+        self,
+        config: LingBotConfig,
+        task: TaskPrompt,
+        *,
+        run_id: str,
+        video_filename: str,
+    ):
         self.config = config
         self.task = task
+        self.run_id = run_id
+        self.video_filename = video_filename
         self.system = config.system
         self.execution = config.execution
         self.server = config.server
@@ -171,7 +179,8 @@ class A1LingBotEEBridge:
             if config.recording.agent_view_enabled:
                 video_path = self.cameras.start_agent_recording(
                     output_root=config.recording.output_root,
-                    run_id=recording_run_id(self.task.task_id),
+                    run_id=self.run_id,
+                    video_filename=self.video_filename,
                 )
                 info(f"AgentView recording armed: {video_path}")
         except BaseException as init_error:

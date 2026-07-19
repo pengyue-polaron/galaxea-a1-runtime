@@ -11,7 +11,7 @@ from galaxea_a1_runtime.apps.lingbot.config import (
 )
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.configuration.base import discover_repo_root
-from galaxea_a1_runtime.console import ArgumentParser, step, success
+from galaxea_a1_runtime.console import ArgumentParser, step, success, warning
 from galaxea_a1_runtime.models.backend import (
     ensure_backend_checkout,
     ensure_backend_environment,
@@ -54,7 +54,12 @@ def setup(config: LingBotConfig) -> None:
         f"({model.source.revision_label})"
     )
     result = fetch_artifact(model)
-    validate_training_summary(config, result.root)
+    provenance = validate_training_summary(config, result.root)
+    if provenance == "embedded-inference-config":
+        warning(
+            "Training summary has no code revision; compatibility was verified "
+            "by matching its embedded inference config to the pinned backend."
+        )
     success(
         "LingBot inference ready: "
         f"model={model.model_id} files={result.files} bytes={result.bytes} "
@@ -66,10 +71,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--config", type=Path)
+    parser.add_argument("--model")
     args = parser.parse_args(argv)
     repo_root = args.repo_root.resolve()
     config_path = args.config or default_config_path(repo_root)
-    config = load_lingbot_config(config_path, repo_root=repo_root)
+    config = load_lingbot_config(
+        config_path,
+        repo_root=repo_root,
+        model_selector=args.model,
+    )
     if discover_repo_root(config.path) != repo_root:
         raise ValueError("LingBot config does not belong to --repo-root")
     setup(config)

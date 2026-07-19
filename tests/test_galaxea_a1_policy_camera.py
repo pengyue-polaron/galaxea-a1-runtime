@@ -1,12 +1,11 @@
 from pathlib import Path
 
-from galaxea_a1_runtime.apps import policy_camera
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
 from galaxea_a1_runtime.hardware.video_recorder import VideoRecordingResult
 
 
-def test_policy_camera_finalizes_recording_before_preview_and_cameras(
-    tmp_path: Path, monkeypatch
+def test_policy_camera_finalizes_recording_before_bridge_disconnect(
+    tmp_path: Path,
 ):
     operations: list[str] = []
     result = VideoRecordingResult(
@@ -21,25 +20,18 @@ def test_policy_camera_finalizes_recording_before_preview_and_cameras(
             operations.append("recording")
             return result
 
-    class Preview:
+    class Bridge:
         def close(self):
-            operations.append("preview")
+            operations.append("bridge")
 
-    monkeypatch.setattr(
-        policy_camera,
-        "close_camera_resources",
-        lambda *_args: operations.append("cameras"),
-    )
     session = PolicyCameraSession.__new__(PolicyCameraSession)
     session.agent_recorder = Recorder()
     session.recording_result = None
-    session.preview = Preview()
+    session.camera_bridge = Bridge()
     session.wrist_reader = object()
     session.front_reader = object()
-    session.wrist_camera = object()
-    session.front_camera = object()
 
     session.close()
 
-    assert operations == ["recording", "preview", "cameras"]
+    assert operations == ["recording", "bridge"]
     assert session.recording_result == result

@@ -34,12 +34,13 @@ from galaxea_a1_runtime.configuration.base import (
     required_table,
     string,
 )
-from galaxea_a1_runtime.configuration.cli import run_config_renderer
 from galaxea_a1_runtime.configuration.paths import LINGBOT_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.configuration.tasks import load_task_catalog
+from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
+from galaxea_a1_runtime.models.registry import resolve_registered_model
 from galaxea_a1_runtime.schema import LINGBOT_EEF_ACTION_CHANNEL_IDS
 
 
@@ -82,7 +83,12 @@ def default_config_path(repo_root: Path) -> Path:
     return repo_root / DEFAULT_LINGBOT_CONFIG
 
 
-def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBotConfig:
+def load_lingbot_config(
+    path: Path,
+    *,
+    repo_root: Path | None = None,
+    model_selector: str | None = None,
+) -> LingBotConfig:
     path, repo_root, data = load_toml(path, repo_root=repo_root)
     require_exact_keys(
         data,
@@ -104,8 +110,17 @@ def load_lingbot_config(path: Path, *, repo_root: Path | None = None) -> LingBot
     backend, engine = _load_backend(
         _config_reference(data, "backend", repo_root), repo_root
     )
-    model = load_model_config(
+    default_model = load_model_config(
         _config_reference(data, "model", repo_root), repo_root=repo_root
+    )
+    model = (
+        default_model
+        if model_selector is None
+        else resolve_registered_model(
+            model_selector,
+            repo_root=repo_root,
+            backend=backend.backend_id,
+        )
     )
     if backend.adapter != "lingbot_va" or model.backend != backend.backend_id:
         raise ValueError(
@@ -469,13 +484,33 @@ def _attention_mode(value: str) -> AttentionMode:
 
 
 def main(argv: list[str] | None = None) -> int:
-    return run_config_renderer(
-        argv,
-        description="Read the composed A1 LingBot deployment config.",
-        default_config=DEFAULT_LINGBOT_CONFIG,
-        load_config=load_lingbot_config,
-        render_shell=bash_config,
+    parser = ArgumentParser(
+        description="Read the composed A1 LingBot deployment config."
     )
+    parser.add_argument("config", nargs="?", type=Path, default=DEFAULT_LINGBOT_CONFIG)
+    parser.add_argument(
+        "--repo-root",
+        type=Path,
+        default=Path.cwd(),
+        help="repository root used to resolve tracked relative paths",
+    )
+    parser.add_argument(
+        "--model",
+        help="registered model id, pinned id, or unique descriptor name",
+    )
+    parser.add_argument(
+        "--shell",
+        action="store_true",
+        help="emit validated shell assignments for a runtime supervisor",
+    )
+    args = parser.parse_args(argv)
+    config = load_lingbot_config(
+        args.config,
+        repo_root=args.repo_root,
+        model_selector=args.model,
+    )
+    print(bash_config(config) if args.shell else config.path)
+    return 0
 
 
 if __name__ == "__main__":

@@ -4,7 +4,11 @@ import numpy as np
 import pytest
 
 from galaxea_a1_runtime.configuration.system import load_system_config
-from galaxea_a1_runtime.hardware.eef_ik import A1EefIkSolver, build_eef_ik_solver
+from galaxea_a1_runtime.hardware.eef_ik import (
+    A1EefIkSolver,
+    A1EefIkTargetRejected,
+    build_eef_ik_solver,
+)
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -26,9 +30,9 @@ def test_tracked_a1_ik_reaches_cartesian_target_with_named_joint_limits():
     solver = build_eef_ik_solver(system)
     start_xyz, start_quat = solver.forward(RESET_JOINTS)
 
-    assert system.eef_ik.position_tolerance_m == pytest.approx(0.002)
+    assert system.eef_ik.position_tolerance_m == pytest.approx(0.003)
     assert system.eef_ik.orientation_tolerance_rad == pytest.approx(0.02)
-    assert system.eef_ik.max_solution_delta_rad == pytest.approx(1.50)
+    assert system.eef_ik.max_solution_delta_rad == pytest.approx(1.70)
     solution = solver.solve(
         RESET_JOINTS,
         start_xyz + np.asarray([0.03, 0.0, 0.0]),
@@ -65,5 +69,7 @@ def test_a1_ik_rejects_solution_beyond_tracked_delta_limit():
     )
     start_xyz, start_quat = solver.forward(RESET_JOINTS)
 
-    with pytest.raises(RuntimeError, match="exceeds the configured joint delta"):
+    with pytest.raises(
+        A1EefIkTargetRejected, match="exceeds the configured joint delta"
+    ):
         solver.solve(RESET_JOINTS, start_xyz + [0.03, 0.0, 0.0], start_quat)

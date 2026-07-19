@@ -18,6 +18,11 @@ class EefActionTransformConfig:
     min_quat_norm: float
     gripper_stroke_min: float
     gripper_stroke_max: float
+    gripper_normalized_endpoint_tolerance: float
+
+
+class EefPolicyWorkspaceRejected(ValueError):
+    """A finite policy target that lies outside the tracked EEF workspace."""
 
 
 def build_action_transform_config(
@@ -32,6 +37,9 @@ def build_action_transform_config(
         min_quat_norm=system.eef.min_quat_norm,
         gripper_stroke_min=system.gripper.stroke_min_mm,
         gripper_stroke_max=system.gripper.stroke_max_mm,
+        gripper_normalized_endpoint_tolerance=(
+            system.gripper.normalized_endpoint_tolerance
+        ),
     )
 
 
@@ -44,7 +52,9 @@ def normalize_condition_action(
     action[3:7] = normalize_quat(
         action[3:7], min_norm=config.min_quat_norm, label="EE state condition"
     )
-    action[7] = _continuous_gripper(action[7])
+    action[7] = _continuous_gripper(
+        action[7], tolerance=config.gripper_normalized_endpoint_tolerance
+    )
     return action
 
 
@@ -59,7 +69,9 @@ def validate_policy_action(
     action[3:7] = normalize_quat(
         action[3:7], min_norm=config.min_quat_norm, label="EEF policy action"
     )
-    action[7] = _continuous_gripper(action[7])
+    action[7] = _continuous_gripper(
+        action[7], tolerance=config.gripper_normalized_endpoint_tolerance
+    )
     return action
 
 
@@ -133,13 +145,16 @@ def absolute_action_to_relative(
     return relative
 
 
-def _continuous_gripper(value: float) -> float:
+def _continuous_gripper(value: float, *, tolerance: float) -> float:
     result = float(value)
     if not np.isfinite(result):
         raise ValueError(f"Non-finite gripper value: {result}")
-    if result < 0.0 or result > 1.0:
-        raise ValueError(f"Gripper value must be in [0, 1], got {result:g}")
-    return result
+    if result < -tolerance or result > 1.0 + tolerance:
+        raise ValueError(
+            "Gripper value must be in [0, 1] within endpoint tolerance "
+            f"{tolerance:.17g}, got {result:.17g}"
+        )
+    return min(1.0, max(0.0, result))
 
 
 def _quat_inverse(quat: Sequence[float]) -> np.ndarray:
@@ -204,7 +219,7 @@ def _validate_xyz(xyz: Sequence[float], config: EefActionTransformConfig) -> Non
         if value < lo_i or value > hi_i
     ]
     if axes:
-        raise ValueError(
+        raise EefPolicyWorkspaceRejected(
             "EEF policy action is outside the configured workspace on "
             f"{','.join(axes)}: xyz={values.tolist()} "
             f"min={lower.tolist()} max={upper.tolist()}"

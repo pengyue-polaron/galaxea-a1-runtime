@@ -4,6 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_runtime.sh"
+CAMERA_RUNTIME="${ROOT}/scripts/apps/cameras/a1_camera_web_runtime.sh"
 CONFIG_PATH=""
 
 if [[ "${1:-}" == "--config" ]]; then
@@ -209,10 +210,15 @@ PY
   cleanup_collect() {
     a1_info "Stopping teleop runtime after collection."
     stop_runtime >/dev/null 2>&1 || true
+    if ! "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"; then
+      a1_fail "Persistent Camera Bridge became unavailable during collection cleanup."
+    fi
   }
   trap cleanup_collect EXIT
+  "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
   start_services
   start_bridge
+  a1_step "Collecting uncompressed frames from the persistent Camera Bridge."
   PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/teleop_collect.py" \
       --experiment "${experiment}" \

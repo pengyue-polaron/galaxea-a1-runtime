@@ -6,7 +6,7 @@ import threading
 import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 
 @dataclass(frozen=True)
@@ -14,6 +14,20 @@ class CameraSample:
     seq: int
     monotonic_s: float
     value: Any
+
+
+class CameraReader(Protocol):
+    """Latest-frame interface shared by physical and bridged camera readers."""
+
+    name: str
+
+    def latest(self) -> CameraSample | None: ...
+
+    def latest_seq(self) -> int: ...
+
+    def frame_count(self) -> int: ...
+
+    def exception(self) -> BaseException | None: ...
 
 
 class LatestCameraReader:

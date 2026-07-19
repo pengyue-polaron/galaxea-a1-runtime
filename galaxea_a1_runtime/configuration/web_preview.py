@@ -22,6 +22,8 @@ class WebPreviewConfig:
     port: int
     fps: float
     jpeg_quality: int
+    startup_timeout_s: float = 15.0
+    shutdown_timeout_s: float = 5.0
 
     def validate(self) -> None:
         if not self.bind:
@@ -32,6 +34,14 @@ class WebPreviewConfig:
             raise ValueError("web_preview.fps must be positive")
         if not 1 <= self.jpeg_quality <= 100:
             raise ValueError("web_preview.jpeg_quality must be in [1, 100]")
+        if self.startup_timeout_s < 1:
+            raise ValueError(
+                "web_preview.startup_timeout_s must be at least one second"
+            )
+        if self.shutdown_timeout_s < 1:
+            raise ValueError(
+                "web_preview.shutdown_timeout_s must be at least one second"
+            )
 
 
 def parse_web_preview_config(
@@ -40,7 +50,15 @@ def parse_web_preview_config(
     del repo_root
     require_exact_keys(
         data,
-        required={"enabled", "bind", "port", "fps", "jpeg_quality"},
+        required={
+            "enabled",
+            "bind",
+            "port",
+            "fps",
+            "jpeg_quality",
+            "startup_timeout_s",
+            "shutdown_timeout_s",
+        },
         label="web_preview",
     )
     config = WebPreviewConfig(
@@ -49,6 +67,8 @@ def parse_web_preview_config(
         port=integer(data, "port"),
         fps=floating(data, "fps"),
         jpeg_quality=integer(data, "jpeg_quality"),
+        startup_timeout_s=floating(data, "startup_timeout_s"),
+        shutdown_timeout_s=floating(data, "shutdown_timeout_s"),
     )
     config.validate()
     return config

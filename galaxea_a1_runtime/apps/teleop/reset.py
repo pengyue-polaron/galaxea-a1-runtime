@@ -17,12 +17,12 @@ from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
 
 configure_ros1_python(ROOT_DIR)
 
-from galaxea_a1_runtime.apps.teleop.reset_a1 import A1HomeRunner
+from galaxea_a1_runtime.apps.reset.runner import A1HomeRunner
+from galaxea_a1_runtime.apps.reset.progress import ResetProgress
 from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose
 from galaxea_a1_runtime.configuration.paths import TELEOP_CONFIG
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.apps.teleop.reset_leader import reset_leader_home
-from galaxea_a1_runtime.apps.teleop.reset_progress import ResetProgress
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 
@@ -47,7 +47,7 @@ def main() -> int:
     pose = load_home_pose(teleop.reset.config, teleop=teleop)
     devices = ("A1", "Leader") if pose.leader.enabled else ("A1",)
     progress = ResetProgress(devices)
-    a1 = A1HomeRunner(pose, progress)
+    a1 = A1HomeRunner(pose.a1, progress)
     jobs = {"A1": a1.run}
     if pose.leader.enabled:
         jobs["leader"] = lambda: reset_leader_home(pose, progress)

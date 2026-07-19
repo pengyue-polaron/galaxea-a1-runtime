@@ -171,14 +171,26 @@ a1_process_status() {
 
 a1_process_stop_all_managed() {
   local timeout_s="${1:-5}"
+  shift || true
+  local excluded_names=("$@")
   [[ -d "${A1_PROCESS_STATE_ROOT}" ]] || return 0
-  local state_file name
+  local state_file name excluded excluded_name
   local status=0
   shopt -s nullglob
   local state_files=("${A1_PROCESS_STATE_ROOT}"/*.pid)
   shopt -u nullglob
   for state_file in "${state_files[@]}"; do
     name="$(basename "${state_file}" .pid)"
+    excluded=false
+    for excluded_name in "${excluded_names[@]}"; do
+      if [[ "${name}" == "${excluded_name}" ]]; then
+        excluded=true
+        break
+      fi
+    done
+    if [[ "${excluded}" == "true" ]]; then
+      continue
+    fi
     a1_process_stop "${name}" "${timeout_s}" || status=1
   done
   return "${status}"

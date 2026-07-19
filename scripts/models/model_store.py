@@ -9,6 +9,7 @@ import sys
 
 from galaxea_a1_runtime.console import ArgumentParser, emit, failure, info, success
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
+from galaxea_a1_runtime.models.registry import registered_models
 from galaxea_a1_runtime.models.store import fetch_artifact, validate_artifact
 
 
@@ -16,19 +17,7 @@ MAX_TRACKED_BYTES = 100 * 1024 * 1024
 
 
 def configured_model_configs(repo: Path) -> tuple[ModelArtifactConfig, ...]:
-    paths = sorted((repo / "configs/models").glob("**/*.toml"))
-    descriptors = [path for path in paths if not path.name.endswith(".contract.toml")]
-    models = tuple(load_model_config(path, repo_root=repo) for path in descriptors)
-    identities: dict[tuple[str, str], Path] = {}
-    for model in models:
-        identity = (model.model_id, model.source.revision)
-        if previous := identities.get(identity):
-            raise ValueError(
-                "duplicate configured model identity "
-                f"{model.model_id}@{model.source.revision}: {previous}, {model.path}"
-            )
-        identities[identity] = model.path
-    return models
+    return registered_models(repo)
 
 
 def configured_registry_paths(repo: Path) -> dict[str, Path]:

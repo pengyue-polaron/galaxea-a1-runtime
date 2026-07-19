@@ -276,10 +276,36 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("teleop_bridge_script", teleop_bridge.is_file(), str(teleop_bridge))
     teleop_collect = repo_root / "scripts" / "apps" / "teleop" / "teleop_collect.py"
     add("teleop_collect_script", teleop_collect.is_file(), str(teleop_collect))
+    camera_web_runtime = (
+        repo_root / "scripts" / "apps" / "cameras" / "a1_camera_web_runtime.sh"
+    )
+    add(
+        "camera_web_runtime_script",
+        camera_web_runtime.is_file(),
+        str(camera_web_runtime),
+    )
     lingbot_runtime = (
         repo_root / "scripts" / "apps" / "lingbot" / "a1_lingbot_runtime.sh"
     )
     add("lingbot_runtime_script", lingbot_runtime.is_file(), str(lingbot_runtime))
+    lingbot_run_artifacts = (
+        repo_root / "galaxea_a1_runtime" / "apps" / "lingbot" / "run_artifacts.py"
+    )
+    add(
+        "lingbot_run_artifacts",
+        lingbot_run_artifacts.is_file(),
+        str(lingbot_run_artifacts),
+    )
+    lingbot_batch_config = (
+        repo_root / "configs" / "runs" / "lingbot" / "fruit_placement.toml"
+    )
+    add(
+        "lingbot_batch_config",
+        lingbot_batch_config.is_file(),
+        str(lingbot_batch_config),
+    )
+    a1_reset_script = repo_root / "scripts" / "runtime" / "a1_reset.py"
+    add("a1_reset_script", a1_reset_script.is_file(), str(a1_reset_script))
 
     existing_removed_paths = [
         path for path in REMOVED_MAINLINE_PATHS if (repo_root / path).exists()

@@ -73,6 +73,27 @@ def test_rosbag_topic_exports_come_from_system_config():
     }
 
 
+def test_camera_web_lifecycle_exports_come_from_system_config():
+    config = load_system_config(SYSTEM, repo_root=REPO)
+    names = (
+        "WEB_PREVIEW_BIND",
+        "WEB_PREVIEW_PORT",
+        "WEB_PREVIEW_STARTUP_TIMEOUT_S",
+        "WEB_PREVIEW_SHUTDOWN_TIMEOUT_S",
+    )
+
+    rendered = dict(
+        line.split("=", 1) for line in render_shell_values(config, names).splitlines()
+    )
+
+    assert rendered == {
+        "WEB_PREVIEW_BIND": config.web_preview.bind,
+        "WEB_PREVIEW_PORT": str(config.web_preview.port),
+        "WEB_PREVIEW_STARTUP_TIMEOUT_S": "15",
+        "WEB_PREVIEW_SHUTDOWN_TIMEOUT_S": "5",
+    }
+
+
 def test_system_config_rejects_removed_orientation_mode(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(

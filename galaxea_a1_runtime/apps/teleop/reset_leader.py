@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 
 from galaxea_a1_runtime.apps.teleop.reset_config import HomePose, LeaderMotion
-from galaxea_a1_runtime.apps.teleop.reset_progress import ResetProgress
+from galaxea_a1_runtime.apps.reset.progress import ResetProgress
 from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
 
 

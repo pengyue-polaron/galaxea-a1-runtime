@@ -59,18 +59,30 @@ only normal owner of both host command topics.
   within the configured startup tolerance before becoming `ACTIVE`.
 - Absolute joint, workspace, and physical gripper limits come from System
   config. EEF policy targets outside workspace or normalized gripper bounds are
-  rejected without publication; no target is clamped onto a boundary. No hidden
+  rejected without publication. The sole endpoint projection is the tracked
+  `2e-6` normalized gripper tolerance that absorbs LingBot's explicit `1e-6`
+  quantile de-normalization offset; larger overshoots are rejected. No hidden
   tracking-error, speed, or action-step clamp is applied.
 - The complete episode-relative model pose is always composed into the absolute
   IK target; its quaternion is never replaced with current feedback.
 - Verbose action logging reports IK residuals and maximum joint deltas when
-  enabled by the deployment; the tracked Cartesian tolerance is 2 mm and the
-  maximum single-joint IK solution delta from fresh feedback is 1.50 rad.
+  enabled by the deployment; the tracked Cartesian tolerance is 3 mm and the
+  maximum single-joint IK solution delta from fresh feedback is 1.70 rad.
 - Gripper forwarding occurs only while `ACTIVE` and healthy. State/action above
   hardware is continuous `0..1`, mapped exactly once to physical stroke;
   `/gripper_stroke_host` is the only feedback source.
 - Normal completion, errors, and `Ctrl+C` must disable motion and stop the
   owning runtime.
+- LingBot treats only typed IK non-convergence, solution-delta rejection, and
+  finite target workspace rejection as a clean `safety_stopped` attempt. It
+  never publishes the rejected target; unexpected runtime and hardware
+  exceptions remain failures. Workspace validation remains mandatory. After a
+  batch safety stop, the operator explicitly counts the evaluation or discards
+  it for a reset/retry; resume honors that durable decision.
+- A scripted LingBot plan remains operator-gated: every attempt requires Enter,
+  then moves A1 through the same tracked staged reset before inference. Reset or
+  infrastructure failure aborts the plan; an IK safety stop returns to the next
+  Enter gate, and repetitions never auto-bypass a fault.
 
 ## Observed A1 status semantics
 
@@ -88,13 +100,19 @@ additional gripper bit latches `FAULT`.
 - Parse and validate all tracked configuration before opening hardware or
   creating processes.
 - One process owns each driver, tracker, camera, serial bus, and command
-  publisher.
-- Embedded preview and AgentView recording consume the policy app's existing
-  latest-frame reader; they never open competing camera handles. Bridge cleanup
-  finalizes recording before closing the owned cameras.
+  publisher. The persistent Camera Bridge is the only camera-handle owner.
+  Camera-consuming apps attach to its local raw-frame channel and never reopen
+  the physical devices.
+- The bridge preserves source sequence numbers and monotonic timestamps on
+  uncompressed BGR/depth pairs. Inference, AgentView recording, and formal
+  collection retain their freshness and paired-skew validation. The Web encoder
+  is a separate latest-frame consumer; Web JPEGs are never policy or collection
+  inputs.
 - After partial startup failure, run `just stop` before retrying.
 - The configuration-independent shutdown fallback may stop only marked
-  repository-owned containers and tmux sessions.
+  repository-owned containers, host process groups, and tmux sessions. Normal
+  `just stop` may preserve the marked read-only camera monitor; explicit
+  `just camera-web stop` closes it.
 - The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
   encryption and must not be port-forwarded or gain control endpoints.
 

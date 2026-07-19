@@ -1,4 +1,4 @@
-"""A1-side implementation of the tracked collection reset."""
+"""ROS adapter for the shared, staged A1 reset."""
 
 from __future__ import annotations
 
@@ -11,8 +11,8 @@ from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
-from galaxea_a1_runtime.apps.teleop.reset_config import HomePose
-from galaxea_a1_runtime.apps.teleop.reset_progress import ResetProgress
+from galaxea_a1_runtime.apps.reset.config import A1HomePose
+from galaxea_a1_runtime.apps.reset.progress import ResetProgress
 from galaxea_a1_runtime.runtime.relay import RelayMonitor
 from galaxea_a1_runtime.runtime.ros_feedback import (
     A1JointStateCache,
@@ -21,7 +21,7 @@ from galaxea_a1_runtime.runtime.ros_feedback import (
 
 
 class A1HomeRunner:
-    def __init__(self, pose: HomePose, progress: ResetProgress):
+    def __init__(self, pose: A1HomePose, progress: ResetProgress):
         self.pose = pose
         self.progress = progress
         self.joints = A1JointStateCache(pose.names)
@@ -54,17 +54,17 @@ class A1HomeRunner:
         motion = self.pose.motion
         rate = rospy.Rate(motion.hz)
         self.enable_pub.publish(Bool(data=False))
-        current = self.wait_for_joints(timeout_s=motion.tracker_alignment_timeout_s)
-        self.progress.update("A1", 0)
-        self.wait_for_staged_alignment(
-            current,
-            timeout_s=motion.tracker_alignment_timeout_s,
-            tolerance_rad=motion.tracker_alignment_tolerance_rad,
-            rate=rate,
-        )
-        self.enable_pub.publish(Bool(data=True))
-        self.wait_for_relay_active(timeout_s=motion.relay_enable_timeout_s)
         try:
+            current = self.wait_for_joints(timeout_s=motion.tracker_alignment_timeout_s)
+            self.progress.update("A1", 0)
+            self.wait_for_staged_alignment(
+                current,
+                timeout_s=motion.tracker_alignment_timeout_s,
+                tolerance_rad=motion.tracker_alignment_tolerance_rad,
+                rate=rate,
+            )
+            self.enable_pub.publish(Bool(data=True))
+            self.wait_for_relay_active(timeout_s=motion.relay_enable_timeout_s)
             self.close_gripper()
             self.move_smooth(current, rate)
             final = self.hold_target(rate)

@@ -22,10 +22,15 @@ from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 def main() -> int:
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--model")
     parser.add_argument("--repo-root", type=Path, default=ROOT)
     args = parser.parse_args()
 
-    config = load_lingbot_config(args.config, repo_root=args.repo_root)
+    config = load_lingbot_config(
+        args.config,
+        repo_root=args.repo_root,
+        model_selector=args.model,
+    )
     policy = config.policy_server
     checkout = policy.backend.source.checkout
     model_root = policy.model.artifact_root

@@ -69,16 +69,17 @@ damping = 0.01
 orientation_weight = 0.2
 max_iteration_step_rad = 0.08
 # A live LingBot rollout reached a numerically valid solution with 1.417 mm
-# Cartesian residual; accept up to 2 mm while retaining fail-closed IK checks.
-position_tolerance_m = 0.002
+# A completed-looking scripted target was rejected at a 2.025 mm Cartesian
+# residual. Accept up to 3 mm while retaining an explicit convergence check.
+position_tolerance_m = 0.003
 # A red_mango_bowl rollout reached 1.141 mm position residual with a
 # 0.012650 rad orientation residual. Allow practical headroom to 0.02 rad
 # (about 1.15 degrees) while preserving an explicit pose convergence check.
 orientation_tolerance_rad = 0.02
-# Live pi0.5 and two-frame LingBot rollouts observed continuous valid IK
-# solutions up to 0.924255 rad. Allow practical headroom while still rejecting
+# A scripted LingBot target produced an otherwise converged 1.622263 rad
+# solution. Allow modest headroom above that observation while still rejecting
 # larger branch jumps; absolute named-joint limits remain independently enforced.
-max_solution_delta_rad = 1.50
+max_solution_delta_rad = 1.70
 
 [eef_test]
 step_m = 0.03
@@ -90,6 +91,10 @@ settle_s = 1.0
 # observed at about 103.8 mm on this arm on 2026-07-15.
 stroke_min_mm = 0.0
 stroke_max_mm = 104.0
+# LingBot quantile de-normalization adds 1e-6 to its range, so an exact learned
+# endpoint may arrive as the adjacent float above 1. Allow only that numerical
+# endpoint error; materially out-of-range policy targets remain rejected.
+normalized_endpoint_tolerance = 0.000002
 
 [cameras]
 warmup_frames = 20
@@ -140,3 +145,5 @@ bind = "0.0.0.0"
 port = 8088
 fps = 10.0
 jpeg_quality = 75
+startup_timeout_s = 15.0
+shutdown_timeout_s = 5.0

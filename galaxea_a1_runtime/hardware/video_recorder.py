@@ -51,6 +51,7 @@ class LatestFrameVideoRecorder:
         fps: float,
         source: str,
         max_source_age_s: float,
+        video_filename: str = "agent_view.mp4",
         monotonic: Callable[[], float] = time.perf_counter,
     ) -> None:
         if min(width, height) <= 0 or width % 2 or height % 2:
@@ -61,6 +62,15 @@ class LatestFrameVideoRecorder:
             raise ValueError("video max_source_age_s must be finite and positive")
         if not run_id or run_id.startswith(".") or "/" in run_id:
             raise ValueError(f"invalid recording run id: {run_id!r}")
+        if (
+            not video_filename
+            or video_filename.startswith(".")
+            or Path(video_filename).name != video_filename
+            or "\\" in video_filename
+            or not video_filename.endswith(".mp4")
+            or len(video_filename.encode("utf-8")) > 240
+        ):
+            raise ValueError(f"invalid recording video filename: {video_filename!r}")
         self.reader = reader
         self.extract_bgr = extract_bgr
         self.output_root = output_root.expanduser().resolve()
@@ -69,12 +79,13 @@ class LatestFrameVideoRecorder:
         self.height = int(height)
         self.fps = float(fps)
         self.source = source
+        self.video_filename = video_filename
         self.max_source_age_s = float(max_source_age_s)
         self.monotonic = monotonic
         self.final_dir = self.output_root / run_id
         self.staging_dir = self.output_root / f".{run_id}.staging"
-        self.final_path = self.final_dir / "agent_view.mp4"
-        self._staging_path = self.staging_dir / "agent_view.mp4"
+        self.final_path = self.final_dir / self.video_filename
+        self._staging_path = self.staging_dir / self.video_filename
         self._stop = threading.Event()
         self._ready = threading.Event()
         self._thread: threading.Thread | None = None

@@ -1,4 +1,4 @@
-"""Shared dual-camera ownership for RGB policy inference apps."""
+"""Shared raw Camera Bridge consumption for RGB policy inference apps."""
 
 from __future__ import annotations
 
@@ -8,22 +8,12 @@ from pathlib import Path
 
 import numpy as np
 
-from galaxea_a1_runtime.hardware.cameras import (
-    ColorCamera,
-    LatestCameraReader,
-    RealSenseColorCamera,
-    RealSenseFrameSet,
-    open_configured_camera,
-    close_camera_resources,
-)
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.configuration.system import SystemConfig
+from galaxea_a1_runtime.hardware.camera_bridge import CameraBridgeReaders
+from galaxea_a1_runtime.hardware.cameras import CameraReader, RealSenseFrameSet
 from galaxea_a1_runtime.hardware.image_geometry import crop_image
-from galaxea_a1_runtime.hardware.web_preview import (
-    CameraWebPreview,
-    color_from_bgr,
-    color_from_frameset,
-)
+from galaxea_a1_runtime.hardware.web_preview import color_from_frameset
 from galaxea_a1_runtime.hardware.video_recorder import (
     LatestFrameVideoRecorder,
     VideoRecordingResult,
@@ -41,37 +31,17 @@ class PolicyCameraSession:
         self.system = system
         self.front_key = front_key
         self.wrist_key = wrist_key
-        front = system.cameras.front
-        wrist = system.cameras.wrist
         self.front_roi = required_front_roi(system.cameras)
-        self.front_camera: RealSenseColorCamera | None = None
-        self.wrist_camera: ColorCamera | None = None
-        self.front_reader: LatestCameraReader | None = None
-        self.wrist_reader: LatestCameraReader | None = None
-        self.preview: CameraWebPreview | None = None
+        self.camera_bridge: CameraBridgeReaders | None = None
+        self.front_reader: CameraReader | None = None
+        self.wrist_reader: CameraReader | None = None
         self.agent_recorder: LatestFrameVideoRecorder | None = None
         self.recording_result: VideoRecordingResult | None = None
         try:
-            opened_front = open_configured_camera(
-                front,
-                warmup_frames=system.cameras.warmup_frames,
-                enable_depth=False,
-            )
-            if not isinstance(opened_front, RealSenseColorCamera):
-                raise RuntimeError("policy AgentView must open as a RealSense camera")
-            self.front_camera = opened_front
-            self.wrist_camera = open_configured_camera(
-                wrist,
-                warmup_frames=system.cameras.warmup_frames,
-                enable_depth=False,
-            )
-            self.front_reader = LatestCameraReader(
-                "front", self.front_camera.read_frameset
-            )
-            self.wrist_reader = LatestCameraReader("wrist", self.wrist_camera.read_bgr)
-            self.front_reader.start()
-            self.wrist_reader.start()
-            self._start_preview()
+            self.camera_bridge = CameraBridgeReaders(system.cameras)
+            self.camera_bridge.start(timeout_s=system.web_preview.startup_timeout_s)
+            self.front_reader = self.camera_bridge.front
+            self.wrist_reader = self.camera_bridge.wrist
         except BaseException:
             self.close()
             raise
@@ -145,30 +115,14 @@ class PolicyCameraSession:
             except BaseException as exc:  # Finalize other camera resources too.
                 errors.append(exc)
             self.agent_recorder = None
-        preview_error: BaseException | None = None
-        if self.preview is not None:
+        if self.camera_bridge is not None:
             try:
-                self.preview.close()
-            except BaseException as exc:  # noqa: BLE001 - finish camera cleanup.
-                preview_error = exc
-            self.preview = None
-        cleanup_error: BaseException | None = None
-        try:
-            close_camera_resources(
-                (self.wrist_reader, self.front_reader),
-                (self.wrist_camera, self.front_camera),
-            )
-        except BaseException as exc:  # noqa: BLE001 - clear owned references.
-            cleanup_error = exc
+                self.camera_bridge.close()
+            except BaseException as exc:  # Finalize all owned resources.
+                errors.append(exc)
+            self.camera_bridge = None
         self.wrist_reader = None
         self.front_reader = None
-        self.wrist_camera = None
-        self.front_camera = None
-        if preview_error is not None:
-            errors.append(RuntimeError("camera web preview cleanup failed"))
-            errors[-1].__cause__ = preview_error
-        if cleanup_error is not None:
-            errors.append(cleanup_error)
         if errors:
             raise BaseExceptionGroup("policy camera cleanup failed", errors)
 
@@ -177,13 +131,14 @@ class PolicyCameraSession:
         *,
         output_root: Path,
         run_id: str,
+        video_filename: str = "agent_view.mp4",
     ) -> Path:
         if self.agent_recorder is not None:
             raise RuntimeError("AgentView recording is already active")
-        if self.front_camera is None:
-            raise RuntimeError("cannot record AgentView before its camera is open")
         front_reader, _ = self._readers()
         front = self.system.cameras.front
+        if self.camera_bridge is None:
+            raise RuntimeError("cannot record AgentView before its bridge is open")
         self.agent_recorder = LatestFrameVideoRecorder(
             reader=front_reader,
             extract_bgr=color_from_frameset,
@@ -192,8 +147,9 @@ class PolicyCameraSession:
             width=front.width,
             height=front.height,
             fps=front.fps,
-            source=self.front_camera.label,
+            source=self.camera_bridge.metadata.front_source,
             max_source_age_s=self.system.cameras.max_age_s,
+            video_filename=video_filename,
         )
         try:
             self.agent_recorder.start()
@@ -207,36 +163,7 @@ class PolicyCameraSession:
             return None
         return self.agent_recorder.frame_count, self.agent_recorder.elapsed_s
 
-    def _start_preview(self) -> None:
-        preview_config = self.system.web_preview
-        if not preview_config.enabled:
-            return
-        if self.front_camera is None or self.wrist_camera is None:
-            raise RuntimeError("cannot start preview before cameras")
-        front_reader, wrist_reader = self._readers()
-        self.preview = CameraWebPreview(
-            preview_config,
-            max_source_age_s=self.system.cameras.max_age_s,
-        )
-        self.preview.register_reader(
-            "agent",
-            front_reader,
-            extract=color_from_frameset,
-            source=self.front_camera.label,
-            overlay_roi=self.front_roi,
-            overlay_label=(
-                f"POLICY INPUT {self.front_roi.width}x{self.front_roi.height}"
-            ),
-        )
-        self.preview.register_reader(
-            "wrist",
-            wrist_reader,
-            extract=color_from_bgr,
-            source=self.wrist_camera.label,
-        )
-        self.preview.start()
-
-    def _readers(self) -> tuple[LatestCameraReader, LatestCameraReader]:
+    def _readers(self) -> tuple[CameraReader, CameraReader]:
         if self.front_reader is None or self.wrist_reader is None:
             raise RuntimeError("policy cameras are not started")
         return self.front_reader, self.wrist_reader

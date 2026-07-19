@@ -1,1 +1,1 @@
-"""Standalone camera application implementations."""
+"""Persistent raw camera bridging and explicit diagnostic applications."""

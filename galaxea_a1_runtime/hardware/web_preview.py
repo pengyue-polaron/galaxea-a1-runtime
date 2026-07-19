@@ -345,17 +345,13 @@ def _reader_exception(reader: Any) -> BaseException | None:
 
 _DASHBOARD_HTML = """<!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Galaxea A1 Cameras</title><style>
-:root{color-scheme:dark;font-family:system-ui,sans-serif;background:#111;color:#eee}body{margin:0;padding:18px}
-header{display:flex;justify-content:space-between;align-items:baseline;gap:16px}h1{font-size:20px;margin:0 0 14px}
-#status{font:13px ui-monospace,monospace;color:#9fd}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:14px}
-figure{margin:0;background:#1c1c1c;border:1px solid #333;border-radius:10px;overflow:hidden}img{display:block;width:100%;height:auto;background:#000}
-figcaption{padding:9px 12px;font-weight:600}.note{margin-top:12px;color:#aaa;font-size:12px}
-</style></head><body><header><h1>Galaxea A1 · Live Cameras</h1><span id="status">connecting…</span></header>
-<main class="grid"><figure><img src="/agent.mjpg" alt="Agent view"><figcaption>Agent view · D455 · red box = policy input</figcaption></figure>
-<figure><img src="/wrist.mjpg" alt="Wrist view"><figcaption>Wrist view · D405</figcaption></figure></main>
-<p class="note">Read-only preview. This service has no robot-control endpoints.</p><script>
-async function health(){try{const r=await fetch('/healthz',{cache:'no-store'}),d=await r.json();
-const s=Object.entries(d.streams).map(([n,v])=>`${n}: ${v.preview_fps}fps age=${v.age_s ?? '-'}s`).join(' · ');
-document.getElementById('status').textContent=s;}catch(e){document.getElementById('status').textContent='health unavailable';}}
-health();setInterval(health,2000);</script></body></html>"""
+<title>A1 Cameras</title><style>
+html,body{margin:0;min-height:100%;background:#000}main{min-height:100vh;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:2px}
+img{display:block;width:100%;height:100vh;object-fit:contain;background:#000}@media(max-width:800px){main{grid-template-columns:1fr}img{height:50vh}}
+</style></head><body><main><img data-stream="agent" alt=""><img data-stream="wrist" alt=""></main><script>
+const images=[...document.querySelectorAll('img[data-stream]')];let retryTimer=null;
+function connect(){retryTimer=null;for(const image of images){image.src=`/${image.dataset.stream}.mjpg?t=${Date.now()}`;}}
+function retry(){if(retryTimer===null)retryTimer=setTimeout(connect,1000);}
+for(const image of images)image.addEventListener('error',retry);
+async function probe(){try{const response=await fetch('/healthz',{cache:'no-store'});if(!response.ok)throw new Error();}catch(error){retry();}}
+connect();setInterval(probe,2000);</script></body></html>"""

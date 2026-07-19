@@ -81,7 +81,7 @@ def run(config: TeleopConfig, *, experiment: str) -> int:
     success("ROS state ready.")
 
     episode_index = next_episode_index(experiment_dir)
-    cameras = TeleopCameraSession(config, front_crop)
+    cameras = TeleopCameraSession(config)
     try:
         step("Starting cameras")
         camera_summary = cameras.start()
