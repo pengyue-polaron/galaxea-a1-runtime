@@ -23,6 +23,7 @@ def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
         GalaxeaA1SOLeaderConfig(
             id=leader_config.id,
             port=leader_config.port,
+            motor_write_retries=leader_config.motor_write_retries,
         )
     )
     leader.connect(calibrate=False)

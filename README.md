@@ -115,6 +115,13 @@ never move the arm. The first command stages the current named-joint hold and
 opens the locked relay only after fresh alignment. LeRobot plugins never publish
 host motor topics directly.
 
+The tracked Teleop application is the composition root for the modified
+six-axis leader/A1 pair. It constructs both LeRobot plugins, derives the
+relative-anchor processor from the strict Teleop and System configs, and runs
+the standard observation → teleoperator action → processor → Robot ordering.
+Generic LeRobot 0.6 CLI commands still install identity processors, so this
+pair must be started through the tracked A1 Teleop workflow.
+
 ## Documentation
 
 | Document | Covers |

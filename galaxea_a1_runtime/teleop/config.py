@@ -77,7 +77,11 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         label="runtime",
     )
     require_exact_keys(reset, required={"config"}, label="reset")
-    require_exact_keys(leader, required={"port", "id", "use_degrees"}, label="leader")
+    require_exact_keys(
+        leader,
+        required={"port", "id", "use_degrees", "motor_write_retries"},
+        label="leader",
+    )
     require_exact_keys(
         bridge,
         required={
@@ -147,6 +151,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             port=_string(leader, "port"),
             id=_string(leader, "id"),
             use_degrees=leader_use_degrees,
+            motor_write_retries=integer(leader, "motor_write_retries"),
         ),
         bridge=TeleopBridgeConfig(
             hz=floating(bridge, "hz"),
@@ -195,6 +200,16 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError(
             "leader.use_degrees must be true for the GalaxeaA1SOLeader degree mapping contract"
         )
+    if config.leader.motor_write_retries < 1:
+        raise ValueError("leader.motor_write_retries must be at least 1")
+    if not config.bridge.mapping.relative:
+        raise ValueError(
+            "bridge.relative must be true for the verified A1 startup-anchor contract"
+        )
+    if not config.gripper.enabled:
+        raise ValueError(
+            "gripper.enabled must be true for the canonical A1 Robot action contract"
+        )
     if config.gripper.source_key != "gripper.pos":
         raise ValueError(
             "gripper.source_key must be 'gripper.pos' for GalaxeaA1SOLeader"
@@ -205,6 +220,14 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("bridge.hz must be positive")
     if config.bridge.a1_state_timeout_s <= 0:
         raise ValueError("bridge.a1_state_timeout_s must be positive")
+    minimum_startup_timeout_s = (
+        2 * config.bridge.a1_state_timeout_s + config.system.relay.enable_timeout_s
+    )
+    if config.runtime.bridge_startup_timeout_s < minimum_startup_timeout_s:
+        raise ValueError(
+            "runtime.bridge_startup_timeout_s must cover two bridge.a1_state_timeout_s "
+            "windows plus the System relay enable timeout"
+        )
     if config.bridge.dof <= 0:
         raise ValueError("bridge.dof must be positive")
     if config.collection.fps <= 0:

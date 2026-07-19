@@ -22,8 +22,9 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
 
     assert config.leader.port == LEADER_PORT
     assert config.leader.id == "my_leader"
+    assert config.leader.motor_write_retries == 5
     assert config.reset.config == REPO / "configs/poses/a1_so100_collection_start.toml"
-    assert config.runtime.bridge_startup_timeout_s == 15.0
+    assert config.runtime.bridge_startup_timeout_s == 65.0
     assert config.runtime.bridge_stop_timeout_s == 5.0
     assert config.collection.state_mode == StateMode.EEF_JOINT
     assert config.bridge.dof == 6
@@ -108,7 +109,7 @@ def test_so_leader_open_endpoint_is_the_single_canonical_gripper_action():
 def test_teleop_shell_contract_renders_lifecycle_values():
     rendered = bash_config(load_teleop_config(CONFIG, repo_root=REPO))
 
-    assert "BRIDGE_STARTUP_TIMEOUT_S=15" in rendered
+    assert "BRIDGE_STARTUP_TIMEOUT_S=65" in rendered
     assert "BRIDGE_STOP_TIMEOUT_S=5" in rendered
     assert "JOINT_TRACKER_NODE=/jointTracker_demo_node" in rendered
     assert "JOINT_TRACKER_NODE_NAME=jointTracker_demo_node" in rendered
@@ -127,4 +128,27 @@ def test_teleop_config_rejects_fractional_collection_fps(tmp_path: Path):
     path.write_text(CONFIG.read_text().replace("fps = 30.0", "fps = 29.97"))
 
     with pytest.raises(ValueError, match="integer for LeRobot conversion"):
+        load_teleop_config(path, repo_root=REPO)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("relative = true", "relative = false", "bridge.relative must be true"),
+        ("enabled = true", "enabled = false", "gripper.enabled must be true"),
+        ("motor_write_retries = 5", "motor_write_retries = 0", "must be at least 1"),
+        (
+            "bridge_startup_timeout_s = 65.0",
+            "bridge_startup_timeout_s = 15.0",
+            "must cover two bridge.a1_state_timeout_s",
+        ),
+    ],
+)
+def test_teleop_config_rejects_unsupported_plugin_contracts(
+    tmp_path: Path, old: str, new: str, message: str
+):
+    path = tmp_path / "teleop.toml"
+    path.write_text(CONFIG.read_text().replace(old, new))
+
+    with pytest.raises(ValueError, match=message):
         load_teleop_config(path, repo_root=REPO)

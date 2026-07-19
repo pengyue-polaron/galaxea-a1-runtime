@@ -170,6 +170,15 @@ leader units; pair-specific degree-to-radian, gripper, sign, scale, bias, and
 limit mapping is a LeRobot processor derived from this repository's tracked
 Teleop and System configs.
 
+The production Teleop bridge is the pair composition root. It constructs the
+auto-discovered Teleoperator and Robot plugins, then applies LeRobot's
+teleoperator-action and robot-action processor ordering. The first processed
+action is the current A1 pose and normalized gripper state; the Robot delegates
+that hold to the `galaxea_a1_runtime` backend, which alone attaches to ROS and
+requests the relay. The previous in-app joint mapping and ROS publishers are not
+retained as a second control path. Generic LeRobot 0.6 CLI entrypoints use
+identity processors and are not valid for this degree-to-radian hardware pair.
+
 The default collection contract contains:
 
 - configured AgentView and wrist RGB observations, plus optional aligned depth;

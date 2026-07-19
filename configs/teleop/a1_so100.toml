@@ -7,7 +7,8 @@ config = "configs/system/a1.toml"
 [runtime]
 prefix = "a1-teleop"
 run_dir = "/tmp/a1-teleop"
-bridge_startup_timeout_s = 15.0
+# Covers backend feedback wait + staged-hold alignment + relay acknowledgement.
+bridge_startup_timeout_s = 65.0
 bridge_stop_timeout_s = 5.0
 
 [reset]
@@ -17,6 +18,8 @@ config = "configs/poses/a1_so100_collection_start.toml"
 port = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
 id = "my_leader"
 use_degrees = true
+# Feetech register writes retry this many times before failing the operation.
+motor_write_retries = 5
 
 [bridge]
 hz = 60.0

@@ -170,7 +170,11 @@ just teleop-test
 ```
 
 Exercise all six joint directions and the continuous gripper over a small
-range. Use `just logs` for failures and `just stop` when finished.
+range. This starts the modified leader Teleoperator, the tracked relative-anchor
+processor, the A1 Robot plugin, and the supervised runtime backend as one owned
+control chain. Do not substitute the generic `lerobot-teleoperate` command: in
+LeRobot 0.6 it uses identity processors and cannot safely pair leader degrees
+with A1 radians. Use `just logs` for failures and `just stop` when finished.
 
 ## 4. Record episodes
 

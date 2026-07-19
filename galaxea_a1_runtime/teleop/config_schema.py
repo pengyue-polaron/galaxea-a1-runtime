@@ -28,6 +28,7 @@ class TeleopLeaderConfig:
     port: str
     id: str
     use_degrees: bool
+    motor_write_retries: int
 
 
 @dataclass(frozen=True)
