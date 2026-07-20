@@ -4,7 +4,14 @@
 config = "configs/teleop/a1_so100.toml"
 
 [dataset]
-raw_package_config = "configs/datasets/fruit_placement_raw.toml"
+raw_source_id = "pengyue-polaron/nyush-galaxea-a1-fruit-placement-raw-v3"
+raw_source_roots = [
+  "data/raw/put-banana-into-blue-plate",
+  "data/raw/put-banana-into-bowl",
+  "data/raw/put-lemon-into-blue-plate",
+  "data/raw/put-mango-into-blue-plate",
+  "data/raw/put-mango-into-bowl",
+]
 overwrite = false
 
 [trim]

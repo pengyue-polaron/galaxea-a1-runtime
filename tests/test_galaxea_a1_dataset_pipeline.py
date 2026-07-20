@@ -126,6 +126,25 @@ def test_dataset_pipeline_config_rejects_unknown_keys(tmp_path, monkeypatch):
         load_pipeline_config(path)
 
 
+def test_dataset_pipeline_config_rejects_raw_source_outside_data_root(
+    tmp_path, monkeypatch
+):
+    path = tmp_path / "dataset.toml"
+    path.write_text(
+        PIPELINE_CONFIG_FIXTURE.read_text().replace(
+            '"data/raw/test_experiment"', '"../outside"'
+        )
+    )
+    monkeypatch.setattr(
+        pipeline_config_module,
+        "load_toml",
+        lambda config_path: load_toml(config_path, repo_root=REPO_ROOT),
+    )
+
+    with pytest.raises(ValueError, match="must be below"):
+        load_pipeline_config(path)
+
+
 def test_dataset_pipeline_config_rejects_invalid_trim(tmp_path, monkeypatch):
     path = tmp_path / "dataset.toml"
     path.write_text(

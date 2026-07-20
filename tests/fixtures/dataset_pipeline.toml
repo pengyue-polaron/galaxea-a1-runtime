@@ -4,7 +4,8 @@
 config = "configs/teleop/a1_so100.toml"
 
 [dataset]
-raw_package_config = "tests/fixtures/raw_package.toml"
+raw_source_id = "galaxea-a1/test_experiment_raw_v3"
+raw_source_roots = ["data/raw/test_experiment"]
 overwrite = true
 
 [trim]

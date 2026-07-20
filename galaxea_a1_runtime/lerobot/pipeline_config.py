@@ -17,9 +17,9 @@ from galaxea_a1_runtime.configuration.base import (
     required_table,
     string,
 )
+from galaxea_a1_runtime.collection.schema import validate_experiment_name
 from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
-from galaxea_a1_runtime.datasets.raw_package import load_raw_package_config
 from galaxea_a1_runtime.schema import (
     ActionMode,
     LEGACY_RAW_ACTION_NAMES,
@@ -80,13 +80,15 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     kinematics = required_table(raw, "kinematics")
     require_exact_keys(
         dataset,
-        required={"raw_package_config", "overwrite"},
+        required={"raw_source_id", "raw_source_roots", "overwrite"},
         label="dataset",
     )
-    raw_package = load_raw_package_config(
-        repo_path(repo_root, string(dataset, "raw_package_config")),
-        repo_root=repo_root,
-    )
+    raw_source_id = string(dataset, "raw_source_id")
+    if raw_source_id.count("/") != 1 or any(
+        not part for part in raw_source_id.split("/")
+    ):
+        raise ValueError("dataset.raw_source_id must be a namespaced dataset ID")
+    raw_source_roots = _raw_source_roots(dataset, repo_root=repo_root)
     require_exact_keys(
         trim,
         required={
@@ -117,8 +119,8 @@ def load_pipeline_config(path: Path) -> DatasetPipelineConfig:
     eef_v3 = _output_config(outputs, "eef_v3")
     eef_v21 = _output_config(outputs, "eef_v21")
     config = DatasetPipelineConfig(
-        raw_source_id=raw_package.repo_id,
-        raw_source_roots=raw_package.source_roots,
+        raw_source_id=raw_source_id,
+        raw_source_roots=raw_source_roots,
         overwrite=boolean(dataset, "overwrite"),
         boundary_trim=_boundary_trim_config(trim),
         source_contract=DatasetContract(
@@ -162,6 +164,25 @@ def _boundary_trim_config(data: dict[str, Any]) -> BoundaryTrimConfig:
         max_trim_fraction=floating(data, "max_trim_fraction"),
         min_kept_duration_s=floating(data, "min_kept_duration_s"),
     )
+
+
+def _raw_source_roots(data: dict[str, Any], *, repo_root: Path) -> tuple[Path, ...]:
+    values = data.get("raw_source_roots")
+    if (
+        not isinstance(values, list)
+        or not values
+        or not all(isinstance(value, str) and value for value in values)
+    ):
+        raise ValueError("dataset.raw_source_roots must be a non-empty string list")
+    roots = tuple(repo_path(repo_root, value) for value in values)
+    if len(set(roots)) != len(roots):
+        raise ValueError("dataset.raw_source_roots contains duplicates")
+    raw_root = (repo_root / "data" / "raw").resolve()
+    for root in roots:
+        if not root.is_relative_to(raw_root):
+            raise ValueError(f"legacy Raw v3 source must be below {raw_root}: {root}")
+        validate_experiment_name(root.name)
+    return roots
 
 
 def _output_config(outputs: dict[str, Any], name: str) -> dict[str, Any]:

@@ -302,9 +302,9 @@ just legacy-convert EXPERIMENT eef-v3
 just legacy-convert EXPERIMENT eef-v2.1
 ```
 
-The legacy dataset config references the tracked Raw-package config that owns the
-logical Raw v3 identity and its non-empty task-root list; it owns processed
-packaging paths, overwrite policy, and the explicit boundary-trim policy. A
+The legacy dataset config owns the logical Raw v3 identity and its non-empty
+task-root list, processed packaging paths, overwrite policy, and the explicit
+boundary-trim policy. A
 multi-task output preserves each root's `task.txt` on its episodes. Observation
 and action contracts derive from the referenced Teleop and System configs. Use
 the reviewed trim values unless a dataset inspection justifies changing them:
