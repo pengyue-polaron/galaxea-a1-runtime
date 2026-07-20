@@ -10,6 +10,7 @@ MODEL_SELECTOR=""
 TASK_SELECTOR=""
 SCENE_NOTE_INPUT=""
 source "${ROOT}/scripts/runtime/a1_processes.sh"
+A1_REPO_PYTHONPATH="$(a1_repo_pythonpath "${ROOT}")"
 
 runtime_args=()
 while (( $# > 0 )); do
@@ -256,7 +257,7 @@ start_model_server() {
 
   local server_command=(
     env
-    "PYTHONPATH=${MODEL_CHECKOUT}:${ROOT}:${PYTHONPATH:-}"
+    "PYTHONPATH=${MODEL_CHECKOUT}:${A1_REPO_PYTHONPATH}:${PYTHONPATH:-}"
     TOKENIZERS_PARALLELISM=false
     PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True
     "${MODEL_PYTHON}" -m torch.distributed.run

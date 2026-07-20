@@ -45,6 +45,13 @@ def test_shell_config_loader_applies_assignments_in_calling_shell():
     assert result.returncode == 0
 
 
+def test_repo_pythonpath_includes_runtime_and_embodied_ops_sdk():
+    result = run_bash("a1_repo_pythonpath /workspace")
+
+    assert result.returncode == 0
+    assert result.stdout.strip() == ("/workspace:/workspace/external/embodied-ops/src")
+
+
 def test_rosbag_topic_exports_come_from_system_config():
     config = load_system_config(
         SYSTEM,

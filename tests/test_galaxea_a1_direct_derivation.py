@@ -106,16 +106,22 @@ def test_each_derivative_starts_from_the_canonical_source(
 
     monkeypatch.setattr(derive_module, "export_v21_dataset", export_v21)
 
-    result = derive_module.build_derivatives(
-        config, targets=[derive_module.JOINT_V21, derive_module.EEF_V3]
-    )
+    result = derive_module.build_derivatives(config)
 
-    assert set(result) == {derive_module.JOINT_V21, derive_module.EEF_V3}
+    assert set(result) == {
+        derive_module.JOINT_V21,
+        derive_module.EEF_V3,
+        derive_module.EEF_V21,
+    }
     assert calls[0] == ("joint-v2.1", config.source_root)
     assert calls[1] == ("eef", config.source_root)
+    assert calls[2] == ("eef", config.source_root)
+    assert calls[3][0] == "joint-v2.1"
+    assert calls[3][1].name == "eef-v3"
+    assert calls[3][1] != config.eef_v3.target_root
 
 
-def test_joint_v21_and_eef_v3_accept_the_direct_canonical_contract(tmp_path: Path):
+def test_v21_exports_and_eef_v3_accept_the_direct_canonical_contract(tmp_path: Path):
     source_root = tmp_path / "canonical"
     identity = DirectDatasetIdentity(
         target_root=source_root,
@@ -174,11 +180,21 @@ def test_joint_v21_and_eef_v3_accept_the_direct_canonical_contract(tmp_path: Pat
         tip_link="arm_seg6",
         source_dataset=identity.repo_id,
     )
+    eef_v21 = export_v21_dataset(
+        source_root=tmp_path / "eef",
+        target_root=tmp_path / "eef-v21",
+        repo_id="test/eef-v21",
+        source_dataset=identity.repo_id,
+    )
 
     assert joint["format"] == "v2.1"
     assert eef["source_format"] == DIRECT_DATASET_SCHEMA_VERSION
-    for derivative in (tmp_path / "joint", tmp_path / "eef"):
+    assert eef_v21["format"] == "v2.1"
+    for derivative in (tmp_path / "joint", tmp_path / "eef", tmp_path / "eef-v21"):
         assert not (derivative / "meta/galaxea_a1.json").exists()
         assert (derivative / "meta/source_galaxea_a1.json").is_file()
     eef_info = json.loads((tmp_path / "eef/meta/info.json").read_text())
     assert eef_info["features"]["action"]["names"] == list(EEF_ACTION_NAMES)
+    eef_v21_info = json.loads((tmp_path / "eef-v21/meta/info.json").read_text())
+    assert eef_v21_info["codebase_version"] == "v2.1"
+    assert eef_v21_info["features"]["action"]["names"] == list(EEF_ACTION_NAMES)

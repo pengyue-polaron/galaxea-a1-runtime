@@ -326,6 +326,15 @@ bridge. Configuration is composed from five exclusive owners:
 System + inference backend + immutable model + task catalog + deployment
 ```
 
+Each supervisor exposes only the repository runtime source and the pinned
+`embodied-ops` source to its isolated backend interpreter; it never leaks the
+main virtual environment into a model environment. LingBot uses Python 3.12 and
+OpenPI uses its pinned Python 3.11 environment, so the shared runtime import
+surface remains Python 3.11-parseable even though the main runtime environment
+is formally Python 3.12. Repository-owned ROS containers receive the same
+runtime plus `embodied-ops` source boundary through their fixed container
+`PYTHONPATH`.
+
 The backend pins source code and its dependency lock. The model descriptor pins
 one Hugging Face commit, checkpoint step, artifact format, complete file
 manifest, and model-specific contract. Its local directory is derived as

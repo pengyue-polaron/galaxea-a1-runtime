@@ -94,3 +94,4 @@ def test_output_writer_mounts_only_outputs_read_write(tmp_path: Path) -> None:
     assert f"{tmp_path}:/workspace:ro" in commands
     assert f"{tmp_path}/outputs:/workspace/outputs:rw" in commands
     assert f"{tmp_path}:/workspace:rw" not in commands
+    assert "-e PYTHONPATH=/workspace:/workspace/external/embodied-ops/src" in commands

@@ -42,6 +42,7 @@ ros-python-check:
     #!/usr/bin/env bash
     set -euo pipefail
     source {{repo}}/scripts/runtime/a1_config.sh
+    source {{repo}}/scripts/runtime/a1_services.sh
     a1_load_shell_config env \
       PYTHONPATH="{{repo}}:${PYTHONPATH:-}" \
       {{vpy}} -m galaxea_a1_runtime.configuration.system \
@@ -49,6 +50,7 @@ ros-python-check:
     docker image inspect "${IMAGE}" >/dev/null
     docker run --rm --network none \
       --entrypoint /workspace/scripts/runtime/a1_ros_python_check.py \
+      -e "PYTHONPATH=${A1_CONTAINER_PYTHONPATH}" \
       -v "{{repo}}:/workspace:ro" \
       "${IMAGE}" \
       --config /workspace/configs/system/a1.toml

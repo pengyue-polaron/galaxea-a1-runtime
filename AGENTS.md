@@ -44,6 +44,9 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   `external/`; runtime-specific ROS and safety behavior stays in this package.
 - Reuse `galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python` before ROS1
   imports; do not duplicate path surgery.
+- Keep runtime modules parseable as Python 3.11 even though the main environment
+  is Python 3.12: the pinned OpenPI policy process imports the shared deployment
+  contract from its Python 3.11 backend environment.
 
 ## Configuration and live contracts
 

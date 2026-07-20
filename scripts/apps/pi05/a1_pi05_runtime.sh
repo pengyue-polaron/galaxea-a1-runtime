@@ -4,6 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
+A1_REPO_PYTHONPATH="$(a1_repo_pythonpath "${ROOT}")"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CONFIG_PATH=""
 
@@ -77,7 +78,7 @@ start_server() {
   local command_q
   printf -v command_q "%q " "${command[@]}"
   a1_tmux_start "${MODEL_SESSION}" "${MODEL_CHECKOUT}" \
-    "bash -lc 'export PYTHONPATH=\"${ROOT}:\${PYTHONPATH:-}\"; ${command_q}; rc=\$?; echo SERVER_EXIT=\$rc; exec bash'"
+    "bash -lc 'export PYTHONPATH=\"${A1_REPO_PYTHONPATH}:\${PYTHONPATH:-}\"; ${command_q}; rc=\$?; echo SERVER_EXIT=\$rc; exec bash'"
 
   local timeout_s="${MODEL_STARTUP_TIMEOUT%.*}"
   if ! a1_tmux_wait_for_http_health \
