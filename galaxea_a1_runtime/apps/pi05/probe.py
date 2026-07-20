@@ -7,6 +7,7 @@ from pathlib import Path
 from galaxea_a1_runtime.apps.pi05.client import Pi05Client
 from galaxea_a1_runtime.apps.pi05.config import default_config_path, load_pi05_config
 from galaxea_a1_runtime.apps.pi05.protocol import server_metadata
+from galaxea_a1_runtime.configuration.base import discover_repo_root
 from galaxea_a1_runtime.console import ArgumentParser, success
 
 
@@ -19,6 +20,8 @@ def main(argv: list[str] | None = None) -> int:
     config = load_pi05_config(
         args.config or default_config_path(repo_root), repo_root=repo_root
     )
+    if discover_repo_root(config.path) != repo_root:
+        raise ValueError("pi0.5 config does not belong to --repo-root")
     client = Pi05Client(
         config.server.host,
         config.server.port,
