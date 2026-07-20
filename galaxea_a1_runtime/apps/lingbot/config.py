@@ -25,6 +25,7 @@ from galaxea_a1_runtime.configuration.base import (
     boolean,
     float_tuple,
     floating,
+    identifier,
     integer,
     integer_tuple,
     load_toml,
@@ -43,8 +44,6 @@ from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_con
 from galaxea_a1_runtime.models.registry import resolve_registered_model
 from galaxea_a1_runtime.schema import LINGBOT_EEF_ACTION_CHANNEL_IDS
 
-
-DEFAULT_LINGBOT_CONFIG = LINGBOT_CONFIG
 
 __all__ = ["bash_config", "load_lingbot_config"]
 
@@ -80,7 +79,7 @@ class _ModelContract:
 
 
 def default_config_path(repo_root: Path) -> Path:
-    return repo_root / DEFAULT_LINGBOT_CONFIG
+    return repo_root / LINGBOT_CONFIG
 
 
 def load_lingbot_config(
@@ -108,10 +107,10 @@ def load_lingbot_config(
     )
     system = load_system_config(referenced_config(data, repo_root), repo_root=repo_root)
     backend, engine = _load_backend(
-        _config_reference(data, "backend", repo_root), repo_root
+        referenced_config(data, repo_root, key="backend"), repo_root
     )
     default_model = load_model_config(
-        _config_reference(data, "model", repo_root), repo_root=repo_root
+        referenced_config(data, repo_root, key="model"), repo_root=repo_root
     )
     model = (
         default_model
@@ -132,7 +131,7 @@ def load_lingbot_config(
         raise ValueError("LingBot model artifact_format must be 'diffusers'")
     contract = _load_model_contract(model)
     task_catalog = load_task_catalog(
-        _config_reference(data, "tasks", repo_root), repo_root=repo_root
+        referenced_config(data, repo_root, key="tasks"), repo_root=repo_root
     )
 
     deployment = required_table(data, "deployment")
@@ -180,7 +179,7 @@ def load_lingbot_config(
         label="recording",
     )
 
-    deployment_id = _safe_id(string(deployment, "id"), label="deployment.id")
+    deployment_id = identifier(string(deployment, "id"), label="deployment.id")
     transformer_weight = _manifest_file(
         model, "transformer/diffusion_pytorch_model.safetensors"
     )
@@ -441,25 +440,11 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("LingBot front camera must use the RealSense backend")
 
 
-def _config_reference(data: dict[str, Any], key: str, repo_root: Path) -> Path:
-    table = required_table(data, key)
-    require_exact_keys(table, required={"config"}, label=f"{key} reference")
-    return repo_path(repo_root, string(table, "config"))
-
-
 def _manifest_file(model: ModelArtifactConfig, path: str):
     for item in model.manifest.files:
         if item.path.as_posix() == path:
             return item
     raise ValueError(f"LingBot model manifest is missing required path: {path}")
-
-
-def _safe_id(value: str, *, label: str) -> str:
-    if not value or any(
-        not (character.isalnum() or character in {"-", "_", "."}) for character in value
-    ):
-        raise ValueError(f"{label} contains unsupported characters: {value!r}")
-    return value
 
 
 def _pose_mode(value: str) -> PoseMode:
@@ -484,7 +469,7 @@ def main(argv: list[str] | None = None) -> int:
     parser = ArgumentParser(
         description="Read the composed A1 LingBot deployment config."
     )
-    parser.add_argument("config", nargs="?", type=Path, default=DEFAULT_LINGBOT_CONFIG)
+    parser.add_argument("config", nargs="?", type=Path, default=LINGBOT_CONFIG)
     parser.add_argument(
         "--repo-root",
         type=Path,

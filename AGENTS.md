@@ -78,8 +78,8 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   exactly once to the System-owned physical stroke. Use
   `/gripper_stroke_host` as feedback; never reinterpret joint-state element 7.
 - Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v2`
-  contract directly. Raw v3 is a read-only legacy migration source and must
-  never be reintroduced as a new-collection intermediate.
+  contract directly. Raw v3 is not a supported input or collection
+  intermediate.
 - Collection must record reproducibility metadata and fresh joint, EEF, action,
   gripper, and paired-camera samples. Enforce configured camera skew and sample
   freshness.
@@ -94,11 +94,8 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   normalized gripper action, task text, and configured camera observations.
 - Name intentional Joint/EEF or version derivatives by their stored
   representation and LeRobot version, never by a consuming model. A derivative
-  may read the canonical direct dataset or an explicitly legacy Raw v3 import;
-  one final derivative must never be the source of another final derivative.
-- Legacy Raw v3 migration applies its Dataset-owned boundary trim once before
-  Joint/EEF fan-out and records `[start, end)` in `meta/trim.json`. Do not add
-  this historical transformation to direct collection implicitly.
+  reads the canonical direct dataset; one final derivative must never be the
+  source of another final derivative.
 - Keep datasets under `data/`, durable run results under `outputs/`, external
   checkouts under `external/`, and deployment weights under `models/` as defined
   in `docs/ARCHITECTURE.md`. Never commit weights or add Git LFS.

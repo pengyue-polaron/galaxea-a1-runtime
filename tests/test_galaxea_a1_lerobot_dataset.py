@@ -21,6 +21,7 @@ def test_build_dataset_create_kwargs_for_lerobot_v3():
     assert kwargs["fps"] == 20
     assert kwargs["robot_type"] == "galaxea_a1"
     assert kwargs["features"]["observation.images.front"]["dtype"] == "video"
+    assert kwargs["use_videos"] is True
     assert "vcodec" not in kwargs
 
 

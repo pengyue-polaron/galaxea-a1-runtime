@@ -15,12 +15,8 @@ from galaxea_a1_runtime.lerobot.derivation_config import (
     DirectDerivationConfig,
     load_derivation_config,
 )
-from galaxea_a1_runtime.lerobot.direct_recording import (
-    DIRECT_DATASET_SCHEMA_VERSION,
-    discover_direct_dataset,
-)
+from galaxea_a1_runtime.lerobot.direct_recording import discover_direct_dataset
 from galaxea_a1_runtime.lerobot.eef_pack import pack_eef_v3_dataset
-from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 from galaxea_a1_runtime.schema import (
     camera_specs_from_system,
@@ -48,22 +44,15 @@ def build_derivatives(
         ),
     )
     source_id = source.identity.repo_id
-    work_parent = _output(config, selected[0]).target_root.parent
-    work_parent.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(
-        prefix=".a1-direct-derivation-", dir=work_parent
-    ) as temporary:
-        workspace = Path(temporary)
-        return {
-            target: _build_target(
-                config=config,
-                target=target,
-                source_root=source.identity.target_root,
-                source_id=source_id,
-                workspace=workspace,
-            )
-            for target in selected
-        }
+    return {
+        target: _build_target(
+            config=config,
+            target=target,
+            source_root=source.identity.target_root,
+            source_id=source_id,
+        )
+        for target in selected
+    }
 
 
 def _build_target(
@@ -72,7 +61,6 @@ def _build_target(
     target: str,
     source_root: Path,
     source_id: str,
-    workspace: Path,
 ) -> dict[str, Any]:
     output = _output(config, target)
     if target == EEF_V3:
@@ -86,16 +74,8 @@ def _build_target(
             archive_path=output.archive_path,
         )
     if target == JOINT_V21:
-        intermediate = workspace / "joint-v2.1-intermediate-v3"
-        pack_joint_v3_dataset(
-            source_root=source_root,
-            target_root=intermediate,
-            repo_id=f"{output.repo_id}-conversion-v3",
-            source_dataset=source_id,
-            source_format=DIRECT_DATASET_SCHEMA_VERSION,
-        )
         return export_v21_dataset(
-            source_root=intermediate,
+            source_root=source_root,
             target_root=output.target_root,
             repo_id=output.repo_id,
             source_dataset=source_id,
@@ -103,24 +83,29 @@ def _build_target(
             archive_path=output.archive_path,
         )
     if target == EEF_V21:
-        intermediate = workspace / "eef-v2.1-intermediate-v3"
-        _pack_eef(
-            config=config,
-            source_root=source_root,
-            target_root=intermediate,
-            repo_id=f"{output.repo_id}-conversion-v3",
-            source_id=source_id,
-            overwrite=False,
-            archive_path=None,
-        )
-        return export_v21_dataset(
-            source_root=intermediate,
-            target_root=output.target_root,
-            repo_id=output.repo_id,
-            source_dataset=source_id,
-            overwrite=config.overwrite,
-            archive_path=output.archive_path,
-        )
+        work_parent = output.target_root.parent
+        work_parent.mkdir(parents=True, exist_ok=True)
+        with tempfile.TemporaryDirectory(
+            prefix=".a1-eef-v2.1-derivation-", dir=work_parent
+        ) as temporary:
+            intermediate = Path(temporary) / "eef-v3"
+            _pack_eef(
+                config=config,
+                source_root=source_root,
+                target_root=intermediate,
+                repo_id=f"{output.repo_id}-conversion-v3",
+                source_id=source_id,
+                overwrite=False,
+                archive_path=None,
+            )
+            return export_v21_dataset(
+                source_root=intermediate,
+                target_root=output.target_root,
+                repo_id=output.repo_id,
+                source_dataset=source_id,
+                overwrite=config.overwrite,
+                archive_path=output.archive_path,
+            )
     raise AssertionError(f"unhandled derivative target: {target}")
 
 
@@ -144,7 +129,6 @@ def _pack_eef(
         base_link=config.base_link,
         tip_link=config.tip_link,
         source_dataset=source_id,
-        source_format=DIRECT_DATASET_SCHEMA_VERSION,
         overwrite=overwrite,
         archive_path=archive_path,
     )

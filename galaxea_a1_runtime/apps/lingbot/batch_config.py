@@ -11,6 +11,7 @@ from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
 from galaxea_a1_runtime.configuration.base import (
     integer,
     load_toml,
+    lower_identifier,
     repo_path,
     require_exact_keys,
     required_table,
@@ -80,7 +81,7 @@ def load_lingbot_batch_config(
     )
     if integer(batch, "schema_version") != 1:
         raise ValueError("batch.schema_version must be 1")
-    batch_id = _safe_id(string(batch, "id"), label="batch.id")
+    batch_id = lower_identifier(string(batch, "id"), label="batch.id")
     retries = integer(batch, "retries_per_prompt")
     if retries < 0:
         raise ValueError("batch.retries_per_prompt must be non-negative")
@@ -107,7 +108,6 @@ def load_lingbot_batch_config(
 
 def bash_config(config: LingBotBatchConfig) -> str:
     values = (
-        ("BATCH_CONFIG_PATH", str(config.path)),
         ("BATCH_ID", config.batch_id),
         ("BATCH_DEPLOYMENT_CONFIG", str(config.deployment_path)),
         ("BATCH_RESET_POSE", str(config.reset_pose)),
@@ -117,15 +117,6 @@ def bash_config(config: LingBotBatchConfig) -> str:
         ("BATCH_TASK_IDS_CSV", ",".join(config.task_ids)),
     )
     return "\n".join(shell_assign(name, value) for name, value in values)
-
-
-def _safe_id(value: str, *, label: str) -> str:
-    if not value or any(
-        not (character.islower() or character.isdigit() or character in {"-", "_"})
-        for character in value
-    ):
-        raise ValueError(f"{label} contains unsupported characters: {value!r}")
-    return value
 
 
 def main() -> int:

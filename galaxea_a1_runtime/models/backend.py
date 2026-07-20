@@ -10,6 +10,9 @@ from pathlib import Path
 from typing import Literal
 
 from galaxea_a1_runtime.configuration.base import (
+    absolute_path,
+    hex_digest,
+    identifier,
     integer,
     require_exact_keys,
     string,
@@ -63,12 +66,12 @@ def parse_code_backend(
     )
     if integer(backend, "schema_version") != 1:
         raise ValueError("backend.schema_version must be 1")
-    backend_id = _identifier(string(backend, "id"), label="backend.id")
-    adapter = _identifier(string(backend, "adapter"), label="backend.adapter")
+    backend_id = identifier(string(backend, "id"), label="backend.id")
+    adapter = identifier(string(backend, "adapter"), label="backend.adapter")
     repository = string(source, "repository")
     if not repository.startswith("https://"):
         raise ValueError("backend source.repository must use https://")
-    revision = _hex_digest(string(source, "revision"), 40, label="source.revision")
+    revision = hex_digest(string(source, "revision"), 40, label="source.revision")
     manager_text = string(environment, "manager")
     if manager_text not in {"requirements-lock", "uv-lock"}:
         raise ValueError(f"unsupported backend environment manager: {manager_text!r}")
@@ -83,14 +86,14 @@ def parse_code_backend(
         source=CodeSourceConfig(
             repository=repository,
             revision=revision,
-            checkout=_repo_path(repo_root, string(source, "checkout")),
+            checkout=absolute_path(repo_root, string(source, "checkout")),
         ),
         environment=BackendEnvironmentConfig(
             manager=manager_text,
             python_version=python_version,
-            python=_repo_path(repo_root, string(environment, "python")),
-            lock=_repo_path(repo_root, string(environment, "lock")),
-            lock_sha256=_hex_digest(
+            python=absolute_path(repo_root, string(environment, "python")),
+            lock=absolute_path(repo_root, string(environment, "lock")),
+            lock_sha256=hex_digest(
                 string(environment, "lock_sha256"),
                 64,
                 label="environment.lock_sha256",
@@ -220,29 +223,6 @@ def verify_backend_environment(config: CodeBackendConfig) -> None:
             "backend Python version mismatch: expected "
             f"{config.environment.python_version}, got {version}"
         )
-
-
-def _repo_path(repo_root: Path, value: str) -> Path:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = repo_root / path
-    return Path(os.path.abspath(path))
-
-
-def _identifier(value: str, *, label: str) -> str:
-    if not value or any(
-        not (character.isalnum() or character in {"-", "_", "."}) for character in value
-    ):
-        raise ValueError(f"{label} contains unsupported characters: {value!r}")
-    return value
-
-
-def _hex_digest(value: str, length: int, *, label: str) -> str:
-    if len(value) != length or any(
-        character not in "0123456789abcdef" for character in value
-    ):
-        raise ValueError(f"{label} must be a {length}-character lowercase hex digest")
-    return value
 
 
 def _run(

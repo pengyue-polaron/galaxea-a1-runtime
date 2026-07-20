@@ -38,8 +38,8 @@ galaxea_a1_runtime.apps
   LeRobot adapters. The Robot plugin is a thin RPC client; A1-Research hosts the
   operational device service and remains the ROS/safety/process composition root.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
-- `lerobot/` owns direct LeRobotDataset recording, atomic episode commits,
-  legacy Raw v3 import, and deterministic derived packages.
+- `lerobot/` owns direct LeRobotDataset recording, atomic episode commits, and
+  deterministic derived packages.
 - `third_party/` contains pinned vendor snapshots, not A1-specific behavior.
 
 Heavy dependencies are loaded only at hardware or model boundaries. Static
@@ -54,9 +54,8 @@ it instead of copying its values:
 ```text
 configs/system/a1.toml
   ├── configs/teleop/a1_so100.toml
-  │     ├── configs/poses/a1_so100_collection_start.toml
-  │     │     └── configs/poses/a1_collection_start.toml
-  │     └── configs/datasets/<legacy_raw_migration>.toml
+  │     └── configs/poses/a1_so100_collection_start.toml
+  │           └── configs/poses/a1_collection_start.toml
   ├── configs/datasets/<experiment>_derivatives.toml
   ├── configs/deployments/lingbot/<deployment>.toml
   │     ├── configs/inference/backends/lingbot_va.toml
@@ -277,20 +276,18 @@ format; it is not part of collection.
 
 The direct-derivation pipeline accepts only a validated canonical dataset as
 its source. It can produce Joint v2.1, EEF v3.0, and EEF v2.1. Each output starts
-from the canonical source; v2.1 builders may use disposable v3 workspaces but
-never another final derivative. Source identity comes from
+from the canonical source; Joint v2.1 exports directly, while EEF v2.1 uses a
+disposable EEF v3 workspace rather than another final derivative. Source
+identity comes from
 `meta/galaxea_a1.json`, while output paths, repository IDs, overwrite policy,
 and kinematics remain in one tracked Dataset config.
 The derivative namespaces the immutable recording provenance as
 `meta/source_galaxea_a1.json`; it never leaves a stale direct-dataset manifest
 claiming to describe the rewritten action representation.
 
-Raw v3 is a legacy, read-only migration source for the recordings already
-under `data/raw/`. Its importer still validates the historical contract and can
-apply the tracked stationary-boundary trim before producing Joint/EEF v3.0 or
-v2.1 packages. This compatibility path never accepts new collector output and
-must not become a second collection contract. No final derivative is used as
-the source of another final derivative.
+Raw v3 is not a supported source or intermediate. Historical files under
+`data/raw/` may remain locally, but runtime and dataset tooling do not consume
+them. No final derivative is used as the source of another final derivative.
 
 Published metadata is machine-independent: provenance uses logical dataset IDs,
 and external assets use portable names plus content hashes, never host absolute
@@ -379,6 +376,6 @@ There is no local training-output root. First-party code must not create
 ## Deliberate limits
 
 - No standard MoveIt `move_group` path is provided.
-- Old raw-data migration is not maintained.
+- No Raw v3 migration or collection intermediate is provided.
 - No deployment is enabled until its checkpoint contract is registered and
   reviewed.

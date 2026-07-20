@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import math
+import os
 import shlex
 import tomllib
 from pathlib import Path
@@ -141,6 +142,38 @@ def string_tuple(data: dict[str, Any], key: str, expected_len: int) -> tuple[str
     return result
 
 
+def identifier(value: str, *, label: str) -> str:
+    if not value or any(
+        not (character.isalnum() or character in {"-", "_", "."}) for character in value
+    ):
+        raise ValueError(f"{label} contains unsupported characters: {value!r}")
+    return value
+
+
+def lower_identifier(value: str, *, label: str) -> str:
+    if not value or any(
+        not (character.islower() or character.isdigit() or character in {"-", "_"})
+        for character in value
+    ):
+        raise ValueError(f"{label} contains unsupported characters: {value!r}")
+    return value
+
+
+def hex_digest(value: str, length: int, *, label: str) -> str:
+    if len(value) != length or any(
+        character not in "0123456789abcdef" for character in value
+    ):
+        raise ValueError(f"{label} must be a {length}-character lowercase hex digest")
+    return value
+
+
+def absolute_path(repo_root: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = repo_root / path
+    return Path(os.path.abspath(path))
+
+
 def repo_path(repo_root: Path, value: str) -> Path:
     path = Path(value).expanduser()
     return path.resolve() if path.is_absolute() else (repo_root / path).resolve()
@@ -154,10 +187,12 @@ def paths_overlap(left: Path, right: Path) -> bool:
     return left == right or left.is_relative_to(right) or right.is_relative_to(left)
 
 
-def referenced_config(data: dict[str, Any], repo_root: Path) -> Path:
-    system = required_table(data, "system")
-    require_exact_keys(system, required={"config"}, label="system reference")
-    return repo_path(repo_root, string(system, "config"))
+def referenced_config(
+    data: dict[str, Any], repo_root: Path, *, key: str = "system"
+) -> Path:
+    reference = required_table(data, key)
+    require_exact_keys(reference, required={"config"}, label=f"{key} reference")
+    return repo_path(repo_root, string(reference, "config"))
 
 
 def number(value: float) -> str:

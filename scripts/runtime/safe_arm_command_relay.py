@@ -37,7 +37,7 @@ from galaxea_a1_runtime.safety import (  # noqa: E402
 from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
 from galaxea_a1_runtime.constants import SAFE_RELAY_NODE_NAME  # noqa: E402
 from galaxea_a1_runtime.configuration.system import (  # noqa: E402
-    DEFAULT_SYSTEM_CONFIG,
+    SYSTEM_CONFIG,
     load_system_config,
 )
 
@@ -335,7 +335,7 @@ def parse_args() -> RelayRuntimeConfig:
     parser = ArgumentParser(
         description="Fail-closed relay configured from the shared system TOML"
     )
-    parser.add_argument("--config", type=Path, default=ROOT / DEFAULT_SYSTEM_CONFIG)
+    parser.add_argument("--config", type=Path, default=ROOT / SYSTEM_CONFIG)
     cli = parser.parse_args()
     config = load_system_config(cli.config, repo_root=ROOT)
     topics = config.topics

@@ -34,7 +34,7 @@ def test_offline_evaluation_config_is_strict_and_hardware_free():
     assert config.dataset_root == REPO / "data/processed/fruit_placement_eef_v21"
     assert config.coverage.lingbot_first_frame_episodes_per_task == 26
     assert config.coverage.pi05_frames_per_episode == 3
-    assert config.teacher_forcing.episode_index == 0
+    assert config.teacher_forcing_episode_index == 0
 
 
 def test_offline_evaluation_requires_tracked_teacher_forcing_selection(tmp_path):

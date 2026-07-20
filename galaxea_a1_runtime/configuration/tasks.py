@@ -9,6 +9,7 @@ from typing import Any, Literal, cast
 from galaxea_a1_runtime.configuration.base import (
     integer,
     load_toml,
+    lower_identifier,
     require_exact_keys,
     required_table,
     string,
@@ -72,7 +73,7 @@ def load_task_catalog(path: Path, *, repo_root: Path | None = None) -> TaskCatal
     )
     if integer(catalog, "schema_version") != 2:
         raise ValueError("task catalog schema_version must be 2")
-    catalog_id = _safe_id(string(catalog, "id"), label="catalog.id")
+    catalog_id = lower_identifier(string(catalog, "id"), label="catalog.id")
 
     raw_tasks = data.get("tasks")
     if not isinstance(raw_tasks, list) or not raw_tasks:
@@ -86,7 +87,7 @@ def load_task_catalog(path: Path, *, repo_root: Path | None = None) -> TaskCatal
             required={"id", "prompt", "distribution"},
             label=f"task catalog entry {index}",
         )
-        task_id = _safe_id(string(raw_task, "id"), label=f"tasks[{index}].id")
+        task_id = lower_identifier(string(raw_task, "id"), label=f"tasks[{index}].id")
         prompt = text(raw_task, "prompt")
         if not prompt or prompt != prompt.strip() or "\n" in prompt:
             raise ValueError(
@@ -111,12 +112,3 @@ def load_task_catalog(path: Path, *, repo_root: Path | None = None) -> TaskCatal
     if len(set(prompts)) != len(prompts):
         raise ValueError("task catalog prompts must be unique")
     return TaskCatalog(path=path, catalog_id=catalog_id, tasks=tuple(tasks))
-
-
-def _safe_id(value: str, *, label: str) -> str:
-    if not value or any(
-        not (character.islower() or character.isdigit() or character in {"-", "_"})
-        for character in value
-    ):
-        raise ValueError(f"{label} contains unsupported characters: {value!r}")
-    return value

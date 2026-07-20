@@ -23,7 +23,6 @@ def bash_config(config: LingBotConfig) -> str:
         ("CONFIG_PATH", str(config.path)),
         ("LINGBOT_HOST", config.server.host),
         ("LINGBOT_PORT", str(config.server.port)),
-        ("LINGBOT_CONNECT_TIMEOUT", number(config.server.connect_timeout_s)),
         ("MODEL_CHECKOUT", str(config.policy_server.backend.source.checkout)),
         ("MODEL_PYTHON", str(config.policy_server.backend.environment.python)),
         ("MODEL_ROOT", str(config.policy_server.model.artifact_root)),

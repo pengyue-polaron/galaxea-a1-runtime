@@ -10,20 +10,21 @@ from typing import Any
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.filesystem import OutputDirectoryTransaction, atomic_write_text
 from galaxea_a1_runtime.lerobot.dataset import (
-    CANONICAL_IMAGE_STORAGE,
     DatasetConfig,
-    ImageStorage,
     LEROBOT_GENERATED_FEATURES,
     build_dataset_create_kwargs,
     create_lerobot_dataset,
     resume_lerobot_dataset,
     validate_dataset_repo_id,
 )
-from galaxea_a1_runtime.lerobot.dataset_package import copy_dataset_tree
+from galaxea_a1_runtime.lerobot.dataset_package import (
+    copy_dataset_tree,
+    non_negative_json_int,
+    read_json,
+)
 from galaxea_a1_runtime.lerobot.integrity import validate_lerobot_v3_payloads
-from galaxea_a1_runtime.schema import DatasetContract
+from galaxea_a1_runtime.schema import DIRECT_DATASET_SCHEMA_VERSION, DatasetContract
 
-DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v2"
 PROVENANCE_PATH = Path("meta/galaxea_a1.json")
 
 
@@ -43,7 +44,6 @@ class DirectDatasetIdentity:
     fps: int
     contract: DatasetContract
     experiment: str
-    image_storage: ImageStorage = CANONICAL_IMAGE_STORAGE
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "target_root", self.target_root.expanduser().resolve())
@@ -51,7 +51,6 @@ class DirectDatasetIdentity:
             repo_id=self.repo_id,
             root=self.target_root,
             fps=self.fps,
-            image_storage=self.image_storage,
         ).validate()
         if not self.experiment or self.experiment.strip() != self.experiment:
             raise ValueError("direct dataset experiment must be a non-empty identity")
@@ -116,8 +115,8 @@ def inspect_direct_dataset(
     if not target_root.is_dir():
         raise ValueError(f"direct dataset target is not a directory: {target_root}")
 
-    info = _read_json(target_root / "meta/info.json", label="LeRobot info")
-    provenance = _read_json(
+    info = read_json(target_root / "meta/info.json", label="LeRobot info")
+    provenance = read_json(
         target_root / PROVENANCE_PATH, label="Galaxea collection provenance"
     )
     if info.get("codebase_version") != LEROBOT_DATASET_FORMAT:
@@ -134,7 +133,6 @@ def inspect_direct_dataset(
     _validate_features(
         info.get("features"),
         contract=identity.contract,
-        image_storage=identity.image_storage,
     )
     if provenance.get("schema_version") != DIRECT_DATASET_SCHEMA_VERSION:
         raise ValueError("direct dataset has an unsupported Galaxea schema")
@@ -160,8 +158,8 @@ def inspect_direct_dataset(
             f"collection task mismatch for {identity.experiment}: "
             f"existing={task!r}, requested={expected_task!r}"
         )
-    total_episodes = _non_negative_int(info, "total_episodes")
-    total_frames = _non_negative_int(info, "total_frames")
+    total_episodes = non_negative_json_int(info, "total_episodes")
+    total_frames = non_negative_json_int(info, "total_frames")
     if total_episodes == 0 or total_frames == 0:
         raise ValueError("a committed direct dataset must contain at least one episode")
     if provenance.get("total_episodes") != total_episodes:
@@ -188,8 +186,8 @@ def discover_direct_dataset(
     target_root = target_root.expanduser().resolve()
     if not target_root.is_dir():
         raise ValueError(f"direct dataset source does not exist: {target_root}")
-    info = _read_json(target_root / "meta/info.json", label="LeRobot info")
-    provenance = _read_json(
+    info = read_json(target_root / "meta/info.json", label="LeRobot info")
+    provenance = read_json(
         target_root / PROVENANCE_PATH, label="Galaxea collection provenance"
     )
     repo_id = _non_empty_string(provenance, "repo_id")
@@ -230,7 +228,7 @@ class DirectLeRobotEpisode:
         )
         exists = state.total_episodes > 0
         if exists:
-            existing_provenance = _read_json(
+            existing_provenance = read_json(
                 self.identity.target_root / PROVENANCE_PATH,
                 label="Galaxea collection provenance",
             )
@@ -272,7 +270,6 @@ class DirectLeRobotEpisode:
                         repo_id=self.identity.repo_id,
                         root=transaction.path,
                         fps=self.identity.fps,
-                        image_storage=self.identity.image_storage,
                     ),
                     contract=self.identity.contract,
                 )
@@ -298,7 +295,7 @@ class DirectLeRobotEpisode:
         self._dataset.save_episode(parallel_encoding=False)
         self._finalize()
         assert self._transaction.path is not None
-        info = _read_json(
+        info = read_json(
             self._transaction.path / "meta/info.json", label="staged LeRobot info"
         )
         payload = {
@@ -307,8 +304,8 @@ class DirectLeRobotEpisode:
             "repo_id": self.identity.repo_id,
             "experiment": self.identity.experiment,
             "task": self.task,
-            "total_episodes": _non_negative_int(info, "total_episodes"),
-            "total_frames": _non_negative_int(info, "total_frames"),
+            "total_episodes": non_negative_json_int(info, "total_episodes"),
+            "total_frames": non_negative_json_int(info, "total_frames"),
         }
         atomic_write_text(
             self._transaction.path / PROVENANCE_PATH,
@@ -347,9 +344,7 @@ class DirectLeRobotEpisode:
             raise cleanup_error
 
 
-def _validate_features(
-    actual: Any, *, contract: DatasetContract, image_storage: ImageStorage
-) -> None:
+def _validate_features(actual: Any, *, contract: DatasetContract) -> None:
     if not isinstance(actual, dict):
         raise ValueError("direct dataset info.features must be a table")
     configured = build_dataset_create_kwargs(
@@ -357,7 +352,6 @@ def _validate_features(
             repo_id="validation/dataset",
             root=Path("validation-only"),
             fps=1,
-            image_storage=image_storage,
         ),
         contract=contract,
     )["features"]
@@ -381,23 +375,6 @@ def _validate_features(
 def _json_value(value: Any) -> Any:
     if isinstance(value, tuple):
         return list(value)
-    return value
-
-
-def _read_json(path: Path, *, label: str) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"cannot read {label}: {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be a JSON object: {path}")
-    return value
-
-
-def _non_negative_int(data: dict[str, Any], key: str) -> int:
-    value = data.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{key} must be a non-negative integer")
     return value
 
 

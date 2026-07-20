@@ -27,10 +27,6 @@ def base_report(
     artifact_root: Path,
 ) -> dict[str, Any]:
     preflight = dataset.preflight()
-    color_checks = {}
-    for episode_indices in dataset.episodes_by_task().values():
-        episode_index = episode_indices[0]
-        color_checks[str(episode_index)] = dataset.color_alignment_check(episode_index)
     return {
         "schema_version": "galaxea_a1_eef_offline_eval_v1",
         "model": model,
@@ -38,7 +34,6 @@ def base_report(
         "evaluation_config": str(config.path.relative_to(config.repo_root)),
         "artifact_root": str(artifact_root),
         "dataset": preflight,
-        "color_and_trim_alignment": color_checks,
         "coverage": asdict(config.coverage),
         "limitations": [
             "evaluation data is the recorded training set",

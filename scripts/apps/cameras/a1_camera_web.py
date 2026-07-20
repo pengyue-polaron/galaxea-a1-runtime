@@ -10,7 +10,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.system import (
-    DEFAULT_SYSTEM_CONFIG,
+    SYSTEM_CONFIG,
     load_system_config,
 )
 from galaxea_a1_runtime.console import ArgumentParser, info, success
@@ -34,7 +34,7 @@ def parse_args() -> Namespace:
     parser = ArgumentParser(
         description="Serve the tracked A1 agent/wrist cameras over LAN MJPEG."
     )
-    parser.add_argument("--config", type=Path, default=ROOT / DEFAULT_SYSTEM_CONFIG)
+    parser.add_argument("--config", type=Path, default=ROOT / SYSTEM_CONFIG)
     return parser.parse_args()
 
 

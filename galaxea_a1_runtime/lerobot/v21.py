@@ -34,7 +34,7 @@ def export_v21_dataset(
     source_root: Path,
     target_root: Path,
     repo_id: str,
-    source_dataset: str | None = None,
+    source_dataset: str,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -58,12 +58,11 @@ def _build_v21_dataset(
     target_root: Path,
     final_target_root: Path,
     repo_id: str,
-    source_dataset: str | None,
+    source_dataset: str,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
-    if source_dataset is not None:
-        source_dataset = portable_metadata_id(source_dataset, label="source dataset")
+    source_dataset = portable_metadata_id(source_dataset, label="source dataset")
     info = read_json(source_root / "meta/info.json")
     if info.get("codebase_version") != "v3.0":
         raise ValueError("v2.1 export source must be a LeRobot v3.0 dataset")
@@ -116,25 +115,13 @@ def _build_v21_dataset(
     v21_info = _v21_info(info, video_keys=video_keys)
     write_json(target_root / "meta/info.json", v21_info)
     shutil.copy2(source_root / "meta/stats.json", target_root / "meta/stats.json")
-    trim_manifest = source_root / "meta/trim.json"
-    if trim_manifest.is_file():
-        shutil.copy2(trim_manifest, target_root / "meta/trim.json")
     for filename in ("TRAINING.md",):
         source_file = source_root / filename
         if source_file.is_file():
             shutil.copy2(source_file, target_root / filename)
-    source_provenance = source_root / "meta/source_galaxea_a1.json"
-    if source_provenance.is_file():
-        shutil.copy2(source_provenance, target_root / "meta/source_galaxea_a1.json")
-    representation_manifests = [
-        path
-        for path in (source_root / "meta/eef.json", source_root / "meta/joint.json")
-        if path.is_file()
-    ]
-    if len(representation_manifests) > 1:
-        raise ValueError("v3 source has multiple action representation manifests")
-    if representation_manifests:
-        source_manifest = representation_manifests[0]
+    _copy_source_provenance(source_root, target_root)
+    source_manifest = source_root / "meta/eef.json"
+    if source_manifest.is_file():
         manifest = read_json(source_manifest)
         source_format = str(manifest.get("format", ""))
         if not source_format.startswith("lerobot_v3_"):
@@ -146,8 +133,7 @@ def _build_v21_dataset(
         manifest.pop("archive_sha256", None)
         manifest["format"] = source_format.replace("lerobot_v3_", "lerobot_v2.1_", 1)
         manifest["repo_id"] = repo_id
-        if source_dataset is not None:
-            manifest["source_dataset"] = source_dataset
+        manifest["source_dataset"] = source_dataset
         manifest["v21_video_codec"] = "h264"
         manifest["conversion_intermediate"] = {
             "format": "lerobot_v3.0",
@@ -174,6 +160,21 @@ def _build_v21_dataset(
         result["archive"] = str(archive_path)
         result["archive_sha256"] = archive_sha256
     return result
+
+
+def _copy_source_provenance(source_root: Path, target_root: Path) -> None:
+    candidates = tuple(
+        path
+        for path in (
+            source_root / "meta/galaxea_a1.json",
+            source_root / "meta/source_galaxea_a1.json",
+        )
+        if path.is_file()
+    )
+    if len(candidates) > 1:
+        raise ValueError("v3 source has conflicting Galaxea provenance files")
+    if candidates:
+        shutil.copy2(candidates[0], target_root / "meta/source_galaxea_a1.json")
 
 
 def _write_episode_data(

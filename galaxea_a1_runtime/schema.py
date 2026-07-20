@@ -3,17 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import StrEnum
 from typing import TYPE_CHECKING, Any
 
 from galaxea_a1_runtime.configuration.cameras import SystemRealSenseCameraConfig
 
-from .constants import LEROBOT_DATASET_FORMAT
-
 if TYPE_CHECKING:
     from galaxea_a1_runtime.configuration.system import SystemConfig
 
-LEGACY_RAW_STATE_NAMES = (
+EEF_POSE_STATE_NAMES = (
     "eef_x",
     "eef_y",
     "eef_z",
@@ -21,23 +18,6 @@ LEGACY_RAW_STATE_NAMES = (
     "eef_qy",
     "eef_qz",
     "eef_qw",
-    "joint_1",
-    "joint_2",
-    "joint_3",
-    "joint_4",
-    "joint_5",
-    "joint_6",
-    "gripper",
-)
-
-LEGACY_RAW_ACTION_NAMES = (
-    "joint_1",
-    "joint_2",
-    "joint_3",
-    "joint_4",
-    "joint_5",
-    "joint_6",
-    "gripper",
 )
 
 JOINT_ACTION_NAMES_RAD = (
@@ -61,17 +41,14 @@ EEF_ACTION_NAMES = (
     "gripper_normalized",
 )
 
-EEF_DATASET_STATE_NAMES = (*LEGACY_RAW_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)
-CANONICAL_STATE_NAMES = EEF_DATASET_STATE_NAMES
+A1_STATE_NAMES = (*EEF_POSE_STATE_NAMES, *JOINT_ACTION_NAMES_RAD)
 
-FRONT_IMAGE_KEY = "observation.images.front"
-WRIST_IMAGE_KEY = "observation.images.wrist"
 LINGBOT_EEF_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)
-DEFAULT_RGB_IMAGE_KEYS = (FRONT_IMAGE_KEY, WRIST_IMAGE_KEY)
-
-
-class ActionMode(StrEnum):
-    JOINT_ABSOLUTE = "joint_absolute"
+DEFAULT_RGB_IMAGE_KEYS = (
+    "observation.images.front",
+    "observation.images.wrist",
+)
+DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v2"
 
 
 @dataclass(frozen=True)
@@ -109,8 +86,6 @@ class CameraSpec:
 
 @dataclass(frozen=True)
 class DatasetContract:
-    dataset_format: str
-    action_mode: ActionMode
     state_names: tuple[str, ...]
     action_names: tuple[str, ...]
     camera_specs: tuple[CameraSpec, ...]
@@ -132,9 +107,7 @@ def canonical_dataset_contract(
     """Return the directly recorded, model-agnostic A1 LeRobot contract."""
 
     return DatasetContract(
-        dataset_format=LEROBOT_DATASET_FORMAT,
-        action_mode=ActionMode.JOINT_ABSOLUTE,
-        state_names=CANONICAL_STATE_NAMES,
+        state_names=A1_STATE_NAMES,
         action_names=JOINT_ACTION_NAMES_RAD,
         camera_specs=cameras,
     )
@@ -192,17 +165,6 @@ def vector_feature(names: tuple[str, ...]) -> dict[str, Any]:
         "shape": (len(names),),
         "names": list(names),
     }
-
-
-def validate_frame_keys(
-    frame: dict[str, Any],
-    *,
-    contract: DatasetContract,
-) -> None:
-    required = set(contract.features())
-    missing = sorted(required - set(frame))
-    if missing:
-        raise ValueError(f"frame missing required keys: {missing}")
 
 
 def _validate_identifier(value: str, label: str) -> None:

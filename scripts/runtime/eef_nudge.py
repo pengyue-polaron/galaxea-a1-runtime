@@ -33,7 +33,7 @@ from galaxea_a1_runtime.console import ArgumentParser, info, step, success, warn
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 from galaxea_a1_runtime.configuration.system import (
-    DEFAULT_SYSTEM_CONFIG,
+    SYSTEM_CONFIG,
     SystemConfig,
     load_system_config,
 )
@@ -234,7 +234,7 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--execute", action="store_true", help="Enable relay and publish commands."
     )
-    parser.add_argument("--config", type=Path, default=ROOT_DIR / DEFAULT_SYSTEM_CONFIG)
+    parser.add_argument("--config", type=Path, default=ROOT_DIR / SYSTEM_CONFIG)
     return parser.parse_args()
 
 

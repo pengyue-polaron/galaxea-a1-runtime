@@ -12,7 +12,6 @@ from galaxea_a1_runtime.lerobot.direct_recording import (
     dataset_repo_id,
     inspect_direct_dataset,
 )
-from galaxea_a1_runtime.lerobot.dataset import ImageStorage
 from galaxea_a1_runtime.schema import CameraSpec, canonical_dataset_contract
 
 
@@ -26,9 +25,7 @@ def _frame(value: float) -> dict:
     }
 
 
-def _episode(
-    root: Path, *, image_storage: ImageStorage = ImageStorage.IMAGE
-) -> DirectLeRobotEpisode:
+def _episode(root: Path) -> DirectLeRobotEpisode:
     return DirectLeRobotEpisode(
         identity=DirectDatasetIdentity(
             target_root=root,
@@ -40,7 +37,6 @@ def _episode(
                     CameraSpec("wrist", height=64, width=64),
                 )
             ),
-            image_storage=image_storage,
             experiment="direct-test",
         ),
         task="pick cube",
@@ -76,7 +72,8 @@ def test_direct_lerobot_dataset_records_and_atomically_appends(tmp_path: Path):
     dataset = LeRobotDataset(repo_id="galaxea-a1/direct-test", root=root)
     assert len(dataset) == 3
     assert dataset.meta.features["action"]["names"][-1] == "gripper_normalized"
-    assert dataset.meta.features["observation.images.front"]["dtype"] == "image"
+    assert dataset.meta.features["observation.images.front"]["dtype"] == "video"
+    assert len(list((root / "videos").rglob("*.mp4"))) == 4
 
 
 def test_discard_preserves_the_previous_complete_dataset(tmp_path: Path):
@@ -91,22 +88,6 @@ def test_discard_preserves_the_previous_complete_dataset(tmp_path: Path):
 
     assert json.loads((root / "meta/info.json").read_text()) == before
     assert not list(tmp_path.glob(".direct-test.staging-*"))
-
-
-def test_direct_video_dataset_uses_production_storage_across_appends(tmp_path: Path):
-    root = tmp_path / "direct-test"
-    for start in (0.1, 0.4):
-        with _episode(root, image_storage=ImageStorage.VIDEO) as episode:
-            for offset in (0.0, 0.1, 0.2):
-                episode.add_frame(_frame(start + offset))
-            episode.commit()
-
-    state = inspect_direct_dataset(
-        _episode(root, image_storage=ImageStorage.VIDEO).identity,
-        expected_task="pick cube",
-    )
-    assert (state.total_episodes, state.total_frames) == (2, 6)
-    assert len(list((root / "videos").rglob("*.mp4"))) == 4
 
 
 def test_failed_episode_save_preserves_the_previous_complete_dataset(tmp_path: Path):

@@ -23,7 +23,6 @@ def _write_run(
     sequence: int,
     status: str,
     scene_note: str = "randomized_A",
-    runtime_log: str = "run finished\n",
     task_id: str | None = None,
     evaluation_decision: str | None = None,
     model_id: str = MODEL_ID,
@@ -44,7 +43,7 @@ def _write_run(
     run_dir.mkdir()
     video = "recording.mp4"
     (run_dir / video).write_bytes(b"video")
-    (run_dir / "runtime.log").write_text(runtime_log)
+    (run_dir / "runtime.log").write_text("run finished\n")
     (run_dir / "policy_server.log").write_text("server\n")
     metadata = {
         "schema_version": 2,
@@ -82,49 +81,27 @@ def _write_run(
     (run_dir / "metadata.json").write_text(json.dumps(metadata))
 
 
-def test_resume_skips_completed_safety_stopped_and_legacy_ik_slots(tmp_path: Path):
+def test_resume_skips_completed_and_counted_safety_stopped_slots(tmp_path: Path):
     config = load_lingbot_batch_config(CONFIG, repo_root=REPO)
     _write_run(
         tmp_path,
-        name="legacy-ik",
-        sequence=1,
-        status="failed",
-        runtime_log=(
-            "RuntimeError: A1 EEF IK solution exceeds the configured joint delta: "
-            "1.622263 > 1.500000 rad\n"
-        ),
-        evaluation_decision="counted",
-    )
-    _write_run(
-        tmp_path,
         name="safe-stop",
-        sequence=2,
+        sequence=1,
         status="safety_stopped",
         evaluation_decision="counted",
     )
-    _write_run(tmp_path, name="complete", sequence=3, status="completed")
-    _write_run(
-        tmp_path,
-        name="legacy-workspace",
-        sequence=4,
-        status="failed",
-        runtime_log=(
-            "ValueError: EEF policy action is outside the configured workspace on x\n"
-        ),
-        evaluation_decision="counted",
-    )
+    _write_run(tmp_path, name="complete", sequence=2, status="completed")
     _write_run(
         tmp_path,
         name="infrastructure-failure",
-        sequence=5,
+        sequence=3,
         status="failed",
-        runtime_log="serial disconnected\n",
     )
-    _write_run(tmp_path, name="interrupted", sequence=6, status="interrupted")
+    _write_run(tmp_path, name="interrupted", sequence=4, status="interrupted")
     _write_run(
         tmp_path,
         name="different-scene",
-        sequence=7,
+        sequence=5,
         status="completed",
         scene_note="randomized_B",
     )
@@ -135,11 +112,10 @@ def test_resume_skips_completed_safety_stopped_and_legacy_ik_slots(tmp_path: Pat
         output_root=tmp_path,
     )
 
-    assert progress.completed_sequences == (1, 2, 3, 4)
-    assert progress.legacy_safety_stop_sequences == (1, 4)
-    assert progress.completed_count == 4
-    assert progress.pending_count == 14
-    assert "BATCH_COMPLETED_SEQUENCES_CSV=1,2,3,4" in progress.shell()
+    assert progress.completed_sequences == (1, 2)
+    assert progress.completed_count == 2
+    assert progress.pending_count == 16
+    assert "BATCH_COMPLETED_SEQUENCES_CSV=1,2" in progress.shell()
 
 
 def test_resume_requires_valid_artifacts_and_exact_task_slot(tmp_path: Path):
@@ -166,15 +142,6 @@ def test_resume_requires_valid_artifacts_and_exact_task_slot(tmp_path: Path):
         status="safety_stopped",
         evaluation_decision="discarded",
     )
-    _write_run(
-        tmp_path,
-        name="legacy-discarded",
-        sequence=6,
-        status="failed",
-        runtime_log="A1 EEF IK did not converge: iterations=200\n",
-        evaluation_decision="discarded",
-    )
-
     progress = inspect_lingbot_batch_progress(
         config,
         scene_note="randomized_A",

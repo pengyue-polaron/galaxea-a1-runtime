@@ -13,17 +13,17 @@ from galaxea_a1_runtime.lerobot.derivation_config import (
     DerivativeOutput,
     load_derivation_config,
 )
-from galaxea_a1_runtime.lerobot.direct_recording import DIRECT_DATASET_SCHEMA_VERSION
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
     DirectLeRobotEpisode,
     discover_direct_dataset,
 )
 from galaxea_a1_runtime.lerobot.eef_pack import pack_eef_v3_dataset
-from galaxea_a1_runtime.lerobot.joint_pack import pack_joint_v3_dataset
+from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 from galaxea_a1_runtime.schema import (
-    EEF_ACTION_NAMES,
     CameraSpec,
+    DIRECT_DATASET_SCHEMA_VERSION,
+    EEF_ACTION_NAMES,
     canonical_dataset_contract,
 )
 
@@ -83,7 +83,7 @@ def test_each_derivative_starts_from_the_canonical_source(
         eef_v3=output("eef-v3"),
         eef_v21=output("eef-v21"),
     )
-    calls: list[tuple[str, Path, str]] = []
+    calls: list[tuple[str, Path]] = []
     source = SimpleNamespace(
         identity=SimpleNamespace(
             target_root=config.source_root,
@@ -94,40 +94,28 @@ def test_each_derivative_starts_from_the_canonical_source(
         derive_module, "discover_direct_dataset", lambda *_args, **_kwargs: source
     )
 
-    def pack_joint(**kwargs):
-        calls.append(("joint", kwargs["source_root"], kwargs["source_format"]))
-        return {}
-
     def pack_eef(**kwargs):
-        calls.append(("eef", kwargs["source_root"], kwargs["source_format"]))
+        calls.append(("eef", kwargs["source_root"]))
         return {"format": "eef-v3"}
 
-    monkeypatch.setattr(derive_module, "pack_joint_v3_dataset", pack_joint)
     monkeypatch.setattr(derive_module, "pack_eef_v3_dataset", pack_eef)
-    monkeypatch.setattr(
-        derive_module,
-        "export_v21_dataset",
-        lambda **kwargs: {"source_root": str(kwargs["source_root"])},
-    )
+
+    def export_v21(**kwargs):
+        calls.append(("joint-v2.1", kwargs["source_root"]))
+        return {"source_root": str(kwargs["source_root"])}
+
+    monkeypatch.setattr(derive_module, "export_v21_dataset", export_v21)
 
     result = derive_module.build_derivatives(
         config, targets=[derive_module.JOINT_V21, derive_module.EEF_V3]
     )
 
     assert set(result) == {derive_module.JOINT_V21, derive_module.EEF_V3}
-    assert calls[0] == (
-        "joint",
-        config.source_root,
-        DIRECT_DATASET_SCHEMA_VERSION,
-    )
-    assert calls[1] == (
-        "eef",
-        config.source_root,
-        DIRECT_DATASET_SCHEMA_VERSION,
-    )
+    assert calls[0] == ("joint-v2.1", config.source_root)
+    assert calls[1] == ("eef", config.source_root)
 
 
-def test_joint_and_eef_packers_accept_the_direct_canonical_contract(tmp_path: Path):
+def test_joint_v21_and_eef_v3_accept_the_direct_canonical_contract(tmp_path: Path):
     source_root = tmp_path / "canonical"
     identity = DirectDatasetIdentity(
         target_root=source_root,
@@ -166,12 +154,11 @@ def test_joint_and_eef_packers_accept_the_direct_canonical_contract(tmp_path: Pa
     assert discovered.identity.repo_id == identity.repo_id
     assert discovered.state.task == "test direct derivation"
 
-    joint = pack_joint_v3_dataset(
+    joint = export_v21_dataset(
         source_root=source_root,
         target_root=tmp_path / "joint",
         repo_id="test/joint",
         source_dataset=identity.repo_id,
-        source_format=DIRECT_DATASET_SCHEMA_VERSION,
     )
     eef = pack_eef_v3_dataset(
         source_root=source_root,
@@ -186,10 +173,9 @@ def test_joint_and_eef_packers_accept_the_direct_canonical_contract(tmp_path: Pa
         base_link="base_link",
         tip_link="arm_seg6",
         source_dataset=identity.repo_id,
-        source_format=DIRECT_DATASET_SCHEMA_VERSION,
     )
 
-    assert joint["source_format"] == DIRECT_DATASET_SCHEMA_VERSION
+    assert joint["format"] == "v2.1"
     assert eef["source_format"] == DIRECT_DATASET_SCHEMA_VERSION
     for derivative in (tmp_path / "joint", tmp_path / "eef"):
         assert not (derivative / "meta/galaxea_a1.json").exists()

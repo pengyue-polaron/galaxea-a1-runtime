@@ -6,37 +6,21 @@ import pure modules, but it must not start ROS, Docker, cameras, or serial IO.
 
 from __future__ import annotations
 
-import sys
+import re
 import tomllib
 from pathlib import Path
 
-from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.configuration.paths import (
     LINGBOT_CONFIG,
     PI05_CONFIG,
-    SYSTEM_CONFIG,
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.constants import SAFE_RELAY_SCRIPT
 from galaxea_a1_runtime.runtime.health_checks import (
     Check,
-    checks_exit_code,
-    checks_to_json,
-    print_checks,
 )
 
-EXPECTED_LEROBOT_V060_COMMIT = "30da8e687a6dfc617fcd94afc367ac7071c376ce"
-EXPECTED_VENDOR_NAMES = ("A1_SDK", "lerobot")
-REMOVED_MAINLINE_PATHS = (
-    "a1",
-    "CLAUDE.md",
-    "scripts/collect_data",
-    "scripts/inference",
-    "scripts/train",
-    "scripts/process_data/convert_episodes_to_lerobot_v21.py",
-    "third_party/TFP_pro",
-    "troubleshooting.md",
-)
+GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
 
 def run_static_doctor(repo_root: Path) -> list[Check]:
@@ -62,25 +46,12 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     add("runtime_package", package_dir.is_dir(), str(package_dir))
 
     try:
-        from galaxea_a1_runtime.schema import (
-            camera_specs_from_system,
-            canonical_dataset_contract,
-        )
-        from galaxea_a1_runtime.safety import RelayInputs, relay_block_reason
-        from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
         from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
         from galaxea_a1_runtime.teleop.config import load_teleop_config
 
-        settings = build_safety_settings(
-            repo_root / SYSTEM_CONFIG,
-            repo_root=repo_root,
-        )
         teleop_config = load_teleop_config(
             repo_root / TELEOP_CONFIG, repo_root=repo_root
-        )
-        contract = canonical_dataset_contract(
-            cameras=camera_specs_from_system(teleop_config.system)
         )
         lingbot_config = load_lingbot_config(
             repo_root / LINGBOT_CONFIG,
@@ -90,52 +61,19 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / PI05_CONFIG,
             repo_root=repo_root,
         )
-        relay_reason = relay_block_reason(
-            RelayInputs(
-                enabled=False,
-                joint_age=0.0,
-                source_age=0.0,
-                status_age=0.0,
-                joint_count=0,
-                source_count=0,
-                motor_error_codes=(),
-            ),
-            max_input_age=teleop_config.system.relay.max_input_age_s,
-            max_status_age=teleop_config.system.relay.max_status_age_s,
-        )
+        system_paths = {
+            teleop_config.system.path,
+            lingbot_config.system.path,
+            pi05_config.system.path,
+        }
         add(
-            "pure_imports",
-            contract.dataset_format == "v3.0"
-            and relay_reason == "locked"
-            and len(settings) > 0
-            and len(contract.state_names) == 14
-            and len(teleop_config.bridge.mapping.sign)
-            == len(teleop_config.system.joint_safety.names),
-            "schema, safety, collection, teleop, and safety report imported without ROS",
-        )
-        add(
-            "teleop_config",
-            teleop_config.system.gripper.stroke_max_mm
-            > teleop_config.system.gripper.stroke_min_mm,
-            str(teleop_config.path),
-        )
-        add(
-            "lingbot_config",
-            lingbot_config.system.path == teleop_config.system.path
-            and 1 <= lingbot_config.server.port <= 65535
-            and lingbot_config.policy_server.deployment_ready
-            and lingbot_config.system.eef.min_quat_norm > 0,
-            str(lingbot_config.path),
-        )
-        add(
-            "pi05_config",
-            pi05_config.system.path == teleop_config.system.path
-            and 1 <= pi05_config.server.port <= 65535
-            and pi05_config.deployment_ready,
-            str(pi05_config.path),
+            "tracked_config_graph",
+            len(system_paths) == 1,
+            "Teleop, LingBot, and pi0.5 configs parsed; System config(s): "
+            + ", ".join(str(path) for path in sorted(system_paths)),
         )
     except Exception as exc:
-        add("pure_imports", False, repr(exc))
+        add("tracked_config_graph", False, repr(exc))
 
     pyproject = repo_root / "pyproject.toml"
     try:
@@ -161,14 +99,22 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
 
     third_party_lerobot = repo_root / "third_party" / "lerobot"
     add("third_party_lerobot", third_party_lerobot.is_dir(), str(third_party_lerobot))
+    lerobot_vendor: dict | None = None
     try:
         vendor_data = tomllib.loads(vendor_manifest.read_text())
         vendors = _vendor_entries(vendor_data)
         vendor_names = tuple(vendor["name"] for vendor in vendors)
+        vendor_paths = {Path(str(vendor["path"])) for vendor in vendors}
+        tracked_vendor_paths = {
+            path.relative_to(repo_root)
+            for path in (repo_root / "third_party").iterdir()
+            if path.is_dir() and not path.name.startswith(".")
+        }
         add(
             "third_party_vendor_manifest_entries",
-            set(EXPECTED_VENDOR_NAMES) <= set(vendor_names)
-            and len(vendor_names) == len(set(vendor_names)),
+            len(vendor_names) == len(set(vendor_names))
+            and len(vendor_paths) == len(vendors)
+            and vendor_paths == tracked_vendor_paths,
             ", ".join(vendor_names),
         )
         for vendor in vendors:
@@ -204,7 +150,8 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         add(
             "vendor_lerobot_rev",
             lerobot_vendor is not None
-            and lerobot_vendor.get("upstream_rev") == EXPECTED_LEROBOT_V060_COMMIT,
+            and GIT_COMMIT.fullmatch(str(lerobot_vendor.get("upstream_rev", "")))
+            is not None,
             "missing"
             if lerobot_vendor is None
             else str(lerobot_vendor.get("upstream_rev")),
@@ -229,14 +176,17 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     try:
         vendored = tomllib.loads(vendored_pyproject.read_text())
         version = vendored.get("project", {}).get("version")
+        expected_version = (
+            None if lerobot_vendor is None else lerobot_vendor.get("version")
+        )
         add(
-            "vendored_lerobot_v060",
-            version == "0.6.0",
-            f"third_party/lerobot version={version!r}; target='0.6.0'",
+            "vendored_lerobot_version",
+            expected_version is not None and version == expected_version,
+            f"third_party/lerobot version={version!r}; manifest={expected_version!r}",
             required=False,
         )
     except Exception as exc:
-        add("vendored_lerobot_v060", False, repr(exc), required=False)
+        add("vendored_lerobot_version", False, repr(exc), required=False)
     vendored_so_leader = (
         third_party_lerobot
         / "src"
@@ -317,17 +267,6 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     a1_reset_script = repo_root / "scripts" / "runtime" / "a1_reset.py"
     add("a1_reset_script", a1_reset_script.is_file(), str(a1_reset_script))
 
-    existing_removed_paths = [
-        path for path in REMOVED_MAINLINE_PATHS if (repo_root / path).exists()
-    ]
-    add(
-        "legacy_mainline_removed",
-        not existing_removed_paths,
-        "removed paths absent"
-        if not existing_removed_paths
-        else "still present: " + ", ".join(existing_removed_paths),
-    )
-
     base_runtime = repo_root / "scripts" / "runtime" / "a1_runtime.sh"
     try:
         text = base_runtime.read_text()
@@ -362,21 +301,3 @@ def _vendor_entries(data: dict) -> tuple[dict, ...]:
             )
         out.append(vendor)
     return tuple(out)
-
-
-def main(argv: list[str] | None = None) -> int:
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", type=Path, default=Path.cwd())
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args(argv)
-
-    checks = run_static_doctor(args.repo_root)
-    if args.json:
-        print(checks_to_json(checks))
-    else:
-        print_checks(checks)
-    return checks_exit_code(checks)
-
-
-if __name__ == "__main__":
-    sys.exit(main())

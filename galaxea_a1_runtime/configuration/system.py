@@ -49,7 +49,7 @@ from galaxea_a1_runtime.constants import (
 from embodied_ops import unix_socket_path
 
 __all__ = [
-    "DEFAULT_SYSTEM_CONFIG",
+    "SYSTEM_CONFIG",
     "CameraDiagnosticsConfig",
     "SystemCameraDeviceConfig",
     "SystemCamerasConfig",
@@ -72,7 +72,6 @@ __all__ = [
     "render_shell_values",
 ]
 
-DEFAULT_SYSTEM_CONFIG = SYSTEM_CONFIG
 ROS_ABSOLUTE_NAME = re.compile(
     r"^/(?:[A-Za-z_][A-Za-z0-9_]*)(?:/[A-Za-z_][A-Za-z0-9_]*)*$"
 )
@@ -599,7 +598,7 @@ def main(argv: list[str] | None = None) -> int:
     return run_config_renderer(
         argv,
         description="Read the unique A1 physical system config.",
-        default_config=DEFAULT_SYSTEM_CONFIG,
+        default_config=SYSTEM_CONFIG,
         load_config=load_system_config,
         render_shell=bash_config,
     )

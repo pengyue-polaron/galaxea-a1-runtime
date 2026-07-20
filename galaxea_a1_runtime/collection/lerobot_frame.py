@@ -7,7 +7,7 @@ from typing import Any
 import numpy as np
 
 from galaxea_a1_runtime.schema import (
-    CANONICAL_STATE_NAMES,
+    A1_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
 )
 
@@ -24,7 +24,7 @@ def build_lerobot_frame(
     """Convert one synchronized sample into the canonical LeRobot feature map."""
 
     state_array = _finite_vector(
-        state, expected=len(CANONICAL_STATE_NAMES), label="observation.state"
+        state, expected=len(A1_STATE_NAMES), label="observation.state"
     )
     action_array = _finite_vector(
         action, expected=len(JOINT_ACTION_NAMES_RAD), label="action"

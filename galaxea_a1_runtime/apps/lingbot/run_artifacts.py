@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import re
@@ -22,6 +21,7 @@ from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.configuration.base import shell_assign
 from galaxea_a1_runtime.configuration.tasks import TaskPrompt
 from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.filesystem import file_sha256
 from galaxea_a1_runtime.hardware.video_recorder import recording_run_id
 
 
@@ -34,11 +34,6 @@ _OUTCOME_KINDS = frozenset(
     {"ik_target_rejected", "workspace_target_rejected", "operator_interrupted"}
 )
 _EVALUATION_DECISIONS = frozenset({"counted", "discarded"})
-_LEGACY_TARGET_REJECTION_MESSAGES = (
-    "A1 EEF IK solution exceeds the configured joint delta",
-    "A1 EEF IK did not converge",
-    "EEF policy action is outside the configured workspace",
-)
 
 
 @dataclass(frozen=True)
@@ -54,7 +49,6 @@ class LingBotRunPaths:
     def shell(self) -> str:
         values = (
             ("RUN_ID", self.run_id),
-            ("RUN_FINAL_DIR", str(self.final_dir)),
             ("RUN_LOG_STAGING_DIR", str(self.log_staging_dir)),
             ("RUN_RUNTIME_RAW_LOG", str(self.raw_runtime_log)),
             ("RUN_POLICY_LOG", str(self.policy_server_log)),
@@ -142,12 +136,12 @@ def prepare_lingbot_run(
             "task_catalog": _repo_path(config.task_catalog.path, root),
             "model": _repo_path(config.policy_server.model.path, root),
             "sha256": {
-                "deployment": _sha256(config.path),
-                "system": _sha256(config.system.path),
-                "task_catalog": _sha256(config.task_catalog.path),
-                "model": _sha256(config.policy_server.model.path),
-                "model_contract": _sha256(config.policy_server.model.contract),
-                "model_manifest": _sha256(config.policy_server.model.manifest.path),
+                "deployment": file_sha256(config.path),
+                "system": file_sha256(config.system.path),
+                "task_catalog": file_sha256(config.task_catalog.path),
+                "model": file_sha256(config.policy_server.model.path),
+                "model_contract": file_sha256(config.policy_server.model.contract),
+                "model_manifest": file_sha256(config.policy_server.model.manifest.path),
             },
             "model_id": config.policy_server.model.model_id,
             "model_revision": config.policy_server.model.source.revision,
@@ -326,13 +320,10 @@ def record_lingbot_evaluation_decision(
     metadata = _load_finalized_metadata(paths)
     run = metadata["run"]
     status = run.get("status")
-    is_legacy_safety_stop = status == "failed" and legacy_target_rejection(
-        paths.final_dir
-    )
-    if status != "safety_stopped" and not is_legacy_safety_stop:
+    if status != "safety_stopped":
         raise ValueError(
-            "evaluation decisions apply only to typed or legacy target safety "
-            f"stops, got status {status!r}"
+            "evaluation decisions apply only to safety-stopped runs, "
+            f"got status {status!r}"
         )
     existing = _evaluation_decision(run, paths.final_dir)
     if existing is not None and existing != decision:
@@ -349,17 +340,6 @@ def record_lingbot_evaluation_decision(
     metadata["run"] = run
     _atomic_json(metadata_path, metadata)
     return metadata_path
-
-
-def legacy_target_rejection(run_dir: Path) -> bool:
-    """Recognize target safety stops recorded before typed outcome metadata."""
-
-    runtime_log = run_dir / "runtime.log"
-    try:
-        log_text = runtime_log.read_text(errors="replace")
-    except OSError:
-        return False
-    return any(message in log_text for message in _LEGACY_TARGET_REJECTION_MESSAGES)
 
 
 def _run_paths(
@@ -474,10 +454,6 @@ def _repo_path(path: Path, repo_root: Path) -> str:
         return str(resolved.relative_to(repo_root))
     except ValueError:
         return str(resolved)
-
-
-def _sha256(path: Path) -> str:
-    return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
 def _plain_terminal_log(value: str) -> str:

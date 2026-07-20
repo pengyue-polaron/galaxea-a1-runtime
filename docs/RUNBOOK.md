@@ -278,59 +278,8 @@ just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
 
 The source repo ID and task are read from its committed provenance instead of
 being duplicated in the derivative config. Every final output derives from the
-canonical v3 root; temporary v3 workspaces used for v2.1 export are removed.
-
-### Legacy Raw v3 migration
-
-The commands below exist for the recordings already under `data/raw/`; they are
-not a post-processing requirement for new collection.
-
-Create a tracked `configs/datasets/EXPERIMENT.toml`, then run the complete
-conversion pipeline:
-
-```bash
-just legacy-convert EXPERIMENT
-```
-
-The default builds all four outputs. Build one independently when only one
-training format is needed:
-
-```bash
-just legacy-convert EXPERIMENT joint-v3
-just legacy-convert EXPERIMENT joint-v2.1
-just legacy-convert EXPERIMENT eef-v3
-just legacy-convert EXPERIMENT eef-v2.1
-```
-
-The legacy dataset config owns the logical Raw v3 identity and its non-empty
-task-root list, processed packaging paths, overwrite policy, and the explicit
-boundary-trim policy. A
-multi-task output preserves each root's `task.txt` on its episodes. Observation
-and action contracts derive from the referenced Teleop and System configs. Use
-the reviewed trim values unless a dataset inspection justifies changing them:
-
-```toml
-[trim]
-enabled = true
-anchor_window_s = 0.5
-joint_deadband_rad = 0.01
-gripper_deadband = 0.01
-confirm_frames = 5
-pre_roll_s = 0.5
-post_roll_s = 0.75
-max_trim_fraction = 0.20
-min_kept_duration_s = 5.0
-```
-
-Legacy migration rejects incomplete or mismatched raw data and preserves an existing
-complete output if replacement fails. It removes only stable stationary
-episode boundaries, never interior pauses; uncertain or over-large candidates
-remain untrimmed. Inspect `meta/trim.json` in any output for the exact source
-frame interval and reason for every episode. Every selected output starts from
-the same trimmed Raw v3 view; processed output directories are never chained
-together. A complete run emits model-agnostic Joint and EEF datasets in both
-LeRobotDataset v3.0 and v2.1. Training and deployment adapters select the
-appropriate representation without changing the stored contract.
+canonical v3 root. Joint v2.1 exports directly; the temporary EEF v3 workspace
+used for EEF v2.1 export is removed.
 
 ## 6. Failure recovery
 
@@ -350,7 +299,7 @@ Then diagnose the narrow layer:
 | embodied-ops socket already exists | run `just stop`, verify the server is absent, then inspect and remove only the exact socket configured in System config |
 | model missing | `just models` |
 | configuration or test failure | `just check` |
-| conversion rejected an episode | inspect its metadata and files; do not weaken validation |
+| derivation rejected a dataset | inspect its metadata and files; do not weaken validation |
 
 Never run two apps that own the same driver, tracker, camera, serial port, or
 publisher. A1 status interpretation and direct-debug procedures are maintained

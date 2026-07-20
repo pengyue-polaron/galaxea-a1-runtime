@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 from pathlib import Path
 
@@ -16,6 +15,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
 )
 from galaxea_a1_runtime.configuration.base import discover_repo_root
 from galaxea_a1_runtime.console import ArgumentParser, success, warning
+from galaxea_a1_runtime.filesystem import file_sha256
 from galaxea_a1_runtime.models.backend import verify_backend_environment
 from galaxea_a1_runtime.models.store import validate_artifact
 
@@ -98,19 +98,11 @@ def _validate_embedded_inference_config(
             "LingBot training summary has no code provenance and its inference "
             f"config compatibility cannot be verified; missing: {missing}"
         )
-    if _sha256(embedded) != _sha256(pinned):
+    if file_sha256(embedded) != file_sha256(pinned):
         raise ValueError(
             "LingBot training summary has no code provenance and its embedded "
             "inference config does not match the pinned backend"
         )
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def main(argv: list[str] | None = None) -> int:

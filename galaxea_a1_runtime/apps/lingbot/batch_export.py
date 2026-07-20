@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import io
 import json
 import os
@@ -24,6 +23,7 @@ from galaxea_a1_runtime.apps.lingbot.batch_progress import (
 )
 from galaxea_a1_runtime.apps.lingbot.operator_input import validate_scene_note
 from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.filesystem import file_sha256
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -138,7 +138,7 @@ def export_valid_lingbot_batch(
                 {
                     "path": archive_path,
                     "bytes": source.stat().st_size,
-                    "sha256": _sha256(source),
+                    "sha256": file_sha256(source),
                 }
             )
         task = config.deployment.task_catalog.task(
@@ -152,7 +152,6 @@ def export_valid_lingbot_batch(
                 "run_id": run.run_id,
                 "status": run.status,
                 "evaluation_decision": run.evaluation_decision,
-                "legacy_safety_stop": run.legacy_safety_stop,
                 "task": {
                     "id": task.task_id,
                     "prompt": task.prompt,
@@ -205,14 +204,6 @@ def _require_regular_file(path: Path) -> None:
         raise FileNotFoundError(f"LingBot export artifact is missing: {path}") from exc
     if not stat.S_ISREG(mode):
         raise ValueError(f"LingBot export artifact is not a regular file: {path}")
-
-
-def _sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as stream:
-        for chunk in iter(lambda: stream.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def _filename_component(value: str) -> str:
