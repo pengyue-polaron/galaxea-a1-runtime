@@ -101,6 +101,9 @@ def _handler_type(
             if path == "/api/catalog":
                 self._send_json(HTTPStatus.OK, app.adapter.catalog())
                 return
+            if path == "/api/camera-health":
+                self._send_json(HTTPStatus.OK, app.adapter.camera_health())
+                return
             if path == "/api/status":
                 self._send_json(HTTPStatus.OK, app.workflow.snapshot())
                 return

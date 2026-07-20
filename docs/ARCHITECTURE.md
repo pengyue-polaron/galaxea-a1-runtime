@@ -163,7 +163,10 @@ through a later safety gate. Configuration creation offers an existing same-kind
 template, writes the edited candidate to hidden sibling staging, runs the owning
 strict loader, and publishes the new file atomically without overwrite. It is
 prohibited while a workflow is active. The page embeds Camera Web MJPEG streams,
-while Camera Web remains a read-only service with no control routes.
+while Camera Web remains a read-only service with no control routes. Per-camera
+preview rate, frame age, freshness, and errors are read from Camera Web's existing
+health endpoint through the A1 adapter; the generic panel neither opens cameras nor
+redefines camera-health thresholds.
 
 LingBot shares its bridged raw AgentView reader with an asynchronous H.264 run
 recorder; neither component opens another camera handle. One run identity owns hidden

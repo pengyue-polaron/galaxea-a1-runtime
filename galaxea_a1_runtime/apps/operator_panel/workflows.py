@@ -40,9 +40,9 @@ def build_a1_workflow_launch(
                 experiment,
             ),
             input_actions=(
-                InputAction("enter", "Next / Save", "\n"),
-                InputAction("discard", "Discard", "d\n"),
-                InputAction("quit", "Quit", "q\n"),
+                InputAction("enter", "Next / Save", "\n", "primary"),
+                InputAction("discard", "Discard", "d\n", "danger"),
+                InputAction("quit", "Quit", "q\n", "quiet"),
             ),
         )
 
@@ -72,8 +72,8 @@ def build_a1_workflow_launch(
             name=f"evaluate:{task_id}",
             command=tuple(command),
             input_actions=(
-                InputAction("enter", "Next", "\n"),
-                InputAction("quit", "Quit", "q\n"),
+                InputAction("enter", "Next", "\n", "primary"),
+                InputAction("quit", "Quit", "q\n", "quiet"),
             ),
         )
 
@@ -107,9 +107,9 @@ def build_a1_workflow_launch(
             name=f"batch:{config.batch_id}",
             command=tuple(command),
             input_actions=(
-                InputAction("enter", "Next / Count", "\n"),
-                InputAction("discard", "Discard", "d\n"),
-                InputAction("quit", "Quit", "q\n"),
+                InputAction("enter", "Next / Count", "\n", "primary"),
+                InputAction("discard", "Discard", "d\n", "danger"),
+                InputAction("quit", "Quit", "q\n", "quiet"),
             ),
         )
 

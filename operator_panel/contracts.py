@@ -15,6 +15,7 @@ class InputAction:
     action_id: str
     label: str
     line: str
+    tone: str = "default"
 
 
 @dataclass(frozen=True)
@@ -32,6 +33,8 @@ class PanelAdapter(Protocol):
     def repo_root(self) -> Path: ...
 
     def catalog(self) -> JsonObject: ...
+
+    def camera_health(self) -> JsonObject: ...
 
     def build_launch(self, workflow: str, values: JsonObject) -> WorkflowLaunch: ...
 

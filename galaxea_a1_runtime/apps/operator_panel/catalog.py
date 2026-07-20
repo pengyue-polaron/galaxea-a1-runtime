@@ -92,6 +92,7 @@ def build_a1_catalog(
                 "label": "Stop cameras",
                 "workflow": "camera",
                 "values": {"action": "stop"},
+                "tone": "danger",
                 "confirm": "Stop the persistent read-only camera monitor?",
             },
         ],
@@ -129,6 +130,7 @@ def _workflow_forms(
             "label": "Collect",
             "eyebrow": "DATA COLLECTION",
             "title": "Collect episodes",
+            "description": "Record directly into the canonical LeRobot dataset.",
             "submit_label": "Start collection",
             "fields": [
                 _select_field(
@@ -148,6 +150,7 @@ def _workflow_forms(
             "label": "Evaluation",
             "eyebrow": "LIVE EVALUATION",
             "title": "Run one evaluation",
+            "description": "Run one tracked task and preserve its result.",
             "submit_label": "Start evaluation",
             "fields": [
                 _select_field(
@@ -170,6 +173,7 @@ def _workflow_forms(
             "label": "Batch",
             "eyebrow": "BATCH",
             "title": "Run a repository plan",
+            "description": "Execute the selected tracked evaluation plan.",
             "submit_label": "Start batch",
             "fields": [
                 _select_field(
@@ -197,7 +201,9 @@ def _workflow_forms(
             "label": "Reset",
             "eyebrow": "RESET",
             "title": "Reset A1",
+            "description": "Move A1 to the selected tracked pose.",
             "submit_label": "Run reset",
+            "tone": "danger",
             "confirm": "Run the selected repository A1 reset now?",
             "fields": [
                 _select_field(

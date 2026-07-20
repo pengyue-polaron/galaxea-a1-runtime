@@ -14,7 +14,7 @@
       <h1 id="product-title">Control</h1>
     </div>
     <div class="runtime-state">
-      <span id="status-dot" class="status-dot"></span>
+      <span id="status-dot" class="status-dot" aria-hidden="true"></span>
       <span id="status-label">Idle</span>
     </div>
   </header>
@@ -25,20 +25,24 @@
         <div>
           <p class="eyebrow">LIVE VIEW</p>
           <h2>Cameras</h2>
+          <p id="camera-summary" class="camera-summary" role="status">Checking camera monitor…</p>
         </div>
-        <div id="camera-controls" class="button-row"></div>
+        <div class="camera-toolbar">
+          <button id="toggle-camera-grid" class="quiet" type="button" aria-controls="camera-grid" aria-expanded="true">Collapse preview</button>
+          <div id="camera-controls" class="button-row"></div>
+        </div>
       </div>
       <div id="camera-grid" class="camera-grid"></div>
     </section>
 
     <section class="workspace">
-      <nav id="workflow-tabs" class="tabs" aria-label="Workflow"></nav>
+      <nav id="workflow-tabs" class="tabs" role="tablist" aria-label="Workflow"></nav>
 
       <div class="panel-grid">
         <section id="control-card" class="control-card">
           <div id="workflow-panels"></div>
 
-          <form id="configuration-panel" class="workflow-panel">
+          <form id="configuration-panel" class="workflow-panel" role="tabpanel">
             <p class="eyebrow">CONFIGURATIONS</p>
             <h2>Create from a validated template</h2>
             <label>Configuration type<select id="config-kind" required></select></label>
@@ -62,6 +66,7 @@
             </div>
             <button id="stop-workflow" class="quiet danger" type="button">Stop</button>
           </div>
+          <p id="session-state-note" class="session-state-note">Start a workflow to see its progress and available actions.</p>
           <div id="session-actions" class="session-actions"></div>
           <pre id="logs" aria-live="polite">Panel ready.</pre>
         </aside>

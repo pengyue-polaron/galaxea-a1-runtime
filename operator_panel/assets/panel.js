@@ -1,5 +1,12 @@
 const token = document.querySelector('meta[name="operator-panel-token"]').content;
-const state = { catalog: null, status: null, activePanel: null };
+const state = {
+  catalog: null,
+  status: null,
+  cameraHealth: null,
+  activePanel: null,
+};
+const cameraHealthPollMs = 2000;
+const cameraCollapsedStorageKey = 'operator-panel.camera-preview-collapsed';
 
 function element(tag, attributes = {}, text = '') {
   const node = document.createElement(tag);
@@ -41,6 +48,21 @@ function refreshCameras() {
   });
 }
 
+function setCameraPreviewCollapsed(collapsed) {
+  const grid = document.getElementById('camera-grid');
+  const toggle = document.getElementById('toggle-camera-grid');
+  grid.classList.toggle('collapsed', collapsed);
+  toggle.textContent = collapsed ? 'Show preview' : 'Collapse preview';
+  toggle.setAttribute('aria-expanded', String(!collapsed));
+  try { window.localStorage.setItem(cameraCollapsedStorageKey, collapsed ? '1' : '0'); }
+  catch (_error) { /* Local storage is optional. */ }
+}
+
+function storedCameraPreviewCollapsed() {
+  try { return window.localStorage.getItem(cameraCollapsedStorageKey) === '1'; }
+  catch (_error) { return false; }
+}
+
 function renderProduct() {
   document.getElementById('product-brand').textContent = state.catalog.product.brand;
   document.getElementById('product-title').textContent = state.catalog.product.title;
@@ -52,15 +74,32 @@ function renderCameras() {
   section.classList.toggle('hidden', !state.catalog.cameras.length);
   const grid = document.getElementById('camera-grid');
   grid.replaceChildren(...state.catalog.cameras.map(camera => {
-    const image = element('img', { alt: `${camera.label} camera stream` });
+    const image = element('img', {
+      alt: `${camera.label} camera stream`,
+      loading: 'eager',
+    });
     image.dataset.cameraUrl = camera.url;
-    const figure = element('figure');
-    figure.append(image, element('figcaption', {}, camera.label));
+    const figure = element('figure', {
+      class: 'camera-frame',
+      dataset: { cameraId: camera.id, cameraHealth: 'checking' },
+    });
+    const caption = element('figcaption');
+    caption.append(
+      element('span', { class: 'camera-name' }, camera.label),
+      element('span', {
+        class: 'camera-status',
+        dataset: { cameraStatus: camera.id },
+      }, 'Checking…'),
+    );
+    figure.append(image, caption);
     return figure;
   }));
   const controls = document.getElementById('camera-controls');
   controls.replaceChildren(...state.catalog.camera_controls.map(control => {
-    const button = element('button', { type: 'button', class: 'quiet' }, control.label);
+    const classes = ['quiet', control.tone === 'danger' ? 'danger' : '']
+      .filter(Boolean)
+      .join(' ');
+    const button = element('button', { type: 'button', class: classes }, control.label);
     button.dataset.startWorkflow = control.workflow;
     button.addEventListener('click', async () => {
       if (control.confirm && !window.confirm(control.confirm)) return;
@@ -71,7 +110,75 @@ function renderCameras() {
     });
     return button;
   }));
+  setCameraPreviewCollapsed(storedCameraPreviewCollapsed());
+  renderCameraHealth();
   refreshCameras();
+}
+
+function renderCameraHealth() {
+  if (!state.catalog) return;
+  const cameras = state.catalog.cameras;
+  const health = state.cameraHealth;
+  let liveCount = 0;
+  for (const camera of cameras) {
+    const figure = document.querySelector(`[data-camera-id="${camera.id}"]`);
+    const status = document.querySelector(`[data-camera-status="${camera.id}"]`);
+    if (!figure || !status) continue;
+    const stream = health?.streams?.[camera.id];
+    let mode = 'offline';
+    let text = 'Monitor offline';
+    if (!health) {
+      mode = 'checking';
+      text = 'Checking…';
+    } else if (health.available && stream?.error) {
+      mode = 'error';
+      text = 'Stream error';
+    } else if (health.available && !stream) {
+      mode = 'error';
+      text = 'Status unavailable';
+    } else if (health.available && stream && !stream.ready) {
+      mode = 'waiting';
+      text = 'Waiting for frames';
+    } else if (health.available && stream?.ready && !stream.fresh) {
+      mode = 'stale';
+      text = stream.age_s == null ? 'Stale' : `Stale · ${formatFrameAge(stream.age_s)}`;
+    } else if (health.available && stream?.ready && stream.fresh) {
+      mode = 'live';
+      liveCount += 1;
+      const fps = Number.isFinite(stream.preview_fps)
+        ? `${stream.preview_fps.toFixed(1)} fps`
+        : 'Live';
+      text = stream.age_s == null ? fps : `${fps} · ${formatFrameAge(stream.age_s)}`;
+    }
+    figure.dataset.cameraHealth = mode;
+    status.textContent = text;
+    status.title = stream?.error || text;
+  }
+
+  const summary = document.getElementById('camera-summary');
+  if (!health) summary.textContent = 'Checking camera monitor…';
+  else if (!health.available) summary.textContent = health.reason || 'Camera monitor offline';
+  else summary.textContent = `${liveCount}/${cameras.length} live · read-only preview`;
+}
+
+function formatFrameAge(ageSeconds) {
+  if (ageSeconds < 1) return `${Math.round(ageSeconds * 1000)} ms`;
+  return `${ageSeconds.toFixed(1)} s`;
+}
+
+async function pollCameraHealth() {
+  if (!state.catalog?.cameras.length) return;
+  try {
+    state.cameraHealth = await request('/api/camera-health');
+  } catch (_error) {
+    state.cameraHealth = {
+      available: false,
+      ok: false,
+      streams: {},
+      reason: 'Camera health unavailable',
+    };
+  }
+  renderCameraHealth();
 }
 
 function fieldControl(field) {
@@ -135,17 +242,41 @@ function renderWorkflows() {
   panels.replaceChildren();
 
   for (const workflow of state.catalog.workflows) {
-    const tab = element('button', { type: 'button', class: 'tab' }, workflow.label);
+    const tab = element('button', {
+      type: 'button',
+      class: 'tab',
+      id: `tab-${workflow.id}`,
+      role: 'tab',
+      'aria-controls': `workflow-${workflow.id}`,
+    }, workflow.label);
     tab.dataset.panel = workflow.id;
     tabs.append(tab);
 
-    const form = element('form', { class: 'workflow-panel', id: `workflow-${workflow.id}` });
-    form.append(
+    const form = element('form', {
+      class: 'workflow-panel',
+      id: `workflow-${workflow.id}`,
+      role: 'tabpanel',
+      'aria-labelledby': `tab-${workflow.id}`,
+    });
+    const heading = element('div', { class: 'workflow-heading' });
+    heading.append(
       element('p', { class: 'eyebrow' }, workflow.eyebrow),
       element('h2', {}, workflow.title),
+      ...(workflow.description
+        ? [element('p', { class: 'workflow-description' }, workflow.description)]
+        : []),
+    );
+    form.append(
+      heading,
       ...workflow.fields.map(fieldControl),
     );
-    const submit = element('button', { type: 'submit', class: 'primary' }, workflow.submit_label);
+    const submitClasses = ['primary', workflow.tone === 'danger' ? 'danger' : '']
+      .filter(Boolean)
+      .join(' ');
+    const submit = element('button', {
+      type: 'submit',
+      class: submitClasses,
+    }, workflow.submit_label);
     submit.dataset.startWorkflow = workflow.id;
     form.append(submit);
     form.querySelectorAll('select').forEach(select => {
@@ -162,12 +293,21 @@ function renderWorkflows() {
   }
 
   if (state.catalog.config_types.length) {
-    const tab = element('button', { type: 'button', class: 'tab' }, 'Configurations');
+    const tab = element('button', {
+      type: 'button',
+      class: 'tab',
+      id: 'tab-configuration',
+      role: 'tab',
+      'aria-controls': 'configuration-panel',
+    }, 'Configurations');
     tab.dataset.panel = 'configuration';
     tabs.append(tab);
+    const panel = document.getElementById('configuration-panel');
+    panel.setAttribute('aria-labelledby', 'tab-configuration');
   }
   tabs.querySelectorAll('.tab').forEach(tab => {
     tab.addEventListener('click', () => activatePanel(tab.dataset.panel));
+    tab.addEventListener('keydown', event => moveTabFocus(event, tabs));
   });
   const defaultPanel = state.catalog.workflows[0]?.id
     || (state.catalog.config_types.length ? 'configuration' : null);
@@ -177,12 +317,31 @@ function renderWorkflows() {
 function activatePanel(panelId) {
   state.activePanel = panelId;
   document.querySelectorAll('.tab').forEach(tab => {
-    tab.classList.toggle('active', tab.dataset.panel === panelId);
+    const active = tab.dataset.panel === panelId;
+    tab.classList.toggle('active', active);
+    tab.setAttribute('aria-selected', String(active));
+    tab.tabIndex = active ? 0 : -1;
   });
   document.querySelectorAll('.workflow-panel').forEach(panel => {
     const expected = panelId === 'configuration' ? 'configuration-panel' : `workflow-${panelId}`;
-    panel.classList.toggle('active', panel.id === expected);
+    const active = panel.id === expected;
+    panel.classList.toggle('active', active);
+    panel.hidden = !active;
   });
+}
+
+function moveTabFocus(event, tabs) {
+  if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+  const items = [...tabs.querySelectorAll('.tab')];
+  const current = items.indexOf(event.currentTarget);
+  let next = current;
+  if (event.key === 'ArrowLeft') next = (current - 1 + items.length) % items.length;
+  if (event.key === 'ArrowRight') next = (current + 1) % items.length;
+  if (event.key === 'Home') next = 0;
+  if (event.key === 'End') next = items.length - 1;
+  event.preventDefault();
+  activatePanel(items[next].dataset.panel);
+  items[next].focus();
 }
 
 function renderConfigurationEditor() {
@@ -221,7 +380,13 @@ function renderStatus() {
 
   const actions = document.getElementById('session-actions');
   actions.replaceChildren(...status.input_actions.map(action => {
-    const button = element('button', { type: 'button' }, action.label);
+    const tone = ['primary', 'danger', 'quiet'].includes(action.tone)
+      ? action.tone
+      : '';
+    const button = element('button', {
+      type: 'button',
+      class: ['session-action', tone].filter(Boolean).join(' '),
+    }, action.label);
     button.addEventListener('click', async () => {
       actions.querySelectorAll('button').forEach(item => { item.disabled = true; });
       try {
@@ -231,6 +396,14 @@ function renderStatus() {
     });
     return button;
   }));
+  const sessionNote = document.getElementById('session-state-note');
+  if (!status.active) {
+    sessionNote.textContent = 'Start a workflow to see its progress and available actions.';
+  } else if (status.input_actions.length) {
+    sessionNote.textContent = 'Waiting for your decision.';
+  } else {
+    sessionNote.textContent = 'Workflow running. Actions appear only when input is accepted.';
+  }
   document.getElementById('stop-workflow').disabled = !status.active;
   document.querySelectorAll('[data-start-workflow]').forEach(button => {
     button.disabled = status.active;
@@ -254,9 +427,14 @@ async function loadCatalog() {
   renderWorkflows();
   renderConfigurationEditor();
   renderStatus();
+  await pollCameraHealth();
 }
 
 document.getElementById('config-kind').addEventListener('change', updateConfigTemplates);
+document.getElementById('toggle-camera-grid').addEventListener('click', () => {
+  const collapsed = document.getElementById('camera-grid').classList.contains('collapsed');
+  setCameraPreviewCollapsed(!collapsed);
+});
 
 document.getElementById('load-template').addEventListener('click', async () => {
   try {
@@ -313,3 +491,4 @@ document.getElementById('stop-workflow').addEventListener('click', async () => {
 loadCatalog().catch(error => toast(error.message));
 pollStatus();
 window.setInterval(pollStatus, 800);
+window.setInterval(pollCameraHealth, cameraHealthPollMs);

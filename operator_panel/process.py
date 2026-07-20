@@ -38,6 +38,13 @@ class WorkflowProcess:
             action_ids = [action.action_id for action in launch.input_actions]
             if len(set(action_ids)) != len(action_ids):
                 raise ValueError("workflow input action ids must be unique")
+            invalid_tones = [
+                action.tone
+                for action in launch.input_actions
+                if action.tone not in {"default", "primary", "danger", "quiet"}
+            ]
+            if invalid_tones:
+                raise ValueError(f"unsupported input action tone: {invalid_tones[0]!r}")
             environment = os.environ.copy()
             environment.update({"NO_COLOR": "1", "PYTHONUNBUFFERED": "1"})
             if launch.input_actions:
@@ -165,6 +172,7 @@ class WorkflowProcess:
                 {
                     "id": action_id,
                     "label": self._input_actions[action_id].label,
+                    "tone": self._input_actions[action_id].tone,
                 }
                 for action_id in self._available_input
             ],

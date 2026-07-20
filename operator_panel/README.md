@@ -11,7 +11,9 @@ processes call `operator_panel.protocol.announce_input()` immediately before an
 interactive prompt; the panel will accept one input and lock the buttons until
 the next announcement.
 
-Consumers implement the five `PanelAdapter` methods and pass the adapter to
+Consumers implement the `PanelAdapter` methods and pass the adapter to
 `serve_operator_panel(adapter, bind="127.0.0.1", port=...)`. Workflow forms,
 select options, cameras, and configuration kinds come from the adapter's JSON
-catalog.
+catalog. Camera presentation stays read-only: the adapter supplies normalized
+freshness, frame-age, preview-rate, and error status without giving the panel
+direct access to a device.

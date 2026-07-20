@@ -81,7 +81,10 @@ Open `http://127.0.0.1:8765`. The panel lists every valid tracked Teleop,
 LingBot deployment, Batch, model, and A1 reset configuration. It embeds the
 read-only Camera Web streams and provides Collect, Evaluation, Batch, and Reset
 views. Use **Start cameras** if the persistent Camera Bridge is not already
-running.
+running. Each preview reports its encoded preview FPS and latest frame age from
+Camera Web's read-only health endpoint. A dark image alone is not treated as a
+failure; the status changes only for missing, stale, or errored frames. Use
+**Collapse preview** when more vertical room is useful for workflow controls.
 
 The **Configurations** view creates Teleop, LingBot deployment, Batch, or A1
 reset TOML from an existing same-kind template. Choose a template, load it,
