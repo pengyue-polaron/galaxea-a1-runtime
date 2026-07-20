@@ -12,7 +12,7 @@ from embodied_ops import ContractError, HealthReport, HealthStatus, LifecycleErr
 
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.apps.embodied_ops.server import build_server
-from galaxea_a1_runtime.embodied_ops_device import (
+from galaxea_a1_runtime.apps.embodied_ops.device import (
     A1RuntimeDevice,
     GRIPPER_FEATURE_KEY,
     JOINT_FEATURE_KEYS,

@@ -41,7 +41,7 @@ class LingBotActionChunk:
         first: bool,
         execute_frames: int,
         observations_per_frame: int,
-    ) -> "LingBotActionChunk":
+    ) -> LingBotActionChunk:
         values = validated_action_tensor(action, expected_shape=expected_shape)
         horizon = values.shape[2]
         if horizon % observations_per_frame != 0:

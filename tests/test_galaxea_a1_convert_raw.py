@@ -10,7 +10,6 @@ from PIL import Image
 import galaxea_a1_runtime.lerobot.convert_raw as convert_raw_module
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.lerobot.convert_raw import (
-    convert_raw_dataset,
     convert_raw_datasets,
     discover_raw_dataset,
     iter_episode_frames,
@@ -219,8 +218,8 @@ def test_failed_overwrite_preserves_previous_converted_dataset(tmp_path, monkeyp
     )
 
     with pytest.raises(RuntimeError, match="conversion failed"):
-        convert_raw_dataset(
-            source_root=source,
+        convert_raw_datasets(
+            source_roots=(source,),
             target_root=target,
             repo_id="galaxea/test",
             source_dataset="galaxea-a1/raw-v3",
@@ -236,8 +235,8 @@ def test_current_raw_converts_with_real_lerobot_writer(tmp_path):
     source = make_raw_episode(tmp_path, width=64, height=48)
     target = tmp_path / "lerobot_v3"
 
-    summary = convert_raw_dataset(
-        source_root=source,
+    (summary,) = convert_raw_datasets(
+        source_roots=(source,),
         target_root=target,
         repo_id="galaxea-a1/test_current_raw",
         source_dataset="galaxea-a1/raw-v3",
@@ -258,8 +257,8 @@ def test_raw_conversion_rejects_absolute_source_dataset_id(tmp_path):
     source = make_raw_episode(tmp_path)
 
     with pytest.raises(ValueError, match="must not be an absolute path"):
-        convert_raw_dataset(
-            source_root=source,
+        convert_raw_datasets(
+            source_roots=(source,),
             target_root=tmp_path / "lerobot_v3",
             repo_id="galaxea-a1/test_current_raw",
             source_dataset=str(source.resolve()),
@@ -305,8 +304,8 @@ def test_raw_conversion_applies_one_audited_boundary_trim(tmp_path, monkeypatch)
     monkeypatch.setattr(convert_raw_module, "create_lerobot_dataset", create_dataset)
     trim_config = load_pipeline_config(PIPELINE_CONFIG_FIXTURE).boundary_trim
 
-    convert_raw_dataset(
-        source_root=source,
+    convert_raw_datasets(
+        source_roots=(source,),
         target_root=target,
         repo_id="galaxea-a1/trimmed",
         source_dataset="galaxea-a1/raw-v3",
@@ -400,8 +399,8 @@ def test_v21_export_round_trips_through_official_lerobot_migrator(tmp_path):
     source = make_raw_episode(tmp_path, width=64, height=48)
     v3_root = tmp_path / "lerobot_v3"
     v21_root = tmp_path / "lerobot_v21"
-    convert_raw_dataset(
-        source_root=source,
+    convert_raw_datasets(
+        source_roots=(source,),
         target_root=v3_root,
         repo_id="galaxea-a1/test_v3",
         source_dataset="galaxea-a1/raw-v3",
@@ -440,8 +439,8 @@ def test_joint_and_eef_outputs_are_model_agnostic_lerobot_datasets(tmp_path):
     joint_v3 = tmp_path / "joint_v3"
     eef_v3 = tmp_path / "eef_v3"
     eef_v21 = tmp_path / "eef_v21"
-    convert_raw_dataset(
-        source_root=raw,
+    convert_raw_datasets(
+        source_roots=(raw,),
         target_root=raw_v3,
         repo_id="galaxea-a1/raw_v3",
         source_dataset="galaxea-a1/raw-v3",

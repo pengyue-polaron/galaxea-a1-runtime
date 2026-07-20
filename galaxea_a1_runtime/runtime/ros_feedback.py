@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import math
 import time
-from typing import Any, Sequence
+from collections.abc import Sequence
+from typing import Any
 
 from galaxea_a1_runtime.gripper import normalize_stroke
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache

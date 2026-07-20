@@ -4,14 +4,11 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from pathlib import Path
-from typing import TypeVar
 
 from galaxea_a1_runtime.console import ArgumentParser
 
-ConfigT = TypeVar("ConfigT")
 
-
-def run_config_renderer(
+def run_config_renderer[ConfigT](
     argv: list[str] | None,
     *,
     description: str,

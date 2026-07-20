@@ -10,10 +10,9 @@ from typing import Any
 
 from embodied_ops.rpc import DeviceRpcServer
 
+from galaxea_a1_runtime.apps.embodied_ops.device import A1RuntimeDevice, SessionFactory
 from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
 from galaxea_a1_runtime.console import ArgumentParser, info, success
-from galaxea_a1_runtime.embodied_ops_device import A1RuntimeDevice, SessionFactory
-
 
 ServerFactory = Callable[..., DeviceRpcServer]
 

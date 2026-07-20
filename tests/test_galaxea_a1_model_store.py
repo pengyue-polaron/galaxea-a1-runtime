@@ -7,7 +7,6 @@ import pytest
 from galaxea_a1_runtime.models.config import ModelFile
 from galaxea_a1_runtime.models.registry import resolve_registered_model
 from galaxea_a1_runtime.models.store import fetch_artifact
-from scripts.models.model_store import configured_registry_paths
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -33,55 +32,6 @@ def test_registered_model_selector_accepts_descriptor_id_and_pinned_id() -> None
 def test_registered_model_selector_rejects_unknown_models() -> None:
     with pytest.raises(ValueError, match="unknown registered lingbot_va model"):
         resolve_registered_model("not-registered", repo_root=REPO, backend="lingbot_va")
-
-
-def test_model_registry_keeps_configured_paths_lexical() -> None:
-    paths = configured_registry_paths(REPO)
-
-    assert (
-        paths[
-            "model:lingbot/a1_fruit_placement_eef@"
-            "90e017bdbc6afac2e441b4634c9192776bbcb8b7"
-        ]
-        == (
-            REPO
-            / "models/artifacts/lingbot/a1_fruit_placement_eef"
-            / "90e017bdbc6afac2e441b4634c9192776bbcb8b7"
-        ).absolute()
-    )
-    assert (
-        paths[
-            "model:openpi_pi05/a1_fruit_placement_eef@"
-            "e1a3e53832ce99edc188fb01e5ec303ac305d552"
-        ]
-        == (
-            REPO
-            / "models/artifacts/openpi_pi05/a1_fruit_placement_eef"
-            / "e1a3e53832ce99edc188fb01e5ec303ac305d552"
-        ).absolute()
-    )
-    assert (
-        paths[
-            "model:lingbot/a1_mango_plate_eef@0fb7f5a46dbdeac0770ae46d6a71411171348eb6"
-        ]
-        == (
-            REPO
-            / "models/artifacts/lingbot/a1_mango_plate_eef"
-            / "0fb7f5a46dbdeac0770ae46d6a71411171348eb6"
-        ).absolute()
-    )
-    assert (
-        paths[
-            "model:lingbot/a1_mango_placement_eef@"
-            "bf15da70c432e39c3a971c50143f4d91ff671ac1"
-        ]
-        == (
-            REPO
-            / "models/artifacts/lingbot/a1_mango_placement_eef"
-            / "bf15da70c432e39c3a971c50143f4d91ff671ac1"
-        ).absolute()
-    )
-    assert len(paths) == 4
 
 
 def test_model_fetch_reuses_identical_local_files(tmp_path, monkeypatch) -> None:

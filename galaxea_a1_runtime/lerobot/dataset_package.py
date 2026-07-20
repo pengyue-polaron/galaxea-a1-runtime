@@ -80,7 +80,7 @@ def vector_stats(values: np.ndarray) -> dict[str, list[float]]:
         "max": np.max(x, axis=0).tolist(),
         "mean": np.mean(x, axis=0).tolist(),
         "std": np.std(x, axis=0).tolist(),
-        "count": [int(len(x))],
+        "count": [len(x)],
         "q01": np.quantile(x, 0.01, axis=0).tolist(),
         "q10": np.quantile(x, 0.10, axis=0).tolist(),
         "q50": np.quantile(x, 0.50, axis=0).tolist(),
@@ -166,9 +166,11 @@ def write_tar_archive(
     root_name: str,
 ) -> tuple[Path, str]:
     final_archive = archive_path.expanduser().resolve()
-    with atomic_output_file(final_archive) as staging_archive:
-        with tarfile.open(staging_archive, "w:gz") as archive:
-            archive.add(source_root, arcname=root_name)
+    with (
+        atomic_output_file(final_archive) as staging_archive,
+        tarfile.open(staging_archive, "w:gz") as archive,
+    ):
+        archive.add(source_root, arcname=root_name)
     sha256 = file_sha256(final_archive)
     atomic_write_text(
         final_archive.with_suffix(final_archive.suffix + ".sha256"),

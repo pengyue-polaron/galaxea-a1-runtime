@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import xml.etree.ElementTree as ET
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Sequence
 
 import numpy as np
 
@@ -33,7 +33,7 @@ class SerialChainFK:
         self.tip_link = tip_link
 
     @classmethod
-    def from_urdf(cls, path: Path, *, base_link: str, tip_link: str) -> "SerialChainFK":
+    def from_urdf(cls, path: Path, *, base_link: str, tip_link: str) -> SerialChainFK:
         root = ET.parse(path).getroot()
         by_child: dict[str, ET.Element] = {}
         for joint in root.findall("joint"):

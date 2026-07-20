@@ -126,8 +126,7 @@ def _check_busy(checks: list[Check], name: str, device: str) -> None:
             ["fuser", str(path)],
             check=False,
             text=True,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             timeout=1.0,
         )
     except Exception as exc:

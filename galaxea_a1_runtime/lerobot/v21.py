@@ -200,7 +200,7 @@ def _write_episode_data(
         )
         data_path.parent.mkdir(parents=True, exist_ok=True)
         episode_frames.to_parquet(data_path, index=False)
-        task_indices = sorted(set(int(value) for value in episode_frames["task_index"]))
+        task_indices = sorted({int(value) for value in episode_frames["task_index"]})
         records.append(
             {
                 "episode_index": episode_index,

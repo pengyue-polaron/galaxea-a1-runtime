@@ -38,7 +38,7 @@ class OutputDirectoryTransaction:
         self.path: Path | None = None
         self._committed = False
 
-    def __enter__(self) -> "OutputDirectoryTransaction":
+    def __enter__(self) -> OutputDirectoryTransaction:
         self.target.parent.mkdir(parents=True, exist_ok=True)
         if _exists(self.target) and not self.overwrite:
             raise FileExistsError(f"target root exists: {self.target}")

@@ -10,8 +10,9 @@ import argparse
 import os
 import sys
 import time
+from collections.abc import Callable
 from enum import StrEnum
-from typing import Callable, TextIO
+from typing import TextIO
 
 
 class Tone(StrEnum):
@@ -20,7 +21,6 @@ class Tone(StrEnum):
     SUCCESS = "1;32"
     WARNING = "1;33"
     FAILURE = "1;31"
-    MUTED = "2"
 
 
 LEVEL_TONES = {

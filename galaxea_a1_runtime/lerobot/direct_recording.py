@@ -223,7 +223,7 @@ class DirectLeRobotEpisode:
         self._finalized = False
         self._committed = False
 
-    def __enter__(self) -> "DirectLeRobotEpisode":
+    def __enter__(self) -> DirectLeRobotEpisode:
         state = inspect_direct_dataset(
             self.identity,
             expected_task=self.task,

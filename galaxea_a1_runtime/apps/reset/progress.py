@@ -11,13 +11,13 @@ from galaxea_a1_runtime.console import Tone, emit, style
 class ResetProgress:
     def __init__(self, devices: tuple[str, ...]):
         self.devices = devices
-        self.values = {device: 0 for device in devices}
-        self.reported = {device: -1 for device in devices}
+        self.values = dict.fromkeys(devices, 0)
+        self.reported = dict.fromkeys(devices, -1)
         self.lock = threading.Lock()
         self.interactive = sys.stdout.isatty()
 
     def update(self, device: str, percent: float) -> None:
-        value = max(0, min(100, int(round(percent))))
+        value = max(0, min(100, round(percent)))
         with self.lock:
             if value == self.reported[device]:
                 return

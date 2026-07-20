@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import re
 import sys
-from collections.abc import Sequence
+from collections.abc import Iterable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -184,27 +184,6 @@ def raw_episode_contract(
         action_names=action_names,
         camera_specs=camera_specs,
     )
-
-
-def convert_raw_dataset(
-    *,
-    source_root: Path,
-    target_root: Path,
-    repo_id: str,
-    source_dataset: str,
-    overwrite: bool = False,
-    expected_contract: DatasetContract | None = None,
-    trim_config: BoundaryTrimConfig,
-) -> RawDatasetSummary:
-    return convert_raw_datasets(
-        source_roots=(source_root,),
-        target_root=target_root,
-        repo_id=repo_id,
-        source_dataset=source_dataset,
-        overwrite=overwrite,
-        expected_contract=expected_contract,
-        trim_config=trim_config,
-    )[0]
 
 
 def convert_raw_datasets(

@@ -128,18 +128,22 @@ class A1RuntimeDevice:
 
 
 def _manifest_from_system(system: SystemConfig) -> DeviceManifest:
-    observations = tuple(
-        FeatureSpec(name, unit="rad") for name in JOINT_FEATURE_KEYS
-    ) + (FeatureSpec(GRIPPER_FEATURE_KEY, minimum=0.0, maximum=1.0),)
-    actions = tuple(
-        FeatureSpec(name, unit="rad", minimum=lower, maximum=upper)
-        for name, lower, upper in zip(
-            JOINT_FEATURE_KEYS,
-            system.joint_safety.lower_limits,
-            system.joint_safety.upper_limits,
-            strict=True,
-        )
-    ) + (FeatureSpec(GRIPPER_FEATURE_KEY, minimum=0.0, maximum=1.0),)
+    observations = (
+        *(FeatureSpec(name, unit="rad") for name in JOINT_FEATURE_KEYS),
+        FeatureSpec(GRIPPER_FEATURE_KEY, minimum=0.0, maximum=1.0),
+    )
+    actions = (
+        *(
+            FeatureSpec(name, unit="rad", minimum=lower, maximum=upper)
+            for name, lower, upper in zip(
+                JOINT_FEATURE_KEYS,
+                system.joint_safety.lower_limits,
+                system.joint_safety.upper_limits,
+                strict=True,
+            )
+        ),
+        FeatureSpec(GRIPPER_FEATURE_KEY, minimum=0.0, maximum=1.0),
+    )
     return DeviceManifest(
         identifier="galaxea-a1",
         capabilities=(Capability.OBSERVE, Capability.COMMAND, Capability.HEALTH),

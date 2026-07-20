@@ -6,20 +6,21 @@ import json
 import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 from urllib.parse import urlsplit
 
 import cv2
 import numpy as np
 
-from galaxea_a1_runtime.console import info
-from galaxea_a1_runtime.hardware.image_geometry import draw_image_roi
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.configuration.web_preview import WebPreviewConfig
+from galaxea_a1_runtime.console import info
+from galaxea_a1_runtime.hardware.image_geometry import draw_image_roi
 
 
 @dataclass
@@ -305,7 +306,7 @@ class CameraWebPreview:
                 with self._condition:
                     state = self._streams[name]
                     self._condition.wait_for(
-                        lambda: (
+                        lambda state=state, last_seq=last_seq: (
                             self._stop.is_set()
                             or (
                                 state.jpeg is not None and state.encoded_seq != last_seq

@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
-from typing import Any, Callable
+from typing import Any
 
 from galaxea_a1_runtime.console import padded_label
 from galaxea_a1_runtime.constants import ARM_JOINT_COUNT, IDLE_TIMEOUT_CODE

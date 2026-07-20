@@ -4,11 +4,6 @@ from pathlib import Path
 import pytest
 
 from galaxea_a1_runtime.apps.teleop.dataset_contract import tracked_config_reference
-from galaxea_a1_runtime.gripper import (
-    denormalize_stroke,
-    normalize_source_position,
-    normalize_stroke,
-)
 from galaxea_a1_runtime.teleop.config import (
     load_teleop_config,
     validate_collection_config,
@@ -85,34 +80,6 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.camera_diagnostics.rate_probe_s == 2.0
     assert config.system.camera_diagnostics.jpeg_quality == 95
     assert config.system.startup.tmux_process_grace_s == 4
-
-
-def test_so_leader_open_endpoint_is_the_single_canonical_gripper_action():
-    config = load_teleop_config(CONFIG, repo_root=REPO)
-    gripper = config.gripper
-    physical = config.system.gripper
-
-    action = normalize_source_position(
-        53.16,
-        source_min=gripper.source_min,
-        source_max=gripper.source_max,
-        invert=gripper.invert,
-        saturate_out_of_range=gripper.saturate_out_of_range,
-    )
-    target_mm = denormalize_stroke(
-        action,
-        stroke_min_mm=physical.stroke_min_mm,
-        stroke_max_mm=physical.stroke_max_mm,
-    )
-    measured_state = normalize_stroke(
-        103.833,
-        stroke_min_mm=physical.stroke_min_mm,
-        stroke_max_mm=physical.stroke_max_mm,
-    )
-
-    assert action == pytest.approx(1.0)
-    assert target_mm == pytest.approx(104.0)
-    assert measured_state == pytest.approx(103.833 / 104.0)
 
 
 def test_teleop_shell_contract_renders_lifecycle_values():

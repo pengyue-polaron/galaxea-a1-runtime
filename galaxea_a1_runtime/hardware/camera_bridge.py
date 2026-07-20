@@ -11,6 +11,7 @@ import stat
 import struct
 import threading
 import time
+from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -316,10 +317,8 @@ class CameraBridgeReaders:
         with self._lock:
             active_socket = self._socket
         if active_socket is not None:
-            try:
+            with suppress(OSError):
                 active_socket.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
             active_socket.close()
         thread = self._thread
         if thread is not None:
@@ -464,10 +463,8 @@ class _CameraUnixServer(socketserver.ThreadingUnixStreamServer):
         with self._clients_lock:
             clients = tuple(self._clients)
         for client in clients:
-            try:
+            with suppress(OSError):
                 client.shutdown(socket.SHUT_RDWR)
-            except OSError:
-                pass
             client.close()
 
 

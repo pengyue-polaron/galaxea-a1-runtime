@@ -5,13 +5,9 @@ from __future__ import annotations
 import threading
 import time
 from collections.abc import Callable
-from typing import Generic, TypeVar
 
 
-MessageT = TypeVar("MessageT")
-
-
-class LatestMessageCache(Generic[MessageT]):
+class LatestMessageCache[MessageT]:
     """Keep the latest message and reject it after a monotonic deadline."""
 
     def __init__(self, *, clock: Callable[[], float] = time.monotonic):

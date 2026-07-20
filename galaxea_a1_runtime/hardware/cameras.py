@@ -21,8 +21,8 @@ from galaxea_a1_runtime.hardware.camera_reader import (
 )
 
 __all__ = [
-    "CameraSample",
     "CameraReader",
+    "CameraSample",
     "ColorCamera",
     "LatestCameraReader",
     "OpenCVColorCamera",
@@ -159,15 +159,6 @@ class RealSenseColorCamera:
         frames = self.pipeline.poll_for_frames()
         return self._decode_frames(frames) if frames else None
 
-    def wait_frameset(
-        self, *, timeout_ms: int = REALSENSE_FRAME_TIMEOUT_MS
-    ) -> RealSenseFrameSet | None:
-        try:
-            frames = self.pipeline.wait_for_frames(timeout_ms)
-        except RuntimeError:
-            return None
-        return self._decode_frames(frames)
-
     def _decode_frames(self, frames: Any) -> RealSenseFrameSet | None:
         if not frames:
             return None
@@ -192,14 +183,6 @@ class RealSenseColorCamera:
     def read_bgr(self) -> np.ndarray | None:
         frameset = self.read_frameset()
         return None if frameset is None else frameset.color_bgr
-
-    def read_rgb(self) -> np.ndarray | None:
-        bgr = self.read_bgr()
-        return None if bgr is None else cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
-
-    def read_depth_mm(self) -> np.ndarray | None:
-        frameset = self.read_frameset()
-        return None if frameset is None else frameset.depth_mm
 
     def close(self) -> None:
         self.pipeline.stop()
@@ -266,10 +249,6 @@ class OpenCVColorCamera:
     def read_bgr(self) -> np.ndarray | None:
         ok, frame = self.cap.read()
         return frame if ok else None
-
-    def read_rgb(self) -> np.ndarray | None:
-        bgr = self.read_bgr()
-        return None if bgr is None else cv2.cvtColor(bgr, cv2.COLOR_BGR2RGB)
 
     def close(self) -> None:
         self.cap.release()

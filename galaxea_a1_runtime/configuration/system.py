@@ -50,15 +50,15 @@ from embodied_ops import unix_socket_path
 
 __all__ = [
     "DEFAULT_SYSTEM_CONFIG",
-    "SystemCameraDeviceConfig",
     "CameraDiagnosticsConfig",
+    "SystemCameraDeviceConfig",
     "SystemCamerasConfig",
     "SystemConfig",
     "SystemDoctorConfig",
-    "SystemEmbodiedOpsConfig",
     "SystemEefConfig",
     "SystemEefIkConfig",
     "SystemEefTestConfig",
+    "SystemEmbodiedOpsConfig",
     "SystemGripperConfig",
     "SystemHostConfig",
     "SystemJointSafetyConfig",
