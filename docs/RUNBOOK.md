@@ -9,6 +9,7 @@ can move the arm are labeled **MOVES HARDWARE**.
 On a new checkout:
 
 ```bash
+git submodule update --init --recursive
 just setup
 just check
 ```
@@ -169,7 +170,13 @@ just teleop-test
 ```
 
 Exercise all six joint directions and the continuous gripper over a small
-range. Use `just logs` for failures and `just stop` when finished.
+range. This starts the modified leader Teleoperator, the tracked relative-anchor
+processor, the A1 Robot plugin, and the supervised Runtime device service as one owned
+control chain. The Robot reaches the Runtime-owned device through the tracked local
+Unix socket; it does not load ROS or Runtime Python code. Do not substitute the generic
+`lerobot-teleoperate` command: in
+LeRobot 0.6 it uses identity processors and cannot safely pair leader degrees
+with A1 radians. Use `just logs` for failures and `just stop` when finished.
 
 ## 4. Record episodes
 
@@ -188,48 +195,116 @@ Enter the natural-language task once. At the episode prompt:
 - `Ctrl+C`: stop immediately.
 
 Every frame requires fresh joint, EEF, gripper, action, and paired-camera data.
-Save validates continuity and exact files, then atomically installs the episode
-under `data/raw/EXPERIMENT/`. A rejected save is deleted, reuses its index, and
-resets before retry when configured. A successful save resets before the next
-episode when configured.
+Save validates continuity and finalizes a standard LeRobotDataset v3 episode in
+a hidden sibling snapshot, then atomically installs the complete dataset under
+`data/datasets/EXPERIMENT/`. A rejected save removes only its snapshot, reuses
+its index, and resets before retry when configured. A successful save resets
+before the next episode when configured.
 
-Do not mix manually edited or older-schema episodes into a current experiment.
-The exact raw contract and commit behavior are documented in
+Do not hand-edit a dataset while collecting. The exact feature contract and
+atomic append behavior are documented in
 [Architecture](ARCHITECTURE.md).
 
-## 5. Inspect and convert
+## 5. Inspect the direct LeRobot dataset
 
 After quitting:
 
 ```bash
 just stop
-find data/raw/EXPERIMENT -maxdepth 2 -type f | sort | head
+just dataset-doctor EXPERIMENT
+find data/datasets/EXPERIMENT -maxdepth 3 -type f | sort | head
+.venv/bin/python - <<'PY'
+from pathlib import Path
+from lerobot.datasets import LeRobotDatasetMetadata
+
+root = Path("data/datasets/EXPERIMENT")
+meta = LeRobotDatasetMetadata("OWNER/REPO-ID", root=root)
+print(meta)
+print(meta.features)
+PY
 ```
 
-Each episode contains metadata, frame records, and configured camera folders.
-Hidden sibling staging directories indicate an interrupted commit; inspect them
-before removal.
+Replace `OWNER/REPO-ID` with the ID printed by the collector. Joint-action
+training can consume this v3 dataset directly; it already contains canonical
+state/action vectors, paired cameras, per-frame task text, stats, and episode
+metadata. Hidden sibling staging directories indicate an interrupted append;
+inspect them before removal.
+
+### Derive EEF or LeRobot v2.1 from canonical v3
+
+Joint-action v3 training consumes the recorded dataset directly. For EEF action
+semantics or an older LeRobot reader, create a strict tracked config such as
+`configs/datasets/EXPERIMENT_derivatives.toml` with these owners:
+
+```toml
+[system]
+config = "configs/system/a1.toml"
+
+[derivation]
+overwrite = false
+
+[source]
+root = "data/datasets/EXPERIMENT"
+
+[outputs.joint_v21]
+target_root = "data/processed/EXPERIMENT_joint_v21"
+archive_path = "data/exports/EXPERIMENT_joint_v21.tar.gz"
+repo_id = "OWNER/EXPERIMENT-joint-v21"
+
+[outputs.eef_v3]
+target_root = "data/processed/EXPERIMENT_eef_v3"
+archive_path = "data/exports/EXPERIMENT_eef_v3.tar.gz"
+repo_id = "OWNER/EXPERIMENT-eef-v3"
+
+[outputs.eef_v21]
+target_root = "data/processed/EXPERIMENT_eef_v21"
+archive_path = "data/exports/EXPERIMENT_eef_v21.tar.gz"
+repo_id = "OWNER/EXPERIMENT-eef-v21"
+
+[kinematics]
+urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+base_link = "base_link"
+tip_link = "arm_seg6"
+```
+
+Then build all derivatives, or one independently:
+
+```bash
+just derive configs/datasets/EXPERIMENT_derivatives.toml
+just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v3
+just derive configs/datasets/EXPERIMENT_derivatives.toml joint-v2.1
+just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
+```
+
+The source repo ID and task are read from its committed provenance instead of
+being duplicated in the derivative config. Every final output derives from the
+canonical v3 root; temporary v3 workspaces used for v2.1 export are removed.
+
+### Legacy Raw v3 migration
+
+The commands below exist for the recordings already under `data/raw/`; they are
+not a post-processing requirement for new collection.
 
 Create a tracked `configs/datasets/EXPERIMENT.toml`, then run the complete
 conversion pipeline:
 
 ```bash
-just convert EXPERIMENT
+just legacy-convert EXPERIMENT
 ```
 
 The default builds all four outputs. Build one independently when only one
 training format is needed:
 
 ```bash
-just convert EXPERIMENT joint-v3
-just convert EXPERIMENT joint-v2.1
-just convert EXPERIMENT eef-v3
-just convert EXPERIMENT eef-v2.1
+just legacy-convert EXPERIMENT joint-v3
+just legacy-convert EXPERIMENT joint-v2.1
+just legacy-convert EXPERIMENT eef-v3
+just legacy-convert EXPERIMENT eef-v2.1
 ```
 
-The dataset config references the tracked Raw-package config that owns the
-logical Raw v3 identity and its non-empty task-root list; it owns processed
-packaging paths, overwrite policy, and the explicit boundary-trim policy. A
+The legacy dataset config owns the logical Raw v3 identity and its non-empty
+task-root list, processed packaging paths, overwrite policy, and the explicit
+boundary-trim policy. A
 multi-task output preserves each root's `task.txt` on its episodes. Observation
 and action contracts derive from the referenced Teleop and System configs. Use
 the reviewed trim values unless a dataset inspection justifies changing them:
@@ -247,7 +322,7 @@ max_trim_fraction = 0.20
 min_kept_duration_s = 5.0
 ```
 
-Conversion rejects incomplete or mismatched raw data and preserves an existing
+Legacy migration rejects incomplete or mismatched raw data and preserves an existing
 complete output if replacement fails. It removes only stable stationary
 episode boundaries, never interior pauses; uncertain or over-large candidates
 remain untrimmed. Inspect `meta/trim.json` in any output for the exact source
@@ -272,6 +347,7 @@ Then diagnose the narrow layer:
 | serial/device missing | `just hardware` |
 | camera missing, stale, or slow | `just cameras`; inspect USB topology |
 | Teleop process exited | `just logs` |
+| embodied-ops socket already exists | run `just stop`, verify the server is absent, then inspect and remove only the exact socket configured in System config |
 | model missing | `just models` |
 | configuration or test failure | `just check` |
 | conversion rejected an episode | inspect its metadata and files; do not weaken validation |
@@ -279,6 +355,11 @@ Then diagnose the narrow layer:
 Never run two apps that own the same driver, tracker, camera, serial port, or
 publisher. A1 status interpretation and direct-debug procedures are maintained
 only in [Safety](SAFETY.md).
+
+The RPC server deliberately refuses to unlink a pre-existing socket at startup. This
+keeps a second runtime from taking over an endpoint that may still be owned. Treat a
+leftover socket as crash evidence and remove it only after the owning process is proven
+stopped.
 
 ## 7. Policy deployment
 

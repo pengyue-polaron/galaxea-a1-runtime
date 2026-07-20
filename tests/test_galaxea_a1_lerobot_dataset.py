@@ -2,13 +2,15 @@ from pathlib import Path
 
 import pytest
 
-from galaxea_a1_runtime.lerobot.dataset import DatasetConfig
-from galaxea_a1_runtime.lerobot.dataset import build_dataset_create_kwargs
-from galaxea_a1_runtime.schema import CameraSpec, default_dataset_contract
+from galaxea_a1_runtime.lerobot.dataset import (
+    DatasetConfig,
+    build_dataset_create_kwargs,
+)
+from galaxea_a1_runtime.schema import CameraSpec, canonical_dataset_contract
 
 
 def test_build_dataset_create_kwargs_for_lerobot_v3():
-    contract = default_dataset_contract(
+    contract = canonical_dataset_contract(
         cameras=(CameraSpec("front", height=480, width=640),)
     )
     config = DatasetConfig(repo_id="galaxea/a1_test", root=Path("/tmp/a1"), fps=20)
@@ -23,7 +25,7 @@ def test_build_dataset_create_kwargs_for_lerobot_v3():
 
 
 def test_dataset_config_requires_namespaced_repo_id():
-    contract = default_dataset_contract(
+    contract = canonical_dataset_contract(
         cameras=(CameraSpec("front", height=480, width=640),)
     )
     config = DatasetConfig(repo_id="a1_test", root=Path("/tmp/a1"), fps=20)

@@ -13,7 +13,7 @@ from .constants import LEROBOT_DATASET_FORMAT
 if TYPE_CHECKING:
     from galaxea_a1_runtime.configuration.system import SystemConfig
 
-DEFAULT_STATE_NAMES = (
+LEGACY_RAW_STATE_NAMES = (
     "eef_x",
     "eef_y",
     "eef_z",
@@ -30,7 +30,7 @@ DEFAULT_STATE_NAMES = (
     "gripper",
 )
 
-JOINT_ACTION_NAMES = (
+LEGACY_RAW_ACTION_NAMES = (
     "joint_1",
     "joint_2",
     "joint_3",
@@ -61,7 +61,8 @@ EEF_ACTION_NAMES = (
     "gripper_normalized",
 )
 
-EEF_DATASET_STATE_NAMES = (*DEFAULT_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)
+EEF_DATASET_STATE_NAMES = (*LEGACY_RAW_STATE_NAMES[:7], *JOINT_ACTION_NAMES_RAD)
+CANONICAL_STATE_NAMES = EEF_DATASET_STATE_NAMES
 
 FRONT_IMAGE_KEY = "observation.images.front"
 WRIST_IMAGE_KEY = "observation.images.wrist"
@@ -96,7 +97,7 @@ class CameraSpec:
         feature = {
             "dtype": "video",
             "shape": (self.height, self.width, self.channels),
-            "names": ["height", "width", "channel"],
+            "names": ["height", "width", "channels"],
         }
         if self.is_depth_map:
             info: dict[str, Any] = {"is_depth_map": True}
@@ -124,15 +125,17 @@ class DatasetContract:
         return features
 
 
-def default_dataset_contract(
+def canonical_dataset_contract(
     *,
     cameras: tuple[CameraSpec, ...],
 ) -> DatasetContract:
+    """Return the directly recorded, model-agnostic A1 LeRobot contract."""
+
     return DatasetContract(
         dataset_format=LEROBOT_DATASET_FORMAT,
         action_mode=ActionMode.JOINT_ABSOLUTE,
-        state_names=DEFAULT_STATE_NAMES,
-        action_names=JOINT_ACTION_NAMES,
+        state_names=CANONICAL_STATE_NAMES,
+        action_names=JOINT_ACTION_NAMES_RAD,
         camera_specs=cameras,
     )
 

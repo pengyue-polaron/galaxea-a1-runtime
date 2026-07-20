@@ -695,16 +695,6 @@ run_batch() {
   a1_success "LingBot batch ${BATCH_ID} completed ${BATCH_TOTAL_ATTEMPTS} attempts."
 }
 
-doctor() {
-  local args=("$@")
-  "${BASE_RUNTIME}" doctor "${args[@]}"
-  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
-    "${PYTHON_BIN}" "${ROOT}/scripts/apps/lingbot/a1_lingbot_doctor.py" \
-      --config "${CONFIG_PATH}" \
-      --model "${MODEL_ID}" \
-      "${args[@]}"
-}
-
 stop_runtime() {
   local rc=0
   "${BASE_RUNTIME}" stop || rc=$?
@@ -785,7 +775,7 @@ case "${1:-help}" in
     ;;
   doctor)
     shift
-    doctor "$@"
+    "${BASE_RUNTIME}" doctor "$@"
     ;;
   status)
     status
@@ -807,7 +797,7 @@ case "${1:-help}" in
   server-logs  Show recent policy server output
   services  Start only the decoupled A1 base runtime
   stop      Stop the A1 runtime and marked LingBot policy server
-  doctor    Run base runtime checks plus LingBot app checks
+  doctor    Run the shared layered runtime checks
   status    Base runtime and marked policy-server status
   logs      Tail base runtime and policy-server logs
 

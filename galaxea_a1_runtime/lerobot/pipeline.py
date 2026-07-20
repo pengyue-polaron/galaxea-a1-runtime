@@ -1,4 +1,4 @@
-"""Build independently reproducible Joint and EEF LeRobot datasets from Raw v3."""
+"""Migrate legacy Raw v3 recordings into reproducible LeRobot derivatives."""
 
 from __future__ import annotations
 
@@ -31,7 +31,7 @@ def build_datasets(
     *,
     targets: Sequence[str] | None = None,
 ) -> dict[str, dict[str, Any]]:
-    """Build selected outputs from Raw v3 without reading another final output."""
+    """Build selected legacy outputs without reading another final output."""
 
     selected = _normalize_targets(targets)
     work_parent = _target_root(config, selected[0]).parent

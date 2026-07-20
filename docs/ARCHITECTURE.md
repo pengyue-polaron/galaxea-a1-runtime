@@ -30,8 +30,16 @@ galaxea_a1_runtime.apps
   download, and validation. `inference/` owns the shared wire protocol.
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
+- The pinned `external/embodied-ops` package owns framework-neutral capability,
+  manifest, lifecycle, health, and the optional versioned Protobuf/gRPC Unix-socket
+  transport. Its core has no ROS or LeRobot dependency.
+- The pinned `external/lerobot-robot-galaxea-a1` and
+  `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
+  LeRobot adapters. The Robot plugin is a thin RPC client; A1-Research hosts the
+  operational device service and remains the ROS/safety/process composition root.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
-- `lerobot/` owns current raw conversion and deterministic derived packages.
+- `lerobot/` owns direct LeRobotDataset recording, atomic episode commits,
+  legacy Raw v3 import, and deterministic derived packages.
 - `third_party/` contains pinned vendor snapshots, not A1-specific behavior.
 
 Heavy dependencies are loaded only at hardware or model boundaries. Static
@@ -48,7 +56,8 @@ configs/system/a1.toml
   ├── configs/teleop/a1_so100.toml
   │     ├── configs/poses/a1_so100_collection_start.toml
   │     │     └── configs/poses/a1_collection_start.toml
-  │     └── configs/datasets/<experiment>.toml
+  │     └── configs/datasets/<legacy_raw_migration>.toml
+  ├── configs/datasets/<experiment>_derivatives.toml
   ├── configs/deployments/lingbot/<deployment>.toml
   │     ├── configs/inference/backends/lingbot_va.toml
   │     ├── configs/models/lingbot/<default-model>.toml
@@ -66,7 +75,7 @@ Ownership is exclusive:
 
 | Config | Owns |
 | --- | --- |
-| System | devices, ROS topics, cameras, physical limits, relay and startup safety |
+| System | devices, ROS topics, cameras, physical limits, relay/startup safety, and the embodied-ops endpoint/session and command timeouts |
 | Teleop | leader identity/mapping and collection behavior |
 | Pose | reset targets and reset motion behavior |
 | Dataset | source/output packaging and conversion policy |
@@ -91,6 +100,29 @@ process lifecycle. No app-specific config may mirror a physical value from the
 System config.
 
 ## Runtime composition
+
+```text
+LeRobot Robot plugin
+  -> embodied-ops protocol client
+  -> versioned gRPC over System-owned Unix socket
+  -> A1 Runtime operational-device service
+  -> ROS staged tracker -> locked relay -> host driver
+```
+
+The service process is the only owner of A1 ROS resources. `Describe` is static;
+hardware attachment occurs only when a session opens. The first session attaches
+read-only feedback and relay-status subscribers; it does not create command publishers
+or require a `LOCKED` relay. One command session owns an opaque lease at a time. Only
+that lease may attach the staged-command subscriber, target publishers, motion gate,
+and hold timer, and it requires fresh feedback plus a fresh `LOCKED` relay before
+attachment. Read-only observation sessions may coexist throughout.
+
+Commands carry a contiguous sequence and monotonic timestamp. Successful commands,
+calibration, or reset refresh the command-inactivity deadline; heartbeats refresh only
+session liveness. Command failure, inactivity expiry, lease expiry, or command-session
+close disables and releases command resources. Observation resources remain attached
+while observers remain connected. The relay's independent input-freshness and
+motor-status gates remain authoritative.
 
 Every managed motion path has four roles: an app publishes a named joint target,
 the isolated jointTracker produces a staged driver command, the relay validates
@@ -155,10 +187,29 @@ export implicitly.
 
 ## Teleop and observation contract
 
-The first-party `A1SOLeader` exposes six arm axes, `joint0..joint5`, plus an
-independent `gripper`. Leader joint motion is mapped relative to both startup
-poses using the tracked signs and limits; unknown layouts fail instead of being
-sorted heuristically.
+The first-party `GalaxeaA1SOLeader` plugin exposes six arm axes,
+`joint0..joint5`, plus an independent `gripper`. Leader joint motion is mapped
+relative to both startup poses using the tracked signs and limits; unknown
+layouts fail instead of being sorted heuristically. The plugin reports truthful
+leader units; pair-specific degree-to-radian, gripper, sign, scale, bias, and
+limit mapping is a LeRobot processor derived from this repository's tracked
+Teleop and System configs.
+
+The production Teleop bridge is the pair composition root. It constructs the
+auto-discovered Teleoperator and Robot plugins, then applies LeRobot's
+teleoperator-action and robot-action processor ordering. The first processed
+action is the current A1 pose and normalized gripper state; the Robot sends that hold
+through the local RPC service, whose A1 device alone attaches to ROS and requests the
+relay. The previous in-app joint mapping and ROS publishers are not
+retained as a second control path. Generic LeRobot 0.6 CLI entrypoints use
+identity processors and are not valid for this degree-to-radian hardware pair.
+
+The Robot plugin intentionally exposes the control observation required by the
+pair (six measured joints and gripper), rather than making joint Teleop depend
+on EEF tracking or cameras. Formal collection is a Runtime composition because
+it also observes the command actually sent, EEF feedback, and the sole-owner
+Camera Bridge. Both paths consume the same canonical feature-name/schema
+module; neither duplicates a physical owner or command publisher.
 
 The default collection contract contains:
 
@@ -182,65 +233,70 @@ System limit.
 
 ## Episode and dataset commit
 
-Formal collection writes only `galaxea_a1_teleop_raw_v3`:
+Formal collection writes `galaxea_a1_lerobot_dataset_v3_v2` directly under
+`data/datasets/EXPERIMENT/`. The standard LeRobot v3 contract is immediately
+usable by LeRobot readers:
 
 ```text
-episode_NNN_timestamp/
-  metadata.json
-  frames.csv
-  cam0/
-  cam1/
-  cam0_depth/       optional
+observation.state = [EEF xyz+xyzw, joint_1_rad..joint_6_rad,
+                     gripper_normalized]
+action            = [joint_1_rad..joint_6_rad, gripper_normalized]
+observation.images.front
+observation.images.wrist
+observation.images.front_depth       optional, uint16 millimeters
+task                              standard LeRobot per-frame task
 ```
 
-Recording occurs in a hidden sibling staging directory. Save validates vector
-dimensions, names, finite values, joint-action continuity, metadata, frame
-counts, and exact image sets before an atomic rename exposes the episode.
-Rejected saves reuse the episode index; undeletable crash leftovers block the
-next run for inspection.
+`meta/galaxea_a1.json` adds the tracked config identity, topic/control path,
+camera sources and crop, feature semantics, freshness limits, and gripper
+mapping. It supplements rather than forks LeRobot's `info.json`, tasks, episode
+metadata, stats, Parquet, and image/video layout.
 
-Conversion derives its expected state, action, and camera contract from the
-referenced Teleop and System configs:
+Each episode records into a hidden sibling snapshot of the complete dataset.
+Existing immutable `data/`, `videos/`, and `images/` payloads are hard-linked;
+the sibling transaction fails clearly if its filesystem cannot preserve those
+links instead of silently copying the complete dataset. Mutable metadata is
+copied. LeRobot resume starts new payload files, finalizes the new episode, then
+the runtime validates format, robot type, FPS, the exact feature contract,
+experiment/task identity, and frame/episode counts before an atomic directory
+replacement. Failure or discard preserves the previous complete dataset.
+Rejected saves reuse the episode index, and crash leftovers block the next run
+for inspection.
 
-```text
-raw v3
-  └── validated boundary trim [start, end)
-      ├── Joint LeRobotDataset v3
-      ├── Joint LeRobotDataset v2.1
-      ├── EEF LeRobotDataset v3
-      └── EEF LeRobotDataset v2.1
-```
+Canonical image storage is always video and is therefore not an operator
+configuration option. Before ROS or cameras start, dataset preflight validates
+the task table, contiguous episode graph, Parquet row counts and schemas, and
+every referenced data/video payload. `just dataset-doctor EXPERIMENT` exposes
+the same hardware-free validation explicitly.
 
-The boundary trim removes only contiguous stationary prefixes and suffixes.
-It detects departure from stable endpoint medians using the six named joint
-targets and continuous gripper, requires stable final action and feedback
-anchors before trimming the suffix, and retains configured pre/post rolls. It
-never removes interior pauses. Ambiguous endpoints, excessive trimming, or a
-too-short result preserve the complete episode. Raw v3 remains immutable, and
-every processed package records the shared source-frame bounds and decisions in
-`meta/trim.json`.
+This canonical dataset intentionally stores the richest model-agnostic A1
+observation and the command actually sent by Teleop. A training adapter can
+select channels without rewriting the recording. An EEF-action or old-version
+package is an explicit derivative because it changes action semantics or file
+format; it is not part of collection.
+
+The direct-derivation pipeline accepts only a validated canonical dataset as
+its source. It can produce Joint v2.1, EEF v3.0, and EEF v2.1. Each output starts
+from the canonical source; v2.1 builders may use disposable v3 workspaces but
+never another final derivative. Source identity comes from
+`meta/galaxea_a1.json`, while output paths, repository IDs, overwrite policy,
+and kinematics remain in one tracked Dataset config.
+The derivative namespaces the immutable recording provenance as
+`meta/source_galaxea_a1.json`; it never leaves a stale direct-dataset manifest
+claiming to describe the rewritten action representation.
+
+Raw v3 is a legacy, read-only migration source for the recordings already
+under `data/raw/`. Its importer still validates the historical contract and can
+apply the tracked stationary-boundary trim before producing Joint/EEF v3.0 or
+v2.1 packages. This compatibility path never accepts new collector output and
+must not become a second collection contract. No final derivative is used as
+the source of another final derivative.
 
 Published metadata is machine-independent: provenance uses logical dataset IDs,
 and external assets use portable names plus content hashes, never host absolute
-paths.
-
-One logical processed dataset references a Raw-package config that owns one or
-more Raw v3 task roots. All roots must share the same state, action, camera, and
-FPS contract, while each episode retains its source root's task text.
-
-Each output and archive is built beside its destination and installed
-atomically. Failure preserves the previous complete output. All four outputs
-derive independently from the same validated and trimmed Raw v3 view; no final
-processed dataset is an input to another. The converter may create disposable
-LeRobot v3 staging data while writing v2.1, but those intermediates are removed
-automatically and never become a user-managed source of truth.
-
-Joint and EEF are model-agnostic action representations, each emitted in
-LeRobotDataset v3.0 and episode-based v2.1. Model-specific channel selection,
-normalization rules, and checkpoint assumptions belong to deployment or
-training configs, not dataset names or manifests. The first-party v2.1 exporter
-is checked against LeRobot's official v2.1-to-v3.0 migrator. Both v2.1 packages
-are derived outputs, never accepted as collector input.
+paths. Model-specific channel selection, normalization rules, and checkpoint
+assumptions remain in deployment or training configs, not dataset names or
+manifests.
 
 ## Deployment
 
@@ -309,10 +365,10 @@ and locked relay remain the sole path toward host motor commands.
 
 | Root | Contents |
 | --- | --- |
-| `data/` | raw episodes, processed datasets, exports, and quarantined legacy data |
+| `data/` | canonical LeRobot datasets, derivatives, exports, and quarantined legacy data |
 | `outputs/` | durable diagnostics, logs, evaluations, and run results |
 | `models/` | immutable, content-verified deployment artifacts |
-| `external/` | machine-local external source checkouts |
+| `external/` | three pinned first-party SDK/plugin submodules plus ignored machine-local external checkouts |
 | `.cache/` | reproducible disposable caches only |
 | `/tmp` | PID files, sockets, and process-lifecycle state |
 

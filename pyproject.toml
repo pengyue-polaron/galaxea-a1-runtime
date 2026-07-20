@@ -4,8 +4,11 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
+    "embodied-ops[grpc]>=0.2,<0.3",
     "huggingface-hub>=1.0.0,<2.0.0",
     "lerobot[dataset,feetech]",
+    "lerobot_robot_galaxea_a1>=0.2,<0.3",
+    "lerobot_teleoperator_galaxea_a1_so_leader>=0.1,<0.2",
     "msgpack>=1.1.0,<2.0.0",
     "numpy>=2.2.0",
     "pandas>=2.3.3",
@@ -16,8 +19,6 @@ dependencies = [
     "torch==2.7.1",
     "torchcodec>=0.5.0,<0.6.0; platform_machine == 'x86_64'",
     "torchvision",
-    "torchaudio",
-    "transformers>=5.4.0,<5.6.0",
     "websockets>=15.0.1",
 ]
 
@@ -39,18 +40,23 @@ operator_panel = ["assets/*", "README.md"]
 environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64')"]
 
 [tool.uv.sources]
+embodied-ops = { path = "external/embodied-ops", editable = true }
 lerobot = { path = "third_party/lerobot", editable = true }
+lerobot-robot-galaxea-a1 = { path = "external/lerobot-robot-galaxea-a1", editable = true }
+lerobot-teleoperator-galaxea-a1-so-leader = { path = "external/lerobot-teleoperator-galaxea-a1-so-leader", editable = true }
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "pre-commit>=4.5.1",
+    "pytest>=9.0.2",
+    "ruff>=0.14.14",
+]
+research = [
     "ipykernel>=7.1.0",
     "ipywidgets>=8.1.8",
     "matplotlib>=3.10.8",
-    "pre-commit>=4.5.1",
     "nvidia-ml-py>=13.580.65",
-    "pytest>=9.0.2",
-    "ruff>=0.14.14",
 ]

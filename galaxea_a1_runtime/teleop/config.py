@@ -6,7 +6,6 @@ import re
 import sys
 from pathlib import Path
 
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.configuration.base import (
     boolean,
     float_tuple as _float_tuple,
@@ -24,6 +23,7 @@ from galaxea_a1_runtime.configuration.cli import run_config_renderer
 from galaxea_a1_runtime.configuration.paths import TELEOP_CONFIG
 from galaxea_a1_runtime.teleop.config_runtime import bash_config
 from galaxea_a1_runtime.teleop.config_schema import (
+    JointMappingConfig,
     TeleopBridgeConfig,
     TeleopCollectionConfig,
     TeleopConfig,
@@ -32,7 +32,6 @@ from galaxea_a1_runtime.teleop.config_schema import (
     TeleopRuntimeConfig,
     TeleopResetConfig,
 )
-from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
 
 DEFAULT_TELEOP_CONFIG = TELEOP_CONFIG
 RUNTIME_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
@@ -77,25 +76,24 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         label="runtime",
     )
     require_exact_keys(reset, required={"config"}, label="reset")
-    require_exact_keys(leader, required={"port", "id", "use_degrees"}, label="leader")
+    require_exact_keys(
+        leader,
+        required={"port", "id", "motor_write_retries"},
+        label="leader",
+    )
     require_exact_keys(
         bridge,
         required={
             "hz",
-            "dof",
-            "relative",
             "scale",
             "sign",
             "bias_rad",
-            "a1_state_timeout_s",
         },
         label="bridge",
     )
     require_exact_keys(
         gripper,
         required={
-            "enabled",
-            "source_key",
             "source_min",
             "source_max",
             "invert",
@@ -106,23 +104,19 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     require_exact_keys(
         collection,
         required={
-            "data_root",
-            "state_mode",
+            "dataset_root",
+            "repo_id_prefix",
             "fps",
             "max_duration_s",
             "auto_reset_after_save",
             "auto_reset_after_discard",
-            "jpeg_quality",
             "ready_timeout_s",
             "max_joint_action_step_rad",
         },
         label="collection",
     )
-    dof = integer(bridge, "dof")
-    leader_use_degrees = boolean(leader, "use_degrees")
+    dof = len(system.joint_safety.names)
     mapping = JointMappingConfig(
-        relative=boolean(bridge, "relative"),
-        input_degrees=leader_use_degrees,
         scale=_float_tuple(bridge, "scale", dof),
         sign=_float_tuple(bridge, "sign", dof),
         bias_rad=_float_tuple(bridge, "bias_rad", dof),
@@ -146,30 +140,25 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         leader=TeleopLeaderConfig(
             port=_string(leader, "port"),
             id=_string(leader, "id"),
-            use_degrees=leader_use_degrees,
+            motor_write_retries=integer(leader, "motor_write_retries"),
         ),
         bridge=TeleopBridgeConfig(
             hz=floating(bridge, "hz"),
-            dof=dof,
             mapping=mapping,
-            a1_state_timeout_s=floating(bridge, "a1_state_timeout_s"),
         ),
         gripper=TeleopGripperConfig(
-            enabled=boolean(gripper, "enabled"),
-            source_key=_string(gripper, "source_key"),
             source_min=floating(gripper, "source_min"),
             source_max=floating(gripper, "source_max"),
             invert=boolean(gripper, "invert"),
             saturate_out_of_range=boolean(gripper, "saturate_out_of_range"),
         ),
         collection=TeleopCollectionConfig(
-            data_root=_repo_path(repo_root, _string(collection, "data_root")),
-            state_mode=StateMode(_string(collection, "state_mode")),
+            dataset_root=_repo_path(repo_root, _string(collection, "dataset_root")),
+            repo_id_prefix=_string(collection, "repo_id_prefix"),
             fps=floating(collection, "fps"),
             max_duration_s=floating(collection, "max_duration_s"),
             auto_reset_after_save=boolean(collection, "auto_reset_after_save"),
             auto_reset_after_discard=boolean(collection, "auto_reset_after_discard"),
-            jpeg_quality=integer(collection, "jpeg_quality"),
             ready_timeout_s=floating(collection, "ready_timeout_s"),
             max_joint_action_step_rad=floating(collection, "max_joint_action_step_rad"),
         ),
@@ -191,39 +180,45 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         character.isspace() for character in config.leader.port
     ):
         raise ValueError("leader.port must be a whitespace-free path under /dev")
-    if not config.leader.use_degrees:
-        raise ValueError(
-            "leader.use_degrees must be true for the A1SOLeader degree mapping contract"
-        )
-    if config.gripper.source_key != "gripper.pos":
-        raise ValueError("gripper.source_key must be 'gripper.pos' for A1SOLeader")
+    if config.leader.motor_write_retries < 1:
+        raise ValueError("leader.motor_write_retries must be at least 1")
     if config.gripper.source_max <= config.gripper.source_min:
         raise ValueError("gripper source_max must be greater than source_min")
     if config.bridge.hz <= 0:
         raise ValueError("bridge.hz must be positive")
-    if config.bridge.a1_state_timeout_s <= 0:
-        raise ValueError("bridge.a1_state_timeout_s must be positive")
-    if config.bridge.dof <= 0:
-        raise ValueError("bridge.dof must be positive")
+    minimum_startup_timeout_s = (
+        2 * config.system.embodied_ops.device_connect_timeout_s
+        + config.system.relay.enable_timeout_s
+    )
+    if config.runtime.bridge_startup_timeout_s < minimum_startup_timeout_s:
+        raise ValueError(
+            "runtime.bridge_startup_timeout_s must cover two System "
+            "embodied_ops.device_connect_timeout_s windows plus the relay enable timeout"
+        )
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
     if not config.collection.fps.is_integer():
-        raise ValueError("collection.fps must be an integer for LeRobot conversion")
+        raise ValueError("collection.fps must be an integer for LeRobot recording")
     if config.collection.max_duration_s < 0:
         raise ValueError("collection.max_duration_s must be non-negative")
-    if not 1 <= config.collection.jpeg_quality <= 100:
-        raise ValueError("collection.jpeg_quality must be in [1, 100]")
+    prefix = config.collection.repo_id_prefix
+    if prefix.count("/") != 1 or any(character.isspace() for character in prefix):
+        raise ValueError(
+            "collection.repo_id_prefix must be a whitespace-free 'owner/name' prefix"
+        )
     if config.collection.ready_timeout_s <= 0:
         raise ValueError("collection.ready_timeout_s must be positive")
     if config.collection.max_joint_action_step_rad <= 0:
         raise ValueError("collection.max_joint_action_step_rad must be positive")
-    front = config.system.cameras.front
-    if front.backend != "realsense":
+
+
+def validate_collection_config(config: TeleopConfig) -> None:
+    """Validate collection-only hardware contracts before any device startup."""
+
+    if config.system.cameras.front.backend != "realsense":
         raise ValueError(
-            "cameras.front.backend must be 'realsense' because teleop records optional depth framesets"
+            "cameras.front.backend must be 'realsense' for canonical Teleop collection"
         )
-    if len(config.system.joint_safety.names) != config.bridge.dof:
-        raise ValueError("bridge.target_joint_names length must match bridge.dof")
 
 
 def main(argv: list[str] | None = None) -> int:

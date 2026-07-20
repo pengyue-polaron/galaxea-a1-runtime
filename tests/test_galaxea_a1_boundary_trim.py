@@ -4,7 +4,10 @@ import numpy as np
 
 from galaxea_a1_runtime.lerobot.boundary_trim import decide_episode_bounds
 from galaxea_a1_runtime.lerobot.boundary_trim_config import BoundaryTrimConfig
-from galaxea_a1_runtime.schema import DEFAULT_STATE_NAMES, JOINT_ACTION_NAMES
+from galaxea_a1_runtime.schema import (
+    LEGACY_RAW_ACTION_NAMES,
+    LEGACY_RAW_STATE_NAMES,
+)
 
 
 def trim_config(**overrides) -> BoundaryTrimConfig:
@@ -23,8 +26,8 @@ def trim_config(**overrides) -> BoundaryTrimConfig:
 
 
 def vectors(frame_count: int = 300) -> tuple[np.ndarray, np.ndarray]:
-    actions = np.zeros((frame_count, len(JOINT_ACTION_NAMES)))
-    states = np.zeros((frame_count, len(DEFAULT_STATE_NAMES)))
+    actions = np.zeros((frame_count, len(LEGACY_RAW_ACTION_NAMES)))
+    states = np.zeros((frame_count, len(LEGACY_RAW_STATE_NAMES)))
     states[:, 6] = 1.0
     return actions, states
 
@@ -38,8 +41,8 @@ def decide(
     return decide_episode_bounds(
         actions=actions,
         states=states,
-        action_names=JOINT_ACTION_NAMES,
-        state_names=DEFAULT_STATE_NAMES,
+        action_names=LEGACY_RAW_ACTION_NAMES,
+        state_names=LEGACY_RAW_STATE_NAMES,
         fps=10,
         config=config or trim_config(),
     )

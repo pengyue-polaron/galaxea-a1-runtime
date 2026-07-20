@@ -1,14 +1,14 @@
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
-from galaxea_a1_runtime.collection import StateMode
-from galaxea_a1_runtime.gripper import (
-    denormalize_stroke,
-    normalize_source_position,
-    normalize_stroke,
+from galaxea_a1_runtime.apps.teleop.dataset_contract import tracked_config_reference
+from galaxea_a1_runtime.teleop.config import (
+    load_teleop_config,
+    validate_collection_config,
+    validate_teleop_config,
 )
-from galaxea_a1_runtime.teleop.config import load_teleop_config
 from galaxea_a1_runtime.teleop.config_runtime import bash_config
 
 
@@ -22,11 +22,12 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
 
     assert config.leader.port == LEADER_PORT
     assert config.leader.id == "my_leader"
+    assert config.leader.motor_write_retries == 5
     assert config.reset.config == REPO / "configs/poses/a1_so100_collection_start.toml"
-    assert config.runtime.bridge_startup_timeout_s == 15.0
+    assert config.runtime.bridge_startup_timeout_s == 65.0
     assert config.runtime.bridge_stop_timeout_s == 5.0
-    assert config.collection.state_mode == StateMode.EEF_JOINT
-    assert config.bridge.dof == 6
+    assert config.collection.dataset_root == REPO / "data/datasets"
+    assert config.collection.repo_id_prefix == "pengyue-polaron/galaxea-a1"
     assert config.system.joint_safety.names == (
         "arm_joint1",
         "arm_joint2",
@@ -35,11 +36,15 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
         "arm_joint5",
         "arm_joint6",
     )
-    assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
-    assert config.bridge.a1_state_timeout_s == 30.0
+    assert config.system.embodied_ops.endpoint == (
+        "unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"
+    )
+    assert config.system.embodied_ops.device_connect_timeout_s == 30.0
+    assert config.system.embodied_ops.rpc_timeout_s == 0.5
+    assert config.system.embodied_ops.command_timeout_s == 0.75
+    assert config.system.embodied_ops.lease_timeout_s == 1.0
     assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
-    assert config.gripper.source_key == "gripper.pos"
     assert (config.gripper.source_min, config.gripper.source_max) == (0.0, 53.16)
     assert config.gripper.saturate_out_of_range is True
     assert config.system.gripper.stroke_min_mm == 0.0
@@ -77,39 +82,15 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.startup.tmux_process_grace_s == 4
 
 
-def test_so_leader_open_endpoint_is_the_single_canonical_gripper_action():
-    config = load_teleop_config(CONFIG, repo_root=REPO)
-    gripper = config.gripper
-    physical = config.system.gripper
-
-    action = normalize_source_position(
-        53.16,
-        source_min=gripper.source_min,
-        source_max=gripper.source_max,
-        invert=gripper.invert,
-        saturate_out_of_range=gripper.saturate_out_of_range,
-    )
-    target_mm = denormalize_stroke(
-        action,
-        stroke_min_mm=physical.stroke_min_mm,
-        stroke_max_mm=physical.stroke_max_mm,
-    )
-    measured_state = normalize_stroke(
-        103.833,
-        stroke_min_mm=physical.stroke_min_mm,
-        stroke_max_mm=physical.stroke_max_mm,
-    )
-
-    assert action == pytest.approx(1.0)
-    assert target_mm == pytest.approx(104.0)
-    assert measured_state == pytest.approx(103.833 / 104.0)
-
-
 def test_teleop_shell_contract_renders_lifecycle_values():
     rendered = bash_config(load_teleop_config(CONFIG, repo_root=REPO))
 
-    assert "BRIDGE_STARTUP_TIMEOUT_S=15" in rendered
+    assert "BRIDGE_STARTUP_TIMEOUT_S=65" in rendered
     assert "BRIDGE_STOP_TIMEOUT_S=5" in rendered
+    assert (
+        "EMBODIED_OPS_ENDPOINT=unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"
+        in rendered
+    )
     assert "JOINT_TRACKER_NODE=/jointTracker_demo_node" in rendered
     assert "JOINT_TRACKER_NODE_NAME=jointTracker_demo_node" in rendered
 
@@ -126,5 +107,61 @@ def test_teleop_config_rejects_fractional_collection_fps(tmp_path: Path):
     path = tmp_path / "teleop.toml"
     path.write_text(CONFIG.read_text().replace("fps = 30.0", "fps = 29.97"))
 
-    with pytest.raises(ValueError, match="integer for LeRobot conversion"):
+    with pytest.raises(ValueError, match="integer for LeRobot recording"):
+        load_teleop_config(path, repo_root=REPO)
+
+
+def test_teleop_config_rejects_removed_image_storage_override(tmp_path: Path):
+    path = tmp_path / "teleop.toml"
+    path.write_text(CONFIG.read_text() + "\nuse_videos = false\n")
+
+    with pytest.raises(ValueError, match="collection"):
+        load_teleop_config(path, repo_root=REPO)
+
+
+def test_formal_collection_config_reference_must_be_portable(tmp_path: Path):
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+
+    assert tracked_config_reference(config, repo_root=REPO) == (
+        "configs/teleop/a1_so100.toml"
+    )
+    with pytest.raises(ValueError, match="tracked inside the repository"):
+        tracked_config_reference(
+            replace(config, path=tmp_path / "external.toml"),
+            repo_root=REPO,
+        )
+
+
+def test_realsense_is_required_by_collection_not_general_teleop():
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+    alternate_front = replace(config.system.cameras.front, backend="opencv")
+    alternate_cameras = replace(config.system.cameras, front=alternate_front)
+    alternate = replace(
+        config,
+        system=replace(config.system, cameras=alternate_cameras),
+    )
+
+    validate_teleop_config(alternate)
+    with pytest.raises(ValueError, match="canonical Teleop collection"):
+        validate_collection_config(alternate)
+
+
+@pytest.mark.parametrize(
+    ("old", "new", "message"),
+    [
+        ("motor_write_retries = 5", "motor_write_retries = 0", "must be at least 1"),
+        (
+            "bridge_startup_timeout_s = 65.0",
+            "bridge_startup_timeout_s = 15.0",
+            "must cover two System embodied_ops.device_connect_timeout_s",
+        ),
+    ],
+)
+def test_teleop_config_rejects_unsupported_plugin_contracts(
+    tmp_path: Path, old: str, new: str, message: str
+):
+    path = tmp_path / "teleop.toml"
+    path.write_text(CONFIG.read_text().replace(old, new))
+
+    with pytest.raises(ValueError, match=message):
         load_teleop_config(path, repo_root=REPO)

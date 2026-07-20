@@ -25,6 +25,10 @@ from operator_panel.protocol import announce_input
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.collector_episode import TeleopEpisodeSession
+from galaxea_a1_runtime.apps.teleop.dataset_contract import (
+    direct_dataset_identity,
+    tracked_config_reference,
+)
 from galaxea_a1_runtime.apps.teleop.collection_task import (
     prepare_collection_task,
     read_collection_task,
@@ -33,15 +37,11 @@ from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
-    next_episode_index,
     normalize_episode_decision,
-    validate_existing_camera_shape,
-    validate_episode_layout,
     validate_experiment_name,
-    validate_existing_schema,
 )
-from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
+from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
 from galaxea_a1_runtime.schema import ActionMode
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
@@ -60,29 +60,26 @@ def load_or_prompt_task(
 
 def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> int:
     experiment = validate_experiment_name(experiment)
-    state_mode = config.collection.state_mode
     front_crop = required_front_roi(config.system.cameras)
-    front = config.system.cameras.front
-    experiment_dir = config.collection.data_root / experiment
-    validate_episode_layout(experiment_dir)
-    validate_existing_schema(experiment_dir, expected=TELEOP_RAW_SCHEMA_VERSION)
-    validate_existing_camera_shape(
-        experiment_dir,
-        camera_name="front",
-        width=front.width if front_crop is None else front_crop.width,
-        height=front.height if front_crop is None else front_crop.height,
+    identity = direct_dataset_identity(config, experiment)
+    config_reference = tracked_config_reference(config, repo_root=ROOT_DIR)
+    existing = inspect_direct_dataset(
+        identity,
     )
-    task = load_or_prompt_task(experiment_dir, provided_task=task)
+    task = load_or_prompt_task(identity.target_root, provided_task=task)
+    if existing.task is not None and existing.task != task:
+        raise ValueError(
+            f"collection task mismatch for {experiment}: "
+            f"existing={existing.task!r}, requested={task!r}"
+        )
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(config)
     step("Waiting for ROS state")
-    ros_state.wait_ready(
-        state_mode=state_mode, timeout_s=config.collection.ready_timeout_s
-    )
+    ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
     success("ROS state ready.")
 
-    episode_index = next_episode_index(experiment_dir)
+    episode_index = existing.total_episodes
     cameras = TeleopCameraSession(config)
     try:
         step("Starting cameras")
@@ -91,21 +88,19 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         _print_collection_summary(
             experiment=experiment,
             task=task,
-            state_mode=state_mode,
-            experiment_dir=experiment_dir,
+            dataset_root=identity.target_root,
+            repo_id=identity.repo_id,
             front_crop=front_crop,
             episode_index=episode_index,
         )
         episodes = TeleopEpisodeSession(
             config=config,
-            experiment=experiment,
-            experiment_dir=experiment_dir,
+            identity=identity,
             task=task,
-            state_mode=state_mode,
             front_crop=front_crop,
             ros_state=ros_state,
             cameras=cameras,
-            repo_root=ROOT_DIR,
+            config_reference=config_reference,
         )
         while not rospy.is_shutdown():
             announce_input(("enter", "quit"))
@@ -141,18 +136,17 @@ def _print_collection_summary(
     *,
     experiment: str,
     task: str,
-    state_mode,
-    experiment_dir: Path,
+    dataset_root: Path,
+    repo_id: str,
     front_crop,
     episode_index: int,
 ) -> None:
     print()
     info(f"Experiment: {experiment}")
     info(f"Task: {task}")
-    info(
-        f"Contract: state={state_mode.value}, action={ActionMode.JOINT_ABSOLUTE.value}"
-    )
-    info(f"Output: {experiment_dir}")
+    info(f"Contract: state=eef_joint, action={ActionMode.JOINT_ABSOLUTE.value}")
+    info(f"LeRobot repo ID: {repo_id}")
+    info(f"Output: {dataset_root}")
     info(f"AgentView ROI: {'full frame' if front_crop is None else front_crop.xywh}")
     info(f"Next episode: {episode_index}; Ctrl+C quits.")
     print()

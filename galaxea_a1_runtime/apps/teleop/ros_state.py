@@ -12,7 +12,6 @@ from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
 
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.apps.eef_bridge import pose_msg_to_xyz_quat
 from galaxea_a1_runtime.gripper import normalize_stroke
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
@@ -74,13 +73,10 @@ class RosTeleopState:
             queue_size=10,
         )
 
-    def wait_ready(self, *, state_mode: StateMode, timeout_s: float) -> None:
+    def wait_ready(self, *, timeout_s: float) -> None:
         deadline = time.monotonic() + timeout_s
         while time.monotonic() < deadline and not rospy.is_shutdown():
-            if (
-                self.state_sample(state_mode) is not None
-                and self.action_values() is not None
-            ):
+            if self.state_sample() is not None and self.action_values() is not None:
                 return
             time.sleep(0.05)
         raise RuntimeError(f"ROS state did not become ready within {timeout_s:.1f}s")
@@ -111,11 +107,7 @@ class RosTeleopState:
         xyz, quat = decoded
         return tuple(float(value) for value in (*xyz, *quat))
 
-    def state_values(self, mode: StateMode) -> tuple[float, ...] | None:
-        sample = self.state_sample(mode)
-        return None if sample is None else sample.values
-
-    def state_sample(self, mode: StateMode) -> TeleopStateSample | None:
+    def state_sample(self) -> TeleopStateSample | None:
         joints = self.joint_snapshot()
         if joints is None:
             return None
@@ -124,14 +116,6 @@ class RosTeleopState:
         if gripper is None:
             return None
         eef = self.eef_vector()
-        if mode == StateMode.EEF:
-            if eef is None:
-                return None
-            values = (*eef, gripper)
-            return TeleopStateSample(values, joints.ros_stamp_s)
-        if mode == StateMode.JOINT:
-            values = (*joint_values, gripper)
-            return TeleopStateSample(values, joints.ros_stamp_s)
         if eef is None:
             return None
         values = (*eef, *joint_values, gripper)

@@ -64,11 +64,10 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     try:
         from galaxea_a1_runtime.schema import (
             camera_specs_from_system,
-            default_dataset_contract,
+            canonical_dataset_contract,
         )
         from galaxea_a1_runtime.safety import RelayInputs, relay_block_reason
         from galaxea_a1_runtime.runtime.safety_report import build_safety_settings
-        from galaxea_a1_runtime.collection import state_names_for_mode
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
         from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
         from galaxea_a1_runtime.teleop.config import load_teleop_config
@@ -77,11 +76,10 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / SYSTEM_CONFIG,
             repo_root=repo_root,
         )
-        teleop_state_names = state_names_for_mode("eef_joint")
         teleop_config = load_teleop_config(
             repo_root / TELEOP_CONFIG, repo_root=repo_root
         )
-        contract = default_dataset_contract(
+        contract = canonical_dataset_contract(
             cameras=camera_specs_from_system(teleop_config.system)
         )
         lingbot_config = load_lingbot_config(
@@ -110,15 +108,14 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             contract.dataset_format == "v3.0"
             and relay_reason == "locked"
             and len(settings) > 0
-            and len(teleop_state_names) == len(contract.state_names)
+            and len(contract.state_names) == 14
             and len(teleop_config.bridge.mapping.sign)
             == len(teleop_config.system.joint_safety.names),
             "schema, safety, collection, teleop, and safety report imported without ROS",
         )
         add(
             "teleop_config",
-            teleop_config.collection.state_mode.value == "eef_joint"
-            and teleop_config.system.gripper.stroke_max_mm
+            teleop_config.system.gripper.stroke_max_mm
             > teleop_config.system.gripper.stroke_min_mm,
             str(teleop_config.path),
         )
@@ -143,17 +140,24 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     pyproject = repo_root / "pyproject.toml"
     try:
         data = tomllib.loads(pyproject.read_text())
-        source = (
-            data.get("tool", {}).get("uv", {}).get("sources", {}).get("lerobot", {})
-        )
-        path = source.get("path")
-        add(
-            "lerobot_single_source",
-            path == "third_party/lerobot" and source.get("editable") is True,
-            f"pyproject lerobot source={source!r}",
-        )
+        sources = data.get("tool", {}).get("uv", {}).get("sources", {})
+        expected_sources = {
+            "embodied-ops": "external/embodied-ops",
+            "lerobot": "third_party/lerobot",
+            "lerobot-robot-galaxea-a1": "external/lerobot-robot-galaxea-a1",
+            "lerobot-teleoperator-galaxea-a1-so-leader": (
+                "external/lerobot-teleoperator-galaxea-a1-so-leader"
+            ),
+        }
+        for package, expected_path in expected_sources.items():
+            source = sources.get(package, {})
+            add(
+                f"{package.replace('-', '_')}_source",
+                source.get("path") == expected_path and source.get("editable") is True,
+                f"pyproject {package} source={source!r}",
+            )
     except Exception as exc:
-        add("lerobot_single_source", False, repr(exc))
+        add("first_party_plugin_sources", False, repr(exc))
 
     third_party_lerobot = repo_root / "third_party" / "lerobot"
     add("third_party_lerobot", third_party_lerobot.is_dir(), str(third_party_lerobot))
@@ -241,8 +245,14 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         / "so_leader"
         / "so_leader.py"
     )
-    a1_so_leader = repo_root / "galaxea_a1_runtime" / "teleop" / "a1_so_leader.py"
-    add("a1_so_leader_adapter", a1_so_leader.is_file(), str(a1_so_leader))
+    a1_so_leader = (
+        repo_root
+        / "external"
+        / "lerobot-teleoperator-galaxea-a1-so-leader"
+        / "lerobot_teleoperator_galaxea_a1_so_leader"
+        / "galaxea_a1_so_leader.py"
+    )
+    add("a1_so_leader_plugin", a1_so_leader.is_file(), str(a1_so_leader))
     try:
         text = vendored_so_leader.read_text()
         add(

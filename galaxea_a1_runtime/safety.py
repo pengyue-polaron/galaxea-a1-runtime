@@ -5,9 +5,9 @@ This module must stay free of ROS imports and hardware side effects.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from math import isfinite
-from typing import Sequence
 
 from .constants import (
     ARM_JOINT_COUNT,

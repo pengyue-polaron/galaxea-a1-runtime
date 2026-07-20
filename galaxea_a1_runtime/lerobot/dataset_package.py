@@ -35,6 +35,7 @@ def copy_dataset_tree(
     *,
     skip_roots: tuple[str, ...] = ("images",),
     hardlink_roots: tuple[str, ...] = ("videos",),
+    require_hardlinks: bool = False,
 ) -> None:
     """Copy a dataset tree, hard-linking large immutable payloads when possible."""
     for source_path in source.rglob("*"):
@@ -51,8 +52,25 @@ def copy_dataset_tree(
             continue
         try:
             os.link(source_path, target_path)
-        except OSError:
+        except OSError as exc:
+            if require_hardlinks:
+                raise RuntimeError(
+                    "dataset snapshot requires hard-link support for immutable "
+                    f"payload {source_path}"
+                ) from exc
             shutil.copy2(source_path, target_path)
+
+
+def namespace_source_provenance(target_root: Path) -> None:
+    """Keep direct-recording provenance as source metadata in a derivative."""
+
+    direct = target_root / "meta/galaxea_a1.json"
+    namespaced = target_root / "meta/source_galaxea_a1.json"
+    if not direct.exists():
+        return
+    if namespaced.exists():
+        raise ValueError("derivative contains ambiguous Galaxea source provenance")
+    direct.replace(namespaced)
 
 
 def vector_stats(values: np.ndarray) -> dict[str, list[float]]:
@@ -62,7 +80,7 @@ def vector_stats(values: np.ndarray) -> dict[str, list[float]]:
         "max": np.max(x, axis=0).tolist(),
         "mean": np.mean(x, axis=0).tolist(),
         "std": np.std(x, axis=0).tolist(),
-        "count": [int(len(x))],
+        "count": [len(x)],
         "q01": np.quantile(x, 0.01, axis=0).tolist(),
         "q10": np.quantile(x, 0.10, axis=0).tolist(),
         "q50": np.quantile(x, 0.50, axis=0).tolist(),
@@ -148,9 +166,11 @@ def write_tar_archive(
     root_name: str,
 ) -> tuple[Path, str]:
     final_archive = archive_path.expanduser().resolve()
-    with atomic_output_file(final_archive) as staging_archive:
-        with tarfile.open(staging_archive, "w:gz") as archive:
-            archive.add(source_root, arcname=root_name)
+    with (
+        atomic_output_file(final_archive) as staging_archive,
+        tarfile.open(staging_archive, "w:gz") as archive,
+    ):
+        archive.add(source_root, arcname=root_name)
     sha256 = file_sha256(final_archive)
     atomic_write_text(
         final_archive.with_suffix(final_archive.suffix + ".sha256"),

@@ -137,22 +137,19 @@ def build_safety_settings(
             path=f"{topics.joint_target} -> jointTracker -> relay",
             default="enabled for just teleop <experiment>",
             behavior=(
-                "The SO leader bridge publishes joint targets to the joint tracker; "
-                "the tracker output is staged and forwarded by the same relay."
+                "The LeRobot Teleoperator and pair processor send canonical actions "
+                "to the A1 Robot; its runtime backend publishes named joint targets "
+                "to the staged tracker and relay."
             ),
             visibility=f"Teleop bridge log plus relay status on {topics.relay_status}.",
-            operator_note="This preserves the old teleop workflow without direct app publishing to host commands.",
+            operator_note="Neither out-of-tree plugin imports ROS or publishes host commands directly.",
         ),
         SafetySetting(
             name="teleop_relative_mapping",
             path=f"{TELEOP_CONFIG} [bridge]",
-            default=(
-                "relative leader delta from startup pose"
-                if teleop.bridge.mapping.relative
-                else "absolute leader mapping"
-            ),
+            default="relative leader delta from startup pose",
             behavior="A1 target starts from current A1 joints plus mapped leader delta, avoiding a startup jump.",
-            visibility="Bridge log prints leader keys and A1 target joint names.",
+            visibility="Bridge becomes live only after the first processed hold is accepted by the Robot backend.",
             operator_note="Edit the tracked teleop config, then restart the bridge after repositioning the leader baseline.",
         ),
         SafetySetting(
@@ -268,7 +265,7 @@ def build_safety_settings(
                 f"[{system.gripper.stroke_min_mm:g}, "
                 f"{system.gripper.stroke_max_mm:g}]mm."
             ),
-            visibility="Teleop config doctor and collected run metadata expose both ranges.",
+            visibility="Teleop tracked config and collected run metadata expose both ranges.",
             operator_note=(
                 "Out-of-range leader feedback saturates only when the tracked "
                 "Teleop compatibility policy explicitly enables it."

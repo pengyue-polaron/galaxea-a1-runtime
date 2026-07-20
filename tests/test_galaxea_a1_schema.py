@@ -7,15 +7,15 @@ from galaxea_a1_runtime.schema import (
     ActionMode,
     CameraSpec,
     camera_specs_from_system,
-    default_dataset_contract,
+    canonical_dataset_contract,
     validate_frame_keys,
 )
 
 
-def test_default_contract_targets_lerobot_v3():
+def test_canonical_contract_targets_lerobot_v3():
     repo = Path(__file__).resolve().parents[1]
     system = load_system_config(repo / "configs/system/a1.toml", repo_root=repo)
-    contract = default_dataset_contract(cameras=camera_specs_from_system(system))
+    contract = canonical_dataset_contract(cameras=camera_specs_from_system(system))
 
     assert contract.dataset_format == LEROBOT_DATASET_FORMAT
     assert contract.dataset_format == "v3.0"
@@ -23,8 +23,8 @@ def test_default_contract_targets_lerobot_v3():
     assert contract.features()["observation.images.front"]["shape"] == (480, 480, 3)
 
 
-def test_default_contract_exposes_expected_feature_keys():
-    contract = default_dataset_contract(
+def test_canonical_contract_exposes_expected_feature_keys():
+    contract = canonical_dataset_contract(
         cameras=(CameraSpec("front", height=480, width=640),)
     )
     features = contract.features()
@@ -56,7 +56,7 @@ def test_depth_camera_spec_marks_lerobot_depth_feature():
 
 
 def test_validate_frame_keys_reports_missing_required_keys():
-    contract = default_dataset_contract(
+    contract = canonical_dataset_contract(
         cameras=(CameraSpec("front", height=480, width=640),)
     )
 

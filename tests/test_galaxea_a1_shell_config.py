@@ -94,6 +94,53 @@ def test_camera_web_lifecycle_exports_come_from_system_config():
     }
 
 
+def test_embodied_ops_lifecycle_exports_come_from_system_config():
+    config = load_system_config(SYSTEM, repo_root=REPO)
+    names = (
+        "EMBODIED_OPS_ENDPOINT",
+        "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S",
+        "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S",
+    )
+
+    rendered = dict(
+        line.split("=", 1) for line in render_shell_values(config, names).splitlines()
+    )
+
+    assert rendered == {
+        "EMBODIED_OPS_ENDPOINT": config.embodied_ops.endpoint,
+        "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S": "5",
+        "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S": "5",
+    }
+
+
+def test_system_config_rejects_non_unix_embodied_ops_endpoint(tmp_path):
+    path = tmp_path / "a1.toml"
+    path.write_text(
+        SYSTEM.read_text().replace(
+            'endpoint = "unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"',
+            'endpoint = "127.0.0.1:50051"',
+        )
+    )
+
+    with pytest.raises(ValueError, match="unix"):
+        load_system_config(path, repo_root=REPO)
+
+
+def test_system_config_rejects_command_timeout_outside_rpc_lease_window(tmp_path):
+    path = tmp_path / "a1.toml"
+    path.write_text(
+        SYSTEM.read_text().replace(
+            "command_timeout_s = 0.75",
+            "command_timeout_s = 0.25",
+        )
+    )
+
+    with pytest.raises(
+        ValueError, match="command_timeout_s must be above rpc_timeout_s"
+    ):
+        load_system_config(path, repo_root=REPO)
+
+
 def test_system_config_rejects_removed_orientation_mode(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(

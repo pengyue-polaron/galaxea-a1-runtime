@@ -3,14 +3,12 @@ from dataclasses import replace
 import json
 import re
 import subprocess
-from types import SimpleNamespace
 
 import pytest
 
 from galaxea_a1_runtime.apps.eef_policy_actions import build_action_transform_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.lingbot.config_runtime import bash_config
-from galaxea_a1_runtime.apps.lingbot import doctor as doctor_module
 from galaxea_a1_runtime.apps.lingbot.verify import validate_training_summary
 
 
@@ -175,34 +173,6 @@ def test_eef_bridge_guard_refuses_to_run_without_its_cleanup_dependency(tmp_path
     assert result.returncode != 0
     assert not marker.exists()
     assert "a1_tmux.sh" in result.stderr
-
-
-def test_lingbot_app_doctor_is_independent_of_runtime_ros_checks(
-    tmp_path, monkeypatch, capsys
-):
-    wrist = tmp_path / "wrist-camera"
-    wrist.touch()
-    config = SimpleNamespace(
-        system=SimpleNamespace(
-            cameras=SimpleNamespace(
-                wrist=SimpleNamespace(backend="v4l2", device=str(wrist))
-            )
-        ),
-        server=SimpleNamespace(host="127.0.0.1", port=8000, connect_timeout_s=0.1),
-    )
-    monkeypatch.setattr(doctor_module, "load_lingbot_config", lambda *_a, **_k: config)
-    monkeypatch.setattr(doctor_module, "websocket_open", lambda *_a, **_k: True)
-
-    result = doctor_module.main(
-        ["--config", str(tmp_path / "unused.toml"), "--require-execution", "--json"]
-    )
-
-    assert result == 0
-    checks = json.loads(capsys.readouterr().out)
-    assert [check["name"] for check in checks] == [
-        "wrist_camera",
-        "lingbot_server",
-    ]
 
 
 def test_lingbot_ready_rejects_missing_real_statistics(tmp_path):

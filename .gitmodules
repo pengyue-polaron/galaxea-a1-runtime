@@ -1,0 +1,9 @@
+[submodule "external/embodied-ops"]
+	path = external/embodied-ops
+	url = https://github.com/pengyue-polaron/embodied-ops.git
+[submodule "external/lerobot-robot-galaxea-a1"]
+	path = external/lerobot-robot-galaxea-a1
+	url = https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1.git
+[submodule "external/lerobot-teleoperator-galaxea-a1-so-leader"]
+	path = external/lerobot-teleoperator-galaxea-a1-so-leader
+	url = https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader.git

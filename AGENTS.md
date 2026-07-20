@@ -39,8 +39,9 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   `galaxea_a1_runtime/apps/`; reusable runtime, hardware, collection, and policy
   logic lives in its focused package.
 - Keep Teleop collection, inference, and conversion independent of LingBot.
-- Do not patch `third_party/lerobot` for A1 behavior. Put integrations in the
-  first-party package.
+- Do not patch `third_party/lerobot` for A1 behavior. Framework-neutral contracts
+  and the two LeRobot adapters live in the pinned first-party repositories under
+  `external/`; runtime-specific ROS and safety behavior stays in this package.
 - Reuse `galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python` before ROS1
   imports; do not duplicate path surgery.
 
@@ -76,29 +77,28 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 - Gripper state/actions are continuous normalized `0..1` above hardware and map
   exactly once to the System-owned physical stroke. Use
   `/gripper_stroke_host` as feedback; never reinterpret joint-state element 7.
-- Formal collection accepts only `galaxea_a1_teleop_raw_v3`. Do not add schema
-  fallbacks or migration unless the user explicitly requests recovery.
+- Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v2`
+  contract directly. Raw v3 is a read-only legacy migration source and must
+  never be reintroduced as a new-collection intermediate.
 - Collection must record reproducibility metadata and fresh joint, EEF, action,
   gripper, and paired-camera samples. Enforce configured camera skew and sample
   freshness.
-- Write raw episodes and converted datasets to hidden sibling staging paths;
-  expose them only by atomic rename after validation. Preserve the previous
-  complete output on conversion failure. Crash leftovers must block reuse until
-  inspected.
+- Append each direct LeRobot episode through a hidden sibling dataset snapshot;
+  expose it only by atomic rename after LeRobot finalization and validation.
+  Preserve the previous complete dataset on failure. Crash leftovers must block
+  reuse until inspected.
 - Dataset keys, state/action names, camera order, and protocol channels come from
   one schema module, never repeated literals or positional slicing.
-- Name processed datasets by their stored Joint/EEF representation and LeRobot
-  version, never by a consuming model; model adapters must consume that shared
-  contract without rewriting it.
-- Every processed format must derive from the Raw v3 roots owned by its
-  referenced Raw-package config. A multi-task dataset preserves each root's
-  task text per episode. A converter may use disposable internal staging
-  representations, but one final Joint/EEF output must never be the source of
-  another final output.
-- Apply the Dataset-owned boundary-trim policy once before the Joint/EEF
-  fan-out. Trim only stable contiguous prefixes/suffixes, preserve pre/post
-  rolls and interior pauses, keep ambiguous episodes whole, and record each raw
-  `[start, end)` decision in `meta/trim.json`.
+- The canonical direct dataset stores absolute EEF pose, six measured joints in
+  radians, normalized gripper state, absolute joint targets in radians,
+  normalized gripper action, task text, and configured camera observations.
+- Name intentional Joint/EEF or version derivatives by their stored
+  representation and LeRobot version, never by a consuming model. A derivative
+  may read the canonical direct dataset or an explicitly legacy Raw v3 import;
+  one final derivative must never be the source of another final derivative.
+- Legacy Raw v3 migration applies its Dataset-owned boundary trim once before
+  Joint/EEF fan-out and records `[start, end)` in `meta/trim.json`. Do not add
+  this historical transformation to direct collection implicitly.
 - Keep datasets under `data/`, durable run results under `outputs/`, external
   checkouts under `external/`, and deployment weights under `models/` as defined
   in `docs/ARCHITECTURE.md`. Never commit weights or add Git LFS.

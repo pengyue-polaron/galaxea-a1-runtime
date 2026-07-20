@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
-from typing import Any, Callable, Sequence
+from typing import Any
 
 import numpy as np
 
@@ -93,7 +94,6 @@ class EefIkCommandPublisher:
     log_solutions: bool = True
     active_joint_target: Any | None = None
     active_target_lock: threading.Lock = field(default_factory=threading.Lock)
-    last_solution: IkSolution | None = None
 
     def publish_motion_enable(self, enabled: bool) -> None:
         if not self.execute:
@@ -115,7 +115,6 @@ class EefIkCommandPublisher:
             raise RuntimeError("Cannot solve EEF IK without fresh joint feedback")
         solution = self.solver.solve(current, action[:3], action[3:7])
         self._set_active_joint_target(solution.joint_positions)
-        self.last_solution = solution
         if self.log_solutions:
             info(
                 "EEF IK solved: "

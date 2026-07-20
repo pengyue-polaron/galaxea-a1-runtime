@@ -401,11 +401,8 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError(
             "LingBot checkpoint action_channel_ids do not match the shared A1 EEF schema"
         )
-    if policy.deployment_ready:
-        if not policy.q01_source or not policy.q99_source:
-            raise ValueError(
-                "deployment-ready LingBot config requires q01/q99 statistics"
-            )
+    if policy.deployment_ready and (not policy.q01_source or not policy.q99_source):
+        raise ValueError("deployment-ready LingBot config requires q01/q99 statistics")
     if len(policy.action_channel_ids) != len(policy.q01_source) or len(
         policy.q01_source
     ) != len(policy.q99_source):

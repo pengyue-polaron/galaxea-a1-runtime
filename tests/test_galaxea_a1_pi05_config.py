@@ -1,9 +1,11 @@
 from pathlib import Path
 import json
+from types import SimpleNamespace
 
 import pytest
 
 from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
+from galaxea_a1_runtime.apps.pi05 import probe as probe_module
 from galaxea_a1_runtime.apps.pi05.protocol import (
     PROTOCOL_VERSION,
     server_metadata,
@@ -66,6 +68,22 @@ def test_pi05_config_rejects_unknown_keys(tmp_path):
 
     with pytest.raises(ValueError, match="unknown"):
         load_pi05_config(path, repo_root=REPO)
+
+
+def test_pi05_probe_rejects_config_from_another_repository(tmp_path, monkeypatch):
+    foreign = tmp_path / "foreign"
+    (foreign / "galaxea_a1_runtime").mkdir(parents=True)
+    (foreign / "pyproject.toml").write_text("[project]\nname = 'foreign'\n")
+    config_path = foreign / "deployment.toml"
+    config_path.touch()
+    monkeypatch.setattr(
+        probe_module,
+        "load_pi05_config",
+        lambda *_args, **_kwargs: SimpleNamespace(path=config_path),
+    )
+
+    with pytest.raises(ValueError, match="does not belong to --repo-root"):
+        probe_module.main(["--repo-root", str(REPO), "--config", str(config_path)])
 
 
 def test_pi05_protocol_exhaustively_identifies_model_and_io_contract():

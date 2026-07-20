@@ -159,7 +159,17 @@ logs:
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
-convert experiment target="all":
+dataset-doctor experiment:
+    {{vpy}} -m galaxea_a1_runtime.apps.teleop.dataset_doctor \
+        --repo-root "{{repo}}" \
+        --experiment "{{experiment}}"
+
+derive config target="all":
+    {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
+        --config "{{config}}" \
+        --target "{{target}}"
+
+legacy-convert experiment target="all":
     {{vpy}} -m galaxea_a1_runtime.lerobot.pipeline \
         --config "{{repo}}/configs/datasets/{{experiment}}.toml" \
         --target "{{target}}"

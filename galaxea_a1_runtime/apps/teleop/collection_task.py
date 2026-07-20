@@ -3,31 +3,38 @@
 from __future__ import annotations
 
 from pathlib import Path
+import json
 
-from galaxea_a1_runtime.collection import validate_experiment_name
-from galaxea_a1_runtime.console import ArgumentParser
-from galaxea_a1_runtime.filesystem import atomic_write_text
+from galaxea_a1_runtime.lerobot.direct_recording import (
+    PROVENANCE_PATH,
+    normalize_dataset_task,
+)
 
 
 def normalize_collection_task(value: str) -> str:
-    task = value.strip()
-    if not task:
-        raise ValueError("collection task must not be empty")
-    if "\n" in task or "\r" in task:
-        raise ValueError("collection task must be a single line")
-    return task
+    """Normalize through the authoritative direct-dataset task contract."""
+
+    return normalize_dataset_task(value)
 
 
 def read_collection_task(experiment_dir: Path) -> str | None:
-    task_path = experiment_dir / "task.txt"
+    task_path = experiment_dir / PROVENANCE_PATH
     if not task_path.is_file():
         return None
-    task = task_path.read_text().strip()
-    return normalize_collection_task(task) if task else None
+    try:
+        payload = json.loads(task_path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(
+            f"cannot read collection provenance: {task_path}: {exc}"
+        ) from exc
+    task = payload.get("task") if isinstance(payload, dict) else None
+    if not isinstance(task, str):
+        raise ValueError(f"collection provenance has no task: {task_path}")
+    return normalize_collection_task(task)
 
 
 def prepare_collection_task(experiment_dir: Path, value: str) -> str:
-    """Create the task identity once and reject accidental task drift."""
+    """Validate a task and reject drift from a committed direct dataset."""
 
     task = normalize_collection_task(value)
     existing = read_collection_task(experiment_dir)
@@ -38,27 +45,4 @@ def prepare_collection_task(experiment_dir: Path, value: str) -> str:
                 f"existing={existing!r}, requested={task!r}"
             )
         return existing
-    experiment_dir.mkdir(parents=True, exist_ok=True)
-    atomic_write_text(experiment_dir / "task.txt", task + "\n")
     return task
-
-
-def main(argv: list[str] | None = None) -> int:
-    from galaxea_a1_runtime.teleop.config import load_teleop_config
-
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", type=Path, required=True)
-    parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--experiment", required=True)
-    parser.add_argument("--task", required=True)
-    args = parser.parse_args(argv)
-    root = args.repo_root.resolve()
-    config = load_teleop_config(args.config, repo_root=root)
-    experiment = validate_experiment_name(args.experiment)
-    task = prepare_collection_task(config.collection.data_root / experiment, args.task)
-    print(task)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

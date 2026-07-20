@@ -21,9 +21,11 @@
 - **Teleoperate** a Galaxea A1 follower with a modified six-axis SO-101 leader
   and continuous gripper control.
 - **Collect** synchronized joint, EEF, action, gripper, and paired-camera data
-  into atomically validated raw episodes.
-- **Convert** current raw-v3 experiments into model-agnostic Joint and EEF
-  LeRobotDataset v2.1 and v3.0 outputs.
+  directly into atomically committed LeRobotDataset v3.0 datasets.
+- **Derive** EEF-action v3.0 or Joint/EEF v2.1 packages directly from the
+  canonical dataset without chaining final outputs.
+- **Migrate** existing raw-v3 experiments into model-agnostic Joint and EEF
+  LeRobotDataset v2.1 and v3.0 outputs without using Raw v3 for new recordings.
 - **Deploy** LingBot EEF and OpenPI pi0.5 EEF policies through
   isolated trackers and a locked, validating command relay.
 - **Operate** collection, live evaluation, tracked batch plans, resets, and the
@@ -34,7 +36,8 @@
   required.
 
 The current baseline is Python 3.12, ROS 1 Noetic, and LeRobot 0.6, with
-first-party LeRobotDataset v2.1 and v3.0 conversion. Hardware, safety,
+first-party direct LeRobotDataset v3.0 recording and legacy v2.1/v3.0 migration.
+Hardware, safety,
 collection, and deployment behavior is owned by strict tracked configuration
 rather than per-run overrides.
 
@@ -48,6 +51,7 @@ Create the Python environment, build the ROS runtime image, and run the
 hardware-free validation suite:
 
 ```bash
+git submodule update --init --recursive
 just setup
 docker compose -f docker-compose.a1-noetic.yml build a1-noetic
 just check
@@ -92,7 +96,38 @@ experiments reported in:
 | `docker/` | Ubuntu 20.04 / ROS Noetic execution environment |
 | `assets/` | setup images and versioned mechanical files |
 | `data/`, `outputs/`, `models/` | ignored local datasets, durable run results, and deployment weights |
+| `external/` | pinned `embodied-ops`, A1 Robot, and A1 SO-Leader plugin submodules plus ignored local model checkouts |
 | `third_party/` | pinned vendor snapshots; no A1-specific behavior |
+
+## Embodied SDK and LeRobot plugins
+
+The framework-neutral contracts and both hardware adapters are independently
+versioned public repositories:
+
+- [`embodied-ops`](https://github.com/pengyue-polaron/embodied-ops) defines
+  capability, manifest, health, lifecycle, and a versioned Protobuf/gRPC
+  protocol over Unix sockets.
+- [`lerobot-robot-galaxea-a1`](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1)
+  provides the auto-discovered `galaxea_a1` LeRobot Robot and its pair-specific
+  relative-anchor processor.
+- [`lerobot-teleoperator-galaxea-a1-so-leader`](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader)
+  provides the auto-discovered `galaxea_a1_so_leader` Teleoperator.
+
+This repository hosts the A1 embodied-ops service and is the sole ROS/hardware
+owner. The Robot plugin is only a Unix-socket client: it never imports this
+package or reads the System config. Opening a session never moves the arm. The
+first command stages the current named-joint hold and opens the locked relay only
+after fresh alignment. Observation sessions own subscribers only; the exclusive
+command lease separately owns staged-control publishers and can be released without
+disconnecting observers. Heartbeats cannot extend an idle command lease, while the
+relay independently retains its shorter freshness checks.
+
+The tracked Teleop application is the composition root for the modified
+six-axis leader/A1 pair. It constructs both LeRobot plugins, derives the
+relative-anchor processor from the strict Teleop and System configs, and runs
+the standard observation → teleoperator action → processor → Robot ordering.
+Generic LeRobot 0.6 CLI commands still install identity processors, so this
+pair must be started through the tracked A1 Teleop workflow.
 
 ## Documentation
 

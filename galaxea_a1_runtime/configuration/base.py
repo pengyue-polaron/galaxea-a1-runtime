@@ -146,6 +146,14 @@ def repo_path(repo_root: Path, value: str) -> Path:
     return path.resolve() if path.is_absolute() else (repo_root / path).resolve()
 
 
+def paths_overlap(left: Path, right: Path) -> bool:
+    """Return whether two resolved file-tree locations contain one another."""
+
+    left = left.resolve()
+    right = right.resolve()
+    return left == right or left.is_relative_to(right) or right.is_relative_to(left)
+
+
 def referenced_config(data: dict[str, Any], repo_root: Path) -> Path:
     system = required_table(data, "system")
     require_exact_keys(system, required={"config"}, label="system reference")

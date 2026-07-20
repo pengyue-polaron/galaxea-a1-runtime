@@ -1,252 +1,191 @@
-#!/usr/bin/env python3
-# ruff: noqa: E402
-"""SO leader to Galaxea A1 staged joint bridge implementation."""
+"""LeRobot-composed Galaxea A1 leader-to-runtime teleoperation."""
 
 from __future__ import annotations
 
+import math
 import signal
-import sys
 import threading
 import time
-from pathlib import Path
-from typing import Any
+from collections.abc import Callable, Mapping
+from typing import Any, Protocol
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
+from lerobot.robots.utils import make_robot_from_config
+from lerobot.teleoperators.utils import make_teleoperator_from_config
+from lerobot_robot_galaxea_a1 import GalaxeaA1Config
+from lerobot_teleoperator_galaxea_a1_so_leader import GalaxeaA1SOLeaderConfig
 
-from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
-
-configure_ros1_python(ROOT_DIR)
-
-import rospy
-from sensor_msgs.msg import JointState
-from signal_arm.msg import arm_control, gripper_position_control
-from std_msgs.msg import Bool, String
-
-from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_source_position
 from galaxea_a1_runtime.console import info
-from galaxea_a1_runtime.runtime.relay import RelayMonitor
-from galaxea_a1_runtime.runtime.ros_feedback import (
-    A1JointStateCache,
-    StagedCommandMonitor,
-)
-from galaxea_a1_runtime.teleop import detect_leader_joint_keys, map_leader_joints_to_a1
-from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
+from galaxea_a1_runtime.lerobot.hardware import make_a1_teleop_processors
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
-def log(message: str) -> None:
-    info(message.removeprefix("[teleop bridge] "))
+class TeleoperatorDevice(Protocol):
+    @property
+    def is_connected(self) -> bool: ...
+
+    def connect(self, calibrate: bool = True) -> None: ...
+
+    def get_action(self) -> Mapping[str, object]: ...
+
+    def disconnect(self) -> None: ...
+
+
+class RobotDevice(Protocol):
+    @property
+    def is_connected(self) -> bool: ...
+
+    def connect(self, calibrate: bool = True) -> None: ...
+
+    def get_observation(self) -> Mapping[str, object]: ...
+
+    def send_action(self, action: Mapping[str, object]) -> Mapping[str, object]: ...
+
+    def disconnect(self) -> None: ...
+
+
+Processor = Callable[[Any], Mapping[str, object]]
+ProcessorSet = tuple[Processor, Processor, Processor]
 
 
 def run(config: TeleopConfig) -> int:
-    system = config.system
-    topics = system.topics
-    bridge = config.bridge
-    dof = bridge.dof
-    target_names = system.joint_safety.names
-    mapping = bridge.mapping
+    """Construct both LeRobot plugins and run them through the tracked processor."""
 
-    rospy.init_node("a1_so100_joint_bridge", anonymous=False, disable_signals=True)
+    teleop = make_teleoperator_from_config(
+        GalaxeaA1SOLeaderConfig(
+            id=config.leader.id,
+            port=config.leader.port,
+            motor_write_retries=config.leader.motor_write_retries,
+        )
+    )
+    robot = make_robot_from_config(
+        GalaxeaA1Config(
+            endpoint=config.system.embodied_ops.endpoint,
+            connect_timeout_s=config.runtime.bridge_startup_timeout_s,
+            rpc_timeout_s=config.system.embodied_ops.rpc_timeout_s,
+        )
+    )
+    processors = make_a1_teleop_processors(config)
     stop_requested = threading.Event()
 
     def request_stop(_signum: int, _frame: Any) -> None:
         stop_requested.set()
 
-    signal.signal(signal.SIGINT, request_stop)
-    signal.signal(signal.SIGTERM, request_stop)
-    a1_state = A1JointStateCache(target_names)
-    relay = RelayMonitor(system.relay.max_status_age_s)
-    staged = StagedCommandMonitor()
-    rospy.Subscriber(topics.joint_states, JointState, a1_state.callback, queue_size=10)
-    rospy.Subscriber(topics.relay_status, String, relay.callback, queue_size=10)
-    rospy.Subscriber(topics.staged_command, arm_control, staged.callback, queue_size=10)
-    target_pub = rospy.Publisher(topics.joint_target, JointState, queue_size=10)
-    motion_enable_pub = rospy.Publisher(
-        topics.motion_enable, Bool, queue_size=1, latch=True
-    )
-    gripper_pub = rospy.Publisher(
-        topics.gripper_target, gripper_position_control, queue_size=10
-    )
-
-    leader = A1SOLeader(
-        SOLeaderTeleopConfig(
-            id=config.leader.id,
-            port=config.leader.port,
-            use_degrees=config.leader.use_degrees,
-        )
-    )
-    leader.connect(calibrate=False)
-
+    previous_handlers = {
+        signum: signal.getsignal(signum) for signum in (signal.SIGINT, signal.SIGTERM)
+    }
+    for signum in previous_handlers:
+        signal.signal(signum, request_stop)
     try:
-        rate = rospy.Rate(bridge.hz)
-        log("[teleop bridge] waiting for leader and A1 joint feedback ...")
-        leader_action0 = leader.get_action()
-        leader_keys = detect_leader_joint_keys(leader_action0, dof)
-        if config.gripper.enabled and config.gripper.source_key not in leader_action0:
-            raise RuntimeError(
-                f"gripper key {config.gripper.source_key!r} not in leader action keys: "
-                f"{sorted(leader_action0)}"
-            )
-        leader_start = tuple(float(leader_action0[key]) for key in leader_keys)
-        log(f"[teleop bridge] leader_keys={list(leader_keys)}")
-        a1_start = wait_for_a1_start(
-            a1_state,
-            timeout_s=bridge.a1_state_timeout_s,
-            topic=topics.joint_states,
+        run_teleop_session(
+            teleop=teleop,
+            robot=robot,
+            processors=processors,
+            hz=config.bridge.hz,
+            stop_requested=stop_requested,
+            on_live=lambda: info("relay ACTIVE; teleop is live"),
         )
-        log(f"[teleop bridge] target_names={list(target_names)}")
-        log(f"[teleop bridge] a1_start={[round(value, 4) for value in a1_start]}")
-        log("[teleop bridge] publishing first target while relay is locked")
-
-        first_target = map_leader_joints_to_a1(
-            leader_now=leader_start,
-            leader_start=leader_start,
-            a1_start=a1_start,
-            config=mapping,
-        )
-        wait_for_staged_alignment(
-            target_pub,
-            target_names,
-            first_target,
-            staged,
-            dof=dof,
-            timeout_s=bridge.a1_state_timeout_s,
-            hz=bridge.hz,
-            tolerance_rad=system.joint_safety.initial_alignment_tolerance_rad,
-        )
-        log("[teleop bridge] tracker staged output aligned with first target")
-        arm_relay(
-            motion_enable_pub,
-            relay,
-            timeout_s=system.relay.enable_timeout_s,
-        )
-        log("[teleop bridge] relay ACTIVE; teleop is live")
-
-        last_loop_log = time.monotonic()
-        loop_count = 0
-        while not rospy.is_shutdown() and not stop_requested.is_set():
-            if not relay.is_active():
-                if stop_requested.is_set():
-                    break
-                motion_enable_pub.publish(Bool(data=False))
-                raise RuntimeError(
-                    "A1 relay is not confirmed ACTIVE; stopping teleop. "
-                    f"Last relay state: {relay.summary()}"
-                )
-            action = leader.get_action()
-            leader_now = tuple(float(action[key]) for key in leader_keys)
-            target = map_leader_joints_to_a1(
-                leader_now=leader_now,
-                leader_start=leader_start,
-                a1_start=a1_start,
-                config=mapping,
-            )
-            stamp = publish_target(target_pub, target_names, target)
-            if config.gripper.enabled:
-                publish_gripper(gripper_pub, action, config, stamp)
-            loop_count += 1
-            now = time.monotonic()
-            if now - last_loop_log >= 2.0:
-                log(
-                    f"[teleop bridge] publishing target at {loop_count / (now - last_loop_log):.1f} Hz"
-                )
-                loop_count = 0
-                last_loop_log = now
-            rate.sleep()
     finally:
-        motion_enable_pub.publish(Bool(data=False))
-        time.sleep(0.1)
-        leader.disconnect()
-        log("[teleop bridge] stopped; relay disabled")
+        for signum, handler in previous_handlers.items():
+            signal.signal(signum, handler)
     return 0
 
 
-def wait_for_a1_start(
-    cache: A1JointStateCache, *, timeout_s: float, topic: str
-) -> tuple[float, ...]:
-    deadline = time.monotonic() + timeout_s
-    while not rospy.is_shutdown() and time.monotonic() < deadline:
-        positions = cache.positions()
-        if positions is not None:
-            return positions
-        time.sleep(0.05)
-    raise RuntimeError(f"No usable {topic} within {timeout_s:.1f}s")
-
-
-def publish_target(pub: Any, names: tuple[str, ...], target: tuple[float, ...]) -> Any:
-    msg = JointState()
-    msg.header.stamp = rospy.Time.now()
-    msg.name = list(names)
-    msg.position = list(target)
-    pub.publish(msg)
-    return msg.header.stamp
-
-
-def wait_for_staged_alignment(
-    pub: Any,
-    names: tuple[str, ...],
-    target: tuple[float, ...],
-    staged: StagedCommandMonitor,
+def run_teleop_session(
     *,
-    dof: int,
-    timeout_s: float,
+    teleop: TeleoperatorDevice,
+    robot: RobotDevice,
+    processors: ProcessorSet,
     hz: float,
-    tolerance_rad: float,
-) -> None:
-    deadline = time.monotonic() + timeout_s
-    period = 1.0 / hz
-    last_error: float | None = None
-    while not rospy.is_shutdown() and time.monotonic() < deadline:
-        publish_target(pub, names, target)
-        last_error = staged.max_error(target, dof)
-        if last_error is not None and last_error <= tolerance_rad:
-            return
-        time.sleep(period)
-    detail = (
-        "no staged command"
-        if last_error is None
-        else f"last max error {last_error:.4f} rad"
-    )
-    raise RuntimeError(
-        "Tracker staged output did not align with the initial target within "
-        f"{timeout_s:.1f}s ({detail}, tolerance {tolerance_rad:.4f} rad)"
-    )
+    stop_requested: threading.Event,
+    on_live: Callable[[], None] = lambda: None,
+    monotonic: Callable[[], float] = time.monotonic,
+    sleep: Callable[[float], None] = time.sleep,
+) -> int:
+    """Run one LeRobot processor loop and always close both device owners."""
+
+    if not math.isfinite(hz) or hz <= 0:
+        raise ValueError("teleoperation rate must be finite and positive")
+    try:
+        teleop.connect(calibrate=False)
+        robot.connect(calibrate=False)
+        return _control_loop(
+            teleop=teleop,
+            robot=robot,
+            processors=processors,
+            hz=hz,
+            stop_requested=stop_requested,
+            on_live=on_live,
+            monotonic=monotonic,
+            sleep=sleep,
+        )
+    finally:
+        _disconnect_devices(robot=robot, teleop=teleop, sleep=sleep)
 
 
-def arm_relay(pub: Any, relay: RelayMonitor, *, timeout_s: float) -> None:
-    pub.publish(Bool(data=True))
-    deadline = time.monotonic() + timeout_s
-    last = relay.summary()
-    while not rospy.is_shutdown() and time.monotonic() < deadline:
-        last = relay.summary()
-        if relay.is_active():
-            return
-        status, _ = relay.status()
-        if status is not None and status.state == "FAULT":
+def _control_loop(
+    *,
+    teleop: TeleoperatorDevice,
+    robot: RobotDevice,
+    processors: ProcessorSet,
+    hz: float,
+    stop_requested: threading.Event,
+    on_live: Callable[[], None],
+    monotonic: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> int:
+    """Apply LeRobot's teleop-action then robot-action pipeline ordering."""
+
+    teleop_action_processor, robot_action_processor, _ = processors
+    period_s = 1.0 / hz
+    frames = 0
+    last_log = monotonic()
+    frames_at_last_log = 0
+    announced_live = False
+    while not stop_requested.is_set():
+        started = monotonic()
+        observation = dict(robot.get_observation())
+        raw_action = dict(teleop.get_action())
+        teleop_action = dict(teleop_action_processor((raw_action, observation)))
+        robot_action = dict(robot_action_processor((teleop_action, observation)))
+        robot.send_action(robot_action)
+        frames += 1
+        if not announced_live:
+            on_live()
+            announced_live = True
+
+        now = monotonic()
+        if now - last_log >= 2.0:
+            info(
+                "LeRobot teleop processor loop "
+                f"{(frames - frames_at_last_log) / (now - last_log):.1f} Hz"
+            )
+            last_log = now
+            frames_at_last_log = frames
+        if stop_requested.is_set():
             break
-        time.sleep(0.05)
-    pub.publish(Bool(data=False))
-    raise RuntimeError(f"A1 relay did not become ACTIVE: {last}")
+        sleep(max(period_s - (monotonic() - started), 0.0))
+    return frames
 
 
-def publish_gripper(
-    pub: Any, leader_action: dict[str, float], config: TeleopConfig, stamp: Any
+def _disconnect_devices(
+    *,
+    robot: RobotDevice,
+    teleop: TeleoperatorDevice,
+    sleep: Callable[[float], None],
 ) -> None:
-    normalized = normalize_source_position(
-        leader_action[config.gripper.source_key],
-        source_min=config.gripper.source_min,
-        source_max=config.gripper.source_max,
-        invert=config.gripper.invert,
-        saturate_out_of_range=config.gripper.saturate_out_of_range,
-    )
-    stroke = denormalize_stroke(
-        normalized,
-        stroke_min_mm=config.system.gripper.stroke_min_mm,
-        stroke_max_mm=config.system.gripper.stroke_max_mm,
-    )
-    msg = gripper_position_control()
-    msg.header.stamp = stamp
-    msg.gripper_stroke = float(stroke)
-    pub.publish(msg)
+    """Lock the robot first, then release the serial leader owner."""
+
+    errors: list[BaseException] = []
+    if robot.is_connected:
+        try:
+            robot.disconnect()
+            sleep(0.1)
+        except BaseException as exc:
+            errors.append(exc)
+    if teleop.is_connected:
+        try:
+            teleop.disconnect()
+        except BaseException as exc:
+            errors.append(exc)
+    if errors:
+        raise BaseExceptionGroup("LeRobot teleoperation cleanup failed", errors)

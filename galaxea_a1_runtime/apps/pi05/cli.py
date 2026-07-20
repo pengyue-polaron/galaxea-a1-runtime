@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
+from galaxea_a1_runtime.apps.eef_policy_cli import run_eef_policy_bridge
 from galaxea_a1_runtime.apps.pi05.config import default_config_path, load_pi05_config
 from galaxea_a1_runtime.console import ArgumentParser, info, warning
 
@@ -33,8 +34,4 @@ def main(argv: list[str] | None = None) -> int:
     if not config.execution.execute:
         warning("Dry run: execution.execute=false in the deployment config.")
     bridge = A1Pi05EEBridge(config, task)
-    try:
-        bridge.run()
-        return 0
-    finally:
-        bridge.close()
+    return run_eef_policy_bridge(bridge)

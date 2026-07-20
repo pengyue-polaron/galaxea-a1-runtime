@@ -289,5 +289,5 @@ def _fit_height(image: np.ndarray, height: int) -> np.ndarray:
     if image.shape[0] == height:
         return image
     scale = height / float(image.shape[0])
-    width = max(1, int(round(image.shape[1] * scale)))
+    width = max(1, round(image.shape[1] * scale))
     return cv2.resize(image, (width, height), interpolation=cv2.INTER_AREA)

@@ -8,35 +8,12 @@ import subprocess
 import sys
 
 from galaxea_a1_runtime.console import ArgumentParser, emit, failure, info, success
-from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
+from galaxea_a1_runtime.models.config import load_model_config
 from galaxea_a1_runtime.models.registry import registered_models
 from galaxea_a1_runtime.models.store import fetch_artifact, validate_artifact
 
 
 MAX_TRACKED_BYTES = 100 * 1024 * 1024
-
-
-def configured_model_configs(repo: Path) -> tuple[ModelArtifactConfig, ...]:
-    return registered_models(repo)
-
-
-def configured_registry_paths(repo: Path) -> dict[str, Path]:
-    """Return every config-owned model path without following symlinks."""
-
-    models = configured_model_configs(repo)
-    paths = {
-        f"model:{model.model_id}@{model.source.revision}": model.artifact_root
-        for model in models
-    }
-    model_root = (repo / "models").resolve()
-    for name, path in paths.items():
-        try:
-            path.relative_to(model_root)
-        except ValueError as exc:
-            raise ValueError(
-                f"model path {name} must be configured under models/: {path}"
-            ) from exc
-    return paths
 
 
 def _human_bytes(size: int) -> str:
@@ -103,7 +80,7 @@ def _check_git_storage(reporter: Reporter, repo: Path) -> None:
 
 def doctor(repo: Path) -> int:
     reporter = Reporter()
-    for model in configured_model_configs(repo):
+    for model in registered_models(repo):
         name = model.model_id.replace("/", ":") + "@" + model.source.revision_label
         try:
             result = validate_artifact(model, verify_hashes=True)

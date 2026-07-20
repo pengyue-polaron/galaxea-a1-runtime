@@ -46,17 +46,19 @@ from galaxea_a1_runtime.constants import (
     JOINT_TRACKER_NODE,
     JOINT_TRACKER_NODE_NAME,
 )
+from embodied_ops import unix_socket_path
 
 __all__ = [
     "DEFAULT_SYSTEM_CONFIG",
-    "SystemCameraDeviceConfig",
     "CameraDiagnosticsConfig",
+    "SystemCameraDeviceConfig",
     "SystemCamerasConfig",
     "SystemConfig",
     "SystemDoctorConfig",
     "SystemEefConfig",
     "SystemEefIkConfig",
     "SystemEefTestConfig",
+    "SystemEmbodiedOpsConfig",
     "SystemGripperConfig",
     "SystemHostConfig",
     "SystemJointSafetyConfig",
@@ -124,6 +126,17 @@ class SystemStartupConfig:
 
 
 @dataclass(frozen=True)
+class SystemEmbodiedOpsConfig:
+    endpoint: str
+    device_connect_timeout_s: float
+    rpc_timeout_s: float
+    command_timeout_s: float
+    lease_timeout_s: float
+    server_startup_timeout_s: float
+    server_shutdown_timeout_s: float
+
+
+@dataclass(frozen=True)
 class SystemJointSafetyConfig:
     names: tuple[str, ...]
     lower_limits: tuple[float, ...]
@@ -175,6 +188,7 @@ class SystemConfig:
     relay: SystemRelayConfig
     doctor: SystemDoctorConfig
     startup: SystemStartupConfig
+    embodied_ops: SystemEmbodiedOpsConfig
     joint_safety: SystemJointSafetyConfig
     eef: SystemEefConfig
     eef_ik: SystemEefIkConfig
@@ -195,6 +209,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             "relay",
             "doctor",
             "startup",
+            "embodied_ops",
             "joint_safety",
             "eef",
             "eef_ik",
@@ -211,6 +226,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     relay = required_table(data, "relay")
     doctor = required_table(data, "doctor")
     startup = required_table(data, "startup")
+    embodied_ops = required_table(data, "embodied_ops")
     joint = required_table(data, "joint_safety")
     eef = required_table(data, "eef")
     eef_ik = required_table(data, "eef_ik")
@@ -229,6 +245,11 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     )
     require_exact_keys(
         startup, required=set(SystemStartupConfig.__annotations__), label="startup"
+    )
+    require_exact_keys(
+        embodied_ops,
+        required=set(SystemEmbodiedOpsConfig.__annotations__),
+        label="embodied_ops",
     )
     require_exact_keys(
         joint,
@@ -282,6 +303,17 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             joint_feedback_timeout_s=floating(startup, "joint_feedback_timeout_s"),
             topic_timeout_s=floating(startup, "topic_timeout_s"),
             tmux_process_grace_s=integer(startup, "tmux_process_grace_s"),
+        ),
+        embodied_ops=SystemEmbodiedOpsConfig(
+            endpoint=string(embodied_ops, "endpoint"),
+            device_connect_timeout_s=floating(embodied_ops, "device_connect_timeout_s"),
+            rpc_timeout_s=floating(embodied_ops, "rpc_timeout_s"),
+            command_timeout_s=floating(embodied_ops, "command_timeout_s"),
+            lease_timeout_s=floating(embodied_ops, "lease_timeout_s"),
+            server_startup_timeout_s=floating(embodied_ops, "server_startup_timeout_s"),
+            server_shutdown_timeout_s=floating(
+                embodied_ops, "server_shutdown_timeout_s"
+            ),
         ),
         joint_safety=SystemJointSafetyConfig(
             names=string_tuple(joint, "names", ARM_JOINT_COUNT),
@@ -437,6 +469,30 @@ def validate_system_config(config: SystemConfig) -> None:
         < 1
     ):
         raise ValueError("startup timeouts must be at least one second")
+    unix_socket_path(config.embodied_ops.endpoint)
+    if (
+        min(
+            config.embodied_ops.device_connect_timeout_s,
+            config.embodied_ops.rpc_timeout_s,
+            config.embodied_ops.command_timeout_s,
+            config.embodied_ops.lease_timeout_s,
+            config.embodied_ops.server_startup_timeout_s,
+            config.embodied_ops.server_shutdown_timeout_s,
+        )
+        <= 0
+    ):
+        raise ValueError("embodied_ops timeouts must be positive")
+    if config.embodied_ops.rpc_timeout_s >= config.embodied_ops.lease_timeout_s:
+        raise ValueError("embodied_ops.rpc_timeout_s must be below lease_timeout_s")
+    if not (
+        config.embodied_ops.rpc_timeout_s
+        < config.embodied_ops.command_timeout_s
+        <= config.embodied_ops.lease_timeout_s
+    ):
+        raise ValueError(
+            "embodied_ops.command_timeout_s must be above rpc_timeout_s "
+            "and no greater than lease_timeout_s"
+        )
 
 
 def shell_values(config: SystemConfig) -> dict[str, str]:
@@ -480,6 +536,13 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         ),
         "TOPIC_STARTUP_TIMEOUT_S": number(config.startup.topic_timeout_s),
         "TMUX_STARTUP_GRACE_S": str(config.startup.tmux_process_grace_s),
+        "EMBODIED_OPS_ENDPOINT": config.embodied_ops.endpoint,
+        "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S": number(
+            config.embodied_ops.server_startup_timeout_s
+        ),
+        "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S": number(
+            config.embodied_ops.server_shutdown_timeout_s
+        ),
     }
 
 
@@ -525,6 +588,9 @@ def bash_config(config: SystemConfig) -> str:
             "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
             "TOPIC_STARTUP_TIMEOUT_S",
             "TMUX_STARTUP_GRACE_S",
+            "EMBODIED_OPS_ENDPOINT",
+            "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S",
+            "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S",
         ),
     )
 

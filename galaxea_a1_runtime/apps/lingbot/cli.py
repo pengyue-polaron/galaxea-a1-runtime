@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from argparse import Namespace
 from pathlib import Path
-from typing import Callable, Protocol
 
+from galaxea_a1_runtime.apps.eef_policy_cli import run_eef_policy_bridge
 from galaxea_a1_runtime.apps.lingbot.config import (
     default_config_path,
     load_lingbot_config,
@@ -14,18 +14,6 @@ from galaxea_a1_runtime.console import ArgumentParser, info, warning
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-
-
-class _LiveStatus(Protocol):
-    def break_line(self) -> None: ...
-
-
-class _BridgeLifecycle(Protocol):
-    live_status: _LiveStatus
-
-    def run(self) -> None: ...
-
-    def close(self) -> None: ...
 
 
 def parse_args() -> Namespace:
@@ -63,13 +51,15 @@ def main() -> int:
     )
     if not config.execution.execute:
         warning("Dry run: execution.execute=false in the deployment config.")
-    return run_bridge(
-        A1LingBotEEBridge(
-            config,
-            task,
-            run_id=args.run_id,
-            video_filename=args.video_filename,
-        ),
+    bridge = A1LingBotEEBridge(
+        config,
+        task,
+        run_id=args.run_id,
+        video_filename=args.video_filename,
+    )
+    return run_eef_policy_bridge(
+        bridge,
+        break_status_line=bridge.live_status.break_line,
         record_outcome=lambda kind, message: record_lingbot_run_outcome(
             config.recording.output_root,
             args.run_id,
@@ -77,47 +67,3 @@ def main() -> int:
             message=message,
         ),
     )
-
-
-def run_bridge(
-    bridge: _BridgeLifecycle,
-    *,
-    record_outcome: Callable[[str, str], None] | None = None,
-) -> int:
-    """Run one bridge and cleanly end expected operator/safety stops."""
-
-    outcome: tuple[str, str] | None = None
-    try:
-        bridge.run()
-    except KeyboardInterrupt:
-        bridge.live_status.break_line()
-        message = "Ctrl+C received; locking the arm and finalizing AgentView video."
-        info(message)
-        outcome = ("operator_interrupted", message)
-    except Exception as exc:
-        # Keep the optional numeric/URDF dependencies out of static CLI startup.
-        from galaxea_a1_runtime.apps.eef_policy_actions import (
-            EefPolicyWorkspaceRejected,
-        )
-        from galaxea_a1_runtime.hardware.eef_ik import A1EefIkTargetRejected
-
-        if isinstance(exc, A1EefIkTargetRejected):
-            kind = "ik_target_rejected"
-            boundary = "IK"
-        elif isinstance(exc, EefPolicyWorkspaceRejected):
-            kind = "workspace_target_rejected"
-            boundary = "workspace"
-        else:
-            raise
-        bridge.live_status.break_line()
-        message = (
-            f"Policy target was rejected by the tracked {boundary} bounds; this attempt "
-            f"ended safely. {exc}"
-        )
-        warning(message)
-        outcome = (kind, message)
-    finally:
-        bridge.close()
-    if outcome is not None and record_outcome is not None:
-        record_outcome(*outcome)
-    return 0

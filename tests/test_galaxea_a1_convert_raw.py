@@ -10,7 +10,6 @@ from PIL import Image
 import galaxea_a1_runtime.lerobot.convert_raw as convert_raw_module
 from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.lerobot.convert_raw import (
-    convert_raw_dataset,
     convert_raw_datasets,
     discover_raw_dataset,
     iter_episode_frames,
@@ -22,8 +21,8 @@ from galaxea_a1_runtime.lerobot.pipeline import build_datasets
 from galaxea_a1_runtime.lerobot.pipeline_config import load_pipeline_config
 from galaxea_a1_runtime.lerobot.v21 import export_v21_dataset
 from galaxea_a1_runtime.schema import (
-    DEFAULT_STATE_NAMES,
-    JOINT_ACTION_NAMES,
+    LEGACY_RAW_ACTION_NAMES,
+    LEGACY_RAW_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
 )
 
@@ -78,8 +77,8 @@ def make_raw_episode(
                 "action_mode": "joint_absolute",
                 "frame_count": frame_count,
                 "fps_target": 30.0,
-                "state_names": list(DEFAULT_STATE_NAMES),
-                "action_names": list(JOINT_ACTION_NAMES),
+                "state_names": list(LEGACY_RAW_STATE_NAMES),
+                "action_names": list(LEGACY_RAW_ACTION_NAMES),
                 "cameras": cameras,
             }
         )
@@ -111,10 +110,16 @@ def make_raw_episode(
             action = [0.02 * (joint + frame_index) for joint in range(6)]
             action.append(0.2 + frame_index * 0.6)
         row.update(
-            {f"state.{name}": value for name, value in zip(DEFAULT_STATE_NAMES, state)}
+            {
+                f"state.{name}": value
+                for name, value in zip(LEGACY_RAW_STATE_NAMES, state)
+            }
         )
         row.update(
-            {f"action.{name}": value for name, value in zip(JOINT_ACTION_NAMES, action)}
+            {
+                f"action.{name}": value
+                for name, value in zip(LEGACY_RAW_ACTION_NAMES, action)
+            }
         )
         rows.append(row)
         for directory in ("cam0", "cam1"):
@@ -136,8 +141,8 @@ def test_discover_current_raw_dataset(tmp_path):
 
     assert summary.task == "pick cube"
     assert summary.total_frames == 2
-    assert summary.episodes[0].state_names == DEFAULT_STATE_NAMES
-    assert summary.episodes[0].action_names == JOINT_ACTION_NAMES
+    assert summary.episodes[0].state_names == LEGACY_RAW_STATE_NAMES
+    assert summary.episodes[0].action_names == LEGACY_RAW_ACTION_NAMES
     assert [camera.name for camera in summary.episodes[0].camera_specs] == [
         "front",
         "wrist",
@@ -213,8 +218,8 @@ def test_failed_overwrite_preserves_previous_converted_dataset(tmp_path, monkeyp
     )
 
     with pytest.raises(RuntimeError, match="conversion failed"):
-        convert_raw_dataset(
-            source_root=source,
+        convert_raw_datasets(
+            source_roots=(source,),
             target_root=target,
             repo_id="galaxea/test",
             source_dataset="galaxea-a1/raw-v3",
@@ -230,8 +235,8 @@ def test_current_raw_converts_with_real_lerobot_writer(tmp_path):
     source = make_raw_episode(tmp_path, width=64, height=48)
     target = tmp_path / "lerobot_v3"
 
-    summary = convert_raw_dataset(
-        source_root=source,
+    (summary,) = convert_raw_datasets(
+        source_roots=(source,),
         target_root=target,
         repo_id="galaxea-a1/test_current_raw",
         source_dataset="galaxea-a1/raw-v3",
@@ -252,8 +257,8 @@ def test_raw_conversion_rejects_absolute_source_dataset_id(tmp_path):
     source = make_raw_episode(tmp_path)
 
     with pytest.raises(ValueError, match="must not be an absolute path"):
-        convert_raw_dataset(
-            source_root=source,
+        convert_raw_datasets(
+            source_roots=(source,),
             target_root=tmp_path / "lerobot_v3",
             repo_id="galaxea-a1/test_current_raw",
             source_dataset=str(source.resolve()),
@@ -278,7 +283,8 @@ def test_raw_conversion_applies_one_audited_boundary_trim(tmp_path, monkeypatch)
         def add_frame(self, frame):
             self.frames.append(frame)
 
-        def save_episode(self):
+        def save_episode(self, *, parallel_encoding):
+            assert parallel_encoding is False
             return None
 
         def finalize(self):
@@ -298,8 +304,8 @@ def test_raw_conversion_applies_one_audited_boundary_trim(tmp_path, monkeypatch)
     monkeypatch.setattr(convert_raw_module, "create_lerobot_dataset", create_dataset)
     trim_config = load_pipeline_config(PIPELINE_CONFIG_FIXTURE).boundary_trim
 
-    convert_raw_dataset(
-        source_root=source,
+    convert_raw_datasets(
+        source_roots=(source,),
         target_root=target,
         repo_id="galaxea-a1/trimmed",
         source_dataset="galaxea-a1/raw-v3",
@@ -333,7 +339,8 @@ def test_raw_conversion_combines_task_roots_without_losing_task_text(
         def add_frame(self, frame):
             self.frames.append(frame)
 
-        def save_episode(self):
+        def save_episode(self, *, parallel_encoding):
+            assert parallel_encoding is False
             self.saved_episodes += 1
 
         def finalize(self):
@@ -392,8 +399,8 @@ def test_v21_export_round_trips_through_official_lerobot_migrator(tmp_path):
     source = make_raw_episode(tmp_path, width=64, height=48)
     v3_root = tmp_path / "lerobot_v3"
     v21_root = tmp_path / "lerobot_v21"
-    convert_raw_dataset(
-        source_root=source,
+    convert_raw_datasets(
+        source_roots=(source,),
         target_root=v3_root,
         repo_id="galaxea-a1/test_v3",
         source_dataset="galaxea-a1/raw-v3",
@@ -432,8 +439,8 @@ def test_joint_and_eef_outputs_are_model_agnostic_lerobot_datasets(tmp_path):
     joint_v3 = tmp_path / "joint_v3"
     eef_v3 = tmp_path / "eef_v3"
     eef_v21 = tmp_path / "eef_v21"
-    convert_raw_dataset(
-        source_root=raw,
+    convert_raw_datasets(
+        source_roots=(raw,),
         target_root=raw_v3,
         repo_id="galaxea-a1/raw_v3",
         source_dataset="galaxea-a1/raw-v3",
@@ -477,7 +484,7 @@ def test_joint_and_eef_outputs_are_model_agnostic_lerobot_datasets(tmp_path):
     assert str(URDF.parent) not in json.dumps(eef_manifest)
     eef_info = json.loads((eef_v3 / "meta/info.json").read_text())
     assert eef_info["features"]["observation.state"]["names"] == [
-        *DEFAULT_STATE_NAMES[:7],
+        *LEGACY_RAW_STATE_NAMES[:7],
         *JOINT_ACTION_NAMES_RAD,
     ]
     serialized_manifest = json.dumps(eef_manifest).lower()

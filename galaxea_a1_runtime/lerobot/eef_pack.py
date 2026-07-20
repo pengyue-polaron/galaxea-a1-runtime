@@ -24,6 +24,7 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     copy_dataset_tree,
     dataset_digest,
     file_sha256,
+    namespace_source_provenance,
     portable_metadata_id,
     read_json,
     rewrite_episode_vector_stats,
@@ -32,16 +33,17 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_tar_archive,
 )
 from galaxea_a1_runtime.schema import (
+    CANONICAL_STATE_NAMES,
     DEFAULT_RGB_IMAGE_KEYS,
-    DEFAULT_STATE_NAMES,
+    LEGACY_RAW_ACTION_NAMES,
+    LEGACY_RAW_STATE_NAMES,
     EEF_ACTION_NAMES,
     EEF_DATASET_STATE_NAMES,
-    JOINT_ACTION_NAMES,
     JOINT_ACTION_NAMES_RAD,
 )
 
-SOURCE_ACTION_NAMES = JOINT_ACTION_NAMES
-SOURCE_STATE_NAMES = DEFAULT_STATE_NAMES
+SOURCE_ACTION_NAMES = LEGACY_RAW_ACTION_NAMES
+SOURCE_STATE_NAMES = LEGACY_RAW_STATE_NAMES
 TARGET_STATE_NAMES = EEF_DATASET_STATE_NAMES
 
 
@@ -67,6 +69,7 @@ def pack_eef_v3_dataset(
     base_link: str,
     tip_link: str,
     source_dataset: str,
+    source_format: str = TELEOP_RAW_SCHEMA_VERSION,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -85,6 +88,7 @@ def pack_eef_v3_dataset(
             base_link=base_link,
             tip_link=tip_link,
             source_dataset=source_dataset,
+            source_format=source_format,
             archive_path=archive_path,
         )
 
@@ -101,6 +105,7 @@ def _build_eef_v3_dataset(
     base_link: str,
     tip_link: str,
     source_dataset: str,
+    source_format: str,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
@@ -116,6 +121,7 @@ def _build_eef_v3_dataset(
         raise ValueError(f"unexpected A1 URDF chain: {chain.joint_names}")
 
     copy_dataset_tree(source_root, target_root)
+    namespace_source_provenance(target_root)
     data_files = sorted(target_root.glob("data/**/*.parquet"))
     if not data_files:
         raise FileNotFoundError(f"no LeRobot parquet data under {source_root}")
@@ -175,7 +181,9 @@ def _build_eef_v3_dataset(
         "representation": "eef",
         "repo_id": repo_id,
         "source_dataset": source_dataset,
-        "source_format": TELEOP_RAW_SCHEMA_VERSION,
+        "source_format": portable_metadata_id(
+            source_format, label="source dataset format"
+        ),
         "intermediate_v3_data_sha256": converted.source_data_sha256,
         "episodes": int(info["total_episodes"]),
         "frames": int(info["total_frames"]),
@@ -362,9 +370,15 @@ def _validate_source(info: dict[str, Any]) -> None:
     if info.get("codebase_version") != "v3.0":
         raise ValueError("source must be a LeRobot v3.0 dataset")
     features = info.get("features", {})
-    if features.get("action", {}).get("names") != list(SOURCE_ACTION_NAMES):
+    if features.get("action", {}).get("names") not in (
+        list(SOURCE_ACTION_NAMES),
+        list(JOINT_ACTION_NAMES_RAD),
+    ):
         raise ValueError("source action must be A1 joint_absolute + normalized gripper")
-    if features.get("observation.state", {}).get("names") != list(SOURCE_STATE_NAMES):
+    if features.get("observation.state", {}).get("names") not in (
+        list(SOURCE_STATE_NAMES),
+        list(CANONICAL_STATE_NAMES),
+    ):
         raise ValueError(
             "source observation.state does not contain the expected A1 EEF and joints"
         )

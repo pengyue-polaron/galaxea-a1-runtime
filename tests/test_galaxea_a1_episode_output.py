@@ -1,14 +1,12 @@
-import json
 from dataclasses import replace
 from pathlib import Path
 
 import pytest
 
 from galaxea_a1_runtime.apps.teleop.metadata import (
-    EpisodeMetadataRequest,
-    write_metadata,
+    DatasetProvenanceRequest,
+    build_dataset_provenance,
 )
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.collection.episode_output import validate_staged_episode
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
@@ -53,19 +51,15 @@ def test_staged_episode_rejects_zero_frames_and_undeclared_depth(tmp_path):
         validate_staged_episode(tmp_path, frame_count=1, depth_enabled=False)
 
 
-def test_episode_metadata_derives_camera_contract_from_typed_config(tmp_path):
+def test_direct_dataset_provenance_derives_camera_contract_from_typed_config():
     config = load_teleop_config(REPO / "configs/teleop/a1_so100.toml", repo_root=REPO)
     front = replace(config.system.cameras.front, depth=True)
     cameras_config = replace(config.system.cameras, front=front)
     config = replace(config, system=replace(config.system, cameras=cameras_config))
-    write_metadata(
-        EpisodeMetadataRequest(
-            episode_dir=tmp_path,
+    payload = build_dataset_provenance(
+        DatasetProvenanceRequest(
             task="pick cube",
             experiment="pick_cube",
-            episode_index=0,
-            frame_count=1,
-            state_mode=StateMode.EEF_JOINT,
             front_crop=config.system.cameras.front.crop,
             wrist_label="realsense:test",
             config_path="configs/teleop/a1_so100.toml",
@@ -73,7 +67,6 @@ def test_episode_metadata_derives_camera_contract_from_typed_config(tmp_path):
         )
     )
 
-    payload = json.loads((tmp_path / "metadata.json").read_text())
     cameras = {item["name"]: item for item in payload["cameras"]}
     assert cameras["front"]["width"] == 480
     assert cameras["front"]["height"] == 480
@@ -85,3 +78,5 @@ def test_episode_metadata_derives_camera_contract_from_typed_config(tmp_path):
     assert payload["quality_checks"]["leader_gripper_source_max"] == 53.16
     assert payload["quality_checks"]["gripper_continuous_stroke_min_mm"] == 0.0
     assert payload["quality_checks"]["gripper_continuous_stroke_max_mm"] == 104.0
+    assert payload["action"]["names"][-1] == "gripper_normalized"
+    assert payload["observation"]["names"][7] == "joint_1_rad"

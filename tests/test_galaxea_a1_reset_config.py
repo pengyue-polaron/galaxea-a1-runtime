@@ -31,7 +31,7 @@ def test_reset_pose_derives_hardware_identity_and_joint_schema_from_teleop():
     assert pose.a1.names == tuple(f"arm_joint{index}" for index in range(1, 7))
     assert pose.a1.path == REPO / "configs/poses/a1_collection_start.toml"
     assert pose.leader.config.port.startswith("/dev/serial/by-id/")
-    assert pose.leader.config.use_degrees is True
+    assert pose.leader.config.motor_write_retries == 5
     assert tuple(pose.leader.action) == (
         "joint0.pos",
         "joint1.pos",

@@ -6,7 +6,10 @@ import time
 
 from galaxea_a1_runtime.apps.teleop.reset_config import HomePose, LeaderMotion
 from galaxea_a1_runtime.apps.reset.progress import ResetProgress
-from galaxea_a1_runtime.teleop.a1_so_leader import A1SOLeader, SOLeaderTeleopConfig
+from lerobot_teleoperator_galaxea_a1_so_leader import (
+    GalaxeaA1SOLeader,
+    GalaxeaA1SOLeaderConfig,
+)
 
 
 def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
@@ -16,11 +19,11 @@ def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
     leader_home = home.leader
     motion = home.leader_motion
     leader_config = leader_home.config
-    leader = A1SOLeader(
-        SOLeaderTeleopConfig(
+    leader = GalaxeaA1SOLeader(
+        GalaxeaA1SOLeaderConfig(
             id=leader_config.id,
             port=leader_config.port,
-            use_degrees=leader_config.use_degrees,
+            motor_write_retries=leader_config.motor_write_retries,
         )
     )
     leader.connect(calibrate=False)
@@ -64,7 +67,7 @@ def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
 
 
 def move_leader_smooth(
-    leader: A1SOLeader,
+    leader: GalaxeaA1SOLeader,
     start: dict[str, float],
     target: dict[str, float],
     motion: LeaderMotion,

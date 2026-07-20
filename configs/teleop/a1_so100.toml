@@ -7,7 +7,8 @@ config = "configs/system/a1.toml"
 [runtime]
 prefix = "a1-teleop"
 run_dir = "/tmp/a1-teleop"
-bridge_startup_timeout_s = 15.0
+# Covers backend feedback wait + staged-hold alignment + relay acknowledgement.
+bridge_startup_timeout_s = 65.0
 bridge_stop_timeout_s = 5.0
 
 [reset]
@@ -16,21 +17,16 @@ config = "configs/poses/a1_so100_collection_start.toml"
 [leader]
 port = "/dev/serial/by-id/usb-1a86_USB_Single_Serial_5A7A016967-if00"
 id = "my_leader"
-use_degrees = true
+# Feetech register writes retry this many times before failing the operation.
+motor_write_retries = 5
 
 [bridge]
 hz = 60.0
-dof = 6
-relative = true
 scale = [1, 1, 1, 1, 1, 1]
 sign = [-1, 1, 1, -1, 1, -1]
 bias_rad = [0, 0, 0, 0, 0, 0]
-# Also covers cold jointTracker initialization before its first staged output.
-a1_state_timeout_s = 30.0
 
 [gripper]
-enabled = true
-source_key = "gripper.pos"
 source_min = 0.0
 source_max = 53.16
 invert = false
@@ -40,13 +36,12 @@ saturate_out_of_range = true
 # Clamp only endpoint overshoot; do not apply another scale or binary rewrite.
 
 [collection]
-data_root = "data/raw"
-state_mode = "eef_joint"
+dataset_root = "data/datasets"
+repo_id_prefix = "pengyue-polaron/galaxea-a1"
 fps = 30.0
 max_duration_s = 0.0
 auto_reset_after_save = true
 auto_reset_after_discard = true
-jpeg_quality = 95
 ready_timeout_s = 10.0
 # Reject an episode after Enter=save if any joint action jumps farther in one frame.
 max_joint_action_step_rad = 0.35
