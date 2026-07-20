@@ -51,6 +51,8 @@ device_connect_timeout_s = 30.0
 # Individual control RPCs fail before the session lease; the relay independently
 # enforces its shorter command-input freshness window.
 rpc_timeout_s = 0.5
+# Heartbeats keep observation sessions alive but cannot keep an idle command owner.
+command_timeout_s = 0.75
 lease_timeout_s = 1.0
 server_startup_timeout_s = 5.0
 server_shutdown_timeout_s = 5.0

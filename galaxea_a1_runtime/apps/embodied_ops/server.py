@@ -34,6 +34,7 @@ def build_server(
         device,
         endpoint=system.embodied_ops.endpoint,
         lease_timeout_s=system.embodied_ops.lease_timeout_s,
+        command_timeout_s=system.embodied_ops.command_timeout_s,
     )
 
 

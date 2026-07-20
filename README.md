@@ -117,8 +117,10 @@ This repository hosts the A1 embodied-ops service and is the sole ROS/hardware
 owner. The Robot plugin is only a Unix-socket client: it never imports this
 package or reads the System config. Opening a session never moves the arm. The
 first command stages the current named-joint hold and opens the locked relay only
-after fresh alignment. Losing the exclusive command lease disconnects the runtime
-device, while the relay independently retains its shorter freshness checks.
+after fresh alignment. Observation sessions own subscribers only; the exclusive
+command lease separately owns staged-control publishers and can be released without
+disconnecting observers. Heartbeats cannot extend an idle command lease, while the
+relay independently retains its shorter freshness checks.
 
 The tracked Teleop application is the composition root for the modified
 six-axis leader/A1 pair. It constructs both LeRobot plugins, derives the

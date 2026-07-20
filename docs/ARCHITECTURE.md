@@ -75,7 +75,7 @@ Ownership is exclusive:
 
 | Config | Owns |
 | --- | --- |
-| System | devices, ROS topics, cameras, physical limits, relay/startup safety, and the embodied-ops endpoint/device lease |
+| System | devices, ROS topics, cameras, physical limits, relay/startup safety, and the embodied-ops endpoint/session and command timeouts |
 | Teleop | leader identity/mapping and collection behavior |
 | Pose | reset targets and reset motion behavior |
 | Dataset | source/output packaging and conversion policy |
@@ -109,12 +109,20 @@ LeRobot Robot plugin
   -> ROS staged tracker -> locked relay -> host driver
 ```
 
-The service process is the only owner of the A1 ROS session. `Describe` is static;
-hardware attachment occurs only when a session opens. One command session owns an
-opaque lease at a time, while read-only observation sessions may coexist. Commands
-carry a contiguous sequence and monotonic timestamp. Command failure, lease expiry,
-or command-session close disconnects the hosted device and disables its relay request.
-The relay's independent input-freshness and motor-status gates remain authoritative.
+The service process is the only owner of A1 ROS resources. `Describe` is static;
+hardware attachment occurs only when a session opens. The first session attaches
+read-only feedback and relay-status subscribers; it does not create command publishers
+or require a `LOCKED` relay. One command session owns an opaque lease at a time. Only
+that lease may attach the staged-command subscriber, target publishers, motion gate,
+and hold timer, and it requires fresh feedback plus a fresh `LOCKED` relay before
+attachment. Read-only observation sessions may coexist throughout.
+
+Commands carry a contiguous sequence and monotonic timestamp. Successful commands,
+calibration, or reset refresh the command-inactivity deadline; heartbeats refresh only
+session liveness. Command failure, inactivity expiry, lease expiry, or command-session
+close disables and releases command resources. Observation resources remain attached
+while observers remain connected. The relay's independent input-freshness and
+motor-status gates remain authoritative.
 
 Every managed motion path has four roles: an app publishes a named joint target,
 the isolated jointTracker produces a staged driver command, the relay validates

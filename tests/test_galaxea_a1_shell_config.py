@@ -126,6 +126,21 @@ def test_system_config_rejects_non_unix_embodied_ops_endpoint(tmp_path):
         load_system_config(path, repo_root=REPO)
 
 
+def test_system_config_rejects_command_timeout_outside_rpc_lease_window(tmp_path):
+    path = tmp_path / "a1.toml"
+    path.write_text(
+        SYSTEM.read_text().replace(
+            "command_timeout_s = 0.75",
+            "command_timeout_s = 0.25",
+        )
+    )
+
+    with pytest.raises(
+        ValueError, match="command_timeout_s must be above rpc_timeout_s"
+    ):
+        load_system_config(path, repo_root=REPO)
+
+
 def test_system_config_rejects_removed_orientation_mode(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(

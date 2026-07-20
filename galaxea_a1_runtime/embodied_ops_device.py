@@ -35,6 +35,10 @@ class _Session(Protocol):
 
     def observe(self) -> Mapping[str, object]: ...
 
+    def acquire_command_lease(self) -> None: ...
+
+    def release_command_lease(self) -> None: ...
+
     def command(self, action: Mapping[str, object]) -> Mapping[str, object]: ...
 
     def health(self) -> HealthReport: ...
@@ -74,8 +78,14 @@ class A1RuntimeDevice:
         session = self._session_factory(self.system, self.device_connect_timeout_s)
         try:
             session.connect()
-        except BaseException:
-            session.disconnect()
+        except BaseException as connect_error:
+            try:
+                session.disconnect()
+            except BaseException as cleanup_error:
+                raise BaseExceptionGroup(
+                    "Galaxea A1 observation connection and cleanup failed",
+                    [connect_error, cleanup_error],
+                ) from connect_error
             raise
         self._session = session
 
@@ -91,6 +101,13 @@ class A1RuntimeDevice:
         requested = validate_feature_values(action, self.manifest.action_features)
         sent = session.command(requested)
         return validate_feature_values(sent, self.manifest.action_features)
+
+    def acquire_command_lease(self) -> None:
+        self._require_session().acquire_command_lease()
+
+    def release_command_lease(self) -> None:
+        if self._session is not None:
+            self._session.release_command_lease()
 
     def health(self) -> HealthReport:
         if not self.is_connected:
@@ -142,9 +159,10 @@ class _RosA1Session:
         self.system = system
         self.connect_timeout_s = connect_timeout_s
         self._connected = False
-        self._resources_open = False
-        self._subscribers: list[Any] = []
-        self._publishers: list[Any] = []
+        self._observation_subscribers: list[Any] = []
+        self._command_subscribers: list[Any] = []
+        self._command_publishers: list[Any] = []
+        self._command_lease_active = False
         self._timer: Any | None = None
         self._gate: Any | None = None
         self._commander: _JointCommandPublisher | None = None
@@ -158,8 +176,8 @@ class _RosA1Session:
         return self._connected
 
     def connect(self) -> None:
-        if self._resources_open:
-            raise LifecycleError("ROS A1 session is already open")
+        if self._connected or self._observation_subscribers:
+            raise LifecycleError("ROS A1 observation session is already open")
 
         repo_root = discover_repo_root(self.system.path)
         from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
@@ -168,19 +186,13 @@ class _RosA1Session:
 
         import rospy
         from sensor_msgs.msg import JointState
-        from signal_arm.msg import arm_control, gripper_position_control
-        from std_msgs.msg import Bool, String
+        from std_msgs.msg import String
 
-        from galaxea_a1_runtime.runtime.relay import (
-            RelayMonitor,
-            relay_status_is_fresh,
-        )
+        from galaxea_a1_runtime.runtime.relay import RelayMonitor
         from galaxea_a1_runtime.runtime.ros_feedback import (
             A1JointStateCache,
             GripperFeedbackCache,
-            StagedCommandMonitor,
         )
-        from galaxea_a1_runtime.runtime.staged_motion import StagedMotionGate
 
         if not rospy.core.is_initialized():
             rospy.init_node(
@@ -194,8 +206,7 @@ class _RosA1Session:
         self._joints = A1JointStateCache(self.system.joint_safety.names)
         self._gripper = GripperFeedbackCache()
         self._relay = RelayMonitor(self.system.relay.max_status_age_s)
-        staged = StagedCommandMonitor()
-        self._subscribers = [
+        self._observation_subscribers = [
             rospy.Subscriber(
                 topics.joint_states, JointState, self._joints.callback, queue_size=10
             ),
@@ -208,54 +219,8 @@ class _RosA1Session:
             rospy.Subscriber(
                 topics.relay_status, String, self._relay.callback, queue_size=10
             ),
-            rospy.Subscriber(
-                topics.staged_command, arm_control, staged.callback, queue_size=10
-            ),
         ]
-        target_pub = rospy.Publisher(topics.joint_target, JointState, queue_size=10)
-        motion_pub = rospy.Publisher(
-            topics.motion_enable, Bool, queue_size=1, latch=True
-        )
-        gripper_pub = rospy.Publisher(
-            topics.gripper_target,
-            gripper_position_control,
-            queue_size=10,
-        )
-        self._publishers = [target_pub, motion_pub, gripper_pub]
-        self._commander = _JointCommandPublisher(
-            rospy=rospy,
-            joint_state_type=JointState,
-            bool_type=Bool,
-            gripper_type=gripper_position_control,
-            target_pub=target_pub,
-            motion_pub=motion_pub,
-            gripper_pub=gripper_pub,
-            system=self.system,
-            current_joints=self._current_joints,
-        )
-        self._gate = StagedMotionGate(
-            relay=self._relay,
-            commander=self._commander,
-            staged_monitor=staged,
-            relay_enable_timeout_s=self.system.relay.enable_timeout_s,
-            staged_wait_timeout_s=self.connect_timeout_s,
-            staged_max_age_s=self.system.relay.max_input_age_s,
-            staged_alignment_tolerance_rad=(
-                self.system.joint_safety.initial_alignment_tolerance_rad
-            ),
-            is_shutdown=rospy.is_shutdown,
-            owner_label="LeRobot Galaxea A1",
-        )
-        self._timer = rospy.Timer(
-            rospy.Duration(0.05), self._gate.publish_active_target
-        )
-        self._resources_open = True
-
-        try:
-            self._wait_ready(relay_status_is_fresh)
-        except BaseException:
-            self.disconnect()
-            raise
+        self._wait_observation_ready()
         self._connected = True
 
     def observe(self) -> Mapping[str, object]:
@@ -271,8 +236,13 @@ class _RosA1Session:
         }
 
     def command(self, action: Mapping[str, object]) -> Mapping[str, object]:
-        if not self._connected or self._gate is None or self._commander is None:
-            raise LifecycleError("ROS A1 session is not connected")
+        if (
+            not self._connected
+            or not self._command_lease_active
+            or self._gate is None
+            or self._commander is None
+        ):
+            raise LifecycleError("ROS A1 command lease is not active")
         try:
             if not self._gate.motion_enabled:
                 self._gate.activate_current_hold()
@@ -287,6 +257,83 @@ class _RosA1Session:
                 self._gate.disable_motion()
             raise
         return dict(action)
+
+    def acquire_command_lease(self) -> None:
+        if not self._connected or self._rospy is None or self._relay is None:
+            raise LifecycleError("ROS A1 observation session is not connected")
+        if (
+            self._command_lease_active
+            or self._command_subscribers
+            or self._command_publishers
+        ):
+            raise LifecycleError("ROS A1 command lease is already active")
+
+        from sensor_msgs.msg import JointState
+        from signal_arm.msg import arm_control, gripper_position_control
+        from std_msgs.msg import Bool
+
+        from galaxea_a1_runtime.runtime.relay import relay_status_is_fresh
+        from galaxea_a1_runtime.runtime.ros_feedback import StagedCommandMonitor
+        from galaxea_a1_runtime.runtime.staged_motion import StagedMotionGate
+
+        self._wait_command_ready(relay_status_is_fresh)
+        topics = self.system.topics
+        staged = StagedCommandMonitor()
+        try:
+            self._command_subscribers = [
+                self._rospy.Subscriber(
+                    topics.staged_command, arm_control, staged.callback, queue_size=10
+                )
+            ]
+            target_pub = self._rospy.Publisher(
+                topics.joint_target, JointState, queue_size=10
+            )
+            motion_pub = self._rospy.Publisher(
+                topics.motion_enable, Bool, queue_size=1, latch=True
+            )
+            gripper_pub = self._rospy.Publisher(
+                topics.gripper_target,
+                gripper_position_control,
+                queue_size=10,
+            )
+            self._command_publishers = [target_pub, motion_pub, gripper_pub]
+            self._commander = _JointCommandPublisher(
+                rospy=self._rospy,
+                joint_state_type=JointState,
+                bool_type=Bool,
+                gripper_type=gripper_position_control,
+                target_pub=target_pub,
+                motion_pub=motion_pub,
+                gripper_pub=gripper_pub,
+                system=self.system,
+                current_joints=self._current_joints,
+            )
+            self._gate = StagedMotionGate(
+                relay=self._relay,
+                commander=self._commander,
+                staged_monitor=staged,
+                relay_enable_timeout_s=self.system.relay.enable_timeout_s,
+                staged_wait_timeout_s=self.connect_timeout_s,
+                staged_max_age_s=self.system.relay.max_input_age_s,
+                staged_alignment_tolerance_rad=(
+                    self.system.joint_safety.initial_alignment_tolerance_rad
+                ),
+                is_shutdown=self._rospy.is_shutdown,
+                owner_label="LeRobot Galaxea A1",
+            )
+            self._timer = self._rospy.Timer(
+                self._rospy.Duration(0.05), self._gate.publish_active_target
+            )
+            self._command_lease_active = True
+        except BaseException as acquire_error:
+            try:
+                self.release_command_lease()
+            except BaseException as cleanup_error:
+                raise BaseExceptionGroup(
+                    "ROS A1 command acquisition and cleanup failed",
+                    [acquire_error, cleanup_error],
+                ) from acquire_error
+            raise
 
     def health(self) -> HealthReport:
         if not self._connected or self._relay is None:
@@ -304,8 +351,8 @@ class _RosA1Session:
             )
         return HealthReport(HealthStatus.HEALTHY, self._relay.summary())
 
-    def disconnect(self) -> None:
-        self._connected = False
+    def release_command_lease(self) -> None:
+        self._command_lease_active = False
         errors: list[BaseException] = []
         if self._gate is not None and self._gate.motion_requested:
             try:
@@ -318,21 +365,55 @@ class _RosA1Session:
                 self._timer.shutdown()
             except BaseException as exc:
                 errors.append(exc)
-        for resource in [*self._subscribers, *self._publishers]:
+        for resource in [*self._command_subscribers, *self._command_publishers]:
             try:
                 resource.unregister()
             except BaseException as exc:
                 errors.append(exc)
-        self._subscribers = []
-        self._publishers = []
+        self._command_subscribers = []
+        self._command_publishers = []
         self._timer = None
         self._gate = None
         self._commander = None
-        self._resources_open = False
+        if errors:
+            raise BaseExceptionGroup("ROS A1 command lease cleanup failed", errors)
+
+    def disconnect(self) -> None:
+        self._connected = False
+        errors: list[BaseException] = []
+        try:
+            self.release_command_lease()
+        except BaseException as exc:
+            errors.append(exc)
+        for resource in self._observation_subscribers:
+            try:
+                resource.unregister()
+            except BaseException as exc:
+                errors.append(exc)
+        self._observation_subscribers = []
+        self._joints = None
+        self._gripper = None
+        self._relay = None
+        self._rospy = None
         if errors:
             raise BaseExceptionGroup("ROS A1 session cleanup failed", errors)
 
-    def _wait_ready(self, relay_status_is_fresh: Callable[..., bool]) -> None:
+    def _wait_observation_ready(self) -> None:
+        assert self._rospy is not None
+        deadline = time.monotonic() + self.connect_timeout_s
+        while not self._rospy.is_shutdown() and time.monotonic() < deadline:
+            if (
+                self._current_joints() is not None
+                and self._current_gripper() is not None
+            ):
+                return
+            time.sleep(0.05)
+        raise LifecycleError(
+            "A1 runtime did not provide fresh joint and gripper feedback within "
+            f"{self.connect_timeout_s:.1f}s"
+        )
+
+    def _wait_command_ready(self, relay_status_is_fresh: Callable[..., bool]) -> None:
         assert self._rospy is not None and self._relay is not None
         deadline = time.monotonic() + self.connect_timeout_s
         last_summary = "no relay status"

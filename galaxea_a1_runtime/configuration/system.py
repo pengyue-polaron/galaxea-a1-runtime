@@ -130,6 +130,7 @@ class SystemEmbodiedOpsConfig:
     endpoint: str
     device_connect_timeout_s: float
     rpc_timeout_s: float
+    command_timeout_s: float
     lease_timeout_s: float
     server_startup_timeout_s: float
     server_shutdown_timeout_s: float
@@ -307,6 +308,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             endpoint=string(embodied_ops, "endpoint"),
             device_connect_timeout_s=floating(embodied_ops, "device_connect_timeout_s"),
             rpc_timeout_s=floating(embodied_ops, "rpc_timeout_s"),
+            command_timeout_s=floating(embodied_ops, "command_timeout_s"),
             lease_timeout_s=floating(embodied_ops, "lease_timeout_s"),
             server_startup_timeout_s=floating(embodied_ops, "server_startup_timeout_s"),
             server_shutdown_timeout_s=floating(
@@ -472,6 +474,7 @@ def validate_system_config(config: SystemConfig) -> None:
         min(
             config.embodied_ops.device_connect_timeout_s,
             config.embodied_ops.rpc_timeout_s,
+            config.embodied_ops.command_timeout_s,
             config.embodied_ops.lease_timeout_s,
             config.embodied_ops.server_startup_timeout_s,
             config.embodied_ops.server_shutdown_timeout_s,
@@ -481,6 +484,15 @@ def validate_system_config(config: SystemConfig) -> None:
         raise ValueError("embodied_ops timeouts must be positive")
     if config.embodied_ops.rpc_timeout_s >= config.embodied_ops.lease_timeout_s:
         raise ValueError("embodied_ops.rpc_timeout_s must be below lease_timeout_s")
+    if not (
+        config.embodied_ops.rpc_timeout_s
+        < config.embodied_ops.command_timeout_s
+        <= config.embodied_ops.lease_timeout_s
+    ):
+        raise ValueError(
+            "embodied_ops.command_timeout_s must be above rpc_timeout_s "
+            "and no greater than lease_timeout_s"
+        )
 
 
 def shell_values(config: SystemConfig) -> dict[str, str]:
