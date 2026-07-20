@@ -90,7 +90,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "scale",
             "sign",
             "bias_rad",
-            "a1_state_timeout_s",
         },
         label="bridge",
     )
@@ -155,7 +154,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             hz=floating(bridge, "hz"),
             dof=dof,
             mapping=mapping,
-            a1_state_timeout_s=floating(bridge, "a1_state_timeout_s"),
         ),
         gripper=TeleopGripperConfig(
             enabled=boolean(gripper, "enabled"),
@@ -215,15 +213,14 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("gripper source_max must be greater than source_min")
     if config.bridge.hz <= 0:
         raise ValueError("bridge.hz must be positive")
-    if config.bridge.a1_state_timeout_s <= 0:
-        raise ValueError("bridge.a1_state_timeout_s must be positive")
     minimum_startup_timeout_s = (
-        2 * config.bridge.a1_state_timeout_s + config.system.relay.enable_timeout_s
+        2 * config.system.embodied_ops.device_connect_timeout_s
+        + config.system.relay.enable_timeout_s
     )
     if config.runtime.bridge_startup_timeout_s < minimum_startup_timeout_s:
         raise ValueError(
-            "runtime.bridge_startup_timeout_s must cover two bridge.a1_state_timeout_s "
-            "windows plus the System relay enable timeout"
+            "runtime.bridge_startup_timeout_s must cover two System "
+            "embodied_ops.device_connect_timeout_s windows plus the relay enable timeout"
         )
     if config.bridge.dof <= 0:
         raise ValueError("bridge.dof must be positive")

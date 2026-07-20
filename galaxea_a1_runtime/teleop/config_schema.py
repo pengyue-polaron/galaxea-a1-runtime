@@ -35,7 +35,6 @@ class TeleopBridgeConfig:
     hz: float
     dof: int
     mapping: JointMappingConfig
-    a1_state_timeout_s: float
 
 
 @dataclass(frozen=True)

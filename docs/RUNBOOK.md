@@ -171,8 +171,10 @@ just teleop-test
 
 Exercise all six joint directions and the continuous gripper over a small
 range. This starts the modified leader Teleoperator, the tracked relative-anchor
-processor, the A1 Robot plugin, and the supervised runtime backend as one owned
-control chain. Do not substitute the generic `lerobot-teleoperate` command: in
+processor, the A1 Robot plugin, and the supervised Runtime device service as one owned
+control chain. The Robot reaches the Runtime-owned device through the tracked local
+Unix socket; it does not load ROS or Runtime Python code. Do not substitute the generic
+`lerobot-teleoperate` command: in
 LeRobot 0.6 it uses identity processors and cannot safely pair leader degrees
 with A1 radians. Use `just logs` for failures and `just stop` when finished.
 
@@ -345,6 +347,7 @@ Then diagnose the narrow layer:
 | serial/device missing | `just hardware` |
 | camera missing, stale, or slow | `just cameras`; inspect USB topology |
 | Teleop process exited | `just logs` |
+| embodied-ops socket already exists | run `just stop`, verify the server is absent, then inspect and remove only the exact socket configured in System config |
 | model missing | `just models` |
 | configuration or test failure | `just check` |
 | conversion rejected an episode | inspect its metadata and files; do not weaken validation |
@@ -352,6 +355,11 @@ Then diagnose the narrow layer:
 Never run two apps that own the same driver, tracker, camera, serial port, or
 publisher. A1 status interpretation and direct-debug procedures are maintained
 only in [Safety](SAFETY.md).
+
+The RPC server deliberately refuses to unlink a pre-existing socket at startup. This
+keeps a second runtime from taking over an endpoint that may still be owned. Treat a
+leftover socket as crash evidence and remove it only after the owning process is proven
+stopped.
 
 ## 7. Policy deployment
 

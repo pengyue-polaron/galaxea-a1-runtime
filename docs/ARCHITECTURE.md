@@ -31,12 +31,12 @@ galaxea_a1_runtime.apps
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
 - The pinned `external/embodied-ops` package owns framework-neutral capability,
-  manifest, lifecycle, health, and backend-discovery protocols. It has no ROS or
-  LeRobot dependency.
+  manifest, lifecycle, health, and the optional versioned Protobuf/gRPC Unix-socket
+  transport. Its core has no ROS or LeRobot dependency.
 - The pinned `external/lerobot-robot-galaxea-a1` and
   `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
-  LeRobot adapters. A1-Research registers the `galaxea_a1_runtime` embodied-ops
-  backend and remains the ROS/safety/process composition root.
+  LeRobot adapters. The Robot plugin is a thin RPC client; A1-Research hosts the
+  operational device service and remains the ROS/safety/process composition root.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
 - `lerobot/` owns direct LeRobotDataset recording, atomic episode commits,
   legacy Raw v3 import, and deterministic derived packages.
@@ -75,7 +75,7 @@ Ownership is exclusive:
 
 | Config | Owns |
 | --- | --- |
-| System | devices, ROS topics, cameras, physical limits, relay and startup safety |
+| System | devices, ROS topics, cameras, physical limits, relay/startup safety, and the embodied-ops endpoint/device lease |
 | Teleop | leader identity/mapping and collection behavior |
 | Pose | reset targets and reset motion behavior |
 | Dataset | source/output packaging and conversion policy |
@@ -100,6 +100,21 @@ process lifecycle. No app-specific config may mirror a physical value from the
 System config.
 
 ## Runtime composition
+
+```text
+LeRobot Robot plugin
+  -> embodied-ops protocol client
+  -> versioned gRPC over System-owned Unix socket
+  -> A1 Runtime operational-device service
+  -> ROS staged tracker -> locked relay -> host driver
+```
+
+The service process is the only owner of the A1 ROS session. `Describe` is static;
+hardware attachment occurs only when a session opens. One command session owns an
+opaque lease at a time, while read-only observation sessions may coexist. Commands
+carry a contiguous sequence and monotonic timestamp. Command failure, lease expiry,
+or command-session close disconnects the hosted device and disables its relay request.
+The relay's independent input-freshness and motor-status gates remain authoritative.
 
 Every managed motion path has four roles: an app publishes a named joint target,
 the isolated jointTracker produces a staged driver command, the relay validates
@@ -175,9 +190,9 @@ Teleop and System configs.
 The production Teleop bridge is the pair composition root. It constructs the
 auto-discovered Teleoperator and Robot plugins, then applies LeRobot's
 teleoperator-action and robot-action processor ordering. The first processed
-action is the current A1 pose and normalized gripper state; the Robot delegates
-that hold to the `galaxea_a1_runtime` backend, which alone attaches to ROS and
-requests the relay. The previous in-app joint mapping and ROS publishers are not
+action is the current A1 pose and normalized gripper state; the Robot sends that hold
+through the local RPC service, whose A1 device alone attaches to ROS and requests the
+relay. The previous in-app joint mapping and ROS publishers are not
 retained as a second control path. Generic LeRobot 0.6 CLI entrypoints use
 identity processors and are not valid for this degree-to-radian hardware pair.
 

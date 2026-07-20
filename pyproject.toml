@@ -4,10 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
-    "embodied-ops>=0.1,<0.2",
+    "embodied-ops[grpc]>=0.2,<0.3",
     "huggingface-hub>=1.0.0,<2.0.0",
     "lerobot[dataset,feetech]",
-    "lerobot_robot_galaxea_a1>=0.1,<0.2",
+    "lerobot_robot_galaxea_a1>=0.2,<0.3",
     "lerobot_teleoperator_galaxea_a1_so_leader>=0.1,<0.2",
     "msgpack>=1.1.0,<2.0.0",
     "numpy>=2.2.0",
@@ -26,9 +26,6 @@ dependencies = [
 
 [project.scripts]
 galaxea-a1-runtime = "galaxea_a1_runtime.cli:main"
-
-[project.entry-points."embodied_ops.backends"]
-galaxea_a1_runtime = "galaxea_a1_runtime.embodied_ops_backend:create_backend"
 
 [build-system]
 requires = ["setuptools"]

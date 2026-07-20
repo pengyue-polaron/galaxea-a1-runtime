@@ -40,7 +40,12 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     )
     assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
-    assert config.bridge.a1_state_timeout_s == 30.0
+    assert config.system.embodied_ops.endpoint == (
+        "unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"
+    )
+    assert config.system.embodied_ops.device_connect_timeout_s == 30.0
+    assert config.system.embodied_ops.rpc_timeout_s == 0.5
+    assert config.system.embodied_ops.lease_timeout_s == 1.0
     assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
     assert config.gripper.source_key == "gripper.pos"
     assert (config.gripper.source_min, config.gripper.source_max) == (0.0, 53.16)
@@ -113,6 +118,10 @@ def test_teleop_shell_contract_renders_lifecycle_values():
 
     assert "BRIDGE_STARTUP_TIMEOUT_S=65" in rendered
     assert "BRIDGE_STOP_TIMEOUT_S=5" in rendered
+    assert (
+        "EMBODIED_OPS_ENDPOINT=unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"
+        in rendered
+    )
     assert "JOINT_TRACKER_NODE=/jointTracker_demo_node" in rendered
     assert "JOINT_TRACKER_NODE_NAME=jointTracker_demo_node" in rendered
 
@@ -163,7 +172,7 @@ def test_formal_collection_config_reference_must_be_portable(tmp_path: Path):
         (
             "bridge_startup_timeout_s = 65.0",
             "bridge_startup_timeout_s = 15.0",
-            "must cover two bridge.a1_state_timeout_s",
+            "must cover two System embodied_ops.device_connect_timeout_s",
         ),
     ],
 )

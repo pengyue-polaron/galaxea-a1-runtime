@@ -105,18 +105,20 @@ The framework-neutral contracts and both hardware adapters are independently
 versioned public repositories:
 
 - [`embodied-ops`](https://github.com/pengyue-polaron/embodied-ops) defines
-  capability, manifest, health, lifecycle, and backend-discovery protocols.
+  capability, manifest, health, lifecycle, and a versioned Protobuf/gRPC
+  protocol over Unix sockets.
 - [`lerobot-robot-galaxea-a1`](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1)
   provides the auto-discovered `galaxea_a1` LeRobot Robot and its pair-specific
   relative-anchor processor.
 - [`lerobot-teleoperator-galaxea-a1-so-leader`](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader)
   provides the auto-discovered `galaxea_a1_so_leader` Teleoperator.
 
-This repository supplies the `galaxea_a1_runtime` embodied-ops backend. It owns
-ROS and attaches to an already supervised runtime; construction and `connect()`
-never move the arm. The first command stages the current named-joint hold and
-opens the locked relay only after fresh alignment. LeRobot plugins never publish
-host motor topics directly.
+This repository hosts the A1 embodied-ops service and is the sole ROS/hardware
+owner. The Robot plugin is only a Unix-socket client: it never imports this
+package or reads the System config. Opening a session never moves the arm. The
+first command stages the current named-joint hold and opens the locked relay only
+after fresh alignment. Losing the exclusive command lease disconnects the runtime
+device, while the relay independently retains its shorter freshness checks.
 
 The tracked Teleop application is the composition root for the modified
 six-axis leader/A1 pair. It constructs both LeRobot plugins, derives the

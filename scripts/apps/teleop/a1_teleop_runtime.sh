@@ -60,6 +60,7 @@ TRACKER_CONTAINER="${PREFIX}-joint-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
 LOG_DIR="${RUN_DIR}/logs"
 BRIDGE_PID_FILE="${RUN_DIR}/bridge.pid"
+RPC_SERVER_PID_FILE="${RUN_DIR}/embodied_ops_server.pid"
 source "${ROOT}/scripts/runtime/a1_services.sh"
 
 bridge_group_has_live_process() {
@@ -96,8 +97,44 @@ stop_bridge() {
   fi
 }
 
+rpc_server_is_live() {
+  local pid="$1"
+  ps -eo pid=,stat=,comm=,args= | awk -v pid="${pid}" '
+    $1 == pid && $2 !~ /^Z/ && $3 ~ /^python/ && \
+      $0 ~ /-m[[:space:]]+galaxea_a1_runtime\.apps\.embodied_ops\.server([[:space:]]|$)/ { found = 1 }
+    END { exit(found ? 0 : 1) }
+  '
+}
+
+stop_rpc_server() {
+  if [[ ! -f "${RPC_SERVER_PID_FILE}" ]]; then
+    return 0
+  fi
+  local pid
+  pid="$(cat "${RPC_SERVER_PID_FILE}")"
+  if [[ ! "${pid}" =~ ^[1-9][0-9]*$ ]]; then
+    a1_fail "Invalid embodied-ops server pid file: ${RPC_SERVER_PID_FILE}"
+    return 1
+  fi
+  if ! rpc_server_is_live "${pid}"; then
+    rm -f "${RPC_SERVER_PID_FILE}"
+    return 0
+  fi
+  kill "${pid}" >/dev/null 2>&1 || true
+  local deadline=$((SECONDS + ${EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S%.*} + 1))
+  while rpc_server_is_live "${pid}" && (( SECONDS < deadline )); do
+    sleep 0.1
+  done
+  if rpc_server_is_live "${pid}"; then
+    a1_fail "embodied-ops server ${pid} did not stop within ${EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S} seconds."
+    return 1
+  fi
+  rm -f "${RPC_SERVER_PID_FILE}"
+}
+
 stop_runtime() {
   stop_bridge
+  stop_rpc_server
   a1_remove_runtime_containers \
     "${RELAY_CONTAINER}" \
     "${TRACKER_CONTAINER}" \
@@ -126,23 +163,57 @@ start_services() {
   stop_runtime >/dev/null 2>&1 || true
   mkdir -p "${LOG_DIR}"
 
-  a1_step "1/4 ROS master"
+  a1_step "1/5 ROS master"
   a1_ensure_roscore "${ROSCORE_CONTAINER}"
 
-  a1_step "2/4 A1 driver"
+  a1_step "2/5 A1 driver"
   a1_start_driver "${DRIVER_CONTAINER}"
   a1_wait_valid_joint_feedback "${DRIVER_CONTAINER}" "${JOINT_STATES_TOPIC}"
 
-  a1_step "3/4 Joint tracker"
+  a1_step "3/5 Joint tracker"
   a1_container_run tracker "${TRACKER_CONTAINER}" \
     "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${JOINT_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${JOINT_TRACKER_NODE_NAME}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
 
-  a1_step "4/4 Command relay"
+  a1_step "4/5 Command relay"
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
+  a1_step "5/5 embodied-ops RPC service"
+  start_rpc_server
+
   a1_success "Teleop services ready."
+}
+
+start_rpc_server() {
+  stop_rpc_server
+  local log_file="${LOG_DIR}/embodied_ops_server.log"
+  : > "${log_file}"
+  setsid env \
+    PYTHONUNBUFFERED=1 \
+    PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
+    "${PYTHON_BIN}" -m galaxea_a1_runtime.apps.embodied_ops.server \
+      --system-config "${SYSTEM_CONFIG_PATH}" \
+      >> "${log_file}" 2>&1 < /dev/null &
+  echo "$!" > "${RPC_SERVER_PID_FILE}"
+
+  local pid deadline
+  pid="$(cat "${RPC_SERVER_PID_FILE}")"
+  deadline=$((SECONDS + ${EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S%.*}))
+  while (( SECONDS < deadline )); do
+    if ! rpc_server_is_live "${pid}"; then
+      a1_fail "embodied-ops server exited during startup. Log: ${log_file}"
+      tail -n 120 "${log_file}" >&2 || true
+      exit 2
+    fi
+    if grep -Fq "embodied-ops RPC ready at ${EMBODIED_OPS_ENDPOINT}" "${log_file}"; then
+      return 0
+    fi
+    sleep 0.1
+  done
+  a1_fail "embodied-ops server did not become ready within ${EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S} seconds. Log: ${log_file}"
+  tail -n 120 "${log_file}" >&2 || true
+  exit 2
 }
 
 start_bridge() {
@@ -309,6 +380,15 @@ status() {
   else
     a1_info "Teleop bridge is not running."
   fi
+  local rpc_pid=""
+  if [[ -f "${RPC_SERVER_PID_FILE}" ]]; then
+    rpc_pid="$(cat "${RPC_SERVER_PID_FILE}")"
+  fi
+  if [[ "${rpc_pid}" =~ ^[1-9][0-9]*$ ]] && rpc_server_is_live "${rpc_pid}"; then
+    a1_success "embodied-ops server running (pid=${rpc_pid}, endpoint=${EMBODIED_OPS_ENDPOINT})."
+  else
+    a1_info "embodied-ops server is not running."
+  fi
   echo
   doctor
 }
@@ -320,6 +400,8 @@ logs() {
   done
   a1_info "Logs: teleop bridge"
   tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/bridge.log" 2>/dev/null || true
+  a1_info "Logs: embodied-ops server"
+  tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/embodied_ops_server.log" 2>/dev/null || true
 }
 
 case "${1:-help}" in

@@ -28,8 +28,6 @@ relative = true
 scale = [1, 1, 1, 1, 1, 1]
 sign = [-1, 1, 1, -1, 1, -1]
 bias_rad = [0, 0, 0, 0, 0, 0]
-# Also covers cold jointTracker initialization before its first staged output.
-a1_state_timeout_s = 30.0
 
 [gripper]
 enabled = true

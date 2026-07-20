@@ -11,8 +11,8 @@ from embodied_ops import (
     FeatureSpec,
     HealthReport,
     HealthStatus,
-    default_registry,
 )
+from embodied_ops.rpc import DeviceRpcServer
 from lerobot_robot_galaxea_a1 import GalaxeaA1, GalaxeaA1Config
 from lerobot_teleoperator_galaxea_a1_so_leader import (
     GalaxeaA1SOLeader,
@@ -68,7 +68,7 @@ class OfflineLeaderBus:
         return next(self.frames)
 
 
-class OfflineA1Backend:
+class OfflineA1RuntimeDevice:
     def __init__(self, stop_requested: threading.Event) -> None:
         self.stop_requested = stop_requested
         self.is_connected = False
@@ -206,8 +206,9 @@ def test_tracked_bridge_wires_both_plugin_configs_and_processor(
     assert teleop_config.motor_write_retries == config.leader.motor_write_retries
     robot_config = captured["robot_config"]
     assert isinstance(robot_config, GalaxeaA1Config)
-    assert robot_config.system_config == config.system.path
-    assert robot_config.connect_timeout_s == config.bridge.a1_state_timeout_s
+    assert robot_config.endpoint == config.system.embodied_ops.endpoint
+    assert robot_config.connect_timeout_s == config.runtime.bridge_startup_timeout_s
+    assert robot_config.rpc_timeout_s == config.system.embodied_ops.rpc_timeout_s
     session = captured["session"]
     assert isinstance(session, dict)
     assert session["teleop"] is teleop
@@ -218,6 +219,7 @@ def test_tracked_bridge_wires_both_plugin_configs_and_processor(
 
 def test_offline_lerobot_plugins_run_one_composed_control_session(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     config = load_teleop_config(CONFIG, repo_root=REPO)
     stop_requested = threading.Event()
@@ -230,14 +232,10 @@ def test_offline_lerobot_plugins_run_one_composed_control_session(
         "FeetechMotorsBus",
         lambda **kwargs: OfflineLeaderBus(**kwargs, frames=frames),
     )
-    backends: list[OfflineA1Backend] = []
-
-    def make_backend(_config: dict[str, object]) -> OfflineA1Backend:
-        backend = OfflineA1Backend(stop_requested)
-        backends.append(backend)
-        return backend
-
-    default_registry.register("offline_galaxea_a1", make_backend)
+    device = OfflineA1RuntimeDevice(stop_requested)
+    endpoint = f"unix://{tmp_path / 'a1.sock'}"
+    server = DeviceRpcServer(device, endpoint=endpoint, lease_timeout_s=1.0)
+    server.start()
     try:
         leader = GalaxeaA1SOLeader(
             GalaxeaA1SOLeaderConfig(
@@ -249,8 +247,7 @@ def test_offline_lerobot_plugins_run_one_composed_control_session(
         robot = GalaxeaA1(
             GalaxeaA1Config(
                 id="offline-a1",
-                backend="offline_galaxea_a1",
-                system_config=config.system.path,
+                endpoint=endpoint,
             )
         )
         live_events: list[str] = []
@@ -264,10 +261,10 @@ def test_offline_lerobot_plugins_run_one_composed_control_session(
             sleep=lambda _seconds: None,
         )
     finally:
-        default_registry.unregister("offline_galaxea_a1")
+        server.stop()
 
     assert completed_frames == 2
-    assert backends[0].actions[0] == {
+    assert device.actions[0] == {
         **{name: 0.0 for name in JOINT_KEYS},
         "gripper_normalized": 0.0,
     }
@@ -281,10 +278,10 @@ def test_offline_lerobot_plugins_run_one_composed_control_session(
             strict=True,
         )
     )
-    assert tuple(backends[0].actions[1][name] for name in JOINT_KEYS) == pytest.approx(
+    assert tuple(device.actions[1][name] for name in JOINT_KEYS) == pytest.approx(
         expected_joints
     )
-    assert backends[0].actions[1]["gripper_normalized"] == pytest.approx(0.5)
+    assert device.actions[1]["gripper_normalized"] == pytest.approx(0.5)
     assert live_events == ["live"]
     assert robot.is_connected is False
     assert leader.is_connected is False

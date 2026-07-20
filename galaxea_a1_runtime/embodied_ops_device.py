@@ -1,4 +1,4 @@
-"""embodied-ops backend for the supervised Galaxea A1 ROS runtime."""
+"""Operational device hosted by the supervised Galaxea A1 RPC service."""
 
 from __future__ import annotations
 
@@ -6,12 +6,10 @@ import math
 import threading
 import time
 from collections.abc import Callable, Mapping, Sequence
-from pathlib import Path
 from typing import Any, Protocol
 
 from embodied_ops import (
     Capability,
-    ContractError,
     DeviceManifest,
     FeatureSpec,
     HealthReport,
@@ -21,13 +19,12 @@ from embodied_ops import (
 )
 
 from galaxea_a1_runtime.configuration.base import discover_repo_root
-from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
+from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.gripper import denormalize_stroke
 from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
 
 JOINT_FEATURE_KEYS = JOINT_ACTION_NAMES_RAD[:-1]
 GRIPPER_FEATURE_KEY = JOINT_ACTION_NAMES_RAD[-1]
-BACKEND_NAME = "galaxea_a1_runtime"
 
 
 class _Session(Protocol):
@@ -48,20 +45,17 @@ class _Session(Protocol):
 SessionFactory = Callable[[SystemConfig, float], _Session]
 
 
-class A1RuntimeBackend:
-    """Strict backend whose construction performs static configuration loading only."""
+class A1RuntimeDevice:
+    """Strict device whose construction performs no ROS or hardware access."""
 
     def __init__(
         self,
         *,
-        system_config: Path,
-        connect_timeout_s: float,
+        system: SystemConfig,
         session_factory: SessionFactory | None = None,
     ) -> None:
-        if not math.isfinite(connect_timeout_s) or connect_timeout_s <= 0:
-            raise ValueError("connect_timeout_s must be finite and positive")
-        self.system = load_system_config(system_config)
-        self.connect_timeout_s = float(connect_timeout_s)
+        self.system = system
+        self.device_connect_timeout_s = system.embodied_ops.device_connect_timeout_s
         self._session_factory = session_factory or _RosA1Session
         self._session: _Session | None = None
         self._manifest = _manifest_from_system(self.system)
@@ -76,8 +70,8 @@ class A1RuntimeBackend:
 
     def connect(self) -> None:
         if self.is_connected:
-            raise LifecycleError("Galaxea A1 runtime backend is already connected")
-        session = self._session_factory(self.system, self.connect_timeout_s)
+            raise LifecycleError("Galaxea A1 runtime device is already connected")
+        session = self._session_factory(self.system, self.device_connect_timeout_s)
         try:
             session.connect()
         except BaseException:
@@ -112,31 +106,8 @@ class A1RuntimeBackend:
 
     def _require_session(self) -> _Session:
         if not self.is_connected or self._session is None:
-            raise LifecycleError("Galaxea A1 runtime backend is not connected")
+            raise LifecycleError("Galaxea A1 runtime device is not connected")
         return self._session
-
-
-def create_backend(config: Mapping[str, object]) -> A1RuntimeBackend:
-    """Entry-point factory with an exact configuration surface."""
-
-    required = {"system_config", "connect_timeout_s"}
-    missing = required - set(config)
-    unknown = set(config) - required
-    if missing or unknown:
-        raise ContractError(
-            f"invalid {BACKEND_NAME} backend config: "
-            f"missing={sorted(missing)} unknown={sorted(unknown)}"
-        )
-    system_config = config["system_config"]
-    if not isinstance(system_config, (str, Path)):
-        raise ContractError("system_config must be a path string")
-    timeout = config["connect_timeout_s"]
-    if isinstance(timeout, bool) or not isinstance(timeout, (int, float)):
-        raise ContractError("connect_timeout_s must be numeric")
-    return A1RuntimeBackend(
-        system_config=Path(system_config),
-        connect_timeout_s=float(timeout),
-    )
 
 
 def _manifest_from_system(system: SystemConfig) -> DeviceManifest:
@@ -159,7 +130,6 @@ def _manifest_from_system(system: SystemConfig) -> DeviceManifest:
         action_features=actions,
         metadata={
             "robot_type": "galaxea_a1",
-            "system_config": str(system.path),
             "control_path": "joint_target->staged_tracker->locked_relay->host_driver",
         },
     )

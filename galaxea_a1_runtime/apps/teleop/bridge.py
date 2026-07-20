@@ -59,8 +59,9 @@ def run(config: TeleopConfig) -> int:
     )
     robot = make_robot_from_config(
         GalaxeaA1Config(
-            system_config=config.system.path,
-            connect_timeout_s=config.bridge.a1_state_timeout_s,
+            endpoint=config.system.embodied_ops.endpoint,
+            connect_timeout_s=config.runtime.bridge_startup_timeout_s,
+            rpc_timeout_s=config.system.embodied_ops.rpc_timeout_s,
         )
     )
     processors = make_a1_teleop_processors(config)

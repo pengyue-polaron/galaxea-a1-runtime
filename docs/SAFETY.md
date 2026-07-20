@@ -47,11 +47,13 @@ only normal owner of both host command topics.
 
 The tracked Teleop bridge composes the out-of-tree LeRobot Teleoperator,
 pair-specific processor, and Robot. The plugins never import ROS or publish host
-commands. The Robot delegates to the `galaxea_a1_runtime` embodied-ops backend,
-which follows the same staged path: it attaches only when fresh feedback is
-available and the relay is `LOCKED`, refuses a competing `ACTIVE`/`ARMING`
-owner, stages the current named-joint hold before its first command, and
-disables the relay on disconnect.
+commands. The Robot is a thin client of the Runtime-owned embodied-ops Unix-socket
+service. That service follows the same staged path: it attaches only when fresh
+feedback is available and the relay is `LOCKED`, refuses a competing
+`ACTIVE`/`ARMING` owner, stages the current named-joint hold before its first command,
+and disables the relay when the exclusive command lease closes, expires, or fails.
+Every command carries a session id, contiguous sequence, and monotonic timestamp. The
+relay's stricter input-freshness checks remain independent of the RPC lease.
 
 ## Relay gates
 
