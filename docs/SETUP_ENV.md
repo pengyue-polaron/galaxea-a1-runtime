@@ -47,16 +47,16 @@ Engine and compatible device/GPU drivers; it does not need native ROS packages.
 
 - Python `>=3.12,<3.13`
 - LeRobot v0.6.0 at `30da8e687a6dfc617fcd94afc367ac7071c376ce`
-- embodied-ops `v0.1.0`, Galaxea A1 Robot `v0.1.1`, and A1 SO-Leader
-  `v0.1.0` at their pinned submodule commits
+- embodied-ops `v0.2.0`, Galaxea A1 Robot `v0.2.1`, and A1 SO-Leader
+  `v0.1.1` at their pinned submodule commits
 - LeRobotDataset v3.0 writer and reader
 - first-party LeRobotDataset v2.1 exporter, validated through LeRobot's
   official v2.1-to-v3.0 migrator
 
 The runtime no longer uses the old OpenPI/TFP, ZMQ, or DataCoach environments.
-Collection writes the canonical LeRobotDataset v3.0 contract directly. The
-Raw-v3 converter remains only for migrating existing recordings into generic
-Joint and EEF v3.0/v2.1 derivatives.
+Collection writes the canonical LeRobotDataset v3.0 contract directly.
+Joint v2.1, EEF v2.1, and EEF v3.0 derivatives are produced directly from that
+canonical dataset; Raw v3 is not a supported input or intermediate.
 
 ## Model inference environments
 

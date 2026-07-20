@@ -12,7 +12,7 @@ Vendor source metadata is tracked in `vendors.toml`.
 
 ## Rules
 
-- Keep vendor code boring. Prefer first-party adapters under
+- Keep vendor changes minimal. Prefer first-party adapters under
   `galaxea_a1_runtime/` or `scripts/apps/` over editing vendor files.
 - If a vendor patch is unavoidable, make it small, document the reason here,
   and keep a test proving why it exists.
@@ -23,8 +23,10 @@ Vendor source metadata is tracked in `vendors.toml`.
 
 ## A1-Specific Adapters
 
-- SO leader six-axis A1 wiring lives in
-  `galaxea_a1_runtime.teleop.a1_so_leader`.
+- The LeRobot A1 Robot and modified SO-Leader adapters live in the pinned
+  first-party repositories under `external/`.
+- Pair-specific mapping and application composition live under
+  `galaxea_a1_runtime/`; vendor code remains framework-owned.
 - Managed app implementations live under `galaxea_a1_runtime.apps`; thin
   operator and process-lifecycle entrypoints remain under `scripts/apps/`.
 - LingBot runtime integration specifically lives in

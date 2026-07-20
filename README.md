@@ -1,54 +1,54 @@
 <h1 align="center">Galaxea A1 Runtime</h1>
 
 <p align="center">
-  End-to-end teleoperation, LeRobot data collection, and policy deployment for
-  the Galaxea A1 robot arm.
+  Teleoperation, LeRobot data collection, and policy deployment for a Galaxea A1 arm.
 </p>
 
 <p align="center">
-  <img alt="Python 3.12" src="https://img.shields.io/badge/Python-3.12-3776AB?logo=python&amp;logoColor=white">
+  <a href="https://github.com/pengyue-polaron/galaxea-a1-runtime/actions/workflows/check.yml"><img alt="CI" src="https://github.com/pengyue-polaron/galaxea-a1-runtime/actions/workflows/check.yml/badge.svg?branch=main"></a>
+  <a href="https://pypi.org/project/galaxea-a1-runtime/"><img alt="PyPI" src="https://img.shields.io/pypi/v/galaxea-a1-runtime"></a>
+  <a href="https://pypi.org/project/galaxea-a1-runtime/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/galaxea-a1-runtime"></a>
+  <a href="https://huggingface.co/docs/lerobot/v0.6.0/en/integrate_hardware"><img alt="LeRobot 0.6" src="https://img.shields.io/badge/LeRobot-0.6-FFD21E"></a>
   <img alt="ROS 1 Noetic" src="https://img.shields.io/badge/ROS_1-Noetic-22314E?logo=ros&amp;logoColor=white">
-  <img alt="Containerized ROS runtime" src="https://img.shields.io/badge/ROS_Runtime-Dockerized-2496ED?logo=docker&amp;logoColor=white">
-  <img alt="LeRobot 0.6" src="https://img.shields.io/badge/LeRobot-0.6-FFD21E">
   <img alt="LeRobotDataset v2.1 and v3.0" src="https://img.shields.io/badge/LeRobotDataset-v2.1_%7C_v3.0-0A7BBC">
   <a href="https://arxiv.org/abs/2607.08283"><img alt="arXiv 2607.08283" src="https://img.shields.io/badge/arXiv-2607.08283-B31B1B?logo=arxiv&amp;logoColor=white"></a>
 </p>
 
 ![Galaxea A1 follower and modified SO-101 leader](assets/images/a1-teleoperation-setup.png)
 
-## What it does
+This repository is the composition root for the A1 system. It owns ROS,
+hardware access, safety, process lifecycle, synchronized collection, and policy
+deployment. Framework-neutral contracts and LeRobot hardware adapters are kept
+in independent packages.
 
-- **Teleoperate** a Galaxea A1 follower with a modified six-axis SO-101 leader
-  and continuous gripper control.
-- **Collect** synchronized joint, EEF, action, gripper, and paired-camera data
-  directly into atomically committed LeRobotDataset v3.0 datasets.
-- **Derive** EEF-action v3.0 or Joint/EEF v2.1 packages directly from the
-  canonical dataset without chaining final outputs.
-- **Migrate** existing raw-v3 experiments into model-agnostic Joint and EEF
-  LeRobotDataset v2.1 and v3.0 outputs without using Raw v3 for new recordings.
-- **Deploy** LingBot EEF and OpenPI pi0.5 EEF policies through
-  isolated trackers and a locked, validating command relay.
-- **Operate** collection, live evaluation, tracked batch plans, resets, and the
-  two camera views from one localhost-only black-and-white control panel whose
-  reusable core is isolated from A1-specific adapters.
-- **Run on modern Ubuntu hosts** with ROS Noetic and the A1 SDK isolated inside
-  a Focal-based Docker runtime—no native Ubuntu 20.04 or ROS installation
-  required.
+## Capabilities
 
-The current baseline is Python 3.12, ROS 1 Noetic, and LeRobot 0.6, with
-first-party direct LeRobotDataset v3.0 recording and legacy v2.1/v3.0 migration.
-Hardware, safety,
-collection, and deployment behavior is owned by strict tracked configuration
-rather than per-run overrides.
+- Teleoperate the A1 with a modified six-axis SO-101 leader and continuous
+  gripper control.
+- Record synchronized joint, EEF, action, gripper, and paired-camera samples
+  directly as an atomically committed LeRobotDataset v3.0 dataset.
+- Derive Joint or EEF LeRobotDataset v2.1 outputs, or an EEF v3.0 output,
+  directly from the canonical dataset.
+- Deploy LingBot EEF and OpenPI pi0.5 EEF policies through isolated trackers
+  and a fail-closed command relay.
+- Operate collection, evaluation, resets, cameras, and tracked batch plans from
+  a localhost control panel.
 
-The current host is Ubuntu 22.04; Ubuntu 24.04 is also suitable as a Docker
-host. Cameras, serial devices, and optional GPU acceleration remain host
-resources passed into the containerized ROS execution layer.
+## Supported baseline
+
+| Component | Baseline |
+| --- | --- |
+| Host application | Python 3.12 |
+| OpenPI backend | Python 3.11, isolated from the main environment |
+| Robot framework | LeRobot 0.6 |
+| ROS runtime | ROS 1 Noetic in an Ubuntu 20.04 container |
+| Canonical recording | LeRobotDataset v3.0 |
+| Training derivatives | Joint v2.1, EEF v2.1, or EEF v3.0 |
+
+Hardware, safety, camera, collection, and deployment behavior comes from
+strict tracked configuration, not per-run flags.
 
 ## Quick start
-
-Create the Python environment, build the ROS runtime image, and run the
-hardware-free validation suite:
 
 ```bash
 git submodule update --init --recursive
@@ -57,86 +57,68 @@ docker compose -f docker-compose.a1-noetic.yml build a1-noetic
 just check
 ```
 
-Continue with the [Runbook](docs/RUNBOOK.md) for hardware acceptance, reset,
-Teleop collection, conversion, recovery, and deployment. Every command that can
-move the robot is labeled there.
+`just check` is hardware-free. Before any command that can move the arm,
+follow the acceptance and workspace checks in the
+[Runbook](docs/RUNBOOK.md).
 
-## Hardware setup
+## Package boundaries
 
-The reference setup pairs a modified SO-101 leader with a Galaxea A1 follower.
-Its wrist view comes from an Intel RealSense D405 on a custom mount; collection
-also uses the configured external AgentView camera.
+| Repository | Responsibility |
+| --- | --- |
+| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Framework-neutral device capabilities, manifests, health, lifecycle, and local RPC |
+| [lerobot-robot-galaxea-a1](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1) | Auto-discovered LeRobot `Robot` client for the A1 Runtime |
+| [lerobot-teleoperator-galaxea-a1-so-leader](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader) | Auto-discovered LeRobot `Teleoperator` for the modified SO-101 leader |
+
+The Robot plugin communicates with this Runtime over a local Unix socket. It
+does not import the Runtime package or own ROS. The Teleoperator plugin owns
+only its serial bus and reports truthful leader units.
+
+Both plugins follow LeRobot's third-party discovery conventions. The A1 pair
+must still be composed by this Runtime: LeRobot 0.6's generic CLI selects
+identity processors, while this setup requires pair-specific degree-to-radian,
+relative-anchor, sign, scale, bias, limit, and gripper mapping.
+
+## Hardware
+
+The reference setup pairs a Galaxea A1 follower with a modified SO-101 leader.
+Collection uses an Intel RealSense D405 wrist camera and a configured AgentView
+camera.
 
 <p align="center">
   <img src="assets/images/a1-d405-wrist-camera.png" width="520" alt="Intel RealSense D405 wrist camera mounted on the Galaxea A1">
 </p>
 
-Mechanical files are kept with the hardware they describe:
-
-- [RealSense D405 wrist-camera holder](assets/cad/d405_wrist_camera_holder/README.md)
-  — STEP source for the mount shown above.
-- [Modified SO-101 leader parts](assets/cad/so100_leader/README.md) — printable
-  STL files used by the leader arm.
-
-## Research
-
-The Galaxea A1 platform behind this repository was used for the real-robot
-experiments reported in:
-
-> **[TFP: Temporally Conditioned Memory-Fusion Policies for Visuomotor Learning](https://arxiv.org/abs/2607.08283)**<br>
-> Yushen Liang, Yue Peng, Baosheng Jin, et al. · SemRob 2026 @ RSS 2026
+- [D405 wrist-camera holder](assets/cad/d405_wrist_camera_holder/README.md)
+- [Modified SO-101 leader parts](assets/cad/so100_leader/README.md)
 
 ## Repository map
 
 | Path | Purpose |
 | --- | --- |
-| `galaxea_a1_runtime/` | first-party runtime, hardware, collection, policy, and conversion logic |
-| `scripts/` | thin lifecycle and operator entrypoints |
-| `configs/` | tracked system, data, backend, model, and deployment contracts |
-| `docker/` | Ubuntu 20.04 / ROS Noetic execution environment |
-| `assets/` | setup images and versioned mechanical files |
-| `data/`, `outputs/`, `models/` | ignored local datasets, durable run results, and deployment weights |
-| `external/` | pinned `embodied-ops`, A1 Robot, and A1 SO-Leader plugin submodules plus ignored local model checkouts |
-| `third_party/` | pinned vendor snapshots; no A1-specific behavior |
-
-## Embodied SDK and LeRobot plugins
-
-The framework-neutral contracts and both hardware adapters are independently
-versioned public repositories:
-
-- [`embodied-ops`](https://github.com/pengyue-polaron/embodied-ops) defines
-  capability, manifest, health, lifecycle, and a versioned Protobuf/gRPC
-  protocol over Unix sockets.
-- [`lerobot-robot-galaxea-a1`](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1)
-  provides the auto-discovered `galaxea_a1` LeRobot Robot and its pair-specific
-  relative-anchor processor.
-- [`lerobot-teleoperator-galaxea-a1-so-leader`](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader)
-  provides the auto-discovered `galaxea_a1_so_leader` Teleoperator.
-
-This repository hosts the A1 embodied-ops service and is the sole ROS/hardware
-owner. The Robot plugin is only a Unix-socket client: it never imports this
-package or reads the System config. Opening a session never moves the arm. The
-first command stages the current named-joint hold and opens the locked relay only
-after fresh alignment. Observation sessions own subscribers only; the exclusive
-command lease separately owns staged-control publishers and can be released without
-disconnecting observers. Heartbeats cannot extend an idle command lease, while the
-relay independently retains its shorter freshness checks.
-
-The tracked Teleop application is the composition root for the modified
-six-axis leader/A1 pair. It constructs both LeRobot plugins, derives the
-relative-anchor processor from the strict Teleop and System configs, and runs
-the standard observation → teleoperator action → processor → Robot ordering.
-Generic LeRobot 0.6 CLI commands still install identity processors, so this
-pair must be started through the tracked A1 Teleop workflow.
+| `galaxea_a1_runtime/` | Runtime, hardware, collection, policy, and conversion modules |
+| `scripts/` | Thin application and lifecycle entrypoints |
+| `configs/` | System, data, backend, model, and deployment contracts |
+| `docker/` | ROS Noetic execution environment |
+| `external/` | Pinned SDK and LeRobot plugin submodules |
+| `third_party/` | Pinned vendor snapshots; no A1-specific behavior |
+| `assets/` | Setup images and mechanical files |
+| `data/`, `outputs/`, `models/` | Ignored datasets, run results, and model weights |
 
 ## Documentation
 
 | Document | Covers |
 | --- | --- |
-| [Runbook](docs/RUNBOOK.md) | operator commands, expected results, and recovery |
-| [Safety](docs/SAFETY.md) | live control paths, relay invariants, and direct debug |
-| [Architecture](docs/ARCHITECTURE.md) | layers, configuration ownership, data contracts, and artifact layout |
-| [Environment setup](docs/SETUP_ENV.md) | Python environment and dependency baseline |
-| [udev setup](docs/SETUP_UDEV.md) | persistent A1 serial permissions and device alias |
-| [Model registry](models/README.md) | immutable model artifacts and inference backends |
-| [Agent guide](AGENTS.md) | constraints for code-writing agents |
+| [Runbook](docs/RUNBOOK.md) | Setup, operation, expected results, and recovery |
+| [Safety](docs/SAFETY.md) | Control paths, relay invariants, and debug constraints |
+| [Architecture](docs/ARCHITECTURE.md) | Layers, ownership, data contracts, and artifact layout |
+| [Environment](docs/SETUP_ENV.md) | Python, LeRobot, ROS, and model environments |
+| [udev setup](docs/SETUP_UDEV.md) | Persistent A1 serial permissions and device alias |
+| [Model registry](models/README.md) | Model artifacts and inference backends |
+
+## Research
+
+The real-robot experiments in
+[TFP: Temporally Conditioned Memory-Fusion Policies for Visuomotor Learning](https://arxiv.org/abs/2607.08283)
+used this Galaxea A1 platform.
+
+Yushen Liang, Yue Peng, Baosheng Jin, et al. · SemRob 2026 @ RSS 2026
