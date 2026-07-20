@@ -5,9 +5,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/pengyue-polaron/galaxea-a1-runtime/actions/workflows/check.yml"><img alt="CI" src="https://github.com/pengyue-polaron/galaxea-a1-runtime/actions/workflows/check.yml/badge.svg?branch=main"></a>
-  <a href="https://pypi.org/project/galaxea-a1-runtime/"><img alt="PyPI" src="https://img.shields.io/pypi/v/galaxea-a1-runtime"></a>
-  <a href="https://pypi.org/project/galaxea-a1-runtime/"><img alt="Python" src="https://img.shields.io/pypi/pyversions/galaxea-a1-runtime"></a>
   <a href="https://huggingface.co/docs/lerobot/v0.6.0/en/integrate_hardware"><img alt="LeRobot 0.6" src="https://img.shields.io/badge/LeRobot-0.6-FFD21E"></a>
   <img alt="ROS 1 Noetic" src="https://img.shields.io/badge/ROS_1-Noetic-22314E?logo=ros&amp;logoColor=white">
   <img alt="LeRobotDataset v2.1 and v3.0" src="https://img.shields.io/badge/LeRobotDataset-v2.1_%7C_v3.0-0A7BBC">
