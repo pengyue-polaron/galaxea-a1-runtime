@@ -266,13 +266,7 @@ print_bridge_failure_log() {
 }
 
 doctor() {
-  local args=("$@")
-  PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
-    uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/a1_teleop_doctor.py" \
-      --config "${CONFIG_PATH}" \
-      "${args[@]}"
-  A1_TRACKER_NODE="${JOINT_TRACKER_NODE}" \
-    "${BASE_RUNTIME}" doctor "${args[@]}"
+  A1_TRACKER_NODE="${JOINT_TRACKER_NODE}" "${BASE_RUNTIME}" doctor "$@"
 }
 
 collect() {
@@ -287,36 +281,18 @@ collect() {
     a1_fail "Per-run collector args are disabled. Edit ${CONFIG_PATH} instead."
     exit 2
   fi
-  if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" - "${experiment}" <<'PY'
-import sys
-from galaxea_a1_runtime.collection import validate_experiment_name
-from galaxea_a1_runtime.console import failure
-
-try:
-    validate_experiment_name(sys.argv[1])
-except ValueError as exc:
-    failure(str(exc))
-    raise SystemExit(2)
-PY
-  then
-    exit 2
+  local preflight_args=(
+    --repo-root "${ROOT}"
+    --config "${CONFIG_PATH}"
+    --experiment "${experiment}"
+  )
+  if [[ -n "${COLLECTION_TASK}" ]]; then
+    preflight_args+=(--task "${COLLECTION_TASK}")
   fi
   if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
     -m galaxea_a1_runtime.apps.teleop.dataset_doctor \
-    --repo-root "${ROOT}" \
-    --config "${CONFIG_PATH}" \
-    --experiment "${experiment}" >/dev/null; then
+    "${preflight_args[@]}" >/dev/null; then
     exit 2
-  fi
-  if [[ -n "${COLLECTION_TASK}" ]]; then
-    if ! PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-      -m galaxea_a1_runtime.apps.teleop.collection_task \
-      --repo-root "${ROOT}" \
-      --config "${CONFIG_PATH}" \
-      --experiment "${experiment}" \
-      --task "${COLLECTION_TASK}" >/dev/null; then
-      exit 2
-    fi
   fi
   cleanup_collect() {
     a1_info "Stopping teleop runtime after collection."
@@ -447,7 +423,7 @@ case "${1:-help}" in
   collect   Start teleop, then run the interactive recorder
   reset     Reset A1 and SO leader using ${RESET_CONFIG_PATH}
   stop      Stop bridge and teleop containers
-  doctor    Static/import checks plus base runtime doctor
+  doctor    Run the base runtime doctor
   status    Containers and bridge process state
   logs      Runtime and bridge logs
 

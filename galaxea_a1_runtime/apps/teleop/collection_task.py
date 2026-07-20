@@ -5,8 +5,6 @@ from __future__ import annotations
 from pathlib import Path
 import json
 
-from galaxea_a1_runtime.collection import validate_experiment_name
-from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.lerobot.direct_recording import (
     PROVENANCE_PATH,
     normalize_dataset_task,
@@ -48,33 +46,3 @@ def prepare_collection_task(experiment_dir: Path, value: str) -> str:
             )
         return existing
     return task
-
-
-def main(argv: list[str] | None = None) -> int:
-    from galaxea_a1_runtime.apps.teleop.dataset_contract import (
-        direct_dataset_identity,
-    )
-    from galaxea_a1_runtime.teleop.config import load_teleop_config
-    from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
-
-    parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--repo-root", type=Path, required=True)
-    parser.add_argument("--config", type=Path, required=True)
-    parser.add_argument("--experiment", required=True)
-    parser.add_argument("--task", required=True)
-    args = parser.parse_args(argv)
-    root = args.repo_root.resolve()
-    config = load_teleop_config(args.config, repo_root=root)
-    experiment = validate_experiment_name(args.experiment)
-    identity = direct_dataset_identity(config, experiment)
-    task = prepare_collection_task(identity.target_root, args.task)
-    inspect_direct_dataset(
-        identity,
-        expected_task=task,
-    )
-    print(task)
-    return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())

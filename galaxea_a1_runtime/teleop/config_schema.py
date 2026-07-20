@@ -6,7 +6,29 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
-from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
+
+
+@dataclass(frozen=True)
+class JointMappingConfig:
+    scale: tuple[float, ...]
+    sign: tuple[float, ...]
+    bias_rad: tuple[float, ...]
+    lower_limits: tuple[float, ...]
+    upper_limits: tuple[float, ...]
+
+    def validate(self, dof: int) -> None:
+        for name, values in (
+            ("scale", self.scale),
+            ("sign", self.sign),
+            ("bias_rad", self.bias_rad),
+            ("lower_limits", self.lower_limits),
+            ("upper_limits", self.upper_limits),
+        ):
+            if len(values) != dof:
+                raise ValueError(f"{name} expects {dof} values, got {len(values)}")
+        for lo, hi in zip(self.lower_limits, self.upper_limits, strict=True):
+            if lo > hi:
+                raise ValueError(f"invalid joint limit: lower={lo} upper={hi}")
 
 
 @dataclass(frozen=True)

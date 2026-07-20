@@ -43,7 +43,6 @@ from galaxea_a1_runtime.collection import (
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
 from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
 from galaxea_a1_runtime.schema import ActionMode
-from galaxea_a1_runtime.collection import StateMode
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -61,7 +60,6 @@ def load_or_prompt_task(
 
 def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> int:
     experiment = validate_experiment_name(experiment)
-    state_mode = StateMode.EEF_JOINT
     front_crop = required_front_roi(config.system.cameras)
     identity = direct_dataset_identity(config, experiment)
     config_reference = tracked_config_reference(config, repo_root=ROOT_DIR)
@@ -78,9 +76,7 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(config)
     step("Waiting for ROS state")
-    ros_state.wait_ready(
-        state_mode=state_mode, timeout_s=config.collection.ready_timeout_s
-    )
+    ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
     success("ROS state ready.")
 
     episode_index = existing.total_episodes
@@ -92,7 +88,6 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         _print_collection_summary(
             experiment=experiment,
             task=task,
-            state_mode=state_mode,
             dataset_root=identity.target_root,
             repo_id=identity.repo_id,
             front_crop=front_crop,
@@ -141,7 +136,6 @@ def _print_collection_summary(
     *,
     experiment: str,
     task: str,
-    state_mode,
     dataset_root: Path,
     repo_id: str,
     front_crop,
@@ -150,9 +144,7 @@ def _print_collection_summary(
     print()
     info(f"Experiment: {experiment}")
     info(f"Task: {task}")
-    info(
-        f"Contract: state={state_mode.value}, action={ActionMode.JOINT_ABSOLUTE.value}"
-    )
+    info(f"Contract: state=eef_joint, action={ActionMode.JOINT_ABSOLUTE.value}")
     info(f"LeRobot repo ID: {repo_id}")
     info(f"Output: {dataset_root}")
     info(f"AgentView ROI: {'full frame' if front_crop is None else front_crop.xywh}")

@@ -23,6 +23,7 @@ from galaxea_a1_runtime.configuration.cli import run_config_renderer
 from galaxea_a1_runtime.configuration.paths import TELEOP_CONFIG
 from galaxea_a1_runtime.teleop.config_runtime import bash_config
 from galaxea_a1_runtime.teleop.config_schema import (
+    JointMappingConfig,
     TeleopBridgeConfig,
     TeleopCollectionConfig,
     TeleopConfig,
@@ -31,7 +32,6 @@ from galaxea_a1_runtime.teleop.config_schema import (
     TeleopRuntimeConfig,
     TeleopResetConfig,
 )
-from galaxea_a1_runtime.teleop.joint_mapping import JointMappingConfig
 
 DEFAULT_TELEOP_CONFIG = TELEOP_CONFIG
 RUNTIME_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")

@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+from galaxea_a1_runtime.apps.teleop.collection_task import prepare_collection_task
 from galaxea_a1_runtime.apps.teleop.dataset_contract import direct_dataset_identity
 from galaxea_a1_runtime.collection import validate_experiment_name
 from galaxea_a1_runtime.console import ArgumentParser
@@ -21,6 +22,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--repo-root", type=Path, required=True)
     parser.add_argument("--config", type=Path)
     parser.add_argument("--experiment", required=True)
+    parser.add_argument("--task")
     args = parser.parse_args(argv)
 
     root = args.repo_root.resolve()
@@ -29,7 +31,12 @@ def main(argv: list[str] | None = None) -> int:
     validate_collection_config(config)
     experiment = validate_experiment_name(args.experiment)
     identity = direct_dataset_identity(config, experiment)
-    state = inspect_direct_dataset(identity)
+    task = (
+        prepare_collection_task(identity.target_root, args.task)
+        if args.task is not None
+        else None
+    )
+    state = inspect_direct_dataset(identity, expected_task=task)
     print(
         json.dumps(
             {

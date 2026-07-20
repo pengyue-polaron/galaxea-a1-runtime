@@ -13,7 +13,6 @@ import rospy
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
-    StateMode,
     normalize_episode_decision,
 )
 from galaxea_a1_runtime.collection.lerobot_frame import build_lerobot_frame
@@ -73,7 +72,7 @@ class _FrameRecorder:
             )
         frameset = front_sample.value
         wrist_image = wrist_sample.value
-        state_sample = self.ros_state.state_sample(StateMode.EEF_JOINT)
+        state_sample = self.ros_state.state_sample()
         action = self.ros_state.action_values()
         if frameset is None or wrist_image is None:
             raise RuntimeError("camera reader returned an empty frame")

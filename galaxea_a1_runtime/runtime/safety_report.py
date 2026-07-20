@@ -265,7 +265,7 @@ def build_safety_settings(
                 f"[{system.gripper.stroke_min_mm:g}, "
                 f"{system.gripper.stroke_max_mm:g}]mm."
             ),
-            visibility="Teleop config doctor and collected run metadata expose both ranges.",
+            visibility="Teleop tracked config and collected run metadata expose both ranges.",
             operator_note=(
                 "Out-of-range leader feedback saturates only when the tracked "
                 "Teleop compatibility policy explicitly enables it."
