@@ -24,22 +24,16 @@ class OfflineCoverage:
 
 
 @dataclass(frozen=True)
-class OfflineTeacherForcing:
-    episode_index: int
-
-
-@dataclass(frozen=True)
 class OfflineEvalConfig:
     path: Path
     repo_root: Path
     dataset_root: Path
-    raw_root: Path
     dataset_repo_id: str
     lingbot_deployment: Path
     pi05_deployment: Path
     output_root: Path
     coverage: OfflineCoverage
-    teacher_forcing: OfflineTeacherForcing
+    teacher_forcing_episode_index: int
 
 
 def load_offline_eval_config(
@@ -57,7 +51,7 @@ def load_offline_eval_config(
     coverage = required_table(data, "coverage")
     teacher_forcing = required_table(data, "teacher_forcing")
     require_exact_keys(
-        dataset, required={"root", "raw_root", "repo_id"}, label="evaluation dataset"
+        dataset, required={"root", "repo_id"}, label="evaluation dataset"
     )
     require_exact_keys(
         deployments, required={"lingbot", "pi05"}, label="evaluation deployments"
@@ -99,11 +93,10 @@ def load_offline_eval_config(
         path=path,
         repo_root=root,
         dataset_root=repo_path(root, string(dataset, "root")),
-        raw_root=repo_path(root, string(dataset, "raw_root")),
         dataset_repo_id=string(dataset, "repo_id"),
         lingbot_deployment=repo_path(root, string(deployments, "lingbot")),
         pi05_deployment=repo_path(root, string(deployments, "pi05")),
         output_root=repo_path(root, string(output, "root")),
         coverage=selection,
-        teacher_forcing=OfflineTeacherForcing(episode_index=episode_index),
+        teacher_forcing_episode_index=episode_index,
     )

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -149,10 +150,8 @@ class RealSenseColorCamera:
             )
             self._warmup(warmup_frames, timeout_s=warmup_timeout_s)
         except BaseException:
-            try:
+            with suppress(Exception):
                 self.pipeline.stop()
-            except Exception:
-                pass
             raise
 
     def read_frameset(self) -> RealSenseFrameSet | None:

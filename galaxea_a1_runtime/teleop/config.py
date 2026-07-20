@@ -33,14 +33,13 @@ from galaxea_a1_runtime.teleop.config_schema import (
     TeleopResetConfig,
 )
 
-DEFAULT_TELEOP_CONFIG = TELEOP_CONFIG
 RUNTIME_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
 
 __all__ = ["bash_config", "load_teleop_config"]
 
 
 def default_config_path(repo_root: Path) -> Path:
-    return repo_root / DEFAULT_TELEOP_CONFIG
+    return repo_root / TELEOP_CONFIG
 
 
 def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopConfig:
@@ -225,7 +224,7 @@ def main(argv: list[str] | None = None) -> int:
     return run_config_renderer(
         argv,
         description="Read the tracked A1 teleoperation config.",
-        default_config=DEFAULT_TELEOP_CONFIG,
+        default_config=TELEOP_CONFIG,
         load_config=load_teleop_config,
         render_shell=bash_config,
     )

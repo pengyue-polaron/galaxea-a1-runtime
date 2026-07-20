@@ -47,7 +47,7 @@ REPORT_NAMES = {
 
 def evaluate_lingbot_teacher_forcing(config: OfflineEvalConfig, run_id: str) -> Path:
     dataset = EefDataset(config)
-    episode = dataset.episode(config.teacher_forcing.episode_index)
+    episode = dataset.episode(config.teacher_forcing_episode_index)
     deployment = load_lingbot_config(
         config.lingbot_deployment, repo_root=config.repo_root
     )
@@ -217,7 +217,7 @@ def evaluate_lingbot_teacher_forcing(config: OfflineEvalConfig, run_id: str) -> 
 
 def evaluate_pi05_teacher_forcing(config: OfflineEvalConfig, run_id: str) -> Path:
     dataset = EefDataset(config)
-    episode = dataset.episode(config.teacher_forcing.episode_index)
+    episode = dataset.episode(config.teacher_forcing_episode_index)
     deployment = load_pi05_config(config.pi05_deployment, repo_root=config.repo_root)
     images = dataset.frames(episode.episode_index, list(range(episode.length)))
     report = _base_report(

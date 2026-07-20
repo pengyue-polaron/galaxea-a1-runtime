@@ -34,10 +34,8 @@ class _StreamState:
     jpeg: bytes | None = None
     encoded_seq: int = -1
     source_monotonic_s: float | None = None
-    encoded_monotonic_s: float | None = None
     encode_times: deque[float] = field(default_factory=lambda: deque(maxlen=30))
     last_error: str | None = None
-    error_monotonic_s: float | None = None
 
 
 class CameraWebPreview:
@@ -182,10 +180,8 @@ class CameraWebPreview:
                         state.source_monotonic_s = source_time
                         state.jpeg = jpeg
                         state.encoded_seq += 1
-                        state.encoded_monotonic_s = now
                         state.encode_times.append(now)
                         state.last_error = None
-                        state.error_monotonic_s = None
                     self._condition.notify_all()
             remaining = interval - (time.perf_counter() - started)
             self._stop.wait(max(0.001, remaining))
@@ -198,7 +194,6 @@ class CameraWebPreview:
             if source_seq is not None:
                 state.last_source_seq = source_seq
             state.last_error = f"{type(error).__name__}: {error}"
-            state.error_monotonic_s = time.perf_counter()
             self._condition.notify_all()
 
     def _handler_type(self) -> type[BaseHTTPRequestHandler]:

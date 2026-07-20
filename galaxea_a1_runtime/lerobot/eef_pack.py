@@ -11,7 +11,6 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.collection.schema import TELEOP_RAW_SCHEMA_VERSION
 from galaxea_a1_runtime.kinematics import (
     SerialChainFK,
     compose_relative_pose,
@@ -19,11 +18,11 @@ from galaxea_a1_runtime.kinematics import (
 )
 from galaxea_a1_runtime.filesystem import (
     atomic_output_directory,
+    file_sha256,
 )
 from galaxea_a1_runtime.lerobot.dataset_package import (
     copy_dataset_tree,
     dataset_digest,
-    file_sha256,
     namespace_source_provenance,
     portable_metadata_id,
     read_json,
@@ -33,18 +32,12 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_tar_archive,
 )
 from galaxea_a1_runtime.schema import (
-    CANONICAL_STATE_NAMES,
+    A1_STATE_NAMES,
     DEFAULT_RGB_IMAGE_KEYS,
-    LEGACY_RAW_ACTION_NAMES,
-    LEGACY_RAW_STATE_NAMES,
+    DIRECT_DATASET_SCHEMA_VERSION,
     EEF_ACTION_NAMES,
-    EEF_DATASET_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
 )
-
-SOURCE_ACTION_NAMES = LEGACY_RAW_ACTION_NAMES
-SOURCE_STATE_NAMES = LEGACY_RAW_STATE_NAMES
-TARGET_STATE_NAMES = EEF_DATASET_STATE_NAMES
 
 
 @dataclass
@@ -69,7 +62,6 @@ def pack_eef_v3_dataset(
     base_link: str,
     tip_link: str,
     source_dataset: str,
-    source_format: str = TELEOP_RAW_SCHEMA_VERSION,
     overwrite: bool = False,
     archive_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -88,7 +80,6 @@ def pack_eef_v3_dataset(
             base_link=base_link,
             tip_link=tip_link,
             source_dataset=source_dataset,
-            source_format=source_format,
             archive_path=archive_path,
         )
 
@@ -105,7 +96,6 @@ def _build_eef_v3_dataset(
     base_link: str,
     tip_link: str,
     source_dataset: str,
-    source_format: str,
     archive_path: Path | None,
 ) -> dict[str, Any]:
     source_root = source_root.expanduser().resolve()
@@ -181,9 +171,7 @@ def _build_eef_v3_dataset(
         "representation": "eef",
         "repo_id": repo_id,
         "source_dataset": source_dataset,
-        "source_format": portable_metadata_id(
-            source_format, label="source dataset format"
-        ),
+        "source_format": DIRECT_DATASET_SCHEMA_VERSION,
         "intermediate_v3_data_sha256": converted.source_data_sha256,
         "episodes": int(info["total_episodes"]),
         "frames": int(info["total_frames"]),
@@ -370,15 +358,9 @@ def _validate_source(info: dict[str, Any]) -> None:
     if info.get("codebase_version") != "v3.0":
         raise ValueError("source must be a LeRobot v3.0 dataset")
     features = info.get("features", {})
-    if features.get("action", {}).get("names") not in (
-        list(SOURCE_ACTION_NAMES),
-        list(JOINT_ACTION_NAMES_RAD),
-    ):
+    if features.get("action", {}).get("names") != list(JOINT_ACTION_NAMES_RAD):
         raise ValueError("source action must be A1 joint_absolute + normalized gripper")
-    if features.get("observation.state", {}).get("names") not in (
-        list(SOURCE_STATE_NAMES),
-        list(CANONICAL_STATE_NAMES),
-    ):
+    if features.get("observation.state", {}).get("names") != list(A1_STATE_NAMES):
         raise ValueError(
             "source observation.state does not contain the expected A1 EEF and joints"
         )
@@ -395,7 +377,6 @@ def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
         "shape": [len(EEF_ACTION_NAMES)],
         "names": list(EEF_ACTION_NAMES),
     }
-    info["features"]["observation.state"]["names"] = list(TARGET_STATE_NAMES)
     write_json(target_root / "meta/info.json", info)
 
 

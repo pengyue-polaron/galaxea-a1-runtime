@@ -12,7 +12,7 @@ from galaxea_a1_runtime.apps.pi05.protocol import (
     validate_server_metadata,
 )
 from galaxea_a1_runtime.apps.pi05.verify import validate_training_summary
-from galaxea_a1_runtime.schema import EEF_DATASET_STATE_NAMES
+from galaxea_a1_runtime.schema import A1_STATE_NAMES
 
 
 REPO = Path(__file__).resolve().parents[1]
@@ -99,7 +99,7 @@ def test_pi05_protocol_exhaustively_identifies_model_and_io_contract():
     assert metadata["task_catalog"] == config.task_catalog.protocol_contract()
     assert metadata["camera_shapes"] == [[480, 480, 3], [480, 640, 3]]
     assert metadata["state_shape"] == [14]
-    assert metadata["state_names"] == list(EEF_DATASET_STATE_NAMES)
+    assert metadata["state_names"] == list(A1_STATE_NAMES)
     assert metadata["action_shape"] == [10, 8]
     assert metadata["pose_mode"] == "episode-relative"
     assert len(metadata["contract_sha256"]) == 64

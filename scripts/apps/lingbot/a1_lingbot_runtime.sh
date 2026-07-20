@@ -93,7 +93,6 @@ SELECTED_TASK_ID=""
 SCENE_NOTE=""
 RESET_BEFORE_RUN_PATH=""
 BATCH_ID=""
-BATCH_CONFIG_PATH=""
 BATCH_RESET_POSE=""
 BATCH_RETRIES_PER_PROMPT=0
 BATCH_ATTEMPTS_PER_PROMPT=1
@@ -106,7 +105,6 @@ BATCH_SEQUENCE=""
 BATCH_COMPLETED_SEQUENCES_CSV=""
 BATCH_COMPLETED_COUNT=0
 BATCH_PENDING_COUNT=0
-BATCH_LEGACY_SAFETY_STOP_COUNT=0
 
 config_args=(--repo-root "${ROOT}" --shell)
 if [[ -n "${MODEL_SELECTOR}" ]]; then
@@ -138,7 +136,6 @@ MODEL_PROCESS_NAME="lingbot-policy-server"
 MODEL_LOG="${MODEL_SAVE_ROOT}/policy_server.log"
 PIPELINE_CLEANED_UP=false
 RUN_ID=""
-RUN_FINAL_DIR=""
 RUN_LOG_STAGING_DIR=""
 RUN_RUNTIME_RAW_LOG=""
 RUN_POLICY_LOG=""
@@ -636,9 +633,6 @@ run_batch() {
   if [[ "${resume}" == "true" ]]; then
     load_batch_progress "${batch_config}"
     a1_info "Resume found ${BATCH_COMPLETED_COUNT}/${BATCH_TOTAL_ATTEMPTS} completed slots for scene note ${SCENE_NOTE}; pending=${BATCH_PENDING_COUNT}."
-    if (( BATCH_LEGACY_SAFETY_STOP_COUNT > 0 )); then
-      a1_info "Resume recognized ${BATCH_LEGACY_SAFETY_STOP_COUNT} earlier target safety stop(s) from legacy logs."
-    fi
   fi
 
   local task_ids=()

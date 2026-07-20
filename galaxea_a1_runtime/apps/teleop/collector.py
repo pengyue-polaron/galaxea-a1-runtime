@@ -42,7 +42,6 @@ from galaxea_a1_runtime.collection import (
 )
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
 from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
-from galaxea_a1_runtime.schema import ActionMode
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -144,7 +143,7 @@ def _print_collection_summary(
     print()
     info(f"Experiment: {experiment}")
     info(f"Task: {task}")
-    info(f"Contract: state=eef_joint, action={ActionMode.JOINT_ABSOLUTE.value}")
+    info("Contract: canonical A1 state and absolute joint action")
     info(f"LeRobot repo ID: {repo_id}")
     info(f"Output: {dataset_root}")
     info(f"AgentView ROI: {'full frame' if front_crop is None else front_crop.xywh}")

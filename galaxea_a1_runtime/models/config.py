@@ -10,6 +10,9 @@ from pathlib import Path, PurePosixPath
 from typing import Literal
 
 from galaxea_a1_runtime.configuration.base import (
+    absolute_path,
+    hex_digest,
+    identifier,
     integer,
     load_toml,
     require_exact_keys,
@@ -101,8 +104,8 @@ def load_model_config(
     if integer(model, "schema_version") != 1:
         raise ValueError("model.schema_version must be 1")
     model_id = _model_id(string(model, "id"))
-    backend = _identifier(string(model, "backend"), label="model.backend")
-    artifact_format = _identifier(
+    backend = identifier(string(model, "backend"), label="model.backend")
+    artifact_format = identifier(
         string(model, "artifact_format"), label="model.artifact_format"
     )
     checkpoint_step = integer(model, "checkpoint_step")
@@ -114,10 +117,10 @@ def load_model_config(
         not part or part in {".", ".."} for part in repo_id.split("/")
     ):
         raise ValueError("source.repo_id must be a namespace/name Hugging Face id")
-    revision = _hex_digest(string(source, "revision"), 40, label="source.revision")
+    revision = hex_digest(string(source, "revision"), 40, label="source.revision")
     revision_label = string(source, "revision_label")
-    manifest_path = _repo_path(repo_root, string(model, "manifest"))
-    contract = _repo_path(repo_root, string(model, "contract"))
+    manifest_path = absolute_path(repo_root, string(model, "manifest"))
+    contract = absolute_path(repo_root, string(model, "contract"))
     if not contract.is_file():
         raise FileNotFoundError(f"model contract is missing: {contract}")
     manifest = load_model_manifest(
@@ -197,7 +200,7 @@ def load_model_manifest(
             ModelFile(
                 path=relative,
                 size=size,
-                sha256=_hex_digest(
+                sha256=hex_digest(
                     digest, 64, label=f"manifest SHA256 for {relative_text}"
                 ),
             )
@@ -214,13 +217,6 @@ def load_model_manifest(
         files=tuple(files),
         sha256=hashlib.sha256(canonical).hexdigest(),
     )
-
-
-def _repo_path(repo_root: Path, value: str) -> Path:
-    path = Path(value).expanduser()
-    if not path.is_absolute():
-        path = repo_root / path
-    return Path(os.path.abspath(path))
 
 
 def _relative_artifact_path(value: object) -> PurePosixPath:
@@ -247,12 +243,6 @@ def _model_id(value: str) -> str:
     return value
 
 
-def _identifier(value: str, *, label: str) -> str:
-    if not _valid_identifier(value):
-        raise ValueError(f"{label} contains unsupported characters: {value!r}")
-    return value
-
-
 def _valid_identifier(value: str) -> bool:
     return bool(value) and all(
         character.isalnum() or character in {"-", "_", "."} for character in value
@@ -262,12 +252,4 @@ def _valid_identifier(value: str) -> bool:
 def _provider(value: str) -> ProviderKind:
     if value != "huggingface":
         raise ValueError(f"unsupported model source provider: {value!r}")
-    return value
-
-
-def _hex_digest(value: str, length: int, *, label: str) -> str:
-    if len(value) != length or any(
-        character not in "0123456789abcdef" for character in value
-    ):
-        raise ValueError(f"{label} must be a {length}-character lowercase hex digest")
     return value

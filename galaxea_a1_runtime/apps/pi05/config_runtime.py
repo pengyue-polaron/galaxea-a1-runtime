@@ -12,8 +12,6 @@ def bash_config(config: Pi05Config) -> str:
         config.system,
         (
             "SYSTEM_CONFIG_PATH",
-            "WRIST_BACKEND",
-            "WRIST_CAMERA",
             "TMUX_STARTUP_GRACE_S",
         ),
     )
@@ -23,11 +21,9 @@ def bash_config(config: Pi05Config) -> str:
         ("MODEL_SESSION", config.session.model_tmux),
         ("MODEL_CHECKOUT", str(config.backend.source.checkout)),
         ("MODEL_PYTHON", str(config.backend.environment.python)),
-        ("MODEL_ROOT", str(config.model.artifact_root)),
         ("TASK_CATALOG_PATH", str(config.task_catalog.path)),
         ("MODEL_HOST", config.server.host),
         ("MODEL_PORT", str(config.server.port)),
-        ("MODEL_CONNECT_TIMEOUT", number(config.server.connect_timeout_s)),
         ("MODEL_STARTUP_TIMEOUT", number(config.session.startup_timeout_s)),
         ("DEPLOYMENT_READY", "1" if config.deployment_ready else "0"),
     )

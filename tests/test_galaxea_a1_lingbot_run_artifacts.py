@@ -231,31 +231,12 @@ def test_workspace_rejection_can_be_discarded_for_retry(tmp_path: Path):
     )
 
 
-def test_legacy_target_rejection_accepts_an_operator_decision(tmp_path: Path):
-    paths = _prepare(tmp_path, "20260718_010203_000006_red_mango_bowl")
-    paths.raw_runtime_log.write_text(
-        "ValueError: EEF policy action is outside the configured workspace on x\n"
-    )
-    final_dir = finalize_lingbot_run(tmp_path, paths.run_id, exit_code=1)
-
-    record_lingbot_evaluation_decision(
-        tmp_path,
-        paths.run_id,
-        decision="discarded",
-    )
-
-    metadata = json.loads((final_dir / "metadata.json").read_text())
-    assert metadata["run"]["status"] == "failed"
-    assert metadata["run"]["evaluation"]["decision"] == "discarded"
-
-
 def test_prepared_run_shell_values_share_one_run_identity(tmp_path: Path):
     paths = _prepare(tmp_path, "20260718_010203_000002_red_mango_bowl")
 
     rendered = paths.shell()
 
     assert f"RUN_ID={paths.run_id}" in rendered
-    assert f"RUN_FINAL_DIR={paths.final_dir}" in rendered
     assert f"RUN_RUNTIME_RAW_LOG={paths.raw_runtime_log}" in rendered
     assert f"RUN_POLICY_LOG={paths.policy_server_log}" in rendered
     assert "RUN_VIDEO_FILENAME=" in rendered

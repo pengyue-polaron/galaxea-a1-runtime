@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path, PurePosixPath
-from typing import Any
 
 from galaxea_a1_runtime.apps.pi05.config_schema import (
     Pi05Config,
@@ -19,11 +18,11 @@ from galaxea_a1_runtime.apps.pi05.config_schema import (
 from galaxea_a1_runtime.configuration.base import (
     boolean,
     floating,
+    identifier,
     integer,
     load_toml,
     referenced_config,
     require_exact_keys,
-    repo_path,
     required_table,
     string,
 )
@@ -32,14 +31,11 @@ from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.configuration.tasks import load_task_catalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config
-from galaxea_a1_runtime.schema import EEF_ACTION_NAMES, EEF_DATASET_STATE_NAMES
-
-
-DEFAULT_PI05_CONFIG = PI05_CONFIG
+from galaxea_a1_runtime.schema import A1_STATE_NAMES, EEF_ACTION_NAMES
 
 
 def default_config_path(repo_root: Path) -> Path:
-    return repo_root / DEFAULT_PI05_CONFIG
+    return repo_root / PI05_CONFIG
 
 
 def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config:
@@ -61,10 +57,10 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     )
     system = load_system_config(referenced_config(data, repo_root), repo_root=repo_root)
     backend, engine = _load_backend(
-        _config_reference(data, "backend", repo_root), repo_root
+        referenced_config(data, repo_root, key="backend"), repo_root
     )
     model = load_model_config(
-        _config_reference(data, "model", repo_root), repo_root=repo_root
+        referenced_config(data, repo_root, key="model"), repo_root=repo_root
     )
     if backend.adapter != "openpi_pi05" or model.backend != backend.backend_id:
         raise ValueError(
@@ -76,7 +72,7 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
         raise ValueError("pi0.5 model artifact_format must be 'orbax-ocdbt'")
     model_contract = _load_model_contract(model)
     task_catalog = load_task_catalog(
-        _config_reference(data, "tasks", repo_root), repo_root=repo_root
+        referenced_config(data, repo_root, key="tasks"), repo_root=repo_root
     )
 
     deployment = required_table(data, "deployment")
@@ -114,7 +110,7 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     )
     config = Pi05Config(
         path=path,
-        deployment_id=_safe_id(string(deployment, "id"), label="deployment.id"),
+        deployment_id=identifier(string(deployment, "id"), label="deployment.id"),
         deployment_ready=boolean(deployment, "ready"),
         system=system,
         backend=backend,
@@ -243,7 +239,7 @@ def validate_pi05_config(config: Pi05Config) -> None:
         raise ValueError("pi0.5 checkpoint format does not match the model descriptor")
     if contract.parameter_set != "ema_params":
         raise ValueError("pi0.5 deployment accepts only the published EMA parameters")
-    if contract.state_dim != len(EEF_DATASET_STATE_NAMES):
+    if contract.state_dim != len(A1_STATE_NAMES):
         raise ValueError(
             "pi0.5 state_dim does not match the shared A1 EEF state schema"
         )
@@ -280,12 +276,6 @@ def validate_pi05_config(config: Pi05Config) -> None:
         raise ValueError("pi0.5 front camera must use the RealSense backend")
 
 
-def _config_reference(data: dict[str, Any], key: str, repo_root: Path) -> Path:
-    table = required_table(data, key)
-    require_exact_keys(table, required={"config"}, label=f"{key} reference")
-    return repo_path(repo_root, string(table, "config"))
-
-
 def _artifact_relative_path(value: str) -> PurePosixPath:
     path = PurePosixPath(value)
     if (
@@ -303,14 +293,6 @@ def _pose_mode(value: str) -> PoseMode:
     return value
 
 
-def _safe_id(value: str, *, label: str) -> str:
-    if not value or any(
-        not (character.isalnum() or character in {"-", "_", "."}) for character in value
-    ):
-        raise ValueError(f"{label} contains unsupported characters: {value!r}")
-    return value
-
-
 def main(argv: list[str] | None = None) -> int:
     from galaxea_a1_runtime.configuration.cli import run_config_renderer
     from galaxea_a1_runtime.apps.pi05.config_runtime import bash_config
@@ -318,7 +300,7 @@ def main(argv: list[str] | None = None) -> int:
     return run_config_renderer(
         argv,
         description="Read the composed A1 pi0.5 deployment config.",
-        default_config=DEFAULT_PI05_CONFIG,
+        default_config=PI05_CONFIG,
         load_config=load_pi05_config,
         render_shell=bash_config,
     )

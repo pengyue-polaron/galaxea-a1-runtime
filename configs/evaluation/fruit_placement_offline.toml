@@ -1,6 +1,5 @@
 [dataset]
 root = "data/processed/fruit_placement_eef_v21"
-raw_root = "data/raw"
 repo_id = "pengyue-polaron/nyush-galaxea-a1-fruit-placement-eef-v21"
 
 [deployments]

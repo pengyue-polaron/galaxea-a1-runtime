@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
-import json
 from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.lerobot.dataset import LEROBOT_GENERATED_FEATURES
+from galaxea_a1_runtime.lerobot.dataset_package import (
+    non_negative_json_int,
+    read_json,
+)
 
 
 def validate_lerobot_v3_payloads(
@@ -23,7 +26,7 @@ def validate_lerobot_v3_payloads(
     import pandas as pd
     import pyarrow.parquet as parquet
 
-    stats = _read_json(root / "meta/stats.json", label="LeRobot stats")
+    stats = read_json(root / "meta/stats.json", label="LeRobot stats")
     if "action" not in stats or "observation.state" not in stats:
         raise ValueError("LeRobot stats are missing canonical vector features")
 
@@ -35,7 +38,7 @@ def validate_lerobot_v3_payloads(
     if list(tasks.columns) != ["task_index"]:
         raise ValueError("LeRobot tasks must contain exactly the task_index column")
     task_records = {int(row["task_index"]): str(task) for task, row in tasks.iterrows()}
-    total_tasks = _non_negative_json_int(info, "total_tasks")
+    total_tasks = non_negative_json_int(info, "total_tasks")
     if total_tasks != 1 or task_records != {0: expected_task}:
         raise ValueError(
             "direct dataset must contain exactly its canonical collection task"
@@ -218,20 +221,3 @@ def _positive_int(value: Any, *, label: str) -> int:
     if result <= 0:
         raise ValueError(f"{label} must be positive")
     return result
-
-
-def _read_json(path: Path, *, label: str) -> dict[str, Any]:
-    try:
-        value = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError(f"cannot read {label}: {path}: {exc}") from exc
-    if not isinstance(value, dict):
-        raise ValueError(f"{label} must be a JSON object: {path}")
-    return value
-
-
-def _non_negative_json_int(data: dict[str, Any], key: str) -> int:
-    value = data.get(key)
-    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
-        raise ValueError(f"{key} must be a non-negative integer")
-    return value

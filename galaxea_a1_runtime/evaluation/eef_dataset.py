@@ -12,7 +12,7 @@ from galaxea_a1_runtime.evaluation.io import read_json_object, read_jsonl_object
 from galaxea_a1_runtime.evaluation.metrics import summary, vector_stats
 from galaxea_a1_runtime.evaluation.offline_config import OfflineEvalConfig
 from galaxea_a1_runtime.evaluation.types import EpisodeRecord
-from galaxea_a1_runtime.schema import EEF_ACTION_NAMES, EEF_DATASET_STATE_NAMES
+from galaxea_a1_runtime.schema import A1_STATE_NAMES, EEF_ACTION_NAMES
 
 
 class EefDataset:
@@ -21,7 +21,6 @@ class EefDataset:
         self.root = config.dataset_root
         self.info = read_json_object(self.root / "meta/info.json")
         self.eef = read_json_object(self.root / "meta/eef.json")
-        self.trim = read_json_object(self.root / "meta/trim.json")
         self.tasks = {
             int(item["task_index"]): str(item["task"])
             for item in read_jsonl_objects(self.root / "meta/tasks.jsonl")
@@ -49,9 +48,7 @@ class EefDataset:
                 f"offline dataset repo mismatch: {self.eef.get('repo_id')!r}"
             )
         features = self.info.get("features", {})
-        if features.get("observation.state", {}).get("names") != list(
-            EEF_DATASET_STATE_NAMES
-        ):
+        if features.get("observation.state", {}).get("names") != list(A1_STATE_NAMES):
             raise ValueError("offline dataset state names do not match the A1 contract")
         if features.get("action", {}).get("names") != list(EEF_ACTION_NAMES):
             raise ValueError(
@@ -61,8 +58,6 @@ class EefDataset:
             "EEF target relative to episode initial feedback pose"
         ):
             raise ValueError("offline dataset is not episode-relative EEF")
-        if len(self.trim.get("episodes", [])) != len(self.episode_meta):
-            raise ValueError("trim metadata does not cover every episode")
 
     def episode(self, episode_index: int) -> EpisodeRecord:
         cached = self._episodes.get(episode_index)
@@ -90,7 +85,7 @@ class EefDataset:
         task_id = int(task_ids[0])
         expected_length = int(self.episode_meta[episode_index]["length"])
         if (
-            states.shape != (expected_length, len(EEF_DATASET_STATE_NAMES))
+            states.shape != (expected_length, len(A1_STATE_NAMES))
             or actions.shape != (expected_length, len(EEF_ACTION_NAMES))
             or not np.isfinite(states).all()
             or not np.isfinite(actions).all()
@@ -167,12 +162,6 @@ class EefDataset:
             ],
             "state_stats": vector_stats(states),
             "action_stats": vector_stats(actions),
-            "trimmed_frames": int(
-                sum(
-                    int(item["original_frames"]) - int(item["kept_frames"])
-                    for item in self.trim["episodes"]
-                )
-            ),
         }
 
     def episodes_by_task(self) -> dict[int, list[int]]:
@@ -198,37 +187,6 @@ class EefDataset:
         return {
             index: {key: decoded[key][index] for key in camera_keys} for index in unique
         }
-
-    def color_alignment_check(self, episode_index: int) -> dict[str, Any]:
-        processed = self.frames(episode_index, [0])[0]
-        trim = self.trim["episodes"][episode_index]
-        raw_episode = self.config.raw_root / str(trim["episode"])
-        raw_frame = int(trim["start"])
-        camera_dirs = {
-            "observation.images.front": "cam0",
-            "observation.images.wrist": "cam1",
-        }
-        import cv2
-
-        checks: dict[str, Any] = {}
-        for key, directory in camera_dirs.items():
-            raw_path = raw_episode / directory / f"{raw_frame:06d}.jpg"
-            raw_bgr = cv2.imread(str(raw_path))
-            if raw_bgr is None:
-                raise FileNotFoundError(raw_path)
-            actual = processed[key].astype(np.float32)
-            rgb_mae = float(
-                np.mean(np.abs(actual - raw_bgr[..., ::-1].astype(np.float32)))
-            )
-            swapped_mae = float(np.mean(np.abs(actual - raw_bgr.astype(np.float32))))
-            if rgb_mae >= swapped_mae:
-                raise ValueError(f"processed video appears BGR-swapped for {key}")
-            checks[key] = {
-                "raw_frame": raw_frame,
-                "rgb_alignment_mae": rgb_mae,
-                "bgr_swapped_mae": swapped_mae,
-            }
-        return checks
 
     def _data_path(self, episode_index: int) -> Path:
         return self.root / str(self.info["data_path"]).format(

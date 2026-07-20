@@ -8,7 +8,7 @@ import sys
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.system import (
-    DEFAULT_SYSTEM_CONFIG,
+    SYSTEM_CONFIG,
     load_system_config,
 )
 from galaxea_a1_runtime.console import ArgumentParser
@@ -29,9 +29,7 @@ def main():
     parser = ArgumentParser(description=__doc__)
     parser.add_argument("--json", action="store_true")
     parser.add_argument("--require-execution", action="store_true")
-    parser.add_argument(
-        "--system-config", type=Path, default=ROOT / DEFAULT_SYSTEM_CONFIG
-    )
+    parser.add_argument("--system-config", type=Path, default=ROOT / SYSTEM_CONFIG)
     parser.add_argument("--tracker-node", default=EE_TRACKER_NODE)
     args = parser.parse_args()
     system = load_system_config(args.system_config, repo_root=ROOT)

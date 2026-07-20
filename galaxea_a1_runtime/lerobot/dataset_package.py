@@ -16,6 +16,7 @@ import pandas as pd
 from galaxea_a1_runtime.filesystem import (
     atomic_output_file,
     atomic_write_text,
+    file_sha256,
 )
 
 
@@ -109,8 +110,21 @@ def rewrite_episode_vector_stats(
         episodes.to_parquet(path, index=False)
 
 
-def read_json(path: Path) -> dict[str, Any]:
-    return json.loads(path.read_text(encoding="utf-8"))
+def read_json(path: Path, *, label: str = "JSON document") -> dict[str, Any]:
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError(f"cannot read {label}: {path}: {exc}") from exc
+    if not isinstance(value, dict):
+        raise ValueError(f"{label} must be a JSON object: {path}")
+    return value
+
+
+def non_negative_json_int(data: dict[str, Any], key: str) -> int:
+    value = data.get(key)
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ValueError(f"{key} must be a non-negative integer")
+    return value
 
 
 def write_json(path: Path, value: dict[str, Any]) -> None:
@@ -137,14 +151,6 @@ def json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [json_value(item) for item in value]
     return value
-
-
-def file_sha256(path: Path) -> str:
-    digest = hashlib.sha256()
-    with path.open("rb") as handle:
-        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-            digest.update(chunk)
-    return digest.hexdigest()
 
 
 def dataset_digest(root: Path, *, exclude: set[Path] | None = None) -> str:

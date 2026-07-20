@@ -10,7 +10,7 @@ from galaxea_a1_runtime.inference.protocol import (
     add_contract_digest,
     validate_exact_metadata,
 )
-from galaxea_a1_runtime.schema import EEF_ACTION_NAMES, EEF_DATASET_STATE_NAMES
+from galaxea_a1_runtime.schema import A1_STATE_NAMES, EEF_ACTION_NAMES
 
 
 PROTOCOL_VERSION = "galaxea_a1_openpi_pi05_eef_v3"
@@ -52,7 +52,7 @@ def server_metadata(config: Pi05Config) -> dict[str, Any]:
                 [wrist.height, wrist.width, 3],
             ],
             "policy_image_shape": [224, 224, 3],
-            "state_names": list(EEF_DATASET_STATE_NAMES),
+            "state_names": list(A1_STATE_NAMES),
             "action_names": list(EEF_ACTION_NAMES),
             "state_shape": [contract.state_dim],
             "action_shape": [contract.action_horizon, contract.source_action_dim],

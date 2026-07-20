@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from galaxea_a1_runtime.configuration.system import (  # noqa: E402
-    DEFAULT_SYSTEM_CONFIG,
+    SYSTEM_CONFIG,
     load_system_config,
 )
 from galaxea_a1_runtime.console import ArgumentParser, success  # noqa: E402
@@ -20,7 +20,7 @@ from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python  # noqa: E
 
 def main() -> int:
     parser = ArgumentParser(description=__doc__)
-    parser.add_argument("--config", type=Path, default=ROOT / DEFAULT_SYSTEM_CONFIG)
+    parser.add_argument("--config", type=Path, default=ROOT / SYSTEM_CONFIG)
     args = parser.parse_args()
     system = load_system_config(args.config, repo_root=ROOT)
 

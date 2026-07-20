@@ -12,7 +12,6 @@ from galaxea_a1_runtime.apps.lingbot.batch_config import (
     load_lingbot_batch_config,
 )
 from galaxea_a1_runtime.apps.lingbot.operator_input import validate_scene_note
-from galaxea_a1_runtime.apps.lingbot.run_artifacts import legacy_target_rejection
 from galaxea_a1_runtime.configuration.base import shell_assign
 from galaxea_a1_runtime.console import ArgumentParser
 
@@ -29,7 +28,6 @@ class LingBotValidBatchRun:
     run_dir: Path
     status: str
     evaluation_decision: str
-    legacy_safety_stop: bool
 
 
 @dataclass(frozen=True)
@@ -40,12 +38,6 @@ class LingBotBatchProgress:
     @property
     def completed_sequences(self) -> tuple[int, ...]:
         return tuple(sorted({run.sequence for run in self.valid_runs}))
-
-    @property
-    def legacy_safety_stop_sequences(self) -> tuple[int, ...]:
-        return tuple(
-            sorted({run.sequence for run in self.valid_runs if run.legacy_safety_stop})
-        )
 
     @property
     def duplicate_sequences(self) -> tuple[int, ...]:
@@ -72,10 +64,6 @@ class LingBotBatchProgress:
             ),
             ("BATCH_COMPLETED_COUNT", str(self.completed_count)),
             ("BATCH_PENDING_COUNT", str(self.pending_count)),
-            (
-                "BATCH_LEGACY_SAFETY_STOP_COUNT",
-                str(len(self.legacy_safety_stop_sequences)),
-            ),
         )
         return "\n".join(shell_assign(name, value) for name, value in values)
 
@@ -180,10 +168,8 @@ def _classify_run(
             run_dir=run_dir,
             status=status,
             evaluation_decision="completed",
-            legacy_safety_stop=False,
         )
-    is_legacy = status == "failed" and legacy_target_rejection(run_dir)
-    if status != "safety_stopped" and not is_legacy:
+    if status != "safety_stopped":
         return None
     evaluation = run.get("evaluation")
     if isinstance(evaluation, dict) and evaluation.get("decision") == "counted":
@@ -195,7 +181,6 @@ def _classify_run(
             run_dir=run_dir,
             status=status,
             evaluation_decision="counted",
-            legacy_safety_stop=is_legacy,
         )
     return None
 

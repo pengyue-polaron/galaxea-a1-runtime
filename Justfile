@@ -168,8 +168,3 @@ derive config target="all":
     {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
         --config "{{config}}" \
         --target "{{target}}"
-
-legacy-convert experiment target="all":
-    {{vpy}} -m galaxea_a1_runtime.lerobot.pipeline \
-        --config "{{repo}}/configs/datasets/{{experiment}}.toml" \
-        --target "{{target}}"

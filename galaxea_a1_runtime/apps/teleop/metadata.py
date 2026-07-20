@@ -6,9 +6,8 @@ from dataclasses import dataclass
 
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
-from galaxea_a1_runtime.lerobot.dataset import CANONICAL_IMAGE_STORAGE
 from galaxea_a1_runtime.schema import (
-    CANONICAL_STATE_NAMES,
+    A1_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
     camera_specs_from_system,
 )
@@ -81,10 +80,10 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
         "task": request.task,
         "config_path": request.config_path,
         "robot_type": "galaxea_a1",
-        "image_storage": CANONICAL_IMAGE_STORAGE.value,
+        "image_storage": "video",
         "observation": {
             "feature": "observation.state",
-            "names": list(CANONICAL_STATE_NAMES),
+            "names": list(A1_STATE_NAMES),
             "semantics": "absolute EEF pose, measured joints in radians, normalized gripper",
             "eef_reference_frame": "base_link",
             "eef_position_unit": "meter",
