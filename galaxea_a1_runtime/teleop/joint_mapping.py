@@ -7,8 +7,6 @@ from dataclasses import dataclass
 
 @dataclass(frozen=True)
 class JointMappingConfig:
-    relative: bool
-    input_degrees: bool
     scale: tuple[float, ...]
     sign: tuple[float, ...]
     bias_rad: tuple[float, ...]

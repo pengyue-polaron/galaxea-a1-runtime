@@ -22,7 +22,6 @@ def make_a1_teleop_processors(config: TeleopConfig):
             bias_rad=mapping.bias_rad,
             lower_limits_rad=mapping.lower_limits,
             upper_limits_rad=mapping.upper_limits,
-            gripper_input_key=gripper.source_key,
             gripper_source_min=gripper.source_min,
             gripper_source_max=gripper.source_max,
             gripper_invert=gripper.invert,

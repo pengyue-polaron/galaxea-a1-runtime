@@ -9,7 +9,11 @@ from galaxea_a1_runtime.apps.teleop.dataset_contract import direct_dataset_ident
 from galaxea_a1_runtime.collection import validate_experiment_name
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
-from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
+from galaxea_a1_runtime.teleop.config import (
+    default_config_path,
+    load_teleop_config,
+    validate_collection_config,
+)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -22,6 +26,7 @@ def main(argv: list[str] | None = None) -> int:
     root = args.repo_root.resolve()
     config_path = args.config or default_config_path(root)
     config = load_teleop_config(config_path, repo_root=root)
+    validate_collection_config(config)
     experiment = validate_experiment_name(args.experiment)
     identity = direct_dataset_identity(config, experiment)
     state = inspect_direct_dataset(identity)

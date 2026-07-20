@@ -5,6 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from lerobot_robot_galaxea_a1 import (
+    DEFAULT_GRIPPER_INPUT_KEY,
+    DEFAULT_LEADER_JOINT_KEYS,
+)
+
 from galaxea_a1_runtime.apps.reset.config import A1HomePose, load_a1_home_pose
 from galaxea_a1_runtime.configuration.base import (
     boolean,
@@ -66,8 +71,6 @@ def load_home_pose(path: Path, *, teleop: TeleopConfig) -> HomePose:
     leader = _load_leader_home(
         required_table(data, "leader"),
         teleop.leader,
-        dof=teleop.bridge.dof,
-        gripper_key=teleop.gripper.source_key,
     )
     leader_motion = _load_leader_motion(required_table(data, "leader_motion"))
     home = HomePose(
@@ -89,16 +92,13 @@ def validate_home_pose(home: HomePose) -> None:
 def _load_leader_home(
     data: dict,
     config: TeleopLeaderConfig,
-    *,
-    dof: int,
-    gripper_key: str,
 ) -> LeaderHome:
     require_exact_keys(
         data,
         required={"enabled", "action_keys", "action_values"},
         label="reset leader",
     )
-    expected_keys = (*(f"joint{index}.pos" for index in range(dof)), gripper_key)
+    expected_keys = (*DEFAULT_LEADER_JOINT_KEYS, DEFAULT_GRIPPER_INPUT_KEY)
     keys = string_tuple(data, "action_keys", len(expected_keys))
     if keys != expected_keys:
         raise ValueError(

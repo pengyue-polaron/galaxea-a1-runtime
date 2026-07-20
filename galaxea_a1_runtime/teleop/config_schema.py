@@ -26,21 +26,17 @@ class TeleopResetConfig:
 class TeleopLeaderConfig:
     port: str
     id: str
-    use_degrees: bool
     motor_write_retries: int
 
 
 @dataclass(frozen=True)
 class TeleopBridgeConfig:
     hz: float
-    dof: int
     mapping: JointMappingConfig
 
 
 @dataclass(frozen=True)
 class TeleopGripperConfig:
-    enabled: bool
-    source_key: str
     source_min: float
     source_max: float
     invert: bool

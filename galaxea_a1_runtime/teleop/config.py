@@ -78,15 +78,13 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     require_exact_keys(reset, required={"config"}, label="reset")
     require_exact_keys(
         leader,
-        required={"port", "id", "use_degrees", "motor_write_retries"},
+        required={"port", "id", "motor_write_retries"},
         label="leader",
     )
     require_exact_keys(
         bridge,
         required={
             "hz",
-            "dof",
-            "relative",
             "scale",
             "sign",
             "bias_rad",
@@ -96,8 +94,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     require_exact_keys(
         gripper,
         required={
-            "enabled",
-            "source_key",
             "source_min",
             "source_max",
             "invert",
@@ -119,11 +115,8 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         },
         label="collection",
     )
-    dof = integer(bridge, "dof")
-    leader_use_degrees = boolean(leader, "use_degrees")
+    dof = len(system.joint_safety.names)
     mapping = JointMappingConfig(
-        relative=boolean(bridge, "relative"),
-        input_degrees=leader_use_degrees,
         scale=_float_tuple(bridge, "scale", dof),
         sign=_float_tuple(bridge, "sign", dof),
         bias_rad=_float_tuple(bridge, "bias_rad", dof),
@@ -147,17 +140,13 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         leader=TeleopLeaderConfig(
             port=_string(leader, "port"),
             id=_string(leader, "id"),
-            use_degrees=leader_use_degrees,
             motor_write_retries=integer(leader, "motor_write_retries"),
         ),
         bridge=TeleopBridgeConfig(
             hz=floating(bridge, "hz"),
-            dof=dof,
             mapping=mapping,
         ),
         gripper=TeleopGripperConfig(
-            enabled=boolean(gripper, "enabled"),
-            source_key=_string(gripper, "source_key"),
             source_min=floating(gripper, "source_min"),
             source_max=floating(gripper, "source_max"),
             invert=boolean(gripper, "invert"),
@@ -191,24 +180,8 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         character.isspace() for character in config.leader.port
     ):
         raise ValueError("leader.port must be a whitespace-free path under /dev")
-    if not config.leader.use_degrees:
-        raise ValueError(
-            "leader.use_degrees must be true for the GalaxeaA1SOLeader degree mapping contract"
-        )
     if config.leader.motor_write_retries < 1:
         raise ValueError("leader.motor_write_retries must be at least 1")
-    if not config.bridge.mapping.relative:
-        raise ValueError(
-            "bridge.relative must be true for the verified A1 startup-anchor contract"
-        )
-    if not config.gripper.enabled:
-        raise ValueError(
-            "gripper.enabled must be true for the canonical A1 Robot action contract"
-        )
-    if config.gripper.source_key != "gripper.pos":
-        raise ValueError(
-            "gripper.source_key must be 'gripper.pos' for GalaxeaA1SOLeader"
-        )
     if config.gripper.source_max <= config.gripper.source_min:
         raise ValueError("gripper source_max must be greater than source_min")
     if config.bridge.hz <= 0:
@@ -222,8 +195,6 @@ def validate_teleop_config(config: TeleopConfig) -> None:
             "runtime.bridge_startup_timeout_s must cover two System "
             "embodied_ops.device_connect_timeout_s windows plus the relay enable timeout"
         )
-    if config.bridge.dof <= 0:
-        raise ValueError("bridge.dof must be positive")
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")
     if not config.collection.fps.is_integer():
@@ -239,13 +210,15 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("collection.ready_timeout_s must be positive")
     if config.collection.max_joint_action_step_rad <= 0:
         raise ValueError("collection.max_joint_action_step_rad must be positive")
-    front = config.system.cameras.front
-    if front.backend != "realsense":
+
+
+def validate_collection_config(config: TeleopConfig) -> None:
+    """Validate collection-only hardware contracts before any device startup."""
+
+    if config.system.cameras.front.backend != "realsense":
         raise ValueError(
-            "cameras.front.backend must be 'realsense' because teleop records optional depth framesets"
+            "cameras.front.backend must be 'realsense' for canonical Teleop collection"
         )
-    if len(config.system.joint_safety.names) != config.bridge.dof:
-        raise ValueError("bridge.target_joint_names length must match bridge.dof")
 
 
 def main(argv: list[str] | None = None) -> int:

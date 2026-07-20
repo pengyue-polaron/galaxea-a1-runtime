@@ -9,7 +9,11 @@ from galaxea_a1_runtime.gripper import (
     normalize_source_position,
     normalize_stroke,
 )
-from galaxea_a1_runtime.teleop.config import load_teleop_config
+from galaxea_a1_runtime.teleop.config import (
+    load_teleop_config,
+    validate_collection_config,
+    validate_teleop_config,
+)
 from galaxea_a1_runtime.teleop.config_runtime import bash_config
 
 
@@ -29,7 +33,6 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.runtime.bridge_stop_timeout_s == 5.0
     assert config.collection.dataset_root == REPO / "data/datasets"
     assert config.collection.repo_id_prefix == "pengyue-polaron/galaxea-a1"
-    assert config.bridge.dof == 6
     assert config.system.joint_safety.names == (
         "arm_joint1",
         "arm_joint2",
@@ -38,16 +41,15 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
         "arm_joint5",
         "arm_joint6",
     )
-    assert config.bridge.mapping.relative is True
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
     assert config.system.embodied_ops.endpoint == (
         "unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"
     )
     assert config.system.embodied_ops.device_connect_timeout_s == 30.0
     assert config.system.embodied_ops.rpc_timeout_s == 0.5
+    assert config.system.embodied_ops.command_timeout_s == 0.75
     assert config.system.embodied_ops.lease_timeout_s == 1.0
     assert config.system.joint_safety.initial_alignment_tolerance_rad == 0.05
-    assert config.gripper.source_key == "gripper.pos"
     assert (config.gripper.source_min, config.gripper.source_max) == (0.0, 53.16)
     assert config.gripper.saturate_out_of_range is True
     assert config.system.gripper.stroke_min_mm == 0.0
@@ -163,11 +165,23 @@ def test_formal_collection_config_reference_must_be_portable(tmp_path: Path):
         )
 
 
+def test_realsense_is_required_by_collection_not_general_teleop():
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+    alternate_front = replace(config.system.cameras.front, backend="opencv")
+    alternate_cameras = replace(config.system.cameras, front=alternate_front)
+    alternate = replace(
+        config,
+        system=replace(config.system, cameras=alternate_cameras),
+    )
+
+    validate_teleop_config(alternate)
+    with pytest.raises(ValueError, match="canonical Teleop collection"):
+        validate_collection_config(alternate)
+
+
 @pytest.mark.parametrize(
     ("old", "new", "message"),
     [
-        ("relative = true", "relative = false", "bridge.relative must be true"),
-        ("enabled = true", "enabled = false", "gripper.enabled must be true"),
         ("motor_write_retries = 5", "motor_write_retries = 0", "must be at least 1"),
         (
             "bridge_startup_timeout_s = 65.0",
