@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from embodied_ops.operator_panel import RepositoryConfigStore
+from embodied_ops.operator_panel import RepositoryDocumentStore
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
@@ -26,7 +26,7 @@ from .configuration import looks_like_a1_pose
 
 
 def build_a1_catalog(
-    repo_root: Path, config_store: RepositoryConfigStore
+    repo_root: Path, document_store: RepositoryDocumentStore
 ) -> dict[str, Any]:
     root = repo_root.resolve()
     system = load_system_config(root / SYSTEM_CONFIG, repo_root=root)
@@ -124,7 +124,7 @@ def build_a1_catalog(
             reset_options=reset_options,
         ),
         "registrations": _registration_forms(prompt_catalog_options),
-        "config_types": config_store.catalog(),
+        "configuration_types": document_store.catalog(),
         "configuration_groups": [
             {"label": "Teleop", "items": teleop_options},
             {"label": "Evaluation", "items": deployment_options},

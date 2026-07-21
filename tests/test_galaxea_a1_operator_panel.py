@@ -28,6 +28,9 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
     assert adapter.panel_port == 8765
     assert catalog["cameras"][0]["port"] == 8088
     assert catalog["cameras"][0]["path"] == "/agent.mjpg"
+    assert {
+        (item["extension"], item["language"]) for item in catalog["configuration_types"]
+    } == {(".toml", "TOML")}
     reset_form = next(item for item in catalog["workflows"] if item["id"] == "reset")
     assert reset_form["tone"] == "danger"
     prompt_form = next(
@@ -95,14 +98,16 @@ def test_a1_panel_registers_a_prompt_and_selects_it_for_evaluation(tmp_path):
     )
     (tmp_path / "external").symlink_to(ROOT / "external", target_is_directory=True)
     adapter = A1OperatorPanelAdapter(tmp_path)
-    result = adapter.register(
-        "prompt",
+    result = OperatorPanelApplication(adapter).register(
         {
-            "catalog": "configs/tasks/fruit_placement/catalog.json",
-            "task_id": "green_apple_bowl",
-            "prompt": "put the green apple into the bowl",
-            "distribution": "ood",
-        },
+            "registration": "prompt",
+            "values": {
+                "catalog": "configs/tasks/fruit_placement/catalog.json",
+                "task_id": "green_apple_bowl",
+                "prompt": "put the green apple into the bowl",
+                "distribution": "ood",
+            },
+        }
     )
 
     assert result["created"] == (

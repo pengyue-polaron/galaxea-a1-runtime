@@ -8,7 +8,11 @@ from http.client import HTTPConnection
 from pathlib import Path
 from typing import Any
 
-from embodied_ops.operator_panel import RepositoryConfigStore, WorkflowLaunch
+from embodied_ops.operator_panel import (
+    PanelCapabilities,
+    RepositoryDocumentStore,
+    WorkflowLaunch,
+)
 
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
@@ -19,7 +23,7 @@ from galaxea_a1_runtime.configuration.tasks import (
 )
 
 from .catalog import build_a1_catalog
-from .configuration import build_a1_config_store
+from .configuration import build_a1_document_store
 from .workflows import build_a1_workflow_launch
 
 
@@ -38,12 +42,17 @@ class A1OperatorPanelAdapter:
         self.panel_bind = system.operator_panel.bind
         self.panel_port = system.operator_panel.port
         self._camera_web_port = system.web_preview.port
-        self._config_store: RepositoryConfigStore = build_a1_config_store(
+        self._document_store: RepositoryDocumentStore = build_a1_document_store(
             self.repo_root
+        )
+        self.capabilities = PanelCapabilities(
+            camera=self,
+            configuration=self,
+            registration=self,
         )
 
     def catalog(self) -> dict[str, Any]:
-        return build_a1_catalog(self.repo_root, self._config_store)
+        return build_a1_catalog(self.repo_root, self._document_store)
 
     def camera_health(self) -> dict[str, Any]:
         connection = HTTPConnection(
@@ -77,25 +86,23 @@ class A1OperatorPanelAdapter:
         return build_a1_workflow_launch(self.repo_root, workflow, values)
 
     def config_template(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._config_store.template(
+        return self._document_store.template(
             _payload_text(payload, "kind"), _payload_text(payload, "source")
         )
 
     def validate_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        return self._config_store.validate(
+        return self._document_store.validate(
             _payload_text(payload, "kind"),
             _payload_text(payload, "filename"),
             _payload_content(payload),
         )
 
     def create_config(self, payload: dict[str, Any]) -> dict[str, Any]:
-        result: dict[str, Any] = self._config_store.create(
+        return self._document_store.create(
             _payload_text(payload, "kind"),
             _payload_text(payload, "filename"),
             _payload_content(payload),
         )
-        result["catalog"] = self.catalog()
-        return result
 
     def register(self, registration: str, values: dict[str, Any]) -> dict[str, Any]:
         if registration != "prompt":
@@ -128,7 +135,6 @@ class A1OperatorPanelAdapter:
         activation_values["task"] = _payload_text(values, "task_id")
         return {
             "created": target.relative_to(self.repo_root).as_posix(),
-            "catalog": self.catalog(),
             "activate": {"panel": "evaluate", "values": activation_values},
         }
 

@@ -6,7 +6,7 @@ import tomllib
 from functools import partial
 from pathlib import Path
 
-from embodied_ops.operator_panel import ConfigKind, RepositoryConfigStore
+from embodied_ops.operator_panel import DocumentKind, RepositoryDocumentStore
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
@@ -16,34 +16,42 @@ from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 
-def build_a1_config_store(repo_root: Path) -> RepositoryConfigStore:
+def build_a1_document_store(repo_root: Path) -> RepositoryDocumentStore:
     root = repo_root.resolve()
-    return RepositoryConfigStore(
+    return RepositoryDocumentStore(
         root,
         (
-            ConfigKind(
-                "teleop",
-                "Teleop",
-                Path("configs/teleop"),
-                partial(_validate_teleop, root),
+            DocumentKind(
+                kind_id="teleop",
+                label="Teleop",
+                directory=Path("configs/teleop"),
+                suffix=".toml",
+                language="TOML",
+                validate=partial(_validate_teleop, root),
             ),
-            ConfigKind(
-                "deployment",
-                "LingBot deployment",
-                Path("configs/deployments/lingbot"),
-                partial(_validate_deployment, root),
+            DocumentKind(
+                kind_id="deployment",
+                label="LingBot deployment",
+                directory=Path("configs/deployments/lingbot"),
+                suffix=".toml",
+                language="TOML",
+                validate=partial(_validate_deployment, root),
             ),
-            ConfigKind(
-                "batch",
-                "LingBot Batch",
-                Path("configs/runs/lingbot"),
-                partial(_validate_batch, root),
+            DocumentKind(
+                kind_id="batch",
+                label="LingBot Batch",
+                directory=Path("configs/runs/lingbot"),
+                suffix=".toml",
+                language="TOML",
+                validate=partial(_validate_batch, root),
             ),
-            ConfigKind(
-                "reset",
-                "A1 reset pose",
-                Path("configs/poses"),
-                partial(_validate_reset, root),
+            DocumentKind(
+                kind_id="reset",
+                label="A1 reset pose",
+                directory=Path("configs/poses"),
+                suffix=".toml",
+                language="TOML",
+                validate=partial(_validate_reset, root),
                 include=looks_like_a1_pose,
             ),
         ),

@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
-    "embodied-ops>=0.4,<0.5",
+    "embodied-ops>=0.5,<0.6",
     "huggingface-hub>=1.0.0,<2.0.0",
     "lerobot[dataset,feetech]",
     "lerobot_robot_galaxea_a1>=0.3,<0.4",

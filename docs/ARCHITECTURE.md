@@ -177,10 +177,13 @@ but no user authentication or transport encryption and must not be exposed
 beyond that LAN. The
 repository-independent `embodied_ops.operator_panel` package in the pinned
 `external/embodied-ops` repository owns HTTP, static rendering, create-only
-configuration staging, subprocess supervision, and a small child presentation
-protocol for input readiness and typed progress. Progress is display-only,
-retained by stable id as latest state, and excluded from durable logs. It has no
-Galaxea, ROS, camera, model, topic, or tracked-config imports. The A1 adapter under
+document staging, subprocess supervision, and a small child presentation protocol
+for input readiness and typed progress. Its minimal adapter owns only catalog and
+workflow launch contracts; camera health, configuration, and registration are
+independent optional providers. Document suffix and editor language come from the
+A1 provider rather than the generic core. Progress is display-only, retained by
+stable id as latest state, and excluded from durable logs. It has no Galaxea, ROS,
+camera, model, topic, or tracked-config imports. The A1 adapter under
 `galaxea_a1_runtime/apps/operator_panel/` discovers and fully loads repository
 Teleop, LingBot deployment, Batch, model, task-registry, and reset files,
 supplies the dynamic form catalog, handles strict prompt registration, and
