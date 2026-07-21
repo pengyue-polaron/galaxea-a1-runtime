@@ -44,9 +44,16 @@ EEF_ACTION_NAMES = (
 A1_STATE_NAMES = (*EEF_POSE_STATE_NAMES, *JOINT_ACTION_NAMES_RAD)
 
 LINGBOT_EEF_ACTION_CHANNEL_IDS = (0, 1, 2, 3, 4, 5, 6, 28)
+STATE_FEATURE_KEY = "observation.state"
+ACTION_FEATURE_KEY = "action"
+TASK_FEATURE_KEY = "task"
+IMAGE_FEATURE_PREFIX = "observation.images."
+FRONT_IMAGE_FEATURE_KEY = f"{IMAGE_FEATURE_PREFIX}front"
+WRIST_IMAGE_FEATURE_KEY = f"{IMAGE_FEATURE_PREFIX}wrist"
+FRONT_DEPTH_FEATURE_KEY = f"{IMAGE_FEATURE_PREFIX}front_depth"
 DEFAULT_RGB_IMAGE_KEYS = (
-    "observation.images.front",
-    "observation.images.wrist",
+    FRONT_IMAGE_FEATURE_KEY,
+    WRIST_IMAGE_FEATURE_KEY,
 )
 DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v2"
 
@@ -61,7 +68,7 @@ class CameraSpec:
     depth_unit: str | None = None
 
     def feature_key(self) -> str:
-        return f"observation.images.{self.name}"
+        return f"{IMAGE_FEATURE_PREFIX}{self.name}"
 
     def feature(self) -> dict[str, Any]:
         _validate_identifier(self.name, "camera name")
@@ -92,8 +99,8 @@ class DatasetContract:
 
     def features(self) -> dict[str, dict[str, Any]]:
         features: dict[str, dict[str, Any]] = {
-            "observation.state": vector_feature(self.state_names),
-            "action": vector_feature(self.action_names),
+            STATE_FEATURE_KEY: vector_feature(self.state_names),
+            ACTION_FEATURE_KEY: vector_feature(self.action_names),
         }
         for camera in self.camera_specs:
             features[camera.feature_key()] = camera.feature()

@@ -158,6 +158,7 @@ def prepare_lingbot_run(
         _validate_batch_attempt(batch_attempt, task_id=task.task_id)
         context["batch"] = {
             "id": batch_attempt.batch_id,
+            "task_id": task.task_id,
             "task_position": batch_attempt.task_position,
             "task_count": batch_attempt.task_count,
             "attempt": batch_attempt.attempt,

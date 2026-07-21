@@ -7,8 +7,8 @@ from typing import Any
 
 import numpy as np
 
-from galaxea_a1_runtime.apps.eef_bridge import pose_msg_to_xyz_quat
-from galaxea_a1_runtime.apps.eef_policy_actions import (
+from galaxea_a1_runtime.hardware.eef_bridge import pose_msg_to_xyz_quat
+from galaxea_a1_runtime.policies.eef_actions import (
     EefActionTransformConfig,
     absolute_action_to_relative,
     gripper_norm_from_stroke,

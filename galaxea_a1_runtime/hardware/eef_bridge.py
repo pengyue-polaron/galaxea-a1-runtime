@@ -1,4 +1,4 @@
-"""Reusable EEF bridge utilities for policy app scripts."""
+"""ROS-facing EEF command and feedback adapters."""
 
 from __future__ import annotations
 
@@ -14,8 +14,6 @@ from galaxea_a1_runtime.hardware.eef_ik import A1EefIkSolver, IkSolution
 
 __all__ = [
     "EefIkCommandPublisher",
-    "condition_state_from_action8",
-    "format_xyz_direction",
     "pose_msg_to_xyz_quat",
 ]
 
@@ -43,36 +41,6 @@ def pose_msg_to_xyz_quat(
     if not np.isfinite(norm) or norm < min_quat_norm:
         return None
     return xyz, quat / norm
-
-
-def condition_state_from_action8(
-    action8: Sequence[float],
-    *,
-    frame_chunk_size: int,
-    action_per_frame: int,
-) -> np.ndarray:
-    action = np.asarray(action8, dtype=np.float64).reshape(8)
-    if not np.all(np.isfinite(action)):
-        raise ValueError("condition action must contain only finite values")
-    if frame_chunk_size <= 0 or action_per_frame <= 0:
-        raise ValueError("condition dimensions must be positive")
-    return (
-        np.broadcast_to(
-            action[:, None, None],
-            (8, frame_chunk_size, action_per_frame),
-        )
-        .astype(np.float32)
-        .copy()
-    )
-
-
-def format_xyz_direction(delta_xyz: Sequence[float], *, deadband_m: float) -> str:
-    parts: list[str] = []
-    for axis, value in zip(("x", "y", "z"), delta_xyz, strict=True):
-        if abs(float(value)) < deadband_m:
-            continue
-        parts.append(f"{axis}{'+' if value > 0 else '-'}")
-    return ",".join(parts) if parts else "hold"
 
 
 @dataclass

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from galaxea_a1_runtime.lerobot.hardware import make_a1_teleop_processors
+from galaxea_a1_runtime.apps.teleop.processors import make_a1_teleop_processors
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 

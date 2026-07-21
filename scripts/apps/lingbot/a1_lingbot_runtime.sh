@@ -397,7 +397,7 @@ run_pipeline_foreground() {
   if [[ -n "${reset_pose}" ]]; then
     a1_step "Resetting A1 to the tracked batch start pose before inference."
     PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
-      "${PYTHON_BIN}" "${ROOT}/scripts/runtime/a1_reset.py" \
+      "${PYTHON_BIN}" "${ROOT}/scripts/apps/reset/a1_reset.py" \
       --system-config "${SYSTEM_CONFIG_PATH}" \
       --pose "${reset_pose}"
   fi

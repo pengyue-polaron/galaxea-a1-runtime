@@ -4,8 +4,10 @@ from pathlib import Path
 import numpy as np
 import pytest
 
-import galaxea_a1_runtime.lerobot.dataset_package as dataset_package
+import embodied_ops.artifacts as artifacts
+from embodied_ops import PublishedOutputCleanupError
 
+import galaxea_a1_runtime.lerobot.dataset_package as dataset_package
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
     DirectLeRobotEpisode,
@@ -110,6 +112,33 @@ def test_failed_episode_save_preserves_the_previous_complete_dataset(tmp_path: P
 
     assert (root / "meta/info.json").read_bytes() == before
     assert not list(tmp_path.glob(".direct-test.staging-*"))
+
+
+def test_published_episode_remains_committed_when_backup_cleanup_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+):
+    root = tmp_path / "direct-test"
+    with _episode(root) as episode:
+        episode.add_frame(_frame(0.1))
+        episode.commit()
+
+    original_remove = artifacts._remove
+
+    def fail_backup_cleanup(path):
+        if ".backup-" in path.name:
+            raise PermissionError("injected backup cleanup failure")
+        original_remove(path)
+
+    monkeypatch.setattr(artifacts, "_remove", fail_backup_cleanup)
+    with pytest.raises(PublishedOutputCleanupError, match="published output") as error:
+        with _episode(root) as episode:
+            episode.add_frame(_frame(0.2))
+            episode.commit()
+
+    info = json.loads((root / "meta/info.json").read_text())
+    assert (info["total_episodes"], info["total_frames"]) == (2, 2)
+    assert error.value.backup.is_dir()
 
 
 def test_append_requires_snapshot_hardlinks(

@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import numpy as np
 
-from galaxea_a1_runtime.apps.eef_bridge import format_xyz_direction
-from galaxea_a1_runtime.apps.eef_policy_actions import (
+from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
+from galaxea_a1_runtime.console import info, step
+from galaxea_a1_runtime.policies.eef_actions import (
     EefActionTransformConfig,
     gripper_stroke_from_norm,
 )
-from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
-from galaxea_a1_runtime.console import info, step
 
 
 class EefActionReviewer:
@@ -65,10 +64,18 @@ class EefActionReviewer:
                 f"validated_delta_cm={np.round(validated_delta * 100.0, 2).tolist()} "
                 f"validated_norm_cm={np.linalg.norm(validated_delta) * 100.0:.2f} "
                 "direction="
-                f"{format_xyz_direction(validated_delta, deadband_m=self.review_deadband_m)}"
+                f"{_format_xyz_direction(validated_delta, deadband_m=self.review_deadband_m)}"
             )
         info(
             f"gripper_norm={validated_action[7]:.3f} "
             f"gripper_mm={gripper_mm:.1f} "
             f"execute={self.execute}"
         )
+
+
+def _format_xyz_direction(delta_xyz: np.ndarray, *, deadband_m: float) -> str:
+    parts: list[str] = []
+    for axis, value in zip(("x", "y", "z"), delta_xyz, strict=True):
+        if abs(float(value)) >= deadband_m:
+            parts.append(f"{axis}{'+' if value > 0 else '-'}")
+    return ",".join(parts) if parts else "hold"

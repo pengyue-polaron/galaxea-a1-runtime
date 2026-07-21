@@ -14,13 +14,13 @@ from galaxea_a1_runtime.configuration.paths import (
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.console import ArgumentParser, failure, success
-from galaxea_a1_runtime.runtime.doctor import run_static_doctor
+from galaxea_a1_runtime.doctor import run_static_doctor
 from galaxea_a1_runtime.runtime.health_checks import (
     checks_exit_code,
     checks_to_json,
     print_checks,
 )
-from galaxea_a1_runtime.runtime.safety_report import (
+from galaxea_a1_runtime.safety_report import (
     format_safety_report,
     safety_report_as_dict,
 )

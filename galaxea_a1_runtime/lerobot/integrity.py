@@ -11,6 +11,7 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     non_negative_json_int,
     read_json,
 )
+from galaxea_a1_runtime.schema import ACTION_FEATURE_KEY, STATE_FEATURE_KEY
 
 
 def validate_lerobot_v3_payloads(
@@ -27,7 +28,7 @@ def validate_lerobot_v3_payloads(
     import pyarrow.parquet as parquet
 
     stats = read_json(root / "meta/stats.json", label="LeRobot stats")
-    if "action" not in stats or "observation.state" not in stats:
+    if ACTION_FEATURE_KEY not in stats or STATE_FEATURE_KEY not in stats:
         raise ValueError("LeRobot stats are missing canonical vector features")
 
     tasks_path = root / "meta/tasks.parquet"
@@ -174,8 +175,8 @@ def _validate_data_file(path: Path, *, expected_rows: int, parquet: Any) -> None
             f"expected={expected_rows}, actual={metadata.num_rows}"
         )
     required = set(LEROBOT_GENERATED_FEATURES) | {
-        "observation.state",
-        "action",
+        STATE_FEATURE_KEY,
+        ACTION_FEATURE_KEY,
     }
     missing = required - columns
     if missing:

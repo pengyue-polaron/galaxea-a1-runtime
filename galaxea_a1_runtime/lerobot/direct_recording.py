@@ -7,8 +7,9 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from embodied_ops.artifacts import OutputDirectoryTransaction, atomic_write_text
+
+from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
 from galaxea_a1_runtime.lerobot.dataset import (
     DatasetConfig,
     LEROBOT_GENERATED_FEATURES,
@@ -320,8 +321,12 @@ class DirectLeRobotEpisode:
             replace(self.identity, target_root=self._transaction.path),
             expected_task=self.task,
         )
-        result = self._transaction.commit()
-        self._committed = True
+        try:
+            result = self._transaction.commit()
+        finally:
+            # Publication precedes displaced-backup cleanup. Preserve that state
+            # even when cleanup raises PublishedOutputCleanupError.
+            self._committed = self._transaction.committed
         return result
 
     def discard(self) -> None:

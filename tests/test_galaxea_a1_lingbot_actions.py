@@ -1,7 +1,7 @@
 import numpy as np
 import pytest
 
-from galaxea_a1_runtime.apps.eef_policy_actions import (
+from galaxea_a1_runtime.policies.eef_actions import (
     EefActionTransformConfig,
     EefPolicyWorkspaceRejected,
     absolute_action_to_relative,

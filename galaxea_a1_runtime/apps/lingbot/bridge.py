@@ -25,8 +25,8 @@ import numpy as np
 import rospy
 
 from operator_panel.protocol import announce_input
-from galaxea_a1_runtime.apps.eef_bridge import EefIkCommandPublisher
-from galaxea_a1_runtime.apps.eef_policy_actions import (
+from galaxea_a1_runtime.hardware.eef_bridge import EefIkCommandPublisher
+from galaxea_a1_runtime.policies.eef_actions import (
     build_action_transform_config,
     gripper_stroke_from_norm,
 )

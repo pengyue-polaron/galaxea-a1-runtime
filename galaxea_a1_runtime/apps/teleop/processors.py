@@ -1,4 +1,4 @@
-"""Application composition for the out-of-tree A1 LeRobot plugins."""
+"""Teleop processor composition for the out-of-tree LeRobot plugins."""
 
 from __future__ import annotations
 

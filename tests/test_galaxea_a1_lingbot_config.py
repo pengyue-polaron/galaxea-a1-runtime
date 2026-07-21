@@ -6,7 +6,7 @@ import subprocess
 
 import pytest
 
-from galaxea_a1_runtime.apps.eef_policy_actions import build_action_transform_config
+from galaxea_a1_runtime.policies.eef_actions import build_action_transform_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.lingbot.config_runtime import bash_config
 from galaxea_a1_runtime.apps.lingbot.verify import validate_training_summary

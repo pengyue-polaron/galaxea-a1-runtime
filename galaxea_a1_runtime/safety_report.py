@@ -1,4 +1,4 @@
-"""Static safety disclosure for the Galaxea A1 runtime."""
+"""Static safety disclosure composed across Galaxea A1 applications."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.constants import IDLE_TIMEOUT_CODE, SAFE_RELAY_SCRIPT
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
-ROOT = Path(__file__).resolve().parents[2]
+ROOT = Path(__file__).resolve().parents[1]
 
 
 @dataclass(frozen=True)

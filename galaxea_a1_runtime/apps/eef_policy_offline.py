@@ -44,6 +44,7 @@ from galaxea_a1_runtime.evaluation.offline_config import (
     OfflineEvalConfig,
     load_offline_eval_config,
 )
+from galaxea_a1_runtime.schema import FRONT_IMAGE_FEATURE_KEY, WRIST_IMAGE_FEATURE_KEY
 
 
 def evaluate_lingbot(config: OfflineEvalConfig, run_id: str) -> Path:
@@ -123,8 +124,8 @@ def evaluate_lingbot(config: OfflineEvalConfig, run_id: str) -> Path:
                     visuals.append(
                         (
                             episode.task,
-                            images[0]["observation.images.front"],
-                            images[0]["observation.images.wrist"],
+                            images[0][FRONT_IMAGE_FEATURE_KEY],
+                            images[0][WRIST_IMAGE_FEATURE_KEY],
                             prediction[0],
                             target[0],
                         )
@@ -285,8 +286,8 @@ def evaluate_pi05(config: OfflineEvalConfig, run_id: str) -> Path:
                     visuals.append(
                         (
                             episode.task,
-                            images[0]["observation.images.front"],
-                            images[0]["observation.images.wrist"],
+                            images[0][FRONT_IMAGE_FEATURE_KEY],
+                            images[0][WRIST_IMAGE_FEATURE_KEY],
                             prediction[0],
                             target[0],
                         )

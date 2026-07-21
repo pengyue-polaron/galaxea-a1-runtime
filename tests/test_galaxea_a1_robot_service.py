@@ -9,6 +9,7 @@ from typing import Mapping
 
 import pytest
 from lerobot_robot_galaxea_a1.runtime.contracts import (
+    A1_CONTROL_FEATURE_NAMES,
     HealthReport,
     HealthStatus,
     RuntimeContractError as ContractError,
@@ -16,6 +17,7 @@ from lerobot_robot_galaxea_a1.runtime.contracts import (
 )
 
 from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
 from galaxea_a1_runtime.apps.robot_service.server import build_server
 from galaxea_a1_runtime.apps.robot_service.device import (
     A1RuntimeDevice,
@@ -26,6 +28,10 @@ from galaxea_a1_runtime.apps.robot_service.device import (
 
 REPO = Path(__file__).resolve().parents[1]
 SYSTEM_CONFIG = REPO / "configs/system/a1.toml"
+
+
+def test_runtime_and_dataset_share_the_a1_control_feature_names():
+    assert A1_CONTROL_FEATURE_NAMES == JOINT_ACTION_NAMES_RAD
 
 
 class FakeSession:

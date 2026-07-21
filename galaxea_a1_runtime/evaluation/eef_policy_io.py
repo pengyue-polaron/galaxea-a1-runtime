@@ -6,15 +6,18 @@ from typing import Any
 
 import numpy as np
 
-from galaxea_a1_runtime.apps.eef_bridge import condition_state_from_action8
-from galaxea_a1_runtime.apps.eef_policy_actions import absolute_action_to_relative
 from galaxea_a1_runtime.evaluation.types import EpisodeRecord
+from galaxea_a1_runtime.policies.eef_actions import (
+    absolute_action_to_relative,
+    condition_state_from_action8,
+)
+from galaxea_a1_runtime.schema import FRONT_IMAGE_FEATURE_KEY, WRIST_IMAGE_FEATURE_KEY
 
 
 def camera_packet(deployment: Any, images: dict[str, np.ndarray]) -> dict[str, Any]:
     return {
-        deployment.observations.front_key: images["observation.images.front"],
-        deployment.observations.wrist_key: images["observation.images.wrist"],
+        deployment.observations.front_key: images[FRONT_IMAGE_FEATURE_KEY],
+        deployment.observations.wrist_key: images[WRIST_IMAGE_FEATURE_KEY],
     }
 
 

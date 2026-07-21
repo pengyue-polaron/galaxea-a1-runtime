@@ -1,31 +1,27 @@
-#!/usr/bin/env python3
 """Read-only hardware enumeration check for the A1 teleop rig."""
 
 from __future__ import annotations
 
 import os
 import subprocess
-import sys
 from pathlib import Path
 
-ROOT_DIR = Path(__file__).resolve().parents[2]
-if str(ROOT_DIR) not in sys.path:
-    sys.path.insert(0, str(ROOT_DIR))
-
-from galaxea_a1_runtime.hardware.cameras import (  # noqa: E402
+from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose
+from galaxea_a1_runtime.console import ArgumentParser
+from galaxea_a1_runtime.hardware.cameras import (
     realsense_device_info,
     realsense_usb_is_superspeed,
     resolve_video_source,
 )
-from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
-from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose  # noqa: E402
-from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config  # noqa: E402
-from galaxea_a1_runtime.runtime.health_checks import (  # noqa: E402
+from galaxea_a1_runtime.runtime.health_checks import (
     Check,
     add_check,
     add_level,
     finish_checks,
 )
+from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
+
+ROOT_DIR = Path(__file__).resolve().parents[3]
 
 
 def main() -> int:

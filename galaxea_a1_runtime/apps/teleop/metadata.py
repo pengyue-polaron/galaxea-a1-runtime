@@ -7,8 +7,10 @@ from dataclasses import dataclass
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.constants import JOINT_TRACKER_NODE_NAME, SAFE_RELAY_SCRIPT
 from galaxea_a1_runtime.schema import (
+    ACTION_FEATURE_KEY,
     A1_STATE_NAMES,
     JOINT_ACTION_NAMES_RAD,
+    STATE_FEATURE_KEY,
     camera_specs_from_system,
 )
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
@@ -82,7 +84,7 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
         "robot_type": "galaxea_a1",
         "image_storage": "video",
         "observation": {
-            "feature": "observation.state",
+            "feature": STATE_FEATURE_KEY,
             "names": list(A1_STATE_NAMES),
             "semantics": "absolute EEF pose, measured joints in radians, normalized gripper",
             "eef_reference_frame": "base_link",
@@ -91,8 +93,8 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
             "joint_unit": "radian",
             "gripper_range": [0.0, 1.0],
         },
-        "action": {
-            "feature": "action",
+        ACTION_FEATURE_KEY: {
+            "feature": ACTION_FEATURE_KEY,
             "names": list(JOINT_ACTION_NAMES_RAD),
             "semantics": "absolute joint targets in radians plus normalized gripper target",
             "joint_unit": "radian",

@@ -9,6 +9,7 @@ from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
 from lerobot_robot_galaxea_a1.runtime.contracts import (
+    A1_CONTROL_FEATURE_NAMES,
     FeatureSpec,
     HealthReport,
     HealthStatus,
@@ -20,10 +21,9 @@ from lerobot_robot_galaxea_a1.runtime.contracts import (
 from galaxea_a1_runtime.configuration.base import discover_repo_root
 from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.gripper import denormalize_stroke
-from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
 
-JOINT_FEATURE_KEYS = JOINT_ACTION_NAMES_RAD[:-1]
-GRIPPER_FEATURE_KEY = JOINT_ACTION_NAMES_RAD[-1]
+JOINT_FEATURE_KEYS = A1_CONTROL_FEATURE_NAMES[:-1]
+GRIPPER_FEATURE_KEY = A1_CONTROL_FEATURE_NAMES[-1]
 
 
 class _Session(Protocol):

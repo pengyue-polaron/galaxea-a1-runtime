@@ -1,4 +1,4 @@
-"""Static runtime doctor checks.
+"""Static repository doctor checks.
 
 The static doctor is intentionally hardware-free. It may inspect files and
 import pure modules, but it must not start ROS, Docker, cameras, or serial IO.
@@ -6,6 +6,7 @@ import pure modules, but it must not start ROS, Docker, cameras, or serial IO.
 
 from __future__ import annotations
 
+import ast
 import re
 import tomllib
 from pathlib import Path
@@ -16,9 +17,7 @@ from galaxea_a1_runtime.configuration.paths import (
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.constants import SAFE_RELAY_SCRIPT
-from galaxea_a1_runtime.runtime.health_checks import (
-    Check,
-)
+from galaxea_a1_runtime.runtime.health_checks import Check
 
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 
@@ -44,6 +43,13 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
 
     package_dir = repo_root / "galaxea_a1_runtime"
     add("runtime_package", package_dir.is_dir(), str(package_dir))
+
+    layer_violations = _lower_layer_app_imports(repo_root)
+    add(
+        "lower_layers_app_free",
+        not layer_violations,
+        "none" if not layer_violations else ", ".join(layer_violations),
+    )
 
     try:
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
@@ -264,7 +270,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         lingbot_batch_config.is_file(),
         str(lingbot_batch_config),
     )
-    a1_reset_script = repo_root / "scripts" / "runtime" / "a1_reset.py"
+    a1_reset_script = repo_root / "scripts" / "apps" / "reset" / "a1_reset.py"
     add("a1_reset_script", a1_reset_script.is_file(), str(a1_reset_script))
 
     base_runtime = repo_root / "scripts" / "runtime" / "a1_runtime.sh"
@@ -301,3 +307,42 @@ def _vendor_entries(data: dict) -> tuple[dict, ...]:
             )
         out.append(vendor)
     return tuple(out)
+
+
+def _lower_layer_app_imports(repo_root: Path) -> tuple[str, ...]:
+    package = repo_root / "galaxea_a1_runtime"
+    layer_names = (
+        "collection",
+        "configuration",
+        "evaluation",
+        "hardware",
+        "lerobot",
+        "policies",
+        "runtime",
+    )
+    forbidden = (
+        "galaxea_a1_runtime.apps",
+        "galaxea_a1_runtime.teleop",
+    )
+    violations: list[str] = []
+    paths: list[Path] = []
+    for layer_name in layer_names:
+        paths.extend((package / layer_name).rglob("*.py"))
+    paths.extend((repo_root / "scripts" / "runtime").glob("*.py"))
+    for path in paths:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+        for node in ast.walk(tree):
+            imported: tuple[str, ...] = ()
+            if isinstance(node, ast.Import):
+                imported = tuple(alias.name for alias in node.names)
+            elif isinstance(node, ast.ImportFrom) and node.module is not None:
+                imported = (node.module,)
+            for module in imported:
+                if any(
+                    module == prefix or module.startswith(f"{prefix}.")
+                    for prefix in forbidden
+                ):
+                    violations.append(
+                        f"{path.relative_to(repo_root)}:{node.lineno} -> {module}"
+                    )
+    return tuple(sorted(violations))

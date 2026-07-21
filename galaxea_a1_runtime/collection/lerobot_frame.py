@@ -7,8 +7,14 @@ from typing import Any
 import numpy as np
 
 from galaxea_a1_runtime.schema import (
+    ACTION_FEATURE_KEY,
     A1_STATE_NAMES,
+    FRONT_DEPTH_FEATURE_KEY,
+    FRONT_IMAGE_FEATURE_KEY,
     JOINT_ACTION_NAMES_RAD,
+    STATE_FEATURE_KEY,
+    TASK_FEATURE_KEY,
+    WRIST_IMAGE_FEATURE_KEY,
 )
 
 
@@ -24,19 +30,19 @@ def build_lerobot_frame(
     """Convert one synchronized sample into the canonical LeRobot feature map."""
 
     state_array = _finite_vector(
-        state, expected=len(A1_STATE_NAMES), label="observation.state"
+        state, expected=len(A1_STATE_NAMES), label=STATE_FEATURE_KEY
     )
     action_array = _finite_vector(
-        action, expected=len(JOINT_ACTION_NAMES_RAD), label="action"
+        action, expected=len(JOINT_ACTION_NAMES_RAD), label=ACTION_FEATURE_KEY
     )
-    _normalized_gripper(state_array[-1], label="observation.state")
-    _normalized_gripper(action_array[-1], label="action")
+    _normalized_gripper(state_array[-1], label=STATE_FEATURE_KEY)
+    _normalized_gripper(action_array[-1], label=ACTION_FEATURE_KEY)
     frame = {
-        "observation.state": state_array,
-        "action": action_array,
-        "observation.images.front": _bgr_to_rgb(front_bgr, label="front"),
-        "observation.images.wrist": _bgr_to_rgb(wrist_bgr, label="wrist"),
-        "task": task,
+        STATE_FEATURE_KEY: state_array,
+        ACTION_FEATURE_KEY: action_array,
+        FRONT_IMAGE_FEATURE_KEY: _bgr_to_rgb(front_bgr, label="front"),
+        WRIST_IMAGE_FEATURE_KEY: _bgr_to_rgb(wrist_bgr, label="wrist"),
+        TASK_FEATURE_KEY: task,
     }
     if front_depth_mm is not None:
         depth = np.asarray(front_depth_mm)
@@ -44,7 +50,7 @@ def build_lerobot_frame(
             raise ValueError(
                 f"front depth must be uint16 HxW millimeters, got {depth.dtype} {depth.shape}"
             )
-        frame["observation.images.front_depth"] = depth[..., None]
+        frame[FRONT_DEPTH_FEATURE_KEY] = depth[..., None]
     return frame
 
 

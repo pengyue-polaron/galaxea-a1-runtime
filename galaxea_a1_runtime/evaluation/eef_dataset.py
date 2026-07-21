@@ -12,7 +12,12 @@ from embodied_ops.artifacts import read_json_object, read_jsonl_objects
 from galaxea_a1_runtime.evaluation.metrics import summary, vector_stats
 from galaxea_a1_runtime.evaluation.offline_config import OfflineEvalConfig
 from galaxea_a1_runtime.evaluation.types import EpisodeRecord
-from galaxea_a1_runtime.schema import A1_STATE_NAMES, EEF_ACTION_NAMES
+from galaxea_a1_runtime.schema import (
+    ACTION_FEATURE_KEY,
+    A1_STATE_NAMES,
+    EEF_ACTION_NAMES,
+    STATE_FEATURE_KEY,
+)
 
 
 class EefDataset:
@@ -48,13 +53,13 @@ class EefDataset:
                 f"offline dataset repo mismatch: {self.eef.get('repo_id')!r}"
             )
         features = self.info.get("features", {})
-        if features.get("observation.state", {}).get("names") != list(A1_STATE_NAMES):
+        if features.get(STATE_FEATURE_KEY, {}).get("names") != list(A1_STATE_NAMES):
             raise ValueError("offline dataset state names do not match the A1 contract")
-        if features.get("action", {}).get("names") != list(EEF_ACTION_NAMES):
+        if features.get(ACTION_FEATURE_KEY, {}).get("names") != list(EEF_ACTION_NAMES):
             raise ValueError(
                 "offline dataset action names do not match the EEF contract"
             )
-        if self.eef.get("action", {}).get("semantics") != (
+        if self.eef.get(ACTION_FEATURE_KEY, {}).get("semantics") != (
             "EEF target relative to episode initial feedback pose"
         ):
             raise ValueError("offline dataset is not episode-relative EEF")
@@ -68,8 +73,8 @@ class EefDataset:
         path = self._data_path(episode_index)
         frame = pd.read_parquet(path)
         required = {
-            "observation.state",
-            "action",
+            STATE_FEATURE_KEY,
+            ACTION_FEATURE_KEY,
             "timestamp",
             "frame_index",
             "episode_index",
@@ -78,8 +83,8 @@ class EefDataset:
         missing = sorted(required - set(frame.columns))
         if missing:
             raise ValueError(f"{path} is missing columns: {missing}")
-        states = np.stack(frame["observation.state"]).astype(np.float32)
-        actions = np.stack(frame["action"]).astype(np.float32)
+        states = np.stack(frame[STATE_FEATURE_KEY]).astype(np.float32)
+        actions = np.stack(frame[ACTION_FEATURE_KEY]).astype(np.float32)
         timestamps = frame["timestamp"].to_numpy(dtype=np.float64)
         task_ids = frame["task_index"].to_numpy(dtype=np.int64)
         task_id = int(task_ids[0])

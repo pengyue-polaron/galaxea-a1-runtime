@@ -1,4 +1,4 @@
-"""Pure EEF policy action transforms shared by model adapters."""
+"""Pure EEF policy action transforms shared by applications and evaluation."""
 
 from __future__ import annotations
 
@@ -23,6 +23,29 @@ class EefActionTransformConfig:
 
 class EefPolicyWorkspaceRejected(ValueError):
     """A finite policy target that lies outside the tracked EEF workspace."""
+
+
+def condition_state_from_action8(
+    action8: Sequence[float],
+    *,
+    frame_chunk_size: int,
+    action_per_frame: int,
+) -> np.ndarray:
+    """Broadcast one finite EEF action into the LingBot conditioning tensor."""
+
+    action = np.asarray(action8, dtype=np.float64).reshape(8)
+    if not np.all(np.isfinite(action)):
+        raise ValueError("condition action must contain only finite values")
+    if frame_chunk_size <= 0 or action_per_frame <= 0:
+        raise ValueError("condition dimensions must be positive")
+    return (
+        np.broadcast_to(
+            action[:, None, None],
+            (8, frame_chunk_size, action_per_frame),
+        )
+        .astype(np.float32)
+        .copy()
+    )
 
 
 def build_action_transform_config(

@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from embodied_ops.artifacts import PublishedOutputCleanupError
+
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.metadata import (
     DatasetProvenanceRequest,
@@ -127,6 +129,16 @@ class TeleopEpisodeSession:
                     )
 
                 output.commit()
+        except PublishedOutputCleanupError as error:
+            warning(
+                f"Episode {episode_index} was saved to {error.target}, but the displaced "
+                f"backup could not be removed: {error.backup}"
+            )
+            failure(
+                "Collection stopped: the saved dataset is authoritative; "
+                "inspect the backup before retrying."
+            )
+            raise
         except BaseException:
             failure(
                 f"Episode {episode_index}: recording or commit failed; "

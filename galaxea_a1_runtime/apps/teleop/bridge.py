@@ -15,7 +15,7 @@ from lerobot_robot_galaxea_a1 import GalaxeaA1Config
 from lerobot_teleoperator_galaxea_a1_so_leader import GalaxeaA1SOLeaderConfig
 
 from galaxea_a1_runtime.console import info
-from galaxea_a1_runtime.lerobot.hardware import make_a1_teleop_processors
+from galaxea_a1_runtime.apps.teleop.processors import make_a1_teleop_processors
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 

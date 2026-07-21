@@ -1,5 +1,5 @@
 from galaxea_a1_runtime.apps import eef_policy_cli as cli
-from galaxea_a1_runtime.apps.eef_policy_actions import EefPolicyWorkspaceRejected
+from galaxea_a1_runtime.policies.eef_actions import EefPolicyWorkspaceRejected
 from galaxea_a1_runtime.hardware.eef_ik import A1EefIkTargetRejected
 
 

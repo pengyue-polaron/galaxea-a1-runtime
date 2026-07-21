@@ -1,4 +1,4 @@
-from galaxea_a1_runtime.runtime.safety_report import (
+from galaxea_a1_runtime.safety_report import (
     build_architecture_findings,
     build_safety_settings,
     format_safety_report,

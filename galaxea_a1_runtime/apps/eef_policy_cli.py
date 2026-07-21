@@ -33,7 +33,7 @@ def run_eef_policy_bridge(
         outcome = ("operator_interrupted", message)
     except Exception as exc:
         # Keep optional numeric/URDF dependencies out of static CLI startup.
-        from galaxea_a1_runtime.apps.eef_policy_actions import (
+        from galaxea_a1_runtime.policies.eef_actions import (
             EefPolicyWorkspaceRejected,
         )
         from galaxea_a1_runtime.hardware.eef_ik import A1EefIkTargetRejected

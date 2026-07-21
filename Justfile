@@ -72,7 +72,7 @@ model-verify config:
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
 hardware *args:
-    {{vpy}} {{repo}}/scripts/runtime/a1_hardware_check.py {{args}}
+    {{vpy}} {{repo}}/scripts/apps/teleop/a1_hardware_check.py {{args}}
 
 rosbag *args:
     {{repo}}/scripts/apps/recording/a1_rosbag.sh {{args}}

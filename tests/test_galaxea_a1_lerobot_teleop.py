@@ -22,7 +22,7 @@ import lerobot_teleoperator_galaxea_a1_so_leader.galaxea_a1_so_leader as leader_
 
 import galaxea_a1_runtime.apps.teleop.bridge as bridge_module
 from galaxea_a1_runtime.apps.teleop.bridge import run_teleop_session
-from galaxea_a1_runtime.lerobot.hardware import make_a1_teleop_processors
+from galaxea_a1_runtime.apps.teleop.processors import make_a1_teleop_processors
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 

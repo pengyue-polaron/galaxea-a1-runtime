@@ -1,11 +1,10 @@
 import pytest
 
-from galaxea_a1_runtime.apps.eef_bridge import (
+from galaxea_a1_runtime.hardware.eef_bridge import (
     EefIkCommandPublisher,
-    condition_state_from_action8,
-    format_xyz_direction,
     pose_msg_to_xyz_quat,
 )
+from galaxea_a1_runtime.policies.eef_actions import condition_state_from_action8
 from galaxea_a1_runtime.hardware.eef_ik import IkSolution
 from galaxea_a1_runtime.runtime.relay import (
     decode_relay_status,
@@ -121,7 +120,6 @@ def test_pose_msg_and_condition_helpers():
     assert xyz == pytest.approx((0.1, -0.2, 0.3))
     assert quat == pytest.approx((0.0, 0.0, 0.0, 1.0))
     assert state.shape == (8, 4, 20)
-    assert format_xyz_direction([0.0, -0.02, 0.03], deadband_m=0.001) == "y-,z+"
 
 
 def test_eef_joint_publisher_solves_named_target_before_gripper_publication():

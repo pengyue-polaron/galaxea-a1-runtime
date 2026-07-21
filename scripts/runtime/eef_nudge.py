@@ -25,7 +25,7 @@ from sensor_msgs.msg import JointState
 from signal_arm.msg import arm_control, gripper_position_control
 from std_msgs.msg import Bool, String
 
-from galaxea_a1_runtime.apps.eef_bridge import (
+from galaxea_a1_runtime.hardware.eef_bridge import (
     EefIkCommandPublisher,
     pose_msg_to_xyz_quat,
 )

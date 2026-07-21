@@ -89,6 +89,7 @@ def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Pat
     assert metadata["run"]["video_filename"] == paths.video_filename
     assert metadata["run"]["batch"] == {
         "id": "fruit-placement-scripted",
+        "task_id": "red_mango_bowl",
         "task_position": 5,
         "task_count": 6,
         "attempt": 2,

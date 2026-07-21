@@ -140,7 +140,10 @@ def _classify_run(
         return None
     expected_sequence = slot.sequence
     expected_batch = slot.to_dict()
-    if any(batch.get(key) != value for key, value in expected_batch.items()):
+    if any(
+        batch.get(key, slot.task_id if key == "task_id" else None) != value
+        for key, value in expected_batch.items()
+    ):
         return None
     if sequence != expected_sequence or task.get("id") != slot.task_id:
         return None

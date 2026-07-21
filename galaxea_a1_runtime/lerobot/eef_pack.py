@@ -32,11 +32,13 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     write_tar_archive,
 )
 from galaxea_a1_runtime.schema import (
+    ACTION_FEATURE_KEY,
     A1_STATE_NAMES,
     DEFAULT_RGB_IMAGE_KEYS,
     DIRECT_DATASET_SCHEMA_VERSION,
     EEF_ACTION_NAMES,
     JOINT_ACTION_NAMES_RAD,
+    STATE_FEATURE_KEY,
 )
 
 
@@ -184,7 +186,7 @@ def _build_eef_v3_dataset(
             "tip_link": tip_link,
             "joint_names": list(chain.joint_names),
         },
-        "action": {
+        ACTION_FEATURE_KEY: {
             "shape": [len(EEF_ACTION_NAMES)],
             "names": list(EEF_ACTION_NAMES),
             "semantics": "EEF target relative to episode initial feedback pose",
@@ -240,10 +242,10 @@ def _convert_data_files(
     for path in data_files:
         frame = pd.read_parquet(path)
         source_hash.update((source_root / path.relative_to(target_root)).read_bytes())
-        source_states = np.stack(frame["observation.state"].to_numpy()).astype(
+        source_states = np.stack(frame[STATE_FEATURE_KEY].to_numpy()).astype(np.float64)
+        source_actions = np.stack(frame[ACTION_FEATURE_KEY].to_numpy()).astype(
             np.float64
         )
-        source_actions = np.stack(frame["action"].to_numpy()).astype(np.float64)
         output_actions = np.empty((len(frame), len(EEF_ACTION_NAMES)), dtype=np.float32)
         output_states = source_states.astype(np.float32, copy=True)
         episode_indices = frame["episode_index"].to_numpy()
@@ -270,8 +272,8 @@ def _convert_data_files(
             roundtrip_position_errors.append(episode["roundtrip_position_error"])
             roundtrip_quaternion_dots.append(episode["roundtrip_quaternion_dot"])
 
-        frame["observation.state"] = list(output_states)
-        frame["action"] = list(output_actions)
+        frame[STATE_FEATURE_KEY] = list(output_states)
+        frame[ACTION_FEATURE_KEY] = list(output_actions)
         frame.to_parquet(path, index=False)
 
     return _ConversionResult(
@@ -311,7 +313,7 @@ def _convert_episode(
         actions[row, :7] = relative_pose(target_pose, initial_pose)
     _make_quaternions_continuous(actions[:, 3:7])
     actions[:, 7] = _normalized_gripper(
-        joint_actions[:, arm_dof], episode_index=episode_index, label="action"
+        joint_actions[:, arm_dof], episode_index=episode_index, label=ACTION_FEATURE_KEY
     )
     continuous_states = observations.astype(np.float32, copy=True)
     continuous_states[:, -1] = _normalized_gripper(
@@ -358,9 +360,11 @@ def _validate_source(info: dict[str, Any]) -> None:
     if info.get("codebase_version") != "v3.0":
         raise ValueError("source must be a LeRobot v3.0 dataset")
     features = info.get("features", {})
-    if features.get("action", {}).get("names") != list(JOINT_ACTION_NAMES_RAD):
+    if features.get(ACTION_FEATURE_KEY, {}).get("names") != list(
+        JOINT_ACTION_NAMES_RAD
+    ):
         raise ValueError("source action must be A1 joint_absolute + normalized gripper")
-    if features.get("observation.state", {}).get("names") != list(A1_STATE_NAMES):
+    if features.get(STATE_FEATURE_KEY, {}).get("names") != list(A1_STATE_NAMES):
         raise ValueError(
             "source observation.state does not contain the expected A1 EEF and joints"
         )
@@ -372,7 +376,7 @@ def _validate_source(info: dict[str, Any]) -> None:
 def _rewrite_info(target_root: Path, source_info: dict[str, Any]) -> None:
     info = json.loads(json.dumps(source_info))
     info["robot_type"] = "galaxea_a1_eef"
-    info["features"]["action"] = {
+    info["features"][ACTION_FEATURE_KEY] = {
         "dtype": "float32",
         "shape": [len(EEF_ACTION_NAMES)],
         "names": list(EEF_ACTION_NAMES),
@@ -387,8 +391,8 @@ def _rewrite_global_stats(
 ) -> None:
     path = target_root / "meta/stats.json"
     stats = read_json(path)
-    stats["action"] = action_stats
-    stats["observation.state"] = state_stats
+    stats[ACTION_FEATURE_KEY] = action_stats
+    stats[STATE_FEATURE_KEY] = state_stats
     write_json(path, stats)
 
 

@@ -12,7 +12,7 @@ from geometry_msgs.msg import PoseStamped
 from sensor_msgs.msg import JointState
 from signal_arm.msg import gripper_position_control
 
-from galaxea_a1_runtime.apps.eef_bridge import pose_msg_to_xyz_quat
+from galaxea_a1_runtime.hardware.eef_bridge import pose_msg_to_xyz_quat
 from galaxea_a1_runtime.gripper import normalize_stroke
 from galaxea_a1_runtime.hardware.freshness import LatestMessageCache
 from galaxea_a1_runtime.runtime.ros_feedback import ordered_joint_positions

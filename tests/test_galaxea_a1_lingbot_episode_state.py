@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from galaxea_a1_runtime.apps.eef_policy_actions import EefActionTransformConfig
+from galaxea_a1_runtime.policies.eef_actions import EefActionTransformConfig
 from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 
 

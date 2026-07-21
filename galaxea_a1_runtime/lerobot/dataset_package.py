@@ -19,6 +19,8 @@ from embodied_ops.artifacts import (
     file_sha256,
 )
 
+from galaxea_a1_runtime.schema import ACTION_FEATURE_KEY, STATE_FEATURE_KEY
+
 
 def portable_metadata_id(value: str, *, label: str) -> str:
     """Validate a logical metadata identifier without host-specific paths."""
@@ -100,8 +102,8 @@ def rewrite_episode_vector_stats(
         episodes = pd.read_parquet(path)
         for row_index, episode_index in enumerate(episodes["episode_index"].to_numpy()):
             for feature, values in (
-                ("action", episode_actions[int(episode_index)]),
-                ("observation.state", episode_states[int(episode_index)]),
+                (ACTION_FEATURE_KEY, episode_actions[int(episode_index)]),
+                (STATE_FEATURE_KEY, episode_states[int(episode_index)]),
             ):
                 for statistic, statistic_values in vector_stats(values).items():
                     episodes.at[row_index, f"stats/{feature}/{statistic}"] = (
