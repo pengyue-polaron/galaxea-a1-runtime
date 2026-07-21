@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import io
 import json
-import os
 import stat
 import tarfile
 import unicodedata
@@ -23,7 +22,7 @@ from galaxea_a1_runtime.apps.lingbot.batch_progress import (
 )
 from galaxea_a1_runtime.apps.lingbot.operator_input import validate_scene_note
 from galaxea_a1_runtime.console import ArgumentParser
-from galaxea_a1_runtime.filesystem import file_sha256
+from embodied_ops.artifacts import create_only_output_file, file_sha256
 
 
 ROOT = Path(__file__).resolve().parents[3]
@@ -109,10 +108,6 @@ def export_valid_lingbot_batch(
         f"{created.strftime('%Y%m%d_%H%M%S')}.tar"
     )
     destination = destination_root / filename
-    temporary = destination_root / f".{filename}.tmp.{os.getpid()}"
-    destination_root.mkdir(parents=True, exist_ok=True)
-    if destination.exists() or temporary.exists():
-        raise FileExistsError(f"LingBot batch export already exists: {destination}")
 
     by_sequence = _runs_by_sequence(progress)
     manifest_runs = []
@@ -172,8 +167,8 @@ def export_valid_lingbot_batch(
     manifest_bytes = (
         json.dumps(manifest, indent=2, sort_keys=True, ensure_ascii=False) + "\n"
     ).encode()
-    try:
-        with tarfile.open(temporary, mode="x") as archive:
+    with create_only_output_file(destination) as temporary:
+        with tarfile.open(temporary, mode="w") as archive:
             info = tarfile.TarInfo("manifest.json")
             info.size = len(manifest_bytes)
             info.mtime = int(created.timestamp())
@@ -181,10 +176,6 @@ def export_valid_lingbot_batch(
             archive.addfile(info, io.BytesIO(manifest_bytes))
             for source, archive_path in archive_files:
                 archive.add(source, arcname=archive_path, recursive=False)
-        os.replace(temporary, destination)
-    except BaseException:
-        temporary.unlink(missing_ok=True)
-        raise
     return destination
 
 

@@ -134,22 +134,15 @@ def _classify_run(
         return None
     if not 1 <= attempt <= config.attempts_per_prompt:
         return None
-    expected_sequence = (task_position - 1) * config.attempts_per_prompt + attempt
-    expected_batch = {
-        "id": config.batch_id,
-        "task_position": task_position,
-        "task_count": len(config.task_ids),
-        "attempt": attempt,
-        "attempt_count": config.attempts_per_prompt,
-        "sequence": expected_sequence,
-        "total": config.total_attempts,
-    }
+    try:
+        slot = config.plan.slot(task_position=task_position, attempt=attempt)
+    except ValueError:
+        return None
+    expected_sequence = slot.sequence
+    expected_batch = slot.to_dict()
     if any(batch.get(key) != value for key, value in expected_batch.items()):
         return None
-    if (
-        sequence != expected_sequence
-        or task.get("id") != config.task_ids[task_position - 1]
-    ):
+    if sequence != expected_sequence or task.get("id") != slot.task_id:
         return None
 
     run_dir = metadata_path.parent

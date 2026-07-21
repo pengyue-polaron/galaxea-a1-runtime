@@ -30,13 +30,13 @@ galaxea_a1_runtime.apps
   download, and validation. `inference/` owns the shared wire protocol.
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
-- The pinned `external/embodied-ops` package owns framework-neutral capability,
-  manifest, lifecycle, health, and the optional versioned Protobuf/gRPC Unix-socket
-  transport. Its core has no ROS or LeRobot dependency.
+- The pinned `external/embodied-ops` package owns hardware-independent collection,
+  evaluation-plan, sample-timing, and transactional artifact primitives. It defines
+  no robot API and has no ROS or LeRobot dependency.
 - The pinned `external/lerobot-robot-galaxea-a1` and
   `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
-  LeRobot adapters. The Robot plugin is a thin RPC client; A1-Research hosts the
-  operational device service and remains the ROS/safety/process composition root.
+  LeRobot adapters. The Robot plugin also owns its private A1 Runtime transport;
+  A1-Research hosts that service and remains the ROS/safety/process composition root.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
 - `lerobot/` owns direct LeRobotDataset recording, atomic episode commits, and
   deterministic derived packages.
@@ -45,6 +45,21 @@ galaxea_a1_runtime.apps
 Heavy dependencies are loaded only at hardware or model boundaries. Static
 configuration validation and pure tests do not require ROS, cameras, serial
 devices, Torch, or a model checkout.
+
+## Reusable workflow boundary
+
+`embodied-ops` is deliberately a workflow library, not an embodied-hardware
+standard. Its inputs are ordinary paths, identifiers, timestamps, episode
+decisions, and task IDs. It knows how to validate lifecycle transitions and
+publish complete artifacts, but it does not name joints, interpret actions,
+open devices, define datasets, or execute policies.
+
+This repository supplies the A1 semantics around those primitives: the
+canonical observation/action schema, LeRobotDataset versions and conversions,
+camera pairing, reset behavior, task catalogs, model contracts, ROS ownership,
+and safety gates. Hardware interoperability uses LeRobot's existing `Robot`
+and `Teleoperator` plugin contracts; the local A1 transport remains private to
+the A1 Robot plugin and Runtime.
 
 ## Configuration graph
 
@@ -74,7 +89,7 @@ Ownership is exclusive:
 
 | Config | Owns |
 | --- | --- |
-| System | devices, ROS topics, cameras, physical limits, relay/startup safety, and the embodied-ops endpoint/session and command timeouts |
+| System | devices, ROS topics, cameras, physical limits, relay/startup safety, and the A1 Robot service endpoint/session and command timeouts |
 | Teleop | leader identity/mapping and collection behavior |
 | Pose | reset targets and reset motion behavior |
 | Dataset | source/output packaging and conversion policy |
@@ -102,9 +117,9 @@ System config.
 
 ```text
 LeRobot Robot plugin
-  -> embodied-ops protocol client
-  -> versioned gRPC over System-owned Unix socket
-  -> A1 Runtime operational-device service
+  -> plugin-private A1 Runtime client
+  -> A1-specific gRPC over System-owned Unix socket
+  -> A1 Runtime Robot service
   -> ROS staged tracker -> locked relay -> host driver
 ```
 
@@ -116,12 +131,16 @@ that lease may attach the staged-command subscriber, target publishers, motion g
 and hold timer, and it requires fresh feedback plus a fresh `LOCKED` relay before
 attachment. Read-only observation sessions may coexist throughout.
 
-Commands carry a contiguous sequence and monotonic timestamp. Successful commands,
-calibration, or reset refresh the command-inactivity deadline; heartbeats refresh only
-session liveness. Command failure, inactivity expiry, lease expiry, or command-session
-close disables and releases command resources. Observation resources remain attached
-while observers remain connected. The relay's independent input-freshness and
-motor-status gates remain authoritative.
+Commands carry a contiguous sequence and monotonic timestamp. Successful commands
+refresh the command-inactivity deadline; heartbeats refresh only session liveness.
+Command failure, inactivity expiry, lease expiry, or command-session close disables
+and releases command resources. Observation resources remain attached while observers
+remain connected. Calibration and reset remain explicit Runtime workflows rather than
+remote Robot capabilities. A failed command-resource release is process-fatal, so a
+possibly stale publisher or timer can never coexist with a new owner. The socket is
+published inside a current-user-owned `0700` directory with mode `0600`; existing paths
+are never unlinked on startup. The relay's independent input-freshness and motor-status
+gates remain authoritative.
 
 Every managed motion path has four roles: an app publishes a named joint target,
 the isolated jointTracker produces a staged driver command, the relay validates
@@ -201,8 +220,8 @@ The production Teleop bridge is the pair composition root. It constructs the
 auto-discovered Teleoperator and Robot plugins, then applies LeRobot's
 teleoperator-action and robot-action processor ordering. The first processed
 action is the current A1 pose and normalized gripper state; the Robot sends that hold
-through the local RPC service, whose A1 device alone attaches to ROS and requests the
-relay. The previous in-app joint mapping and ROS publishers are not
+through its private local transport. The A1 Robot service alone attaches to ROS and
+requests the relay. The previous in-app joint mapping and ROS publishers are not
 retained as a second control path. Generic LeRobot 0.6 CLI entrypoints use
 identity processors and are not valid for this degree-to-radian hardware pair.
 
@@ -329,14 +348,15 @@ bridge. Configuration is composed from five exclusive owners:
 System + inference backend + immutable model + task catalog + deployment
 ```
 
-Each supervisor exposes only the repository runtime source and the pinned
-`embodied-ops` source to its isolated backend interpreter; it never leaks the
-main virtual environment into a model environment. LingBot uses Python 3.12 and
+Each supervisor exposes only the repository runtime source to its isolated
+backend interpreter; it never leaks the main virtual environment into a model
+environment. LingBot uses Python 3.12 and
 OpenPI uses its pinned Python 3.11 environment, so the shared runtime import
 surface remains Python 3.11-parseable even though the main runtime environment
-is formally Python 3.12. Repository-owned ROS containers receive the same
-runtime plus `embodied-ops` source boundary through their fixed container
-`PYTHONPATH`.
+is formally Python 3.12. Repository-owned ROS containers likewise receive only
+the runtime source through their fixed container `PYTHONPATH`. Workflow modules
+use the installed `embodied-ops` dependency only in the main application
+environment.
 
 The backend pins source code and its dependency lock. The model descriptor pins
 one Hugging Face commit, checkpoint step, artifact format, complete file

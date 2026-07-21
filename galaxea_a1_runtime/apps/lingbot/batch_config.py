@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from embodied_ops.evaluation import EvaluationPlan
+
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
@@ -42,7 +44,15 @@ class LingBotBatchConfig:
 
     @property
     def total_attempts(self) -> int:
-        return len(self.task_ids) * self.attempts_per_prompt
+        return self.plan.total_slots
+
+    @property
+    def plan(self) -> EvaluationPlan:
+        return EvaluationPlan(
+            identifier=self.batch_id,
+            task_ids=self.task_ids,
+            attempts_per_task=self.attempts_per_prompt,
+        )
 
 
 def load_lingbot_batch_config(

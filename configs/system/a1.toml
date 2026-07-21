@@ -42,10 +42,10 @@ joint_feedback_timeout_s = 20.0
 topic_timeout_s = 15.0
 tmux_process_grace_s = 4
 
-[embodied_ops]
+[robot_service]
 # The runtime service is the sole ROS/hardware owner. Framework adapters connect
 # through this local versioned RPC endpoint and never import the runtime backend.
-endpoint = "unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"
+endpoint = "unix:///tmp/galaxea-a1-runtime/robot-service.sock"
 # Covers cold ROS feedback and staged-target alignment during session opening.
 device_connect_timeout_s = 30.0
 # Individual control RPCs fail before the session lease; the relay independently

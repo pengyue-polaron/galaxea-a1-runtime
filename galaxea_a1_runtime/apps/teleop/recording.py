@@ -9,6 +9,7 @@ from dataclasses import dataclass
 from typing import Any
 
 import rospy
+from embodied_ops.collection import require_fresh_sample, require_pair_skew
 
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.collection import (
@@ -63,13 +64,13 @@ class _FrameRecorder:
         wrist_sample = _fresh_camera_sample(
             self.wrist_reader, now_s=now, max_age_s=self.max_camera_age_s
         )
-        camera_skew_s = abs(front_sample.monotonic_s - wrist_sample.monotonic_s)
-        if camera_skew_s > self.max_camera_pair_skew_s:
-            raise RuntimeError(
-                "camera pair is not synchronized: "
-                f"skew={camera_skew_s:.3f}s, max={self.max_camera_pair_skew_s:.3f}s, "
-                f"front_seq={front_sample.seq}, wrist_seq={wrist_sample.seq}"
-            )
+        require_pair_skew(
+            front_sample,
+            wrist_sample,
+            left_label="front",
+            right_label="wrist",
+            max_skew_s=self.max_camera_pair_skew_s,
+        )
         frameset = front_sample.value
         wrist_image = wrist_sample.value
         state_sample = self.ros_state.state_sample()
@@ -214,16 +215,12 @@ def wait_for_new_camera_samples(
 def _fresh_camera_sample(
     reader: CameraReader, *, now_s: float, max_age_s: float
 ) -> CameraSample:
-    sample = reader.latest()
-    if sample is None:
-        raise RuntimeError(f"{reader.name} camera has no sample")
-    age_s = now_s - sample.monotonic_s
-    if age_s > max_age_s:
-        raise RuntimeError(
-            f"{reader.name} camera sample is stale: age={age_s:.3f}s, "
-            f"max={max_age_s:.3f}s, seq={sample.seq}"
-        )
-    return sample
+    return require_fresh_sample(
+        reader.latest(),
+        label=f"{reader.name} camera",
+        now_s=now_s,
+        max_age_s=max_age_s,
+    )
 
 
 def _raise_camera_reader_errors(readers: tuple[CameraReader, ...]) -> None:

@@ -15,7 +15,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
 )
 from galaxea_a1_runtime.configuration.base import discover_repo_root
 from galaxea_a1_runtime.console import ArgumentParser, success, warning
-from galaxea_a1_runtime.filesystem import file_sha256
+from embodied_ops.artifacts import file_sha256
 from galaxea_a1_runtime.models.backend import verify_backend_environment
 from galaxea_a1_runtime.models.store import validate_artifact
 

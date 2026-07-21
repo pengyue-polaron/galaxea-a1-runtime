@@ -11,6 +11,9 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from embodied_ops.artifacts import atomic_write_json, file_sha256
+from embodied_ops.evaluation import EvaluationSlot
+
 from galaxea_a1_runtime.apps.lingbot.config import (
     default_config_path,
     load_lingbot_config,
@@ -21,7 +24,6 @@ from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.configuration.base import shell_assign
 from galaxea_a1_runtime.configuration.tasks import TaskPrompt
 from galaxea_a1_runtime.console import ArgumentParser
-from galaxea_a1_runtime.filesystem import file_sha256
 from galaxea_a1_runtime.hardware.video_recorder import recording_run_id
 
 
@@ -153,7 +155,7 @@ def prepare_lingbot_run(
         },
     }
     if batch_attempt is not None:
-        _validate_batch_attempt(batch_attempt)
+        _validate_batch_attempt(batch_attempt, task_id=task.task_id)
         context["batch"] = {
             "id": batch_attempt.batch_id,
             "task_position": batch_attempt.task_position,
@@ -165,7 +167,7 @@ def prepare_lingbot_run(
         }
     artifacts_root.mkdir(parents=True, exist_ok=True)
     paths.log_staging_dir.mkdir()
-    _atomic_json(paths.log_staging_dir / _CONTEXT_NAME, context)
+    atomic_write_json(paths.log_staging_dir / _CONTEXT_NAME, context)
     paths.policy_server_log.touch(exist_ok=False)
     return paths
 
@@ -188,7 +190,7 @@ def record_lingbot_run_outcome(
     context_path = paths.log_staging_dir / _CONTEXT_NAME
     if not context_path.is_file():
         raise FileNotFoundError(f"LingBot run context is missing: {context_path}")
-    _atomic_json(
+    atomic_write_json(
         paths.log_staging_dir / _OUTCOME_NAME,
         {"kind": kind, "message": message.strip()},
     )
@@ -275,7 +277,7 @@ def finalize_lingbot_run(
             },
         }
     )
-    _atomic_json(metadata_path, metadata)
+    atomic_write_json(metadata_path, metadata)
 
     context_path.unlink()
     if outcome_path.exists():
@@ -338,7 +340,7 @@ def record_lingbot_evaluation_decision(
         "decided_at": (now or datetime.now().astimezone()).isoformat(),
     }
     metadata["run"] = run
-    _atomic_json(metadata_path, metadata)
+    atomic_write_json(metadata_path, metadata)
     return metadata_path
 
 
@@ -394,27 +396,20 @@ def _filename_component(value: str, *, max_bytes: int) -> str:
     return encoded.decode("utf-8").rstrip("_") or "note"
 
 
-def _validate_batch_attempt(value: LingBotBatchAttempt) -> None:
-    if not value.batch_id or any(
-        not (character.islower() or character.isdigit() or character in {"-", "_"})
-        for character in value.batch_id
-    ):
-        raise ValueError(f"invalid LingBot batch id: {value.batch_id!r}")
-    pairs = (
-        (value.task_position, value.task_count, "task position"),
-        (value.attempt, value.attempt_count, "attempt"),
-        (value.sequence, value.total, "sequence"),
+def _validate_batch_attempt(value: LingBotBatchAttempt, *, task_id: str) -> None:
+    slot = EvaluationSlot(
+        plan_id=value.batch_id,
+        task_id=task_id,
+        task_position=value.task_position,
+        task_count=value.task_count,
+        attempt=value.attempt,
+        attempt_count=value.attempt_count,
     )
-    for current, total, label in pairs:
-        if total <= 0 or not 1 <= current <= total:
-            raise ValueError(f"invalid LingBot batch {label}: {current}/{total}")
-    expected_total = value.task_count * value.attempt_count
-    expected_sequence = (value.task_position - 1) * value.attempt_count + value.attempt
-    if value.total != expected_total or value.sequence != expected_sequence:
+    if value.total != slot.total or value.sequence != slot.sequence:
         raise ValueError(
             "inconsistent LingBot batch attempt indices: "
             f"sequence={value.sequence}/{value.total}, expected "
-            f"{expected_sequence}/{expected_total}"
+            f"{slot.sequence}/{slot.total}"
         )
 
 
@@ -537,12 +532,6 @@ def _load_outcome(path: Path) -> dict[str, str]:
     ):
         raise ValueError(f"LingBot run outcome is invalid: {path}")
     return {"kind": kind, "message": message.strip()}
-
-
-def _atomic_json(path: Path, value: dict) -> None:
-    temporary = path.with_name(f".{path.name}.tmp.{os.getpid()}")
-    temporary.write_text(json.dumps(value, indent=2, sort_keys=True) + "\n")
-    os.replace(temporary, path)
 
 
 def main() -> int:

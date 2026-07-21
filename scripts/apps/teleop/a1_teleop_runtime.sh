@@ -60,7 +60,10 @@ TRACKER_CONTAINER="${PREFIX}-joint-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
 LOG_DIR="${RUN_DIR}/logs"
 BRIDGE_PID_FILE="${RUN_DIR}/bridge.pid"
-RPC_SERVER_PID_FILE="${RUN_DIR}/embodied_ops_server.pid"
+ROBOT_SERVICE_PID_FILE="${RUN_DIR}/robot_service.pid"
+# One-release migration guard: an older checkout may still own ROS resources
+# under the former service module and PID filename.
+LEGACY_ROBOT_SERVICE_PID_FILE="${RUN_DIR}/embodied_ops_server.pid"
 source "${ROOT}/scripts/runtime/a1_services.sh"
 
 bridge_group_has_live_process() {
@@ -97,44 +100,53 @@ stop_bridge() {
   fi
 }
 
-rpc_server_is_live() {
+robot_service_is_live() {
   local pid="$1"
   ps -eo pid=,stat=,comm=,args= | awk -v pid="${pid}" '
     $1 == pid && $2 !~ /^Z/ && $3 ~ /^python/ && \
-      $0 ~ /-m[[:space:]]+galaxea_a1_runtime\.apps\.embodied_ops\.server([[:space:]]|$)/ { found = 1 }
+      $0 ~ /-m[[:space:]]+galaxea_a1_runtime\.apps\.(robot_service|embodied_ops)\.server([[:space:]]|$)/ { found = 1 }
     END { exit(found ? 0 : 1) }
   '
 }
 
-stop_rpc_server() {
-  if [[ ! -f "${RPC_SERVER_PID_FILE}" ]]; then
+stop_robot_service_pid_file() {
+  local pid_file="$1"
+  local label="$2"
+  if [[ ! -f "${pid_file}" ]]; then
     return 0
   fi
   local pid
-  pid="$(cat "${RPC_SERVER_PID_FILE}")"
+  pid="$(cat "${pid_file}")"
   if [[ ! "${pid}" =~ ^[1-9][0-9]*$ ]]; then
-    a1_fail "Invalid embodied-ops server pid file: ${RPC_SERVER_PID_FILE}"
+    a1_fail "Invalid ${label} pid file: ${pid_file}"
     return 1
   fi
-  if ! rpc_server_is_live "${pid}"; then
-    rm -f "${RPC_SERVER_PID_FILE}"
+  if ! robot_service_is_live "${pid}"; then
+    rm -f "${pid_file}"
     return 0
   fi
   kill "${pid}" >/dev/null 2>&1 || true
-  local deadline=$((SECONDS + ${EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S%.*} + 1))
-  while rpc_server_is_live "${pid}" && (( SECONDS < deadline )); do
+  local deadline=$((SECONDS + ${A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S%.*} + 1))
+  while robot_service_is_live "${pid}" && (( SECONDS < deadline )); do
     sleep 0.1
   done
-  if rpc_server_is_live "${pid}"; then
-    a1_fail "embodied-ops server ${pid} did not stop within ${EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S} seconds."
+  if robot_service_is_live "${pid}"; then
+    a1_fail "${label} ${pid} did not stop within ${A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S} seconds."
     return 1
   fi
-  rm -f "${RPC_SERVER_PID_FILE}"
+  rm -f "${pid_file}"
+}
+
+stop_robot_service() {
+  stop_robot_service_pid_file "${ROBOT_SERVICE_PID_FILE}" "A1 Robot service"
+  stop_robot_service_pid_file \
+    "${LEGACY_ROBOT_SERVICE_PID_FILE}" \
+    "legacy embodied-ops service"
 }
 
 stop_runtime() {
   stop_bridge
-  stop_rpc_server
+  stop_robot_service
   a1_remove_runtime_containers \
     "${RELAY_CONTAINER}" \
     "${TRACKER_CONTAINER}" \
@@ -179,39 +191,39 @@ start_services() {
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  a1_step "5/5 embodied-ops RPC service"
-  start_rpc_server
+  a1_step "5/5 A1 Robot service"
+  start_robot_service
 
   a1_success "Teleop services ready."
 }
 
-start_rpc_server() {
-  stop_rpc_server
-  local log_file="${LOG_DIR}/embodied_ops_server.log"
+start_robot_service() {
+  stop_robot_service
+  local log_file="${LOG_DIR}/robot_service.log"
   : > "${log_file}"
   setsid env \
     PYTHONUNBUFFERED=1 \
     PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
-    "${PYTHON_BIN}" -m galaxea_a1_runtime.apps.embodied_ops.server \
+    "${PYTHON_BIN}" -m galaxea_a1_runtime.apps.robot_service.server \
       --system-config "${SYSTEM_CONFIG_PATH}" \
       >> "${log_file}" 2>&1 < /dev/null &
-  echo "$!" > "${RPC_SERVER_PID_FILE}"
+  echo "$!" > "${ROBOT_SERVICE_PID_FILE}"
 
   local pid deadline
-  pid="$(cat "${RPC_SERVER_PID_FILE}")"
-  deadline=$((SECONDS + ${EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S%.*}))
+  pid="$(cat "${ROBOT_SERVICE_PID_FILE}")"
+  deadline=$((SECONDS + ${A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S%.*}))
   while (( SECONDS < deadline )); do
-    if ! rpc_server_is_live "${pid}"; then
-      a1_fail "embodied-ops server exited during startup. Log: ${log_file}"
+    if ! robot_service_is_live "${pid}"; then
+      a1_fail "A1 Robot service exited during startup. Log: ${log_file}"
       tail -n 120 "${log_file}" >&2 || true
       exit 2
     fi
-    if grep -Fq "embodied-ops RPC ready at ${EMBODIED_OPS_ENDPOINT}" "${log_file}"; then
+    if grep -Fq "A1 Robot service ready at ${A1_ROBOT_SERVICE_ENDPOINT}" "${log_file}"; then
       return 0
     fi
     sleep 0.1
   done
-  a1_fail "embodied-ops server did not become ready within ${EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S} seconds. Log: ${log_file}"
+  a1_fail "A1 Robot service did not become ready within ${A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S} seconds. Log: ${log_file}"
   tail -n 120 "${log_file}" >&2 || true
   exit 2
 }
@@ -356,14 +368,14 @@ status() {
   else
     a1_info "Teleop bridge is not running."
   fi
-  local rpc_pid=""
-  if [[ -f "${RPC_SERVER_PID_FILE}" ]]; then
-    rpc_pid="$(cat "${RPC_SERVER_PID_FILE}")"
+  local service_pid=""
+  if [[ -f "${ROBOT_SERVICE_PID_FILE}" ]]; then
+    service_pid="$(cat "${ROBOT_SERVICE_PID_FILE}")"
   fi
-  if [[ "${rpc_pid}" =~ ^[1-9][0-9]*$ ]] && rpc_server_is_live "${rpc_pid}"; then
-    a1_success "embodied-ops server running (pid=${rpc_pid}, endpoint=${EMBODIED_OPS_ENDPOINT})."
+  if [[ "${service_pid}" =~ ^[1-9][0-9]*$ ]] && robot_service_is_live "${service_pid}"; then
+    a1_success "A1 Robot service running (pid=${service_pid}, endpoint=${A1_ROBOT_SERVICE_ENDPOINT})."
   else
-    a1_info "embodied-ops server is not running."
+    a1_info "A1 Robot service is not running."
   fi
   echo
   doctor
@@ -376,8 +388,8 @@ logs() {
   done
   a1_info "Logs: teleop bridge"
   tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/bridge.log" 2>/dev/null || true
-  a1_info "Logs: embodied-ops server"
-  tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/embodied_ops_server.log" 2>/dev/null || true
+  a1_info "Logs: A1 Robot service"
+  tail -n "${A1_LOG_TAIL:-120}" "${LOG_DIR}/robot_service.log" 2>/dev/null || true
 }
 
 case "${1:-help}" in

@@ -6,7 +6,7 @@ source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/a1_console.sh"
 
 A1_ROS_PREFIX='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash"'
 A1_MANAGED_CONTAINER_LABEL='io.galaxea.a1-runtime.managed=true'
-A1_CONTAINER_PYTHONPATH='/workspace:/workspace/external/embodied-ops/src'
+A1_CONTAINER_PYTHONPATH='/workspace'
 
 a1_require_runtime_value() {
   local name="$1"

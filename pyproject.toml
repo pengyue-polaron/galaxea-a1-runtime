@@ -4,10 +4,10 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
-    "embodied-ops[grpc]>=0.2,<0.3",
+    "embodied-ops>=0.3,<0.4",
     "huggingface-hub>=1.0.0,<2.0.0",
     "lerobot[dataset,feetech]",
-    "lerobot_robot_galaxea_a1>=0.2,<0.3",
+    "lerobot_robot_galaxea_a1>=0.3,<0.4",
     "lerobot_teleoperator_galaxea_a1_so_leader>=0.1,<0.2",
     "msgpack>=1.1.0,<2.0.0",
     "numpy>=2.2.0",

@@ -47,7 +47,7 @@ Engine and compatible device/GPU drivers; it does not need native ROS packages.
 
 - Python `>=3.12,<3.13`
 - LeRobot v0.6.0 at `30da8e687a6dfc617fcd94afc367ac7071c376ce`
-- embodied-ops `v0.2.0`, Galaxea A1 Robot `v0.2.1`, and A1 SO-Leader
+- embodied-ops `v0.3.0`, Galaxea A1 Robot `v0.3.0`, and A1 SO-Leader
   `v0.1.1` at their pinned submodule commits
 - LeRobotDataset v3.0 writer and reader
 - first-party LeRobotDataset v2.1 exporter, validated through LeRobot's

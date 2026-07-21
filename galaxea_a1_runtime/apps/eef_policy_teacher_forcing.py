@@ -6,6 +6,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from embodied_ops.artifacts import read_json_object
+
 from galaxea_a1_runtime.apps.lingbot.client import LingBotClient
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata as lingbot_metadata
@@ -24,7 +26,6 @@ from galaxea_a1_runtime.evaluation.eef_policy_io import (
 from galaxea_a1_runtime.evaluation.eef_report import validate_training_provenance
 from galaxea_a1_runtime.evaluation.io import (
     evaluation_run_dir,
-    read_json_object,
     write_json_object,
     write_text_new,
 )

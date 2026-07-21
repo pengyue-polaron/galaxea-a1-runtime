@@ -11,7 +11,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.filesystem import atomic_output_directory
+from embodied_ops.artifacts import atomic_output_directory
 from galaxea_a1_runtime.lerobot.dataset_package import (
     dataset_digest,
     json_value,

@@ -4,22 +4,8 @@ import pytest
 
 from galaxea_a1_runtime.apps.teleop.collection_task import prepare_collection_task
 from galaxea_a1_runtime.collection import (
-    EpisodeDecision,
     find_joint_action_step_violation,
-    normalize_episode_decision,
-    reset_required_after_episode,
-    validate_experiment_name,
 )
-
-
-@pytest.mark.parametrize("name", ["../escape", "nested/name", "", ".", ".."])
-def test_experiment_name_rejects_path_traversal_and_empty_names(name):
-    with pytest.raises(ValueError):
-        validate_experiment_name(name)
-
-
-def test_experiment_name_accepts_operator_run_identity():
-    assert validate_experiment_name("pick_cube.v2-01") == "pick_cube.v2-01"
 
 
 def test_collection_task_is_created_once_and_cannot_drift(tmp_path: Path):
@@ -32,24 +18,6 @@ def test_collection_task_is_created_once_and_cannot_drift(tmp_path: Path):
     assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
     with pytest.raises(ValueError, match="task mismatch"):
         prepare_collection_task(experiment_dir, "place fruit")
-
-
-def test_episode_decision_matches_old_teleop_interaction():
-    assert normalize_episode_decision("") == EpisodeDecision.SAVE
-    assert normalize_episode_decision("d") == EpisodeDecision.DISCARD
-    assert normalize_episode_decision("discard") == EpisodeDecision.DISCARD
-    assert normalize_episode_decision("q") == EpisodeDecision.QUIT
-
-
-def test_episode_reset_policy_resets_discard_before_retry_but_not_quit():
-    policy = {
-        "after_save": True,
-        "after_discard": True,
-    }
-
-    assert reset_required_after_episode(EpisodeDecision.SAVE, **policy) is True
-    assert reset_required_after_episode(EpisodeDecision.DISCARD, **policy) is True
-    assert reset_required_after_episode(EpisodeDecision.QUIT, **policy) is False
 
 
 def test_joint_action_quality_check_rejects_discontinuity():

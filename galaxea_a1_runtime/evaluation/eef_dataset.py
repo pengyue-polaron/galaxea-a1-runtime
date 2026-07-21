@@ -7,8 +7,8 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from embodied_ops.artifacts import read_json_object, read_jsonl_objects
 
-from galaxea_a1_runtime.evaluation.io import read_json_object, read_jsonl_objects
 from galaxea_a1_runtime.evaluation.metrics import summary, vector_stats
 from galaxea_a1_runtime.evaluation.offline_config import OfflineEvalConfig
 from galaxea_a1_runtime.evaluation.types import EpisodeRecord

@@ -27,9 +27,9 @@ def bash_config(config: TeleopConfig) -> str:
             "ROS_MASTER_STARTUP_TIMEOUT_S",
             "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
             "TOPIC_STARTUP_TIMEOUT_S",
-            "EMBODIED_OPS_ENDPOINT",
-            "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S",
-            "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S",
+            "A1_ROBOT_SERVICE_ENDPOINT",
+            "A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S",
+            "A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S",
         ),
     )
     app_values = (

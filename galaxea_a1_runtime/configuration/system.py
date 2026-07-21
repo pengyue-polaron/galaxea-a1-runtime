@@ -46,7 +46,6 @@ from galaxea_a1_runtime.constants import (
     JOINT_TRACKER_NODE,
     JOINT_TRACKER_NODE_NAME,
 )
-from embodied_ops import unix_socket_path
 
 __all__ = [
     "SYSTEM_CONFIG",
@@ -58,7 +57,7 @@ __all__ = [
     "SystemEefConfig",
     "SystemEefIkConfig",
     "SystemEefTestConfig",
-    "SystemEmbodiedOpsConfig",
+    "SystemRobotServiceConfig",
     "SystemGripperConfig",
     "SystemHostConfig",
     "SystemJointSafetyConfig",
@@ -125,7 +124,7 @@ class SystemStartupConfig:
 
 
 @dataclass(frozen=True)
-class SystemEmbodiedOpsConfig:
+class SystemRobotServiceConfig:
     endpoint: str
     device_connect_timeout_s: float
     rpc_timeout_s: float
@@ -187,7 +186,7 @@ class SystemConfig:
     relay: SystemRelayConfig
     doctor: SystemDoctorConfig
     startup: SystemStartupConfig
-    embodied_ops: SystemEmbodiedOpsConfig
+    robot_service: SystemRobotServiceConfig
     joint_safety: SystemJointSafetyConfig
     eef: SystemEefConfig
     eef_ik: SystemEefIkConfig
@@ -208,7 +207,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             "relay",
             "doctor",
             "startup",
-            "embodied_ops",
+            "robot_service",
             "joint_safety",
             "eef",
             "eef_ik",
@@ -225,7 +224,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     relay = required_table(data, "relay")
     doctor = required_table(data, "doctor")
     startup = required_table(data, "startup")
-    embodied_ops = required_table(data, "embodied_ops")
+    robot_service = required_table(data, "robot_service")
     joint = required_table(data, "joint_safety")
     eef = required_table(data, "eef")
     eef_ik = required_table(data, "eef_ik")
@@ -246,9 +245,9 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         startup, required=set(SystemStartupConfig.__annotations__), label="startup"
     )
     require_exact_keys(
-        embodied_ops,
-        required=set(SystemEmbodiedOpsConfig.__annotations__),
-        label="embodied_ops",
+        robot_service,
+        required=set(SystemRobotServiceConfig.__annotations__),
+        label="robot_service",
     )
     require_exact_keys(
         joint,
@@ -303,15 +302,19 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             topic_timeout_s=floating(startup, "topic_timeout_s"),
             tmux_process_grace_s=integer(startup, "tmux_process_grace_s"),
         ),
-        embodied_ops=SystemEmbodiedOpsConfig(
-            endpoint=string(embodied_ops, "endpoint"),
-            device_connect_timeout_s=floating(embodied_ops, "device_connect_timeout_s"),
-            rpc_timeout_s=floating(embodied_ops, "rpc_timeout_s"),
-            command_timeout_s=floating(embodied_ops, "command_timeout_s"),
-            lease_timeout_s=floating(embodied_ops, "lease_timeout_s"),
-            server_startup_timeout_s=floating(embodied_ops, "server_startup_timeout_s"),
+        robot_service=SystemRobotServiceConfig(
+            endpoint=string(robot_service, "endpoint"),
+            device_connect_timeout_s=floating(
+                robot_service, "device_connect_timeout_s"
+            ),
+            rpc_timeout_s=floating(robot_service, "rpc_timeout_s"),
+            command_timeout_s=floating(robot_service, "command_timeout_s"),
+            lease_timeout_s=floating(robot_service, "lease_timeout_s"),
+            server_startup_timeout_s=floating(
+                robot_service, "server_startup_timeout_s"
+            ),
             server_shutdown_timeout_s=floating(
-                embodied_ops, "server_shutdown_timeout_s"
+                robot_service, "server_shutdown_timeout_s"
             ),
         ),
         joint_safety=SystemJointSafetyConfig(
@@ -362,6 +365,20 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     )
     validate_system_config(config)
     return config
+
+
+def _validate_robot_service_endpoint(endpoint: str) -> None:
+    """Validate the configured local socket without importing the plugin stack."""
+
+    if endpoint.strip() != endpoint or not endpoint.startswith("unix:///"):
+        raise ValueError("robot_service.endpoint must use an absolute unix:/// path")
+    socket_path = Path(endpoint.removeprefix("unix://"))
+    if not socket_path.is_absolute() or socket_path == Path("/"):
+        raise ValueError(
+            "robot_service.endpoint must use an absolute, non-root Unix socket path"
+        )
+    if len(str(socket_path).encode()) > 100:
+        raise ValueError("robot_service.endpoint is too long for portable AF_UNIX use")
 
 
 def validate_system_config(config: SystemConfig) -> None:
@@ -468,28 +485,28 @@ def validate_system_config(config: SystemConfig) -> None:
         < 1
     ):
         raise ValueError("startup timeouts must be at least one second")
-    unix_socket_path(config.embodied_ops.endpoint)
+    _validate_robot_service_endpoint(config.robot_service.endpoint)
     if (
         min(
-            config.embodied_ops.device_connect_timeout_s,
-            config.embodied_ops.rpc_timeout_s,
-            config.embodied_ops.command_timeout_s,
-            config.embodied_ops.lease_timeout_s,
-            config.embodied_ops.server_startup_timeout_s,
-            config.embodied_ops.server_shutdown_timeout_s,
+            config.robot_service.device_connect_timeout_s,
+            config.robot_service.rpc_timeout_s,
+            config.robot_service.command_timeout_s,
+            config.robot_service.lease_timeout_s,
+            config.robot_service.server_startup_timeout_s,
+            config.robot_service.server_shutdown_timeout_s,
         )
         <= 0
     ):
-        raise ValueError("embodied_ops timeouts must be positive")
-    if config.embodied_ops.rpc_timeout_s >= config.embodied_ops.lease_timeout_s:
-        raise ValueError("embodied_ops.rpc_timeout_s must be below lease_timeout_s")
+        raise ValueError("robot_service timeouts must be positive")
+    if config.robot_service.rpc_timeout_s >= config.robot_service.lease_timeout_s:
+        raise ValueError("robot_service.rpc_timeout_s must be below lease_timeout_s")
     if not (
-        config.embodied_ops.rpc_timeout_s
-        < config.embodied_ops.command_timeout_s
-        <= config.embodied_ops.lease_timeout_s
+        config.robot_service.rpc_timeout_s
+        < config.robot_service.command_timeout_s
+        <= config.robot_service.lease_timeout_s
     ):
         raise ValueError(
-            "embodied_ops.command_timeout_s must be above rpc_timeout_s "
+            "robot_service.command_timeout_s must be above rpc_timeout_s "
             "and no greater than lease_timeout_s"
         )
 
@@ -535,12 +552,12 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         ),
         "TOPIC_STARTUP_TIMEOUT_S": number(config.startup.topic_timeout_s),
         "TMUX_STARTUP_GRACE_S": str(config.startup.tmux_process_grace_s),
-        "EMBODIED_OPS_ENDPOINT": config.embodied_ops.endpoint,
-        "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S": number(
-            config.embodied_ops.server_startup_timeout_s
+        "A1_ROBOT_SERVICE_ENDPOINT": config.robot_service.endpoint,
+        "A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S": number(
+            config.robot_service.server_startup_timeout_s
         ),
-        "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S": number(
-            config.embodied_ops.server_shutdown_timeout_s
+        "A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S": number(
+            config.robot_service.server_shutdown_timeout_s
         ),
     }
 
@@ -587,9 +604,9 @@ def bash_config(config: SystemConfig) -> str:
             "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
             "TOPIC_STARTUP_TIMEOUT_S",
             "TMUX_STARTUP_GRACE_S",
-            "EMBODIED_OPS_ENDPOINT",
-            "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S",
-            "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S",
+            "A1_ROBOT_SERVICE_ENDPOINT",
+            "A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S",
+            "A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S",
         ),
     )
 

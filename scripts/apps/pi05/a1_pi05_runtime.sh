@@ -4,7 +4,7 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
-A1_REPO_PYTHONPATH="$(a1_repo_pythonpath "${ROOT}")"
+A1_REPO_PYTHONPATH="${ROOT}"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CONFIG_PATH=""
 

@@ -186,13 +186,13 @@ def validate_teleop_config(config: TeleopConfig) -> None:
     if config.bridge.hz <= 0:
         raise ValueError("bridge.hz must be positive")
     minimum_startup_timeout_s = (
-        2 * config.system.embodied_ops.device_connect_timeout_s
+        2 * config.system.robot_service.device_connect_timeout_s
         + config.system.relay.enable_timeout_s
     )
     if config.runtime.bridge_startup_timeout_s < minimum_startup_timeout_s:
         raise ValueError(
             "runtime.bridge_startup_timeout_s must cover two System "
-            "embodied_ops.device_connect_timeout_s windows plus the relay enable timeout"
+            "robot_service.device_connect_timeout_s windows plus the relay enable timeout"
         )
     if config.collection.fps <= 0:
         raise ValueError("collection.fps must be positive")

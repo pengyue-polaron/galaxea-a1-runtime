@@ -193,7 +193,6 @@ function fieldControl(field) {
   let control;
   if (field.type === 'select') {
     control = element('select', { name: field.name, required: field.required !== false });
-    control._field = field;
   } else {
     control = element('input', {
       type: 'text',

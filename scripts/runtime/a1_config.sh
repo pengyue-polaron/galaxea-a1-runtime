@@ -3,14 +3,6 @@
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/a1_console.sh"
 
-a1_repo_pythonpath() {
-  if (( $# != 1 )); then
-    a1_fail "a1_repo_pythonpath expects <repository-root>."
-    return 2
-  fi
-  printf '%s:%s/external/embodied-ops/src\n' "$1" "$1"
-}
-
 a1_load_shell_config() {
   if (( $# == 0 )); then
     a1_fail "a1_load_shell_config requires a renderer command."

@@ -147,11 +147,15 @@ def test_append_rejects_collection_provenance_drift(tmp_path: Path):
             raise AssertionError("must reject before recording")
 
 
-def test_interrupted_staging_blocks_collection_for_inspection(tmp_path: Path):
+@pytest.mark.parametrize("kind", ["staging", "backup"])
+def test_interrupted_transaction_blocks_collection_for_inspection(
+    tmp_path: Path,
+    kind: str,
+):
     root = tmp_path / "direct-test"
-    (tmp_path / ".direct-test.staging-crash").mkdir()
+    (tmp_path / f".direct-test.{kind}-crash").mkdir()
 
-    with pytest.raises(ValueError, match="uncommitted staging output"):
+    with pytest.raises(ValueError, match="unfinished transaction"):
         inspect_direct_dataset(
             _episode(root).identity,
         )

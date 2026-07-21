@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.constants import LEROBOT_DATASET_FORMAT
-from galaxea_a1_runtime.filesystem import OutputDirectoryTransaction, atomic_write_text
+from embodied_ops.artifacts import OutputDirectoryTransaction, atomic_write_text
 from galaxea_a1_runtime.lerobot.dataset import (
     DatasetConfig,
     LEROBOT_GENERATED_FEATURES,
@@ -92,11 +92,16 @@ def validate_no_staging_outputs(target_root: Path) -> None:
     """Block collection beside an interrupted direct-dataset transaction."""
 
     leftovers = sorted(
-        path.name for path in target_root.parent.glob(f".{target_root.name}.staging-*")
+        path.name
+        for pattern in (
+            f".{target_root.name}.staging-*",
+            f".{target_root.name}.backup-*",
+        )
+        for path in target_root.parent.glob(pattern)
     )
     if leftovers:
         raise ValueError(
-            "direct dataset has uncommitted staging output; inspect and remove or "
+            "direct dataset has an unfinished transaction; inspect and remove or "
             f"quarantine it before collecting: {leftovers}"
         )
 

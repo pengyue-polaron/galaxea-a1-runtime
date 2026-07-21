@@ -7,11 +7,12 @@ from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
+from embodied_ops.artifacts import read_json_object
+
 from galaxea_a1_runtime.console import success
 from galaxea_a1_runtime.evaluation.eef_dataset import EefDataset
 from galaxea_a1_runtime.evaluation.io import (
     evaluation_run_dir,
-    read_json_object,
     write_text_new,
 )
 from galaxea_a1_runtime.evaluation.offline_config import OfflineEvalConfig

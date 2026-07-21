@@ -1,4 +1,4 @@
-"""Operational device hosted by the supervised Galaxea A1 RPC service."""
+"""A1 backend hosted by the supervised Robot service."""
 
 from __future__ import annotations
 
@@ -8,13 +8,12 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
-from embodied_ops import (
-    Capability,
-    DeviceManifest,
+from lerobot_robot_galaxea_a1.runtime.contracts import (
     FeatureSpec,
     HealthReport,
     HealthStatus,
-    LifecycleError,
+    RuntimeLifecycleError as LifecycleError,
+    RuntimeManifest,
     validate_feature_values,
 )
 
@@ -59,13 +58,13 @@ class A1RuntimeDevice:
         session_factory: SessionFactory | None = None,
     ) -> None:
         self.system = system
-        self.device_connect_timeout_s = system.embodied_ops.device_connect_timeout_s
+        self.device_connect_timeout_s = system.robot_service.device_connect_timeout_s
         self._session_factory = session_factory or _RosA1Session
         self._session: _Session | None = None
         self._manifest = _manifest_from_system(self.system)
 
     @property
-    def manifest(self) -> DeviceManifest:
+    def manifest(self) -> RuntimeManifest:
         return self._manifest
 
     @property
@@ -127,7 +126,7 @@ class A1RuntimeDevice:
         return self._session
 
 
-def _manifest_from_system(system: SystemConfig) -> DeviceManifest:
+def _manifest_from_system(system: SystemConfig) -> RuntimeManifest:
     observations = (
         *(FeatureSpec(name, unit="rad") for name in JOINT_FEATURE_KEYS),
         FeatureSpec(GRIPPER_FEATURE_KEY, minimum=0.0, maximum=1.0),
@@ -144,9 +143,8 @@ def _manifest_from_system(system: SystemConfig) -> DeviceManifest:
         ),
         FeatureSpec(GRIPPER_FEATURE_KEY, minimum=0.0, maximum=1.0),
     )
-    return DeviceManifest(
+    return RuntimeManifest(
         identifier="galaxea-a1",
-        capabilities=(Capability.OBSERVE, Capability.COMMAND, Capability.HEALTH),
         observation_features=observations,
         action_features=actions,
         metadata={
@@ -200,7 +198,7 @@ class _RosA1Session:
 
         if not rospy.core.is_initialized():
             rospy.init_node(
-                "embodied_ops_galaxea_a1",
+                "robot_service_galaxea_a1",
                 anonymous=True,
                 disable_signals=True,
             )

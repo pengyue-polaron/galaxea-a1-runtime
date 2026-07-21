@@ -14,9 +14,9 @@
 ![Galaxea A1 follower and modified SO-101 leader](assets/images/a1-teleoperation-setup.png)
 
 This repository is the composition root for the A1 system. It owns ROS,
-hardware access, safety, process lifecycle, synchronized collection, and policy
-deployment. Framework-neutral contracts and LeRobot hardware adapters are kept
-in independent packages.
+hardware access, safety, process lifecycle, and policy deployment. Reusable
+collection, evaluation, and artifact workflows and the LeRobot hardware adapters
+are kept in independent packages.
 
 ## Capabilities
 
@@ -62,13 +62,13 @@ follow the acceptance and workspace checks in the
 
 | Repository | Responsibility |
 | --- | --- |
-| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Framework-neutral device capabilities, manifests, health, lifecycle, and local RPC |
+| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent collection, evaluation, and atomic artifact workflows |
 | [lerobot-robot-galaxea-a1](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1) | Auto-discovered LeRobot `Robot` client for the A1 Runtime |
 | [lerobot-teleoperator-galaxea-a1-so-leader](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader) | Auto-discovered LeRobot `Teleoperator` for the modified SO-101 leader |
 
-The Robot plugin communicates with this Runtime over a local Unix socket. It
-does not import the Runtime package or own ROS. The Teleoperator plugin owns
-only its serial bus and reports truthful leader units.
+The Robot plugin communicates with this Runtime through its own A1-specific local
+Unix-socket transport. It does not import the Runtime package or own ROS. The
+Teleoperator plugin owns only its serial bus and reports truthful leader units.
 
 Both plugins follow LeRobot's third-party discovery conventions. The A1 pair
 must still be composed by this Runtime: LeRobot 0.6's generic CLI selects

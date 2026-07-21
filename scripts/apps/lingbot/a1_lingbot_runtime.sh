@@ -10,7 +10,7 @@ MODEL_SELECTOR=""
 TASK_SELECTOR=""
 SCENE_NOTE_INPUT=""
 source "${ROOT}/scripts/runtime/a1_processes.sh"
-A1_REPO_PYTHONPATH="$(a1_repo_pythonpath "${ROOT}")"
+A1_REPO_PYTHONPATH="${ROOT}"
 
 runtime_args=()
 while (( $# > 0 )); do

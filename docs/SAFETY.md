@@ -47,8 +47,8 @@ only normal owner of both host command topics.
 
 The tracked Teleop bridge composes the out-of-tree LeRobot Teleoperator,
 pair-specific processor, and Robot. The plugins never import ROS or publish host
-commands. The Robot is a thin client of the Runtime-owned embodied-ops Unix-socket
-service. An observation session attaches only read-only feedback and relay-status
+commands. The Robot uses its A1-specific Unix-socket client to reach the Runtime-owned
+Robot service. An observation session attaches only read-only feedback and relay-status
 subscribers and does not require the relay to be `LOCKED`. Acquiring the exclusive
 command lease separately requires fresh feedback and a fresh `LOCKED` relay, refuses a
 competing `ACTIVE`/`ARMING` owner, and only then creates staged-control resources. The
@@ -58,8 +58,9 @@ Every command carries a session id, contiguous sequence, and monotonic timestamp
 command-inactivity deadline is independent of session heartbeats, so a live but idle
 client cannot retain control indefinitely. Closing, expiring, or failing the command
 lease disables motion and releases its publishers while read-only observers may remain
-attached. The relay's stricter input-freshness checks remain independent of both RPC
-deadlines.
+attached. A cleanup failure terminates the service before another command owner can be
+accepted. The local socket is current-user-only and a pre-existing path blocks startup.
+The relay's stricter input-freshness checks remain independent of both RPC deadlines.
 
 ## Relay gates
 

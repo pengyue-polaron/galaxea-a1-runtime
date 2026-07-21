@@ -45,13 +45,6 @@ def test_shell_config_loader_applies_assignments_in_calling_shell():
     assert result.returncode == 0
 
 
-def test_repo_pythonpath_includes_runtime_and_embodied_ops_sdk():
-    result = run_bash("a1_repo_pythonpath /workspace")
-
-    assert result.returncode == 0
-    assert result.stdout.strip() == ("/workspace:/workspace/external/embodied-ops/src")
-
-
 def test_rosbag_topic_exports_come_from_system_config():
     config = load_system_config(
         SYSTEM,
@@ -101,12 +94,12 @@ def test_camera_web_lifecycle_exports_come_from_system_config():
     }
 
 
-def test_embodied_ops_lifecycle_exports_come_from_system_config():
+def test_robot_service_lifecycle_exports_come_from_system_config():
     config = load_system_config(SYSTEM, repo_root=REPO)
     names = (
-        "EMBODIED_OPS_ENDPOINT",
-        "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S",
-        "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S",
+        "A1_ROBOT_SERVICE_ENDPOINT",
+        "A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S",
+        "A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S",
     )
 
     rendered = dict(
@@ -114,17 +107,17 @@ def test_embodied_ops_lifecycle_exports_come_from_system_config():
     )
 
     assert rendered == {
-        "EMBODIED_OPS_ENDPOINT": config.embodied_ops.endpoint,
-        "EMBODIED_OPS_SERVER_STARTUP_TIMEOUT_S": "5",
-        "EMBODIED_OPS_SERVER_SHUTDOWN_TIMEOUT_S": "5",
+        "A1_ROBOT_SERVICE_ENDPOINT": config.robot_service.endpoint,
+        "A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S": "5",
+        "A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S": "5",
     }
 
 
-def test_system_config_rejects_non_unix_embodied_ops_endpoint(tmp_path):
+def test_system_config_rejects_non_unix_robot_service_endpoint(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(
         SYSTEM.read_text().replace(
-            'endpoint = "unix:///tmp/galaxea-a1-runtime/embodied-ops.sock"',
+            'endpoint = "unix:///tmp/galaxea-a1-runtime/robot-service.sock"',
             'endpoint = "127.0.0.1:50051"',
         )
     )
@@ -148,14 +141,14 @@ def test_system_config_rejects_command_timeout_outside_rpc_lease_window(tmp_path
         load_system_config(path, repo_root=REPO)
 
 
-def test_system_config_rejects_removed_orientation_mode(tmp_path):
+def test_system_config_rejects_unknown_eef_key(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(
         SYSTEM.read_text().replace(
             "[eef]\n",
-            '[eef]\norientation_mode = "hold-current"\n',
+            "[eef]\nunexpected = true\n",
         )
     )
 
-    with pytest.raises(ValueError, match=r"invalid eef keys.*orientation_mode"):
+    with pytest.raises(ValueError, match=r"invalid eef keys.*unexpected"):
         load_system_config(path, repo_root=REPO)

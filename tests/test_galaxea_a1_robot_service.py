@@ -8,11 +8,16 @@ from types import ModuleType, SimpleNamespace
 from typing import Mapping
 
 import pytest
-from embodied_ops import ContractError, HealthReport, HealthStatus, LifecycleError
+from lerobot_robot_galaxea_a1.runtime.contracts import (
+    HealthReport,
+    HealthStatus,
+    RuntimeContractError as ContractError,
+    RuntimeLifecycleError as LifecycleError,
+)
 
 from galaxea_a1_runtime.configuration.system import load_system_config
-from galaxea_a1_runtime.apps.embodied_ops.server import build_server
-from galaxea_a1_runtime.apps.embodied_ops.device import (
+from galaxea_a1_runtime.apps.robot_service.server import build_server
+from galaxea_a1_runtime.apps.robot_service.device import (
     A1RuntimeDevice,
     GRIPPER_FEATURE_KEY,
     JOINT_FEATURE_KEYS,
@@ -319,7 +324,7 @@ def test_runtime_server_wiring_is_static_and_uses_system_transport_contract() ->
     )
 
     assert server is not None
-    assert captured["endpoint"] == system.embodied_ops.endpoint
-    assert captured["lease_timeout_s"] == system.embodied_ops.lease_timeout_s
-    assert captured["command_timeout_s"] == system.embodied_ops.command_timeout_s
+    assert captured["endpoint"] == system.robot_service.endpoint
+    assert captured["lease_timeout_s"] == system.robot_service.lease_timeout_s
+    assert captured["command_timeout_s"] == system.robot_service.command_timeout_s
     assert captured["device"].is_connected is False

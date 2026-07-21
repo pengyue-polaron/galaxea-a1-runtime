@@ -16,7 +16,7 @@ from galaxea_a1_runtime.kinematics import (
     compose_relative_pose,
     relative_pose,
 )
-from galaxea_a1_runtime.filesystem import (
+from embodied_ops.artifacts import (
     atomic_output_directory,
     file_sha256,
 )

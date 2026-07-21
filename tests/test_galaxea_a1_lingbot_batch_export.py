@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+import galaxea_a1_runtime.apps.lingbot.batch_export as batch_export
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.batch_export import (
     export_valid_lingbot_batch,
@@ -148,3 +149,36 @@ def test_batch_export_rejects_pending_or_duplicate_valid_slots(tmp_path: Path):
             recording_root=recordings,
             export_root=tmp_path / "exports",
         )
+
+
+def test_batch_export_never_replaces_an_output_that_appears_during_build(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    config = load_lingbot_batch_config(CONFIG, repo_root=REPO)
+    recordings = tmp_path / "recordings"
+    for sequence in range(1, 19):
+        _write_valid_run(recordings, sequence=sequence)
+    destination = (
+        tmp_path
+        / "exports"
+        / "fruit-placement-scripted__randomized_A__20260719_020304.tar"
+    )
+    original_open = tarfile.open
+
+    def open_after_racer(*args, **kwargs):
+        destination.write_bytes(b"existing export")
+        return original_open(*args, **kwargs)
+
+    monkeypatch.setattr(batch_export.tarfile, "open", open_after_racer)
+
+    with pytest.raises(FileExistsError, match="refusing to replace"):
+        export_valid_lingbot_batch(
+            config,
+            scene_note="randomized_A",
+            recording_root=recordings,
+            export_root=tmp_path / "exports",
+            now=datetime(2026, 7, 19, 2, 3, 4, tzinfo=timezone.utc),
+        )
+
+    assert destination.read_bytes() == b"existing export"

@@ -6,6 +6,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+from embodied_ops.artifacts import read_json_object
 
 from galaxea_a1_runtime.apps.lingbot.client import LingBotClient
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
@@ -30,7 +31,6 @@ from galaxea_a1_runtime.evaluation.eef_report import (
 )
 from galaxea_a1_runtime.evaluation.io import (
     evaluation_run_dir,
-    read_json_object,
     write_contact_sheet,
     write_json_object,
 )

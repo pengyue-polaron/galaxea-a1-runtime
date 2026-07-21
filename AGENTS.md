@@ -39,9 +39,10 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   `galaxea_a1_runtime/apps/`; reusable runtime, hardware, collection, and policy
   logic lives in its focused package.
 - Keep Teleop collection, inference, and conversion independent of LingBot.
-- Do not patch `third_party/lerobot` for A1 behavior. Framework-neutral contracts
-  and the two LeRobot adapters live in the pinned first-party repositories under
-  `external/`; runtime-specific ROS and safety behavior stays in this package.
+- Do not patch `third_party/lerobot` for A1 behavior. Hardware-independent
+  collection/evaluation workflows and the two LeRobot adapters live in the pinned
+  first-party repositories under `external/`. The Robot plugin owns its private
+  A1 Runtime transport; ROS, hardware, and safety behavior stays here.
 - Reuse `galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python` before ROS1
   imports; do not duplicate path surgery.
 - Keep runtime modules parseable as Python 3.11 even though the main environment

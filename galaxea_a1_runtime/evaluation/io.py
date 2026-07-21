@@ -2,31 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import re
 from pathlib import Path
 from typing import Any
 
 import numpy as np
+from embodied_ops.artifacts import (
+    create_only_output_file,
+    write_json_once,
+    write_text_once,
+)
 
 from galaxea_a1_runtime.evaluation.offline_config import OfflineEvalConfig
 
 
 _RUN_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9._-]*")
-
-
-def read_json_object(path: Path) -> dict[str, Any]:
-    value = json.loads(path.read_text())
-    if not isinstance(value, dict):
-        raise ValueError(f"expected JSON object: {path}")
-    return value
-
-
-def read_jsonl_objects(path: Path) -> list[dict[str, Any]]:
-    values = [json.loads(line) for line in path.read_text().splitlines() if line]
-    if not all(isinstance(item, dict) for item in values):
-        raise ValueError(f"expected JSON objects: {path}")
-    return values
 
 
 def evaluation_run_dir(config: OfflineEvalConfig, run_id: str) -> Path:
@@ -38,16 +28,11 @@ def evaluation_run_dir(config: OfflineEvalConfig, run_id: str) -> Path:
 
 
 def write_json_object(path: Path, value: dict[str, Any]) -> None:
-    write_text_new(path, json.dumps(value, indent=2, sort_keys=True) + "\n")
+    write_json_once(path, value)
 
 
 def write_text_new(path: Path, value: str) -> None:
-    if path.exists():
-        raise FileExistsError(f"refusing to replace offline report: {path}")
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp")
-    temporary.write_text(value, encoding="utf-8")
-    temporary.replace(path)
+    write_text_once(path, value)
 
 
 def write_contact_sheet(path: Path, model: str, visuals) -> None:
@@ -55,8 +40,6 @@ def write_contact_sheet(path: Path, model: str, visuals) -> None:
 
     if not visuals:
         return
-    if path.exists():
-        raise FileExistsError(f"refusing to replace offline report: {path}")
     row_height = 220
     canvas = Image.new("RGB", (1280, 55 + row_height * len(visuals)), "white")
     draw = ImageDraw.Draw(canvas)
@@ -85,7 +68,5 @@ def write_contact_sheet(path: Path, model: str, visuals) -> None:
             fill="black",
             spacing=8,
         )
-    path.parent.mkdir(parents=True, exist_ok=True)
-    temporary = path.with_name(f".{path.name}.tmp.png")
-    canvas.save(temporary)
-    temporary.replace(path)
+    with create_only_output_file(path) as temporary:
+        canvas.save(temporary, format="PNG")

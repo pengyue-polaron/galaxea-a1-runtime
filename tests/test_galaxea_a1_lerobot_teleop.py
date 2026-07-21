@@ -5,14 +5,13 @@ import threading
 from pathlib import Path
 
 import pytest
-from embodied_ops import (
-    Capability,
-    DeviceManifest,
+from lerobot_robot_galaxea_a1.runtime.contracts import (
     FeatureSpec,
     HealthReport,
     HealthStatus,
+    RuntimeManifest,
 )
-from embodied_ops.rpc import DeviceRpcServer
+from lerobot_robot_galaxea_a1.runtime.server import A1RuntimeServer
 from lerobot_robot_galaxea_a1 import GalaxeaA1, GalaxeaA1Config
 from lerobot_teleoperator_galaxea_a1_so_leader import (
     GalaxeaA1SOLeader,
@@ -75,10 +74,9 @@ class OfflineA1RuntimeDevice:
         self.actions: list[dict[str, object]] = []
 
     @property
-    def manifest(self) -> DeviceManifest:
-        return DeviceManifest(
-            identifier="offline-a1",
-            capabilities=(Capability.OBSERVE, Capability.COMMAND, Capability.HEALTH),
+    def manifest(self) -> RuntimeManifest:
+        return RuntimeManifest(
+            identifier="galaxea-a1",
             observation_features=CANONICAL_FEATURES,
             action_features=CANONICAL_FEATURES,
         )
@@ -88,6 +86,12 @@ class OfflineA1RuntimeDevice:
 
     def observe(self) -> dict[str, float]:
         return {name: 0.0 for name in (*JOINT_KEYS, "gripper_normalized")}
+
+    def acquire_command_lease(self) -> None:
+        pass
+
+    def release_command_lease(self) -> None:
+        pass
 
     def command(self, action: dict[str, object]) -> dict[str, object]:
         self.actions.append(dict(action))
@@ -206,9 +210,9 @@ def test_tracked_bridge_wires_both_plugin_configs_and_processor(
     assert teleop_config.motor_write_retries == config.leader.motor_write_retries
     robot_config = captured["robot_config"]
     assert isinstance(robot_config, GalaxeaA1Config)
-    assert robot_config.endpoint == config.system.embodied_ops.endpoint
+    assert robot_config.endpoint == config.system.robot_service.endpoint
     assert robot_config.connect_timeout_s == config.runtime.bridge_startup_timeout_s
-    assert robot_config.rpc_timeout_s == config.system.embodied_ops.rpc_timeout_s
+    assert robot_config.rpc_timeout_s == config.system.robot_service.rpc_timeout_s
     session = captured["session"]
     assert isinstance(session, dict)
     assert session["teleop"] is teleop
@@ -234,7 +238,7 @@ def test_offline_lerobot_plugins_run_one_composed_control_session(
     )
     device = OfflineA1RuntimeDevice(stop_requested)
     endpoint = f"unix://{tmp_path / 'a1.sock'}"
-    server = DeviceRpcServer(device, endpoint=endpoint, lease_timeout_s=1.0)
+    server = A1RuntimeServer(device, endpoint=endpoint, lease_timeout_s=1.0)
     server.start()
     try:
         leader = GalaxeaA1SOLeader(

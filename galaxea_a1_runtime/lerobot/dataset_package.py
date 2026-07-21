@@ -13,7 +13,7 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from galaxea_a1_runtime.filesystem import (
+from embodied_ops.artifacts import (
     atomic_output_file,
     atomic_write_text,
     file_sha256,
