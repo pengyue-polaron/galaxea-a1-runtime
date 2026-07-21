@@ -71,20 +71,32 @@ it.
 
 ### Unified operator panel
 
-Start the local control panel without opening hardware:
+Start the tracked control panel without opening hardware:
 
 ```bash
 just panel
 ```
 
-Open `http://127.0.0.1:8765`. The panel lists every valid tracked Teleop,
-LingBot deployment, Batch, model, and A1 reset configuration. It embeds the
+Open `http://127.0.0.1:8765` on this host, or
+`http://<this-host-LAN-IP>:8765` from another device on the trusted LAN. The
+tracked listener is `0.0.0.0:8765`; `hostname -I` prints candidate host
+addresses. The panel lists every valid tracked Teleop, LingBot deployment,
+Batch, model, and A1 reset configuration. It embeds the
 read-only Camera Web streams and provides Collect, Evaluation, Batch, and Reset
-views. Use **Start cameras** if the persistent Camera Bridge is not already
-running. Each preview reports its encoded preview FPS and latest frame age from
-Camera Web's read-only health endpoint. A dark image alone is not treated as a
-failure; the status changes only for missing, stale, or errored frames. Use
-**Collapse preview** when more vertical room is useful for workflow controls.
+views plus a **Prompts** registry. Use **Start cameras** if the persistent Camera
+Bridge is not already running. Each preview reports its encoded preview FPS and
+latest frame age from Camera Web's read-only health endpoint. A dark image alone
+is not treated as a failure; the status changes only for missing, stale, or
+errored frames. Use **Collapse preview** when more vertical room is useful for
+workflow controls. The page follows the browser's light or dark preference.
+
+To add an evaluation prompt, open **Prompts**, select its catalog, enter a unique
+task id and exact single-line prompt, and choose `OOD` or `Train` (`OOD` is the
+default). **Register prompt** atomically creates one JSON record under
+`configs/tasks/<catalog>/prompts/`; it never edits an existing prompt. The panel
+then returns to **Evaluation** with the new task selected. Registration is
+disabled while a workflow is running. Review and commit the new JSON before
+treating it as durable repository state.
 
 The **Configurations** view creates Teleop, LingBot deployment, Batch, or A1
 reset TOML from an existing same-kind template. Choose a template, load it,
@@ -102,6 +114,14 @@ when the child is at the corresponding prompt; one click locks them until the
 next prompt, so decisions cannot queue through a later step. **Stop** sends
 `SIGINT` so the owning script can lock the relay and clean up. If cleanup does
 not finish, the panel stays available and requires `just stop` before retrying.
+The Reset view is A1-only: it validates the selected System and pose first,
+starts ROS, the driver, joint tracker, and locked relay, performs the staged
+reset, and always stops those owned services afterward.
+
+Reset and LingBot inference progress appears above the session terminal and
+updates in place. The terminal keeps durable lifecycle output in its own scroll
+area, follows new lines while it is at the bottom, and preserves the current
+position when you scroll up to inspect history.
 
 The same configuration registry is available from the unified CLI:
 
@@ -119,9 +139,11 @@ The same configuration registry is available from the unified CLI:
 .venv/bin/galaxea-a1-runtime reset configs/poses/a1_collection_start.toml
 ```
 
-The control panel is intentionally fixed to localhost and uses a random
-per-process request token. Do not proxy or port-forward it. The separate Camera
-Web remains read-only and has no control endpoints.
+The control panel uses a random per-process request-integrity token, but that
+token is delivered to every browser that opens the page and is not user
+authentication. Bind it only on a trusted LAN, restrict port `8765` with the
+host firewall when the LAN is shared, and never proxy or port-forward it. The
+separate Camera Web remains read-only and has no control endpoints.
 
 The reusable Web/process/configuration core is documented in
 [`operator_panel/README.md`](../operator_panel/README.md). Another repository
@@ -474,8 +496,8 @@ gzip-compressed.
 
 Run one live app at a time and use `just stop` when switching.
 
-Both commands first display the six approved prompts from
-`configs/tasks/fruit_placement.toml`: five training prompts and the explicitly
+Both commands first display the approved prompts from
+`configs/tasks/fruit_placement/prompts/`: five training prompts and the explicitly
 marked OOD `lemon_bowl` evaluation prompt. Select by number, tracked task id, or
 the exact prompt; `q` cancels before the model server, ROS, cameras, or hardware
 are opened. The selected task id, train/OOD provenance, and exact prompt are

@@ -270,8 +270,12 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
         lingbot_batch_config.is_file(),
         str(lingbot_batch_config),
     )
-    a1_reset_script = repo_root / "scripts" / "apps" / "reset" / "a1_reset.py"
-    add("a1_reset_script", a1_reset_script.is_file(), str(a1_reset_script))
+    a1_reset_runtime = repo_root / "scripts" / "apps" / "reset" / "a1_reset_runtime.sh"
+    add(
+        "a1_reset_runtime_script",
+        a1_reset_runtime.is_file(),
+        str(a1_reset_runtime),
+    )
 
     base_runtime = repo_root / "scripts" / "runtime" / "a1_runtime.sh"
     try:

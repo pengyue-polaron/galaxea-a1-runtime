@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 60,
+  "id": "lemon_bowl",
+  "prompt": "put the lemon into the bowl",
+  "distribution": "ood"
+}

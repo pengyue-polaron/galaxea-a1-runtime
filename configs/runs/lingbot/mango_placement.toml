@@ -1,6 +1,6 @@
-# Scripted full-catalog evaluation for the registered mango-placement model.
-# Every attempt still requires Enter before the tracked A1-only reset. Tasks
-# outside the checkpoint's two training prompts intentionally test transfer.
+# Scripted evaluation of the original six-prompt suite for the registered
+# mango-placement model. Every attempt still requires Enter before the tracked
+# A1-only reset. Prompts added later stay opt-in for batch evaluation.
 
 [deployment]
 config = "configs/deployments/lingbot/fruit_placement_eef.toml"

@@ -132,23 +132,35 @@ additional gripper bit latches `FAULT`.
   `just camera-web stop` closes it.
 - The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
   encryption and must not be port-forwarded or gain control endpoints.
-- The operator control panel is a separate localhost-only HTTP service. It uses
-  a random per-process request token, permits one owned workflow subprocess at
-  a time, and may invoke only validated tracked Collect, LingBot, Batch, Camera,
-  and Reset entrypoints. It never imports ROS or publishes commands itself.
+- The operator control panel is a separate trusted-LAN HTTP service configured
+  by System. It has no user authentication or transport encryption: its random
+  per-process token protects request integrity but is delivered to any browser
+  that can open the page. Never expose or port-forward its port. It permits one
+  owned workflow subprocess at a time and may invoke only validated tracked
+  Collect, LingBot, Batch, Camera, and Reset entrypoints. It never imports ROS
+  or publishes commands itself.
 - Interactive Web input is fail-closed. A child must announce the exact accepted
   input actions at each prompt; one accepted action clears that permission until
   the child announces another prompt. Repeated clicks cannot queue decisions for
   a later reset or inference step.
+- Child progress announcements are display-only latest-state events. They cannot
+  grant input, launch a workflow, publish commands, or alter safety decisions.
 - Web configuration creation is create-only, same-kind validated, and
   prohibited during a workflow. The candidate is hidden, validated with the
   owning strict loader, and atomically linked into its allowed config directory.
   Existing files are never edited, deleted, or overwritten.
+- Web prompt registration is also prohibited during a workflow. It accepts only
+  a validated catalog under `configs/tasks`, rejects duplicate ids and exact
+  prompt text, and atomically creates one new JSON record without rewriting the
+  catalog or any existing prompt.
 - Web workflow buttons have the same authority as running their displayed CLI
   command. Reset, Collect, Evaluation, and Batch move hardware through the
   existing staged tracker and relay path. Stop sends `SIGINT` to the owning
   process group so normal fail-closed cleanup runs. The panel stays alive after
   an incomplete stop and requires `just stop` before another attempt.
+- The A1-only Web/CLI reset validates System and pose before process creation,
+  owns ROS master, driver, joint tracker, and relay startup for its lifetime,
+  and stops those resources on success, failure, or interruption.
 
 ## Direct debug
 

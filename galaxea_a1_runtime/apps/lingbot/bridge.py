@@ -24,7 +24,7 @@ import numpy as np
 
 import rospy
 
-from operator_panel.protocol import announce_input
+from operator_panel.protocol import announce_input, announce_progress
 from galaxea_a1_runtime.hardware.eef_bridge import EefIkCommandPublisher
 from galaxea_a1_runtime.policies.eef_actions import (
     build_action_transform_config,
@@ -86,6 +86,7 @@ class A1LingBotEEBridge:
         self.cameras = None
         self.client = None
         self.live_status = LiveStatusLine()
+        self.panel_progress_phase = ""
         self.actions_executed = 0
         self.last_inference_s = 0.0
         self.action_config = build_action_transform_config(system=config.system)
@@ -498,7 +499,19 @@ class A1LingBotEEBridge:
             if progress is not None:
                 frames, elapsed = progress
                 parts.append(f"REC={elapsed:05.1f}s/{frames}f")
-        self.live_status.update(" | ".join(parts), force=force)
+        message = " | ".join(parts)
+        panel_mode = announce_progress(
+            "inference",
+            "LingBot inference",
+            call_index + 1,
+            self.execution.max_model_calls or None,
+            phase=phase,
+            detail=" | ".join(parts[1:]),
+            force=force or phase != self.panel_progress_phase,
+        )
+        self.panel_progress_phase = phase
+        if not panel_mode:
+            self.live_status.update(message, force=force)
 
     def close(self) -> None:
         self.live_status.close()

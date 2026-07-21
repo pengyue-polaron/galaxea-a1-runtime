@@ -1,3 +1,5 @@
+from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.configuration.paths import LINGBOT_CONFIG
 from galaxea_a1_runtime.safety_report import (
     build_architecture_findings,
     build_safety_settings,
@@ -29,7 +31,10 @@ def test_safety_report_discloses_non_obvious_motion_controls():
         "lingbot_eef_servo_compensation",
         "pi05_eef_servo_compensation",
     }.isdisjoint(settings)
-    assert settings["eef_policy_task_selection"].default == "6 tracked prompts"
+    prompt_count = len(load_lingbot_config(LINGBOT_CONFIG).task_catalog.tasks)
+    assert settings["eef_policy_task_selection"].default == (
+        f"{prompt_count} tracked prompts"
+    )
     assert "position_tolerance=0.003m" in settings["eef_policy_ik"].default
     assert "orientation_tolerance=0.02rad" in settings["eef_policy_ik"].default
     assert "max_joint_delta=1.7rad" in settings["eef_policy_ik"].default

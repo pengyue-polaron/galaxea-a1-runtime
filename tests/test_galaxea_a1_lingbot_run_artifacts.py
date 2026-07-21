@@ -49,7 +49,9 @@ def _prepare(tmp_path: Path, run_id: str = "20260718_010203_000000_red_mango_bow
 def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Path):
     paths = _prepare(tmp_path)
     paths.raw_runtime_log.write_text(
-        "\x1b[1;32m[PASS]\x1b[0m started\r[RUN] call 1\r\nfinished\r\n"
+        "\x1b[1;32m[PASS]\x1b[0m started\r[RUN] call 1\r\n"
+        '@@OPERATOR_PANEL {"progress":{"id":"inference"}}\r\n'
+        "finished\r\n"
     )
     paths.policy_server_log.write_text("server ready\n")
     paths.final_dir.mkdir()

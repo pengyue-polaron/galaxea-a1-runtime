@@ -68,9 +68,7 @@ def main(argv: list[str] | None = None) -> int:
         config_write.add_argument("candidate", type=Path)
         config_write.add_argument("--repo-root", type=Path, default=Path.cwd())
 
-    panel = subparsers.add_parser(
-        "panel", help="serve the localhost-only Web operator panel"
-    )
+    panel = subparsers.add_parser("panel", help="serve the tracked Web operator panel")
     panel.add_argument("--repo-root", type=Path, default=Path.cwd())
 
     collect = subparsers.add_parser(
@@ -135,13 +133,12 @@ def main(argv: list[str] | None = None) -> int:
         from operator_panel import serve_operator_panel
 
         from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
-        from galaxea_a1_runtime.apps.operator_panel.adapter import (
-            PANEL_BIND,
-            PANEL_PORT,
-        )
 
+        panel_adapter = A1OperatorPanelAdapter(args.repo_root)
         return serve_operator_panel(
-            A1OperatorPanelAdapter(args.repo_root), bind=PANEL_BIND, port=PANEL_PORT
+            panel_adapter,
+            bind=panel_adapter.panel_bind,
+            port=panel_adapter.panel_port,
         )
 
     from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter

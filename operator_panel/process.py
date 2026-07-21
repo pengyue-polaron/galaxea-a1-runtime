@@ -13,7 +13,13 @@ from pathlib import Path
 from typing import Any
 
 from .contracts import InputAction, WorkflowLaunch
-from .protocol import PROTOCOL_ENV, parse_input_event
+from .protocol import (
+    PROTOCOL_ENV,
+    InputEvent,
+    InvalidEvent,
+    ProgressEvent,
+    parse_event,
+)
 
 
 class WorkflowProcess:
@@ -28,6 +34,8 @@ class WorkflowProcess:
         self._started_at = ""
         self._exit_code: int | None = None
         self._logs: deque[str] = deque(maxlen=max_log_lines)
+        self._status_line = ""
+        self._progress: dict[str, ProgressEvent] = {}
         self._input_actions: dict[str, InputAction] = {}
         self._available_input: tuple[str, ...] = ()
 
@@ -46,9 +54,13 @@ class WorkflowProcess:
             if invalid_tones:
                 raise ValueError(f"unsupported input action tone: {invalid_tones[0]!r}")
             environment = os.environ.copy()
-            environment.update({"NO_COLOR": "1", "PYTHONUNBUFFERED": "1"})
-            if launch.input_actions:
-                environment[PROTOCOL_ENV] = "1"
+            environment.update(
+                {
+                    "NO_COLOR": "1",
+                    "PYTHONUNBUFFERED": "1",
+                    PROTOCOL_ENV: "1",
+                }
+            )
             process = subprocess.Popen(
                 launch.command,
                 cwd=self.repo_root,
@@ -69,6 +81,8 @@ class WorkflowProcess:
             self._logs.clear()
             self._logs.append(f"[PANEL] started {launch.name}")
             self._logs.append(f"[PANEL] command {shlex.join(launch.command)}")
+            self._status_line = ""
+            self._progress.clear()
             self._input_actions = {
                 action.action_id: action for action in launch.input_actions
             }
@@ -135,22 +149,39 @@ class WorkflowProcess:
         assert process.stdout is not None
         for raw_line in process.stdout:
             line = raw_line.rstrip("\r\n")
-            event = parse_input_event(line)
+            event = parse_event(line)
             with self._lock:
-                if event is not None:
-                    if self._process is process:
-                        self._available_input = tuple(
-                            action_id
-                            for action_id in event
-                            if action_id in self._input_actions
-                        )
+                if self._process is not process:
                     continue
+                if isinstance(event, InputEvent):
+                    self._available_input = tuple(
+                        action_id
+                        for action_id in event.actions
+                        if action_id in self._input_actions
+                    )
+                    continue
+                if isinstance(event, ProgressEvent):
+                    self._progress[event.progress_id] = event
+                    continue
+                if isinstance(event, InvalidEvent):
+                    self._logs.append(
+                        f"[WARN] Ignored invalid operator-panel event: {event.reason}"
+                    )
+                    continue
+                if line.startswith("[RUN] "):
+                    self._status_line = line
+                    continue
+                if self._status_line and not line.strip():
+                    self._status_line = ""
+                    continue
+                self._status_line = ""
                 self._logs.append(line)
         return_code = process.wait()
         with self._lock:
             if self._process is process:
                 self._exit_code = return_code
                 self._available_input = ()
+                self._status_line = ""
                 self._logs.append(f"[PANEL] exited {return_code}")
 
     def _is_active_locked(self) -> bool:
@@ -168,6 +199,11 @@ class WorkflowProcess:
             "command": list(self._command),
             "started_at": self._started_at,
             "exit_code": self._exit_code,
+            "progress": [
+                self._progress[progress_id].as_json()
+                for progress_id in sorted(self._progress)
+            ],
+            "status_line": self._status_line,
             "input_actions": [
                 {
                     "id": action_id,

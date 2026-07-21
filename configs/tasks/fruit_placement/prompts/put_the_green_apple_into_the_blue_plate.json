@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 80,
+  "id": "put_the_green_apple_into_the_blue_plate",
+  "prompt": "put the green apple into the blue plate",
+  "distribution": "ood"
+}

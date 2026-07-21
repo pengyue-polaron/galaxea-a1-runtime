@@ -7,6 +7,7 @@ const state = {
 };
 const cameraHealthPollMs = 2000;
 const cameraCollapsedStorageKey = 'operator-panel.camera-preview-collapsed';
+let renderedTerminalLines = ['Panel ready.'];
 
 function element(tag, attributes = {}, text = '') {
   const node = document.createElement(tag);
@@ -48,6 +49,14 @@ function refreshCameras() {
   });
 }
 
+function cameraUrl(camera) {
+  if (camera.url) return camera.url;
+  if (!Number.isInteger(camera.port) || !camera.path?.startsWith('/')) {
+    throw new Error(`Invalid camera endpoint: ${camera.id}`);
+  }
+  return `${window.location.protocol}//${window.location.hostname}:${camera.port}${camera.path}`;
+}
+
 function setCameraPreviewCollapsed(collapsed) {
   const grid = document.getElementById('camera-grid');
   const toggle = document.getElementById('toggle-camera-grid');
@@ -74,11 +83,12 @@ function renderCameras() {
   section.classList.toggle('hidden', !state.catalog.cameras.length);
   const grid = document.getElementById('camera-grid');
   grid.replaceChildren(...state.catalog.cameras.map(camera => {
+    const streamUrl = cameraUrl(camera);
     const image = element('img', {
       alt: `${camera.label} camera stream`,
       loading: 'eager',
     });
-    image.dataset.cameraUrl = camera.url;
+    image.dataset.cameraUrl = streamUrl;
     const figure = element('figure', {
       class: 'camera-frame',
       dataset: { cameraId: camera.id, cameraHealth: 'checking' },
@@ -100,7 +110,7 @@ function renderCameras() {
       .filter(Boolean)
       .join(' ');
     const button = element('button', { type: 'button', class: classes }, control.label);
-    button.dataset.startWorkflow = control.workflow;
+    button.dataset.panelAction = control.workflow;
     button.addEventListener('click', async () => {
       if (control.confirm && !window.confirm(control.confirm)) return;
       try {
@@ -234,13 +244,37 @@ function workflowValues(form, workflow) {
   }));
 }
 
+function configureDerivedFields(form, definition) {
+  for (const field of definition.fields.filter(item => item.derive_from)) {
+    const source = form.elements.namedItem(field.derive_from);
+    const target = form.elements.namedItem(field.name);
+    if (!source || !target || field.transform !== 'snake_case') continue;
+    source.addEventListener('input', () => {
+      if (target.value && target.value !== target.dataset.derivedValue) return;
+      const derived = source.value
+        .normalize('NFKD')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      target.value = derived;
+      target.dataset.derivedValue = derived;
+    });
+  }
+}
+
 function renderWorkflows() {
   const tabs = document.getElementById('workflow-tabs');
   const panels = document.getElementById('workflow-panels');
   tabs.replaceChildren();
   panels.replaceChildren();
 
-  for (const workflow of state.catalog.workflows) {
+  const forms = [
+    ...state.catalog.workflows.map(item => ({ ...item, operation: 'workflow' })),
+    ...(state.catalog.registrations || []).map(item => ({
+      ...item, operation: 'registration',
+    })),
+  ];
+  for (const workflow of forms) {
     const tab = element('button', {
       type: 'button',
       class: 'tab',
@@ -269,6 +303,7 @@ function renderWorkflows() {
       heading,
       ...workflow.fields.map(fieldControl),
     );
+    configureDerivedFields(form, workflow);
     const submitClasses = ['primary', workflow.tone === 'danger' ? 'danger' : '']
       .filter(Boolean)
       .join(' ');
@@ -276,7 +311,7 @@ function renderWorkflows() {
       type: 'submit',
       class: submitClasses,
     }, workflow.submit_label);
-    submit.dataset.startWorkflow = workflow.id;
+    submit.dataset.panelAction = workflow.id;
     form.append(submit);
     form.querySelectorAll('select').forEach(select => {
       select.addEventListener('change', () => updateSelects(form, workflow));
@@ -285,7 +320,13 @@ function renderWorkflows() {
     form.addEventListener('submit', async event => {
       event.preventDefault();
       if (workflow.confirm && !window.confirm(workflow.confirm)) return;
-      try { await startWorkflow(workflow.id, workflowValues(form, workflow)); }
+      try {
+        if (workflow.operation === 'registration') {
+          await register(workflow.id, workflowValues(form, workflow));
+        } else {
+          await startWorkflow(workflow.id, workflowValues(form, workflow));
+        }
+      }
       catch (error) { toast(error.message); }
     });
     panels.append(form);
@@ -311,6 +352,24 @@ function renderWorkflows() {
   const defaultPanel = state.catalog.workflows[0]?.id
     || (state.catalog.config_types.length ? 'configuration' : null);
   if (defaultPanel) activatePanel(state.activePanel || defaultPanel);
+}
+
+async function register(registration, values) {
+  const result = await post('/api/register', { registration, values });
+  state.catalog = result.catalog;
+  state.activePanel = result.activate?.panel || state.activePanel;
+  renderCatalog();
+  const activation = result.activate;
+  if (activation?.panel && activation.values) {
+    const form = document.getElementById(`workflow-${activation.panel}`);
+    for (const [name, value] of Object.entries(activation.values)) {
+      const control = form?.elements.namedItem(name);
+      if (!control) continue;
+      control.value = value;
+      control.dispatchEvent(new Event('change'));
+    }
+  }
+  toast(`Registered: ${result.created}`);
 }
 
 function activatePanel(panelId) {
@@ -365,6 +424,101 @@ async function startWorkflow(workflow, values) {
   renderStatus();
 }
 
+const terminalToneByLevel = {
+  INFO: 'info',
+  STEP: 'step',
+  PASS: 'pass',
+  WARN: 'warn',
+  FAIL: 'fail',
+  RUN: 'run',
+  PANEL: 'panel',
+  CLEANUP: 'cleanup',
+};
+
+function terminalLine(value) {
+  const text = String(value).replace(/\u001b\[[0-?]*[ -/]*[@-~]/g, '');
+  const line = element('span', { class: 'terminal-line' });
+  const match = text.match(/^(\s*)\[([A-Z]+)\](.*)$/);
+  const tone = match && terminalToneByLevel[match[2]];
+  if (!tone) {
+    line.textContent = text;
+    return line;
+  }
+  line.append(
+    document.createTextNode(match[1]),
+    element('span', { class: `terminal-label terminal-${tone}` }, `[${match[2]}]`),
+    document.createTextNode(match[3]),
+  );
+  return line;
+}
+
+function progressValue(value) {
+  return Number.isInteger(value) ? String(value) : value.toFixed(1);
+}
+
+function renderProgress(status) {
+  const container = document.getElementById('session-progress');
+  const items = Array.isArray(status.progress) ? status.progress : [];
+  const rows = items.map(item => {
+    const row = element('div', { class: 'progress-item' });
+    const heading = element('div', { class: 'progress-heading' });
+    const label = element('span', { class: 'progress-label' }, item.label);
+    const value = item.total == null
+      ? progressValue(item.current)
+      : `${progressValue(item.current)} / ${progressValue(item.total)}`;
+    heading.append(
+      label,
+      element('span', { class: 'progress-value' }, value),
+    );
+    const bar = element('progress', {
+      class: 'progress-bar',
+      'aria-label': item.label,
+    });
+    if (item.total == null) {
+      bar.removeAttribute('value');
+    } else {
+      bar.max = item.total;
+      bar.value = item.current;
+    }
+    const detail = [item.phase, item.detail].filter(Boolean).join(' · ');
+    row.append(heading, bar);
+    if (detail) row.append(element('p', { class: 'progress-detail' }, detail));
+    return row;
+  });
+  if (status.status_line) {
+    rows.push(element(
+      'p',
+      { class: 'live-status' },
+      status.status_line.replace(/^\[RUN\]\s*/, ''),
+    ));
+  }
+  container.replaceChildren(...rows);
+  container.classList.toggle('hidden', rows.length === 0);
+  container.dataset.state = status.active
+    ? 'running'
+    : status.exit_code === 0 ? 'complete' : 'failed';
+}
+
+function renderTerminal(logs, lines) {
+  const values = lines.length ? lines : ['Panel ready.'];
+  if (
+    values.length === renderedTerminalLines.length
+    && values.every((value, index) => value === renderedTerminalLines[index])
+  ) return;
+  const atBottom = logs.scrollHeight - logs.scrollTop - logs.clientHeight < 40;
+  const previousScrollTop = logs.scrollTop;
+  const appendOnly = values.length >= renderedTerminalLines.length
+    && renderedTerminalLines.every((value, index) => values[index] === value);
+  if (appendOnly) {
+    logs.append(...values.slice(renderedTerminalLines.length).map(terminalLine));
+  } else {
+    logs.replaceChildren(...values.map(terminalLine));
+  }
+  renderedTerminalLines = [...values];
+  if (atBottom) logs.scrollTop = logs.scrollHeight;
+  else logs.scrollTop = previousScrollTop;
+}
+
 function renderStatus() {
   const status = state.status || {
     active: false, name: '', logs: [], input_actions: [],
@@ -372,10 +526,9 @@ function renderStatus() {
   document.getElementById('status-dot').classList.toggle('active', status.active);
   document.getElementById('status-label').textContent = status.active ? 'Running' : 'Idle';
   document.getElementById('session-name').textContent = status.name || 'No active workflow';
+  renderProgress(status);
   const logs = document.getElementById('logs');
-  const atBottom = logs.scrollHeight - logs.scrollTop - logs.clientHeight < 40;
-  logs.textContent = status.logs.length ? status.logs.join('\n') : 'Panel ready.';
-  if (atBottom) logs.scrollTop = logs.scrollHeight;
+  renderTerminal(logs, status.logs);
 
   const actions = document.getElementById('session-actions');
   actions.replaceChildren(...status.input_actions.map(action => {
@@ -404,7 +557,7 @@ function renderStatus() {
     sessionNote.textContent = 'Workflow running. Actions appear only when input is accepted.';
   }
   document.getElementById('stop-workflow').disabled = !status.active;
-  document.querySelectorAll('[data-start-workflow]').forEach(button => {
+  document.querySelectorAll('[data-panel-action]').forEach(button => {
     button.disabled = status.active;
   });
   document.getElementById('create-config').disabled = status.active;
@@ -421,12 +574,16 @@ async function pollStatus() {
 
 async function loadCatalog() {
   state.catalog = await request('/api/catalog');
+  renderCatalog();
+  await pollCameraHealth();
+}
+
+function renderCatalog() {
   renderProduct();
   renderCameras();
   renderWorkflows();
   renderConfigurationEditor();
   renderStatus();
-  await pollCameraHealth();
 }
 
 document.getElementById('config-kind').addEventListener('change', updateConfigTemplates);
@@ -463,10 +620,7 @@ document.getElementById('configuration-panel').addEventListener('submit', async 
     state.catalog = result.catalog;
     document.getElementById('config-filename').value = '';
     document.getElementById('config-content').value = '';
-    renderProduct();
-    renderCameras();
-    renderWorkflows();
-    renderConfigurationEditor();
+    renderCatalog();
     toast(`Created: ${result.created}`);
   } catch (error) { toast(error.message); }
 });

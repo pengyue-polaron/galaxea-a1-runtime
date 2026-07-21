@@ -163,3 +163,9 @@ fps = 10.0
 jpeg_quality = 75
 startup_timeout_s = 15.0
 shutdown_timeout_s = 5.0
+
+[operator_panel]
+# The panel can start hardware workflows. Bind to the trusted LAN only; it has
+# request integrity tokens but no user authentication or transport encryption.
+bind = "0.0.0.0"
+port = 8765

@@ -8,7 +8,7 @@ config = "configs/inference/backends/lingbot_va.toml"
 config = "configs/models/lingbot/fruit_placement_eef.toml"
 
 [tasks]
-config = "configs/tasks/fruit_placement.toml"
+config = "configs/tasks/fruit_placement/catalog.json"
 
 [deployment]
 id = "lingbot-fruit-placement-eef"

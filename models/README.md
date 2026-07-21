@@ -27,6 +27,11 @@ and contract; existing deployments can then reference it without changing a
 backend. Multiple tasks and model families can coexist without link farms or
 copied paths.
 
+Task registries use a static `catalog.json` identity plus one strict
+`prompts/<task-id>.json` file per approved prompt. The Web panel may register a
+new create-only record, but runtime selection still accepts only a task that the
+fully loaded registry already contains.
+
 LingBot deployments contain a registered default, while their command-line
 entrypoints accept `--model`. The selector resolves only an exact registered
 model id, a unique descriptor filename, or a pinned id/revision; it never

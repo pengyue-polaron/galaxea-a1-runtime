@@ -45,8 +45,9 @@ def _deployment_copy(
 def test_lingbot_deployment_composes_with_shared_system_config():
     config = load_lingbot_config(CONFIG, repo_root=REPO)
     assert config.system.path == REPO / "configs/system/a1.toml"
-    assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
-    assert len(config.task_catalog.tasks) == 6
+    assert config.task_catalog.path == (
+        REPO / "configs/tasks/fruit_placement/catalog.json"
+    )
     assert config.task_catalog.task("lemon_bowl").distribution == "ood"
     assert config.execution.execute is True
     assert config.execution.step_mode is False
@@ -109,7 +110,9 @@ def test_lingbot_deployment_can_select_a_registered_model() -> None:
         / "models/artifacts/lingbot/a1_mango_placement_eef"
         / "bf15da70c432e39c3a971c50143f4d91ff671ac1"
     )
-    assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
+    assert config.task_catalog.path == (
+        REPO / "configs/tasks/fruit_placement/catalog.json"
+    )
 
 
 def test_lingbot_config_rejects_unknown_keys(tmp_path):

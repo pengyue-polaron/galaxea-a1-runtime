@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 70,
+  "id": "put_the_peach_into_the_blue_plate",
+  "prompt": "put the peach into the blue plate",
+  "distribution": "ood"
+}

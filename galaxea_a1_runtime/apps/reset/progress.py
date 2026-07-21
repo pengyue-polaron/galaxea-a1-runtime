@@ -5,6 +5,8 @@ from __future__ import annotations
 import sys
 import threading
 
+from operator_panel.protocol import announce_progress
+
 from galaxea_a1_runtime.console import Tone, emit, style
 
 
@@ -23,6 +25,17 @@ class ResetProgress:
                 return
             self.values[device] = value
             self.reported[device] = value
+            panel_mode = announce_progress(
+                f"reset-{device.lower()}",
+                f"Reset {device}",
+                value,
+                100,
+                phase="MOVING",
+                detail=f"{value}%",
+                force=value in {0, 100},
+            )
+            if panel_mode:
+                return
             if self.interactive:
                 status = " | ".join(
                     f"{name} {self.values[name]:3d}%" for name in self.devices

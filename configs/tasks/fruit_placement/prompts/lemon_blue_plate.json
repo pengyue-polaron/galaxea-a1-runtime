@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 30,
+  "id": "lemon_blue_plate",
+  "prompt": "put the lemon into the blue plate",
+  "distribution": "train"
+}

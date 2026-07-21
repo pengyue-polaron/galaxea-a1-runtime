@@ -3,6 +3,7 @@ from pathlib import Path
 import pytest
 
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
+from galaxea_a1_runtime.apps.reset.cli import main as reset_main
 from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.teleop.config import load_teleop_config
@@ -86,6 +87,21 @@ def test_shared_a1_reset_pose_maps_every_motion_and_topic_owner():
     assert pose.gripper.closed_stroke_mm == 0.0
     assert pose.gripper.publish_hz == 10.0
     assert pose.gripper.publish_s == 1.0
+
+
+def test_a1_reset_validation_returns_without_starting_ros():
+    assert (
+        reset_main(
+            [
+                "--system-config",
+                str(SYSTEM_CONFIG),
+                "--pose",
+                str(A1_CONFIG),
+                "--validate-only",
+            ]
+        )
+        == 0
+    )
 
 
 def test_shared_a1_reset_pose_rejects_unknown_keys_and_out_of_limit_targets(

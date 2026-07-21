@@ -6,6 +6,7 @@ import re
 import sys
 from collections.abc import Iterable
 from dataclasses import dataclass
+from ipaddress import AddressValueError, IPv4Address
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.base import (
@@ -61,6 +62,7 @@ __all__ = [
     "SystemGripperConfig",
     "SystemHostConfig",
     "SystemJointSafetyConfig",
+    "SystemOperatorPanelConfig",
     "SystemRealSenseCameraConfig",
     "SystemRelayConfig",
     "SystemStartupConfig",
@@ -135,6 +137,12 @@ class SystemRobotServiceConfig:
 
 
 @dataclass(frozen=True)
+class SystemOperatorPanelConfig:
+    bind: str
+    port: int
+
+
+@dataclass(frozen=True)
 class SystemJointSafetyConfig:
     names: tuple[str, ...]
     lower_limits: tuple[float, ...]
@@ -195,6 +203,7 @@ class SystemConfig:
     cameras: SystemCamerasConfig
     camera_diagnostics: CameraDiagnosticsConfig
     web_preview: WebPreviewConfig
+    operator_panel: SystemOperatorPanelConfig
 
 
 def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemConfig:
@@ -216,6 +225,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             "cameras",
             "camera_diagnostics",
             "web_preview",
+            "operator_panel",
         },
         label="system config",
     )
@@ -231,6 +241,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     eef_test = required_table(data, "eef_test")
     gripper = required_table(data, "gripper")
     cameras = required_table(data, "cameras")
+    operator_panel = required_table(data, "operator_panel")
     require_exact_keys(host, required={"image", "a1_serial"}, label="host")
     require_exact_keys(
         topics, required=set(SystemTopicsConfig.__annotations__), label="topics"
@@ -263,6 +274,11 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     )
     require_exact_keys(
         gripper, required=set(SystemGripperConfig.__annotations__), label="gripper"
+    )
+    require_exact_keys(
+        operator_panel,
+        required=set(SystemOperatorPanelConfig.__annotations__),
+        label="operator_panel",
     )
     config = SystemConfig(
         path=path,
@@ -362,6 +378,10 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         web_preview=parse_web_preview_config(
             required_table(data, "web_preview"), repo_root=repo_root
         ),
+        operator_panel=SystemOperatorPanelConfig(
+            bind=string(operator_panel, "bind"),
+            port=integer(operator_panel, "port"),
+        ),
     )
     validate_system_config(config)
     return config
@@ -382,6 +402,12 @@ def _validate_robot_service_endpoint(endpoint: str) -> None:
 
 
 def validate_system_config(config: SystemConfig) -> None:
+    try:
+        IPv4Address(config.operator_panel.bind)
+    except AddressValueError as exc:
+        raise ValueError("operator_panel.bind must be an IPv4 address") from exc
+    if not 1 <= config.operator_panel.port <= 65535:
+        raise ValueError("operator_panel.port must be in [1, 65535]")
     if not config.host.a1_serial.startswith("/dev/") or any(
         character.isspace() for character in config.host.a1_serial
     ):

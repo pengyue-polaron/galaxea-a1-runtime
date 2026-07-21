@@ -11,16 +11,19 @@ from typing import Any
 from operator_panel.config_store import RepositoryConfigStore
 from operator_panel.contracts import WorkflowLaunch
 
+from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.configuration.tasks import (
+    load_task_catalog,
+    register_task_prompt,
+)
 
 from .catalog import build_a1_catalog
 from .configuration import build_a1_config_store
 from .workflows import build_a1_workflow_launch
 
 
-PANEL_BIND = "127.0.0.1"
-PANEL_PORT = 8765
 CAMERA_HEALTH_TIMEOUT_S = 0.4
 CAMERA_HEALTH_MAX_BYTES = 64 * 1024
 
@@ -33,6 +36,8 @@ class A1OperatorPanelAdapter:
         system = load_system_config(
             self.repo_root / SYSTEM_CONFIG, repo_root=self.repo_root
         )
+        self.panel_bind = system.operator_panel.bind
+        self.panel_port = system.operator_panel.port
         self._camera_web_port = system.web_preview.port
         self._config_store: RepositoryConfigStore = build_a1_config_store(
             self.repo_root
@@ -92,6 +97,55 @@ class A1OperatorPanelAdapter:
         )
         result["catalog"] = self.catalog()
         return result
+
+    def register(self, registration: str, values: dict[str, Any]) -> dict[str, Any]:
+        if registration != "prompt":
+            raise ValueError(f"unknown registration: {registration!r}")
+        required = {"catalog", "task_id", "prompt", "distribution"}
+        if set(values) != required:
+            raise ValueError(
+                "prompt registration requires exactly catalog, task_id, prompt, "
+                "and distribution"
+            )
+        catalog_path = self._task_catalog_path(_payload_text(values, "catalog"))
+        target = register_task_prompt(
+            catalog_path,
+            task_id=_payload_text(values, "task_id"),
+            prompt=_payload_text(values, "prompt"),
+            distribution=_payload_text(values, "distribution"),
+            repo_root=self.repo_root,
+        )
+        deployment_reference: str | None = None
+        for path in sorted(
+            (self.repo_root / "configs/deployments/lingbot").glob("*.toml")
+        ):
+            deployment = load_lingbot_config(path, repo_root=self.repo_root)
+            if deployment.task_catalog.path == catalog_path:
+                deployment_reference = path.relative_to(self.repo_root).as_posix()
+                break
+        activation_values = {}
+        if deployment_reference is not None:
+            activation_values["config"] = deployment_reference
+        activation_values["task"] = _payload_text(values, "task_id")
+        return {
+            "created": target.relative_to(self.repo_root).as_posix(),
+            "catalog": self.catalog(),
+            "activate": {"panel": "evaluate", "values": activation_values},
+        }
+
+    def _task_catalog_path(self, value: str) -> Path:
+        candidate = (self.repo_root / value).resolve()
+        allowed = (self.repo_root / "configs/tasks").resolve()
+        if (
+            not candidate.is_relative_to(allowed)
+            or candidate.name != "catalog.json"
+            or not candidate.is_file()
+        ):
+            raise ValueError(
+                "prompt catalog must be a repository catalog.json under configs/tasks"
+            )
+        load_task_catalog(candidate, repo_root=self.repo_root)
+        return candidate
 
 
 def _payload_text(payload: dict[str, Any], key: str) -> str:

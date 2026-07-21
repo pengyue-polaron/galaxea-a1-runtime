@@ -18,6 +18,7 @@ from galaxea_a1_runtime.configuration.paths import (
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.configuration.tasks import load_task_catalog
 from galaxea_a1_runtime.models.registry import registered_models
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
@@ -75,12 +76,30 @@ def build_a1_catalog(
         }
         for model in registered_models(root, backend="lingbot_va")
     )
-    camera_base = f"http://127.0.0.1:{system.web_preview.port}"
+    prompt_catalog_options = []
+    for path in sorted((root / "configs/tasks").glob("*/catalog.json")):
+        task_catalog = load_task_catalog(path, repo_root=root)
+        prompt_catalog_options.append(
+            {
+                "value": _reference(task_catalog.path, root),
+                "label": task_catalog.catalog_id,
+            }
+        )
     return {
         "product": {"brand": "GALAXEA A1", "title": "Control"},
         "cameras": [
-            {"id": "agent", "label": "Agent", "url": f"{camera_base}/agent.mjpg"},
-            {"id": "wrist", "label": "Wrist", "url": f"{camera_base}/wrist.mjpg"},
+            {
+                "id": "agent",
+                "label": "Agent",
+                "port": system.web_preview.port,
+                "path": "/agent.mjpg",
+            },
+            {
+                "id": "wrist",
+                "label": "Wrist",
+                "port": system.web_preview.port,
+                "path": "/wrist.mjpg",
+            },
         ],
         "camera_controls": [
             {
@@ -104,6 +123,7 @@ def build_a1_catalog(
             model_options=model_options,
             reset_options=reset_options,
         ),
+        "registrations": _registration_forms(prompt_catalog_options),
         "config_types": config_store.catalog(),
         "configuration_groups": [
             {"label": "Teleop", "items": teleop_options},
@@ -113,6 +133,46 @@ def build_a1_catalog(
             {"label": "Models", "items": model_options[1:]},
         ],
     }
+
+
+def _registration_forms(
+    prompt_catalog_options: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    return [
+        {
+            "id": "prompt",
+            "label": "Prompts",
+            "eyebrow": "PROMPT REGISTRY",
+            "title": "Register a prompt",
+            "description": (
+                "Create one validated prompt record without modifying existing entries."
+            ),
+            "submit_label": "Register prompt",
+            "confirm": "Register this prompt in the repository?",
+            "fields": [
+                _select_field("catalog", "Catalog", prompt_catalog_options),
+                _text_field(
+                    "prompt",
+                    "Prompt",
+                    placeholder="put the green apple into the bowl",
+                ),
+                {
+                    **_text_field("task_id", "Task ID", placeholder="green_apple_bowl"),
+                    "derive_from": "prompt",
+                    "transform": "snake_case",
+                },
+                _select_field(
+                    "distribution",
+                    "Distribution",
+                    [
+                        {"value": "ood", "label": "OOD"},
+                        {"value": "train", "label": "Train"},
+                    ],
+                    default="ood",
+                ),
+            ],
+        }
+    ]
 
 
 def _workflow_forms(

@@ -3,6 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
   <meta name="operator-panel-token" content="__PANEL_TOKEN__">
   <title>Operator Panel</title>
   <link rel="stylesheet" href="/panel.css">
@@ -67,8 +68,9 @@
             <button id="stop-workflow" class="quiet danger" type="button">Stop</button>
           </div>
           <p id="session-state-note" class="session-state-note">Start a workflow to see its progress and available actions.</p>
+          <div id="session-progress" class="session-progress hidden" aria-live="polite"></div>
           <div id="session-actions" class="session-actions"></div>
-          <pre id="logs" aria-live="polite">Panel ready.</pre>
+          <pre id="logs" role="log" aria-live="polite" aria-relevant="additions">Panel ready.</pre>
         </aside>
       </div>
     </section>

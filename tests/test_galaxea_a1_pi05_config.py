@@ -51,8 +51,9 @@ def test_pi05_deployment_pins_final_checkpoint_and_shared_contracts():
     assert config.model_contract.source_action_dim == 8
     assert config.model_contract.state_dim == 14
     assert config.model_contract.pose_mode == "episode-relative"
-    assert config.task_catalog.path == REPO / "configs/tasks/fruit_placement.toml"
-    assert len(config.task_catalog.tasks) == 6
+    assert config.task_catalog.path == (
+        REPO / "configs/tasks/fruit_placement/catalog.json"
+    )
     assert config.task_catalog.task("lemon_bowl").distribution == "ood"
     assert config.execution.execute is True
     assert config.execution.step_mode is False

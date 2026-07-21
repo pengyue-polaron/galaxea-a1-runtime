@@ -1,4 +1,4 @@
-"""Dependency-free localhost HTTP server for an adapter-driven operator panel."""
+"""Dependency-free HTTP server for an adapter-driven operator panel."""
 
 from __future__ import annotations
 
@@ -39,6 +39,17 @@ class OperatorPanelApplication:
             )
         return self.adapter.create_config(payload)
 
+    def register(self, payload: JsonObject) -> JsonObject:
+        if self.workflow.snapshot()["active"]:
+            raise RuntimeError(
+                "cannot register repository data while a workflow is active"
+            )
+        registration = payload.get("registration")
+        values = payload.get("values", {})
+        if not isinstance(registration, str) or not isinstance(values, dict):
+            raise ValueError("register requires a registration id and values")
+        return self.adapter.register(registration, values)
+
 
 def serve_operator_panel(
     adapter: PanelAdapter,
@@ -51,8 +62,16 @@ def serve_operator_panel(
     handler = _handler_type(app, asset_root.resolve())
     server = ThreadingHTTPServer((bind, port), handler)
     server.daemon_threads = True
-    print("[INFO] Operator Panel is local and adapter-driven.", flush=True)
-    print(f"[PASS] Operator Panel: http://{bind}:{port}", flush=True)
+    print("[INFO] Operator Panel is adapter-driven.", flush=True)
+    if bind == "0.0.0.0":
+        print(f"[PASS] Operator Panel local: http://127.0.0.1:{port}", flush=True)
+        print(
+            f"[WARN] Operator Panel LAN: http://<this-host-ip>:{port} "
+            "(trusted LAN only)",
+            flush=True,
+        )
+    else:
+        print(f"[PASS] Operator Panel: http://{bind}:{port}", flush=True)
     try:
         while True:
             try:
@@ -130,6 +149,8 @@ def _handler_type(
                     result = app.adapter.validate_config(payload)
                 elif path == "/api/config/create":
                     result = app.create_config(payload)
+                elif path == "/api/register":
+                    result = app.register(payload)
                 else:
                     self._send_json(HTTPStatus.NOT_FOUND, {"error": "not found"})
                     return
@@ -184,7 +205,7 @@ def _handler_type(
             if content_security_policy:
                 self.send_header(
                     "Content-Security-Policy",
-                    "default-src 'self'; img-src 'self' http://127.0.0.1:*; "
+                    "default-src 'self'; img-src 'self' http:; "
                     "script-src 'self'; style-src 'self'; connect-src 'self'; "
                     "frame-ancestors 'none'; base-uri 'none'; form-action 'self'",
                 )

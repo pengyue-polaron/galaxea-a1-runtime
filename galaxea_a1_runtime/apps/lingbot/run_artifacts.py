@@ -13,6 +13,7 @@ from pathlib import Path
 
 from embodied_ops.artifacts import atomic_write_json, file_sha256
 from embodied_ops.evaluation import EvaluationSlot
+from operator_panel.protocol import PROTOCOL_PREFIX
 
 from galaxea_a1_runtime.apps.lingbot.config import (
     default_config_path,
@@ -454,7 +455,11 @@ def _repo_path(path: Path, repo_root: Path) -> str:
 
 def _plain_terminal_log(value: str) -> str:
     plain = _ANSI_ESCAPE.sub("", value).replace("\r\n", "\n").replace("\r", "\n")
-    lines = [line.rstrip() for line in plain.splitlines()]
+    lines = [
+        line.rstrip()
+        for line in plain.splitlines()
+        if not line.startswith(PROTOCOL_PREFIX)
+    ]
     return "\n".join(lines).rstrip() + "\n" if lines else ""
 
 

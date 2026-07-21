@@ -126,6 +126,19 @@ def test_system_config_rejects_non_unix_robot_service_endpoint(tmp_path):
         load_system_config(path, repo_root=REPO)
 
 
+def test_system_config_rejects_non_ipv4_operator_panel_bind(tmp_path):
+    path = tmp_path / "a1.toml"
+    path.write_text(
+        SYSTEM.read_text().replace(
+            'bind = "0.0.0.0"\nport = 8765',
+            'bind = "all"\nport = 8765',
+        )
+    )
+
+    with pytest.raises(ValueError, match="IPv4"):
+        load_system_config(path, repo_root=REPO)
+
+
 def test_system_config_rejects_command_timeout_outside_rpc_lease_window(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(

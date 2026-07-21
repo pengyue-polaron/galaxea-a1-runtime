@@ -8,7 +8,7 @@ config = "configs/inference/backends/openpi_pi05.toml"
 config = "configs/models/pi05/fruit_placement_eef.toml"
 
 [tasks]
-config = "configs/tasks/fruit_placement.toml"
+config = "configs/tasks/fruit_placement/catalog.json"
 
 [deployment]
 id = "pi05-fruit-placement-eef"

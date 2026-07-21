@@ -121,8 +121,7 @@ def build_a1_workflow_launch(
             workflow="reset",
             name=f"reset:{pose.path.stem}",
             command=(
-                str(root / ".venv/bin/python"),
-                str(root / "scripts/apps/reset/a1_reset.py"),
+                str(root / "scripts/apps/reset/a1_reset_runtime.sh"),
                 "--system-config",
                 str(system.path),
                 "--pose",
