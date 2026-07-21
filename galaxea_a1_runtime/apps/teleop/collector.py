@@ -21,7 +21,7 @@ configure_ros1_python(ROOT_DIR)
 
 import rospy
 
-from operator_panel.protocol import announce_input
+from embodied_ops.operator_panel import announce_input
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.collector_episode import TeleopEpisodeSession

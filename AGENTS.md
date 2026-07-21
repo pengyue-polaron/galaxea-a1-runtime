@@ -39,6 +39,9 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   `galaxea_a1_runtime/apps/`; reusable runtime, hardware, collection, and policy
   logic lives in its focused package.
 - Keep Teleop collection, inference, and conversion independent of LingBot.
+- Generic collection, evaluation, artifact, and Operator Panel behavior belongs
+  to the pinned `external/embodied-ops` repository. This repository owns only
+  the A1 panel adapter, catalog values, validators, and hardware commands.
 - Do not patch `third_party/lerobot` for A1 behavior. Hardware-independent
   collection/evaluation workflows and the two LeRobot adapters live in the pinned
   first-party repositories under `external/`. The Robot plugin owns its private

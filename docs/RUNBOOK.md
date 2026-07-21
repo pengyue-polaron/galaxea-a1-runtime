@@ -145,10 +145,11 @@ authentication. Bind it only on a trusted LAN, restrict port `8765` with the
 host firewall when the LAN is shared, and never proxy or port-forward it. The
 separate Camera Web remains read-only and has no control endpoints.
 
-The reusable Web/process/configuration core is documented in
-[`operator_panel/README.md`](../operator_panel/README.md). Another repository
-provides its own adapter and child input announcements; A1-specific loaders and
-commands are not part of that core.
+The reusable Web/process/configuration core is provided by the pinned
+`embodied-ops` dependency and documented in its
+[`operator_panel/README.md`](../external/embodied-ops/src/embodied_ops/operator_panel/README.md).
+Another repository provides its own adapter and child input announcements;
+A1-specific loaders and commands are not part of that core.
 
 Optional EEF acceptance **MOVES HARDWARE**:
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import sys
 import threading
 
-from operator_panel.protocol import announce_progress
+from embodied_ops.operator_panel import announce_progress
 
 from galaxea_a1_runtime.console import Tone, emit, style
 

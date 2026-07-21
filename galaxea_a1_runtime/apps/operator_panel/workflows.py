@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from operator_panel.contracts import InputAction, WorkflowLaunch
+from embodied_ops.operator_panel import InputAction, WorkflowLaunch
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config

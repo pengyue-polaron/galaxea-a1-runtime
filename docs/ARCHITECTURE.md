@@ -175,13 +175,12 @@ The generic Operator Panel is a separate control plane. The A1 instance binds
 its System-owned endpoint on the trusted LAN; it has request-integrity tokens
 but no user authentication or transport encryption and must not be exposed
 beyond that LAN. The
-repository-independent `operator_panel/` package owns HTTP, static rendering,
-create-only configuration staging, subprocess supervision, and a small child
-presentation protocol for input readiness and typed progress. Progress is
-display-only, retained by stable id as latest state, and excluded from durable
-logs. It has no Galaxea, ROS, camera, model, topic, or
-tracked-config imports and may move to a standalone repository or Git submodule
-without moving A1 behavior. The A1 adapter under
+repository-independent `embodied_ops.operator_panel` package in the pinned
+`external/embodied-ops` repository owns HTTP, static rendering, create-only
+configuration staging, subprocess supervision, and a small child presentation
+protocol for input readiness and typed progress. Progress is display-only,
+retained by stable id as latest state, and excluded from durable logs. It has no
+Galaxea, ROS, camera, model, topic, or tracked-config imports. The A1 adapter under
 `galaxea_a1_runtime/apps/operator_panel/` discovers and fully loads repository
 Teleop, LingBot deployment, Batch, model, task-registry, and reset files,
 supplies the dynamic form catalog, handles strict prompt registration, and

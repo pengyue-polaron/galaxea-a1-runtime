@@ -8,8 +8,7 @@ from http.client import HTTPConnection
 from pathlib import Path
 from typing import Any
 
-from operator_panel.config_store import RepositoryConfigStore
-from operator_panel.contracts import WorkflowLaunch
+from embodied_ops.operator_panel import RepositoryConfigStore, WorkflowLaunch
 
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG

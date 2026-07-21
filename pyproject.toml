@@ -4,7 +4,7 @@ version = "0.1.0"
 requires-python = ">=3.12,<3.13"
 
 dependencies = [
-    "embodied-ops>=0.3,<0.4",
+    "embodied-ops>=0.4,<0.5",
     "huggingface-hub>=1.0.0,<2.0.0",
     "lerobot[dataset,feetech]",
     "lerobot_robot_galaxea_a1>=0.3,<0.4",
@@ -30,10 +30,7 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["galaxea_a1_runtime*", "operator_panel*"]
-
-[tool.setuptools.package-data]
-operator_panel = ["assets/*", "README.md"]
+include = ["galaxea_a1_runtime*"]
 
 [tool.uv]
 environments = ["sys_platform == 'linux' and (platform_machine == 'x86_64' or platform_machine == 'aarch64' or platform_machine == 'arm64')"]

@@ -130,7 +130,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "panel":
-        from operator_panel import serve_operator_panel
+        from embodied_ops.operator_panel import serve_operator_panel
 
         from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
 

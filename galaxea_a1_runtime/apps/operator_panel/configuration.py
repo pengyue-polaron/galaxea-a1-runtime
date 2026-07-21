@@ -6,7 +6,7 @@ import tomllib
 from functools import partial
 from pathlib import Path
 
-from operator_panel.config_store import ConfigKind, RepositoryConfigStore
+from embodied_ops.operator_panel import ConfigKind, RepositoryConfigStore
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config

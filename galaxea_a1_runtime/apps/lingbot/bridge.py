@@ -24,7 +24,7 @@ import numpy as np
 
 import rospy
 
-from operator_panel.protocol import announce_input, announce_progress
+from embodied_ops.operator_panel import announce_input, announce_progress
 from galaxea_a1_runtime.hardware.eef_bridge import EefIkCommandPublisher
 from galaxea_a1_runtime.policies.eef_actions import (
     build_action_transform_config,

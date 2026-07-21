@@ -13,7 +13,7 @@ from pathlib import Path
 
 from embodied_ops.artifacts import atomic_write_json, file_sha256
 from embodied_ops.evaluation import EvaluationSlot
-from operator_panel.protocol import PROTOCOL_PREFIX
+from embodied_ops.operator_panel import PROTOCOL_PREFIX
 
 from galaxea_a1_runtime.apps.lingbot.config import (
     default_config_path,
