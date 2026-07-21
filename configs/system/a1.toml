@@ -46,10 +46,11 @@ tmux_process_grace_s = 4
 # The runtime service is the sole ROS/hardware owner. Framework adapters connect
 # through this local versioned RPC endpoint and never import the runtime backend.
 endpoint = "unix:///tmp/galaxea-a1-runtime/robot-service.sock"
-# Covers cold ROS feedback and staged-target alignment during session opening.
+# Covers cold ROS feedback and the Runtime's staged-target alignment wait.
 device_connect_timeout_s = 30.0
-# Individual control RPCs fail before the session lease; the relay independently
-# enforces its shorter command-input freshness window.
+# Steady-state control RPCs fail before the session lease. The Robot plugin uses
+# its startup timeout only for the first hold-and-activate command; the relay
+# independently enforces its shorter command-input freshness window.
 rpc_timeout_s = 0.5
 # Heartbeats keep observation sessions alive but cannot keep an idle command owner.
 command_timeout_s = 0.75
