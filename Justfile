@@ -173,7 +173,7 @@ derive config target="all":
         --config "{{config}}" \
         --target "{{target}}"
 
-export-v21 config target="joint-v2.1":
+export-v21 experiment target="joint-v2.1":
     {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
-        --config "{{config}}" \
+        --config "{{repo}}/configs/datasets/{{experiment}}_derivatives.toml" \
         --target "{{target}}"

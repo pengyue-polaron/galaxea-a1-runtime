@@ -298,8 +298,8 @@ Then build all derivatives, or one independently:
 ```bash
 just derive configs/datasets/EXPERIMENT_derivatives.toml
 just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v3
-just export-v21 configs/datasets/EXPERIMENT_derivatives.toml joint-v2.1
-just export-v21 configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
+just export-v21 EXPERIMENT
+just export-v21 EXPERIMENT eef-v2.1
 ```
 
 The source repo ID and task are read from its committed provenance instead of
