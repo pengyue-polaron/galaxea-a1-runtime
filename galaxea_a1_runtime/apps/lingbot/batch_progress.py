@@ -182,6 +182,8 @@ def _classify_run(
 
 
 def _artifacts_are_complete(metadata: dict, artifacts: dict, run_dir: Path) -> bool:
+    if metadata.get("schema_version") != 3:
+        return False
     if artifacts.get("runtime_log") != "runtime.log":
         return False
     if artifacts.get("policy_server_log") != "policy_server.log":
@@ -190,14 +192,49 @@ def _artifacts_are_complete(metadata: dict, artifacts: dict, run_dir: Path) -> b
         return False
     if not (run_dir / "policy_server.log").is_file():
         return False
-    video = artifacts.get("video")
-    if not isinstance(video, str) or not video or Path(video).name != video:
+    videos = artifacts.get("videos")
+    if not isinstance(videos, dict) or set(videos) != {"front", "wrist"}:
         return False
-    video_path = run_dir / video
-    if not video_path.is_file() or video_path.stat().st_size <= 0:
+    for video in videos.values():
+        if not isinstance(video, str) or not video or Path(video).name != video:
+            return False
+        video_path = run_dir / video
+        if not video_path.is_file() or video_path.stat().st_size <= 0:
+            return False
+    recording_name = artifacts.get("camera_recording")
+    timeline_name = artifacts.get("camera_timeline")
+    for name in (recording_name, timeline_name):
+        if not isinstance(name, str) or not name or Path(name).name != name:
+            return False
+        path = run_dir / name
+        if not path.is_file() or path.stat().st_size <= 0:
+            return False
+    try:
+        recording = json.loads((run_dir / recording_name).read_text())
+    except (OSError, json.JSONDecodeError):
+        return False
+    if not isinstance(recording, dict) or recording.get("schema_version") != 1:
+        return False
+    recording_videos = recording.get("videos")
+    if not isinstance(recording_videos, dict) or set(recording_videos) != {
+        "front",
+        "wrist",
+    }:
+        return False
+    if any(
+        not isinstance(recording_videos[camera], dict)
+        or recording_videos[camera].get("file") != videos[camera]
+        for camera in ("front", "wrist")
+    ):
+        return False
+    if recording.get("timeline") != timeline_name:
         return False
     frames = _plain_int(metadata.get("frames"))
-    return frames is not None and frames > 0
+    return (
+        frames is not None
+        and frames > 0
+        and _plain_int(recording.get("frames")) == frames
+    )
 
 
 def _plain_int(value: object) -> int | None:

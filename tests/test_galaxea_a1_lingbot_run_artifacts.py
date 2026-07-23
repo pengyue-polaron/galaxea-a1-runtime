@@ -46,6 +46,44 @@ def _prepare(tmp_path: Path, run_id: str = "20260718_010203_000000_red_mango_bow
     )
 
 
+def _write_camera_recording(paths, *, frames: int = 42) -> None:
+    paths.final_dir.mkdir(exist_ok=True)
+    (paths.final_dir / paths.front_video_filename).write_bytes(b"front-video")
+    (paths.final_dir / paths.wrist_video_filename).write_bytes(b"wrist-video")
+    (paths.final_dir / "camera_timeline.jsonl").write_text(
+        '{"frame_index":0,"front_seq":1,"wrist_seq":1}\n'
+    )
+    (paths.final_dir / "camera_recording.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "videos": {
+                    "front": {
+                        "file": paths.front_video_filename,
+                        "source": "front-test",
+                        "width": 640,
+                        "height": 480,
+                    },
+                    "wrist": {
+                        "file": paths.wrist_video_filename,
+                        "source": "wrist-test",
+                        "width": 640,
+                        "height": 480,
+                    },
+                },
+                "timeline": "camera_timeline.jsonl",
+                "fps": 30.0,
+                "frames": frames,
+                "elapsed_s": 1.4,
+                "started_at": "2026-07-18T01:02:03+00:00",
+                "ended_at": "2026-07-18T01:03:04+00:00",
+                "max_source_age_s": 0.5,
+                "max_pair_skew_s": 0.02,
+            }
+        )
+    )
+
+
 def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Path):
     paths = _prepare(tmp_path)
     paths.raw_runtime_log.write_text(
@@ -54,17 +92,7 @@ def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Pat
         "finished\r\n"
     )
     paths.policy_server_log.write_text("server ready\n")
-    paths.final_dir.mkdir()
-    (paths.final_dir / paths.video_filename).write_bytes(b"video")
-    (paths.final_dir / "metadata.json").write_text(
-        json.dumps(
-            {
-                "schema_version": 1,
-                "video": paths.video_filename,
-                "frames": 42,
-            }
-        )
-    )
+    _write_camera_recording(paths)
 
     final_dir = finalize_lingbot_run(
         tmp_path,
@@ -79,8 +107,7 @@ def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Pat
     )
     assert (final_dir / "policy_server.log").read_text() == "server ready\n"
     metadata = json.loads((final_dir / "metadata.json").read_text())
-    assert metadata["schema_version"] == 2
-    assert metadata["video"] == paths.video_filename
+    assert metadata["schema_version"] == 3
     assert metadata["frames"] == 42
     assert metadata["run"]["task"] == {
         "id": "red_mango_bowl",
@@ -88,7 +115,10 @@ def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Pat
         "distribution": "train",
     }
     assert metadata["run"]["scene_note"] == "桌面偏左，蓝色盘子靠前"
-    assert metadata["run"]["video_filename"] == paths.video_filename
+    assert metadata["run"]["video_filenames"] == {
+        "front": paths.front_video_filename,
+        "wrist": paths.wrist_video_filename,
+    }
     assert metadata["run"]["batch"] == {
         "id": "fruit-placement-scripted",
         "task_id": "red_mango_bowl",
@@ -121,7 +151,12 @@ def test_lingbot_run_finalizes_video_prompt_metadata_and_both_logs(tmp_path: Pat
     assert metadata["run"]["status"] == "completed"
     assert metadata["run"]["exit_code"] == 0
     assert metadata["artifacts"] == {
-        "video": paths.video_filename,
+        "videos": {
+            "front": paths.front_video_filename,
+            "wrist": paths.wrist_video_filename,
+        },
+        "camera_timeline": "camera_timeline.jsonl",
+        "camera_recording": "camera_recording.json",
         "runtime_log": "runtime.log",
         "policy_server_log": "policy_server.log",
         "incomplete_video_staging": False,
@@ -140,7 +175,9 @@ def test_failed_lingbot_start_still_preserves_metadata_and_logs(tmp_path: Path):
 
     metadata = json.loads((final_dir / "metadata.json").read_text())
     assert metadata["run"]["status"] == "failed"
-    assert metadata["artifacts"]["video"] is None
+    assert metadata["artifacts"]["videos"] == {"front": None, "wrist": None}
+    assert metadata["artifacts"]["camera_timeline"] is None
+    assert metadata["artifacts"]["camera_recording"] is None
     assert metadata["artifacts"]["incomplete_video_staging"] is True
     assert (final_dir / "runtime.log").read_text() == "startup failed\n"
     assert (final_dir / "policy_server.log").is_file()
@@ -152,8 +189,6 @@ def test_ik_rejection_requires_a_persisted_operator_evaluation_decision(
 ):
     paths = _prepare(tmp_path, "20260718_010203_000003_red_mango_bowl")
     paths.raw_runtime_log.write_text("IK target stopped\n")
-    paths.final_dir.mkdir()
-    (paths.final_dir / paths.video_filename).write_bytes(b"video")
     record_lingbot_run_outcome(
         tmp_path,
         paths.run_id,
@@ -242,8 +277,10 @@ def test_prepared_run_shell_values_share_one_run_identity(tmp_path: Path):
     assert f"RUN_ID={paths.run_id}" in rendered
     assert f"RUN_RUNTIME_RAW_LOG={paths.raw_runtime_log}" in rendered
     assert f"RUN_POLICY_LOG={paths.policy_server_log}" in rendered
-    assert "RUN_VIDEO_FILENAME=" in rendered
-    assert paths.video_filename in rendered
+    assert "RUN_FRONT_VIDEO_FILENAME=" in rendered
+    assert "RUN_WRIST_VIDEO_FILENAME=" in rendered
+    assert paths.front_video_filename in rendered
+    assert paths.wrist_video_filename in rendered
 
 
 def test_lingbot_video_name_is_scene_prompt_date_and_portable():
@@ -256,7 +293,7 @@ def test_lingbot_video_name_is_scene_prompt_date_and_portable():
     )
 
     assert filename == (
-        "桌面偏左_光照正常__put_the_red_mango_into_the_bowl__20260718_010203.mp4"
+        "桌面偏左_光照正常__put_the_red_mango_into_the_bowl__20260718_010203__front.mp4"
     )
     assert "/" not in filename
     long_filename = lingbot_video_filename("场" * 120, "动" * 200)

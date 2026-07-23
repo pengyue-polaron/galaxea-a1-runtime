@@ -85,7 +85,7 @@ class LingBotActionModeConfig:
 
 @dataclass(frozen=True)
 class LingBotRecordingConfig:
-    agent_view_enabled: bool
+    camera_videos_enabled: bool
     output_root: Path
 
 

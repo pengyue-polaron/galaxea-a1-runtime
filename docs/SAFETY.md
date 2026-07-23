@@ -121,7 +121,7 @@ additional gripper bit latches `FAULT`.
   Camera-consuming apps attach to its local raw-frame channel and never reopen
   the physical devices.
 - The bridge preserves source sequence numbers and monotonic timestamps on
-  uncompressed BGR/depth pairs. Inference, AgentView recording, and formal
+  uncompressed BGR/depth pairs. Inference, paired-camera run recording, and formal
   collection retain their freshness and paired-skew validation. The Web encoder
   is a separate latest-frame consumer; Web JPEGs are never policy or collection
   inputs.

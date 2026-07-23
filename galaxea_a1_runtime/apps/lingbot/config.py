@@ -175,7 +175,7 @@ def load_lingbot_config(
     )
     require_exact_keys(
         recording,
-        required={"agent_view_enabled", "output_root"},
+        required={"camera_videos_enabled", "output_root"},
         label="recording",
     )
 
@@ -251,7 +251,7 @@ def load_lingbot_config(
             pose_mode=contract.pose_mode,
         ),
         recording=LingBotRecordingConfig(
-            agent_view_enabled=boolean(recording, "agent_view_enabled"),
+            camera_videos_enabled=boolean(recording, "camera_videos_enabled"),
             output_root=recording_output_root,
         ),
     )

@@ -41,12 +41,34 @@ def _write_run(
     )
     run_dir = root / name
     run_dir.mkdir()
-    video = "recording.mp4"
-    (run_dir / video).write_bytes(b"video")
+    videos = {"front": "front.mp4", "wrist": "wrist.mp4"}
+    for video in videos.values():
+        (run_dir / video).write_bytes(b"video")
+    (run_dir / "camera_timeline.jsonl").write_text(
+        '{"frame_index":0,"front_seq":1,"wrist_seq":1}\n'
+    )
+    (run_dir / "camera_recording.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "videos": {
+                    camera: {
+                        "file": video,
+                        "source": f"{camera}-test",
+                        "width": 640,
+                        "height": 480,
+                    }
+                    for camera, video in videos.items()
+                },
+                "timeline": "camera_timeline.jsonl",
+                "frames": 10,
+            }
+        )
+    )
     (run_dir / "runtime.log").write_text("run finished\n")
     (run_dir / "policy_server.log").write_text("server\n")
     metadata = {
-        "schema_version": 2,
+        "schema_version": 3,
         "frames": 10,
         "run": {
             "run_id": name,
@@ -68,7 +90,9 @@ def _write_run(
             },
         },
         "artifacts": {
-            "video": video,
+            "videos": videos,
+            "camera_recording": "camera_recording.json",
+            "camera_timeline": "camera_timeline.jsonl",
             "runtime_log": "runtime.log",
             "policy_server_log": "policy_server.log",
         },
@@ -128,7 +152,7 @@ def test_resume_requires_valid_artifacts_and_exact_task_slot(tmp_path: Path):
         task_id="banana_bowl",
     )
     _write_run(tmp_path, name="missing-video", sequence=2, status="completed")
-    (tmp_path / "missing-video" / "recording.mp4").unlink()
+    (tmp_path / "missing-video" / "wrist.mp4").unlink()
     _write_run(tmp_path, name="zero-frames", sequence=3, status="completed")
     metadata_path = tmp_path / "zero-frames" / "metadata.json"
     metadata = json.loads(metadata_path.read_text())

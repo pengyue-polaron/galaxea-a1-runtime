@@ -120,7 +120,10 @@ def export_valid_lingbot_batch(
             "metadata.json",
             artifacts["runtime_log"],
             artifacts["policy_server_log"],
-            artifacts["video"],
+            artifacts["camera_recording"],
+            artifacts["camera_timeline"],
+            artifacts["videos"]["front"],
+            artifacts["videos"]["wrist"],
         )
         archive_dir = f"runs/{sequence:02d}_{run.run_id}"
         files = []

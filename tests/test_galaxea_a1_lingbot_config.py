@@ -60,7 +60,7 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.system.gripper.stroke_min_mm == 0.0
     assert config.system.gripper.stroke_max_mm == 104.0
     assert config.execution.kv_observations_per_frame == 4
-    assert config.recording.agent_view_enabled is True
+    assert config.recording.camera_videos_enabled is True
     assert config.recording.output_root == (
         REPO / "outputs/inference/lingbot-fruit-placement-eef/recordings"
     )

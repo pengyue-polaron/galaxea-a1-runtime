@@ -27,7 +27,8 @@ def parse_args() -> Namespace:
     parser.add_argument("--model")
     parser.add_argument("--task-id", required=True)
     parser.add_argument("--run-id", required=True)
-    parser.add_argument("--video-filename", required=True)
+    parser.add_argument("--front-video-filename", required=True)
+    parser.add_argument("--wrist-video-filename", required=True)
     return parser.parse_args()
 
 
@@ -55,7 +56,8 @@ def main() -> int:
         config,
         task,
         run_id=args.run_id,
-        video_filename=args.video_filename,
+        front_video_filename=args.front_video_filename,
+        wrist_video_filename=args.wrist_video_filename,
     )
     return run_eef_policy_bridge(
         bridge,

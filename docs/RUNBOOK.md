@@ -407,21 +407,23 @@ tmux attach -t pi05-a1
 `just lingbot` first requires a non-empty scene note, then starts a fresh marked
 policy-server process and the A1 services and runs the bridge directly in the
 invoking terminal. Its single `[RUN]` line
-updates in place with inference, execution, EEF, and AgentView recording
+updates in place with inference, execution, EEF, and paired-camera recording
 progress. `Ctrl+C` stops the foreground bridge, locks the relay, and tears down
 the policy server and A1 services. LingBot has no tmux attach/detach lifecycle.
 
 The persistent AgentView/wrist dashboard remains at
 `http://0.0.0.0:8088` (replace `0.0.0.0` with this host's LAN address from
 another machine) before, during, and after a run. The bridge records the full,
-unoverlaid AgentView stream from its raw-frame channel. Normal completion, an
-execution error, and
-`Ctrl+C` all lock the relay before closing the camera and atomically publish the
-named MP4 under `outputs/inference/lingbot-fruit-placement-eef/recordings/`.
+unoverlaid AgentView and wrist streams from the same atomic raw-frame pair used
+by inference. Normal completion, an execution error, and `Ctrl+C` all lock the
+relay before closing the camera and atomically publish both named MP4s plus
+their source timeline under
+`outputs/inference/lingbot-fruit-placement-eef/recordings/`.
 Every selected run,
 including a startup that later fails, gets one timestamped task directory. A
-successful recorded run contains one
-`SCENE_NOTE__INPUT_PROMPT__YYYYMMDD_HHMMSS.mp4`, `runtime.log`,
+successful recorded run contains
+`SCENE_NOTE__INPUT_PROMPT__YYYYMMDD_HHMMSS__front.mp4`, the matching
+`__wrist.mp4`, `camera_timeline.jsonl`, `camera_recording.json`, `runtime.log`,
 `policy_server.log`, and `metadata.json`. Filename components retain Unicode
 letters/digits and replace punctuation or whitespace with `_`. The metadata
 binds the original scene note, exact prompt, task id and distribution,
@@ -444,8 +446,9 @@ Edit `retries_per_prompt` and the ordered `task_ids` in the tracked run plan.
 attempt plus two repetitions. Enter one scene note for the batch. Before every
 attempt, the command displays its task/repetition index and waits: `Enter`
 starts the tracked A1-only reset and then inference, while `q` stops before the
-next reset. The SO leader is not opened. Every attempt gets its own video,
-metadata, and logs. An IK target that does not converge or exceeds the tracked
+next reset. The SO leader is not opened. Every attempt gets its own paired
+videos, camera timeline, metadata, and logs. An IK target that does not converge
+or exceeds the tracked
 solution-delta bound, or a finite target outside the tracked EEF workspace,
 safely locks the arm without publishing the rejected target, finalizes the
 attempt with `status=safety_stopped`, and asks for an evaluation decision.
@@ -462,7 +465,8 @@ just lingbot-batch-resume --model mango_placement_eef configs/runs/lingbot/mango
 ```
 
 Enter the exact same scene note. Resume validates the current plan's batch id,
-task position, attempt number, video, frame count, and both logs. It skips
+task position, attempt number, both videos, camera timeline/sidecar, shared frame
+count, and both logs. It skips
 `completed` slots and `safety_stopped` slots explicitly counted by the operator;
 discarded, undecided, interrupted, and infrastructure-failed slots run again.
 Earlier runs made before typed safety-stop metadata are also recognized when

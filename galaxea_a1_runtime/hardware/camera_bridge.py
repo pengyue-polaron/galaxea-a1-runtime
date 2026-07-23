@@ -335,6 +335,16 @@ class CameraBridgeReaders:
         with self._lock:
             return self._latest[name]
 
+    def latest_pair(self) -> tuple[CameraSample, CameraSample] | None:
+        """Return the latest front/wrist samples from one atomic bridge update."""
+
+        with self._lock:
+            front = self._latest["front"]
+            wrist = self._latest["wrist"]
+        if front is None or wrist is None:
+            return None
+        return front, wrist
+
     def _run(self) -> None:
         active_socket: socket.socket | None = None
         try:

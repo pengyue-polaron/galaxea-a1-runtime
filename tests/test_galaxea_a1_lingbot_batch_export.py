@@ -42,12 +42,34 @@ def _write_valid_run(
     identity = run_id or f"valid-run-{sequence:02d}"
     run_dir = root / identity
     run_dir.mkdir(parents=True)
-    video = "evaluation.mp4"
-    (run_dir / video).write_bytes(f"video-{sequence}".encode())
+    videos = {"front": "front.mp4", "wrist": "wrist.mp4"}
+    for camera, video in videos.items():
+        (run_dir / video).write_bytes(f"{camera}-video-{sequence}".encode())
+    (run_dir / "camera_timeline.jsonl").write_text(
+        '{"frame_index":0,"front_seq":1,"wrist_seq":1}\n'
+    )
+    (run_dir / "camera_recording.json").write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "videos": {
+                    camera: {
+                        "file": video,
+                        "source": f"{camera}-test",
+                        "width": 640,
+                        "height": 480,
+                    }
+                    for camera, video in videos.items()
+                },
+                "timeline": "camera_timeline.jsonl",
+                "frames": 1,
+            }
+        )
+    )
     (run_dir / "runtime.log").write_text(f"runtime-{sequence}\n")
     (run_dir / "policy_server.log").write_text(f"policy-{sequence}\n")
     metadata = {
-        "schema_version": 2,
+        "schema_version": 3,
         "frames": 1,
         "run": {
             "run_id": identity,
@@ -69,7 +91,9 @@ def _write_valid_run(
             },
         },
         "artifacts": {
-            "video": video,
+            "videos": videos,
+            "camera_recording": "camera_recording.json",
+            "camera_timeline": "camera_timeline.jsonl",
             "runtime_log": "runtime.log",
             "policy_server_log": "policy_server.log",
         },
@@ -116,7 +140,7 @@ def test_complete_batch_exports_manifest_video_metadata_and_logs(tmp_path: Path)
         manifest_file = archive.extractfile("manifest.json")
         assert manifest_file is not None
         manifest = json.load(manifest_file)
-    assert len(names) == 73
+    assert len(names) == 127
     assert manifest["scene_note"] == "randomized_A"
     assert manifest["total_slots"] == 18
     assert len(manifest["runs"]) == 18
@@ -125,7 +149,7 @@ def test_complete_batch_exports_manifest_video_metadata_and_logs(tmp_path: Path)
         "prompt": "Put the banana into the blue plate",
         "distribution": "train",
     }
-    assert len(manifest["runs"][0]["files"]) == 4
+    assert len(manifest["runs"][0]["files"]) == 7
     assert all(len(item["sha256"]) == 64 for item in manifest["runs"][0]["files"])
 
 

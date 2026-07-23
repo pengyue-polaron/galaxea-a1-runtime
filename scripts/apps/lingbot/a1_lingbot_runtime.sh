@@ -140,7 +140,8 @@ RUN_ID=""
 RUN_LOG_STAGING_DIR=""
 RUN_RUNTIME_RAW_LOG=""
 RUN_POLICY_LOG=""
-RUN_VIDEO_FILENAME=""
+RUN_FRONT_VIDEO_FILENAME=""
+RUN_WRIST_VIDEO_FILENAME=""
 RUN_ARTIFACTS_PREPARED=false
 RUN_ARTIFACTS_FINALIZED=false
 RUN_EXIT_CODE=2
@@ -353,7 +354,8 @@ run_bridge_foreground() {
     --model "${MODEL_ID}"
     --task-id "${SELECTED_TASK_ID}"
     --run-id "${run_id}"
-    --video-filename "${RUN_VIDEO_FILENAME}"
+    --front-video-filename "${RUN_FRONT_VIDEO_FILENAME}"
+    --wrist-video-filename "${RUN_WRIST_VIDEO_FILENAME}"
   )
   a1_success "LingBot runtime started in the current terminal."
   a1_info "AgentView dashboard: http://${WEB_PREVIEW_BIND}:${WEB_PREVIEW_PORT}"
@@ -499,7 +501,8 @@ run_pipeline() {
   local internal_command=(
     "$0" --config "${CONFIG_PATH}" --model "${MODEL_ID}" __run
     "${SELECTED_TASK_ID}" "${RUN_ID}" "${RUN_POLICY_LOG}"
-    "${RUN_VIDEO_FILENAME}" "${RESET_BEFORE_RUN_PATH}"
+    "${RUN_FRONT_VIDEO_FILENAME}" "${RUN_WRIST_VIDEO_FILENAME}"
+    "${RESET_BEFORE_RUN_PATH}"
   )
   local internal_command_q
   printf -v internal_command_q "%q " "${internal_command[@]}"
@@ -734,15 +737,16 @@ case "${1:-help}" in
     run_batch "${1:-}" "${batch_resume}"
     ;;
   __run)
-    if (( $# != 6 )); then
-      a1_fail "Internal LingBot run expects <task-id> <run-id> <policy-log> <video-filename> <reset-pose>."
+    if (( $# != 7 )); then
+      a1_fail "Internal LingBot run expects <task-id> <run-id> <policy-log> <front-video-filename> <wrist-video-filename> <reset-pose>."
       exit 2
     fi
     SELECTED_TASK_ID="$2"
     RUN_ID="$3"
     MODEL_LOG="$4"
-    RUN_VIDEO_FILENAME="$5"
-    RESET_BEFORE_RUN_PATH="$6"
+    RUN_FRONT_VIDEO_FILENAME="$5"
+    RUN_WRIST_VIDEO_FILENAME="$6"
+    RESET_BEFORE_RUN_PATH="$7"
     expected_policy_log="${RECORDING_OUTPUT_ROOT}/.${RUN_ID}.logs/policy_server.log"
     if [[ "${MODEL_LOG}" != "${expected_policy_log}" || ! -f "${MODEL_LOG}" ]]; then
       a1_fail "Internal LingBot policy log does not match prepared run ${RUN_ID}."

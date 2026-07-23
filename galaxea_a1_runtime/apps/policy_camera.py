@@ -15,8 +15,8 @@ from galaxea_a1_runtime.hardware.cameras import CameraReader, RealSenseFrameSet
 from galaxea_a1_runtime.hardware.image_geometry import crop_image
 from galaxea_a1_runtime.hardware.web_preview import color_from_frameset
 from galaxea_a1_runtime.hardware.video_recorder import (
-    LatestFrameVideoRecorder,
-    VideoRecordingResult,
+    PairedCameraVideoRecorder,
+    PairedVideoRecordingResult,
 )
 
 
@@ -35,8 +35,8 @@ class PolicyCameraSession:
         self.camera_bridge: CameraBridgeReaders | None = None
         self.front_reader: CameraReader | None = None
         self.wrist_reader: CameraReader | None = None
-        self.agent_recorder: LatestFrameVideoRecorder | None = None
-        self.recording_result: VideoRecordingResult | None = None
+        self.camera_recorder: PairedCameraVideoRecorder | None = None
+        self.recording_result: PairedVideoRecordingResult | None = None
         try:
             self.camera_bridge = CameraBridgeReaders(system.cameras)
             self.camera_bridge.start(timeout_s=system.web_preview.startup_timeout_s)
@@ -48,11 +48,11 @@ class PolicyCameraSession:
 
     def read_pair(self) -> tuple[np.ndarray, np.ndarray] | None:
         front_reader, wrist_reader = self._readers()
-        if self.agent_recorder is not None:
-            recording_error = self.agent_recorder.exception()
+        if self.camera_recorder is not None:
+            recording_error = self.camera_recorder.exception()
             if recording_error is not None:
                 raise RuntimeError(
-                    "AgentView video recorder failed"
+                    "paired camera video recorder failed"
                 ) from recording_error
         for reader in (front_reader, wrist_reader):
             exc = reader.exception()
@@ -109,12 +109,12 @@ class PolicyCameraSession:
 
     def close(self) -> None:
         errors: list[BaseException] = []
-        if self.agent_recorder is not None:
+        if self.camera_recorder is not None:
             try:
-                self.recording_result = self.agent_recorder.close()
+                self.recording_result = self.camera_recorder.close()
             except BaseException as exc:  # Finalize other camera resources too.
                 errors.append(exc)
-            self.agent_recorder = None
+            self.camera_recorder = None
         if self.camera_bridge is not None:
             try:
                 self.camera_bridge.close()
@@ -126,42 +126,59 @@ class PolicyCameraSession:
         if errors:
             raise BaseExceptionGroup("policy camera cleanup failed", errors)
 
-    def start_agent_recording(
+    def start_camera_recording(
         self,
         *,
         output_root: Path,
         run_id: str,
-        video_filename: str = "agent_view.mp4",
-    ) -> Path:
-        if self.agent_recorder is not None:
-            raise RuntimeError("AgentView recording is already active")
-        front_reader, _ = self._readers()
+        front_video_filename: str = "front.mp4",
+        wrist_video_filename: str = "wrist.mp4",
+    ) -> tuple[Path, Path]:
+        if self.camera_recorder is not None:
+            raise RuntimeError("paired camera recording is already active")
+        self._readers()
         front = self.system.cameras.front
+        wrist = self.system.cameras.wrist
+        if front.fps != wrist.fps:
+            raise ValueError(
+                "paired camera recording requires matching front/wrist fps, "
+                f"got {front.fps} and {wrist.fps}"
+            )
         if self.camera_bridge is None:
-            raise RuntimeError("cannot record AgentView before its bridge is open")
-        self.agent_recorder = LatestFrameVideoRecorder(
-            reader=front_reader,
-            extract_bgr=color_from_frameset,
+            raise RuntimeError("cannot record cameras before their bridge is open")
+        self.camera_recorder = PairedCameraVideoRecorder(
+            read_pair=self.camera_bridge.latest_pair,
+            reader_exception=self.camera_bridge.exception,
+            extract_front_bgr=color_from_frameset,
+            extract_wrist_bgr=lambda value: value,
             output_root=output_root,
             run_id=run_id,
-            width=front.width,
-            height=front.height,
+            front_width=front.width,
+            front_height=front.height,
+            wrist_width=wrist.width,
+            wrist_height=wrist.height,
             fps=front.fps,
-            source=self.camera_bridge.metadata.front_source,
+            front_source=self.camera_bridge.metadata.front_source,
+            wrist_source=self.camera_bridge.metadata.wrist_source,
             max_source_age_s=self.system.cameras.max_age_s,
-            video_filename=video_filename,
+            max_pair_skew_s=self.system.cameras.max_pair_skew_s,
+            front_video_filename=front_video_filename,
+            wrist_video_filename=wrist_video_filename,
         )
         try:
-            self.agent_recorder.start()
+            self.camera_recorder.start()
         except BaseException:
-            self.agent_recorder = None
+            self.camera_recorder = None
             raise
-        return self.agent_recorder.final_path
+        return (
+            self.camera_recorder.front_path,
+            self.camera_recorder.wrist_path,
+        )
 
     def recording_progress(self) -> tuple[int, float] | None:
-        if self.agent_recorder is None:
+        if self.camera_recorder is None:
             return None
-        return self.agent_recorder.frame_count, self.agent_recorder.elapsed_s
+        return self.camera_recorder.frame_count, self.camera_recorder.elapsed_s
 
     def _readers(self) -> tuple[CameraReader, CameraReader]:
         if self.front_reader is None or self.wrist_reader is None:

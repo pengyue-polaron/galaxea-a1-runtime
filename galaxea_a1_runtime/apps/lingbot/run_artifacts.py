@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import subprocess
@@ -47,7 +48,8 @@ class LingBotRunPaths:
     log_staging_dir: Path
     raw_runtime_log: Path
     policy_server_log: Path
-    video_filename: str = ""
+    front_video_filename: str = ""
+    wrist_video_filename: str = ""
 
     def shell(self) -> str:
         values = (
@@ -55,7 +57,8 @@ class LingBotRunPaths:
             ("RUN_LOG_STAGING_DIR", str(self.log_staging_dir)),
             ("RUN_RUNTIME_RAW_LOG", str(self.raw_runtime_log)),
             ("RUN_POLICY_LOG", str(self.policy_server_log)),
-            ("RUN_VIDEO_FILENAME", self.video_filename),
+            ("RUN_FRONT_VIDEO_FILENAME", self.front_video_filename),
+            ("RUN_WRIST_VIDEO_FILENAME", self.wrist_video_filename),
         )
         return "\n".join(shell_assign(name, value) for name, value in values)
 
@@ -104,8 +107,14 @@ def prepare_lingbot_run(
     note = validate_scene_note(scene_note)
     identity = run_id or recording_run_id(task.task_id, now=started)
     _validate_run_id(identity)
-    video_filename = lingbot_video_filename(note, task.prompt, now=started)
-    paths = _run_paths(artifacts_root, identity, video_filename=video_filename)
+    front_video_filename = lingbot_video_filename(note, task.prompt, now=started)
+    wrist_video_filename = lingbot_wrist_video_filename(front_video_filename)
+    paths = _run_paths(
+        artifacts_root,
+        identity,
+        front_video_filename=front_video_filename,
+        wrist_video_filename=wrist_video_filename,
+    )
     video_staging_dir = artifacts_root / f".{identity}.staging"
     occupied = (
         paths.final_dir,
@@ -127,7 +136,10 @@ def prepare_lingbot_run(
         "run_id": identity,
         "started_at": started.isoformat(),
         "scene_note": note,
-        "video_filename": video_filename,
+        "video_filenames": {
+            "front": front_video_filename,
+            "wrist": wrist_video_filename,
+        },
         "task": {
             "id": task.task_id,
             "prompt": task.prompt,
@@ -253,10 +265,32 @@ def finalize_lingbot_run(
         status = "safety_stopped"
     else:
         status = "interrupted"
-    video_filename = context.get("video_filename")
-    if not isinstance(video_filename, str) or not video_filename.endswith(".mp4"):
-        raise ValueError(f"LingBot run video filename is invalid: {video_filename!r}")
-    video_path = paths.final_dir / video_filename
+    video_filenames = context.get("video_filenames")
+    if not isinstance(video_filenames, dict) or set(video_filenames) != {
+        "front",
+        "wrist",
+    }:
+        raise ValueError(
+            f"LingBot run video filenames are invalid: {video_filenames!r}"
+        )
+    for camera, filename in video_filenames.items():
+        if (
+            not isinstance(filename, str)
+            or not filename.endswith(".mp4")
+            or Path(filename).name != filename
+        ):
+            raise ValueError(
+                f"LingBot {camera} video filename is invalid: {filename!r}"
+            )
+    video_paths = {
+        camera: paths.final_dir / filename
+        for camera, filename in video_filenames.items()
+    }
+    recording_metadata_path = paths.final_dir / "camera_recording.json"
+    recording_metadata = _load_camera_recording_metadata(
+        recording_metadata_path,
+        expected_videos=video_filenames,
+    )
     video_staging_dir = paths.output_root / f".{run_id}.staging"
     run_metadata = {
         key: value for key, value in context.items() if key != "schema_version"
@@ -269,16 +303,37 @@ def finalize_lingbot_run(
         run_metadata["termination"] = outcome
     metadata.update(
         {
-            "schema_version": 2,
+            "schema_version": 3,
             "run": run_metadata,
             "artifacts": {
-                "video": video_path.name if video_path.is_file() else None,
+                "videos": {
+                    camera: path.name if path.is_file() else None
+                    for camera, path in video_paths.items()
+                },
+                "camera_timeline": (
+                    recording_metadata["timeline"]
+                    if recording_metadata is not None
+                    else None
+                ),
+                "camera_recording": (
+                    recording_metadata_path.name
+                    if recording_metadata is not None
+                    else None
+                ),
                 "runtime_log": "runtime.log",
                 "policy_server_log": "policy_server.log",
                 "incomplete_video_staging": video_staging_dir.exists(),
             },
         }
     )
+    if recording_metadata is not None:
+        metadata.update(
+            {
+                "frames": recording_metadata["frames"],
+                "fps": recording_metadata["fps"],
+                "elapsed_s": recording_metadata["elapsed_s"],
+            }
+        )
     atomic_write_json(metadata_path, metadata)
 
     context_path.unlink()
@@ -350,7 +405,8 @@ def _run_paths(
     output_root: Path,
     run_id: str,
     *,
-    video_filename: str = "",
+    front_video_filename: str = "",
+    wrist_video_filename: str = "",
 ) -> LingBotRunPaths:
     staging = output_root / f".{run_id}.logs"
     return LingBotRunPaths(
@@ -360,7 +416,8 @@ def _run_paths(
         log_staging_dir=staging,
         raw_runtime_log=staging / _RAW_RUNTIME_LOG_NAME,
         policy_server_log=staging / "policy_server.log",
-        video_filename=video_filename,
+        front_video_filename=front_video_filename,
+        wrist_video_filename=wrist_video_filename,
     )
 
 
@@ -373,7 +430,21 @@ def lingbot_video_filename(
     note = _filename_component(validate_scene_note(scene_note), max_bytes=60)
     prompt_component = _filename_component(prompt, max_bytes=140)
     date = (now or datetime.now().astimezone()).strftime("%Y%m%d_%H%M%S")
-    return f"{note}__{prompt_component}__{date}.mp4"
+    return f"{note}__{prompt_component}__{date}__front.mp4"
+
+
+def lingbot_wrist_video_filename(front_video_filename: str) -> str:
+    if (
+        not front_video_filename.endswith("__front.mp4")
+        or Path(front_video_filename).name != front_video_filename
+    ):
+        raise ValueError(
+            f"invalid LingBot front video filename: {front_video_filename!r}"
+        )
+    filename = f"{front_video_filename[: -len('__front.mp4')]}__wrist.mp4"
+    if len(filename.encode("utf-8")) > 240:
+        raise ValueError(f"LingBot wrist video filename is too long: {filename!r}")
+    return filename
 
 
 def _filename_component(value: str, *, max_bytes: int) -> str:
@@ -474,6 +545,91 @@ def _move_generated_artifact(source: Path, destination: Path) -> None:
         source.unlink()
         return
     os.replace(source, destination)
+
+
+def _load_camera_recording_metadata(
+    path: Path,
+    *,
+    expected_videos: dict[str, str],
+) -> dict | None:
+    if not path.is_file():
+        return None
+    loaded = json.loads(path.read_text())
+    expected_keys = {
+        "schema_version",
+        "videos",
+        "timeline",
+        "fps",
+        "frames",
+        "elapsed_s",
+        "started_at",
+        "ended_at",
+        "max_source_age_s",
+        "max_pair_skew_s",
+    }
+    if not isinstance(loaded, dict) or set(loaded) != expected_keys:
+        raise ValueError(f"LingBot camera recording metadata is invalid: {path}")
+    if loaded["schema_version"] != 1:
+        raise ValueError(f"LingBot camera recording schema is unsupported: {path}")
+    videos = loaded["videos"]
+    if not isinstance(videos, dict) or set(videos) != {"front", "wrist"}:
+        raise ValueError(f"LingBot camera recording videos are invalid: {path}")
+    for camera, expected_filename in expected_videos.items():
+        entry = videos.get(camera)
+        if not isinstance(entry, dict) or entry.get("file") != expected_filename:
+            raise ValueError(
+                f"LingBot {camera} recording does not match run context: {path}"
+            )
+        if set(entry) != {"file", "source", "width", "height"}:
+            raise ValueError(f"LingBot {camera} recording is invalid: {path}")
+        if (
+            not isinstance(entry["source"], str)
+            or not entry["source"]
+            or not isinstance(entry["width"], int)
+            or isinstance(entry["width"], bool)
+            or entry["width"] <= 0
+            or not isinstance(entry["height"], int)
+            or isinstance(entry["height"], bool)
+            or entry["height"] <= 0
+        ):
+            raise ValueError(f"LingBot {camera} recording is invalid: {path}")
+        video_path = path.parent / expected_filename
+        if not video_path.is_file() or video_path.stat().st_size <= 0:
+            raise ValueError(
+                f"LingBot {camera} recording video is missing: {video_path}"
+            )
+    timeline = loaded["timeline"]
+    if (
+        not isinstance(timeline, str)
+        or Path(timeline).name != timeline
+        or not (path.parent / timeline).is_file()
+    ):
+        raise ValueError(f"LingBot camera recording timeline is invalid: {path}")
+    frames = loaded["frames"]
+    if not isinstance(frames, int) or isinstance(frames, bool) or frames <= 0:
+        raise ValueError(f"LingBot camera recording frame count is invalid: {path}")
+    for key in (
+        "fps",
+        "elapsed_s",
+        "max_source_age_s",
+        "max_pair_skew_s",
+    ):
+        value = loaded[key]
+        if (
+            not isinstance(value, (int, float))
+            or isinstance(value, bool)
+            or not math.isfinite(value)
+            or value < 0
+        ):
+            raise ValueError(f"LingBot camera recording {key} is invalid: {path}")
+    if loaded["fps"] <= 0 or loaded["max_source_age_s"] <= 0:
+        raise ValueError(f"LingBot camera recording timing is invalid: {path}")
+    if not all(
+        isinstance(loaded[key], str) and loaded[key]
+        for key in ("started_at", "ended_at")
+    ):
+        raise ValueError(f"LingBot camera recording timestamps are invalid: {path}")
+    return loaded
 
 
 def _finalized_run_is_complete(paths: LingBotRunPaths) -> bool:

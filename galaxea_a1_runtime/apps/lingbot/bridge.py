@@ -72,12 +72,14 @@ class A1LingBotEEBridge:
         task: TaskPrompt,
         *,
         run_id: str,
-        video_filename: str,
+        front_video_filename: str,
+        wrist_video_filename: str,
     ):
         self.config = config
         self.task = task
         self.run_id = run_id
-        self.video_filename = video_filename
+        self.front_video_filename = front_video_filename
+        self.wrist_video_filename = wrist_video_filename
         self.system = config.system
         self.execution = config.execution
         self.server = config.server
@@ -179,13 +181,17 @@ class A1LingBotEEBridge:
                 expected_metadata=server_metadata(config),
             )
             self.client.reset(self.task.prompt)
-            if config.recording.agent_view_enabled:
-                video_path = self.cameras.start_agent_recording(
+            if config.recording.camera_videos_enabled:
+                front_path, wrist_path = self.cameras.start_camera_recording(
                     output_root=config.recording.output_root,
                     run_id=self.run_id,
-                    video_filename=self.video_filename,
+                    front_video_filename=self.front_video_filename,
+                    wrist_video_filename=self.wrist_video_filename,
                 )
-                info(f"AgentView recording armed: {video_path}")
+                info(
+                    "Paired camera recording armed: "
+                    f"front={front_path}, wrist={wrist_path}"
+                )
         except BaseException as init_error:
             try:
                 self.close()
@@ -529,13 +535,8 @@ class A1LingBotEEBridge:
         finally:
             result = None if cameras is None else cameras.recording_result
             if result is not None:
-                if result.warning is not None:
-                    warning(
-                        "AgentView video finalized with an encoder warning: "
-                        f"{result.warning}"
-                    )
                 success(
-                    "AgentView video saved: "
-                    f"{result.path} "
+                    "Paired camera videos saved: "
+                    f"front={result.front_path}, wrist={result.wrist_path} "
                     f"({result.frames} frames, {result.elapsed_s:.1f}s)"
                 )

@@ -211,21 +211,24 @@ preview rate, frame age, freshness, and errors are read from Camera Web's existi
 health endpoint through the A1 adapter; the generic panel neither opens cameras nor
 redefines camera-health thresholds.
 
-LingBot shares its bridged raw AgentView reader with an asynchronous H.264 run
-recorder; neither component opens another camera handle. One run identity owns hidden
-video and log staging paths before model or hardware startup. The recorder
-publishes a complete MP4 by atomic directory rename, after which the lifecycle
-finalizer adds the scene note, prompt/configuration/Git metadata and that run's
-foreground and policy-server logs. The MP4 filename is a portable composition
-of scene note, exact input prompt, and start date. A startup failure still
-publishes its metadata and logs without exposing an incomplete MP4. A typed IK
-or workspace target rejection records `safety_stopped`; batch resume validates
-the complete artifact set, exact scene/plan slot, and durable operator
-count/discard decision before treating it as finished.
+LingBot shares the Camera Bridge's atomic raw AgentView/wrist pair with one
+asynchronous H.264 run recorder; neither component opens another camera handle.
+One run identity owns hidden video and log staging paths before model or hardware
+startup. The recorder encodes both camera streams at one output cadence, records
+the source sequence/timestamp/skew for every output frame, and publishes the two
+MP4s, timeline, and camera sidecar in one atomic directory rename. The lifecycle
+finalizer then adds the scene note, prompt/configuration/Git metadata and that
+run's foreground and policy-server logs. Video filenames are portable
+compositions of scene note, exact input prompt, start date, and camera name. A
+startup or encoder failure still publishes its metadata and logs without
+exposing a partial camera pair as complete. A typed IK or workspace target
+rejection records `safety_stopped`; batch resume validates both videos, the
+timeline/sidecar, exact scene/plan slot, and durable operator count/discard
+decision before treating it as finished.
 
 The LingBot batch exporter derives only from those finalized recording roots.
 It requires one unambiguous valid run for every tracked plan slot, then writes a
-manifest and the selected videos/metadata/logs to a hidden tar staging path
+manifest and the selected videos/timeline/sidecar/metadata/logs to a hidden tar staging path
 under `outputs/exports/lingbot/` before atomically publishing the completed tar.
 Discarded, undecided, incomplete, and duplicate-valid results cannot enter an
 export implicitly.

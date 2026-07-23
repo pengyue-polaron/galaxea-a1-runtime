@@ -43,5 +43,5 @@ print_actions = false
 review_deadband_m = 0.001
 
 [recording]
-agent_view_enabled = true
+camera_videos_enabled = true
 output_root = "outputs/inference/lingbot-fruit-placement-eef/recordings"
