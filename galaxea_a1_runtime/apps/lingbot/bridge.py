@@ -40,7 +40,7 @@ from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
 from galaxea_a1_runtime.apps.lingbot.rollout import LingBotActionChunk
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
-from galaxea_a1_runtime.configuration.tasks import TaskPrompt
+from embodied_ops import TaskPrompt
 from galaxea_a1_runtime.console import (
     LiveStatusLine,
     Tone,

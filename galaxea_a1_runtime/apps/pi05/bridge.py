@@ -39,7 +39,7 @@ from galaxea_a1_runtime.apps.pi05.client import Pi05Client
 from galaxea_a1_runtime.apps.pi05.config_schema import Pi05Config
 from galaxea_a1_runtime.apps.pi05.protocol import server_metadata
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
-from galaxea_a1_runtime.configuration.tasks import TaskPrompt
+from embodied_ops import TaskPrompt
 from galaxea_a1_runtime.console import Tone, info, step, style, success
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.runtime.relay import RelayMonitor

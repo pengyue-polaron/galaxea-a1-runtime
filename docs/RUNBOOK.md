@@ -29,17 +29,17 @@ cameras. These checks enumerate or read devices but do not command motion:
 
 ```bash
 just hardware
-just cameras
+just camera-check
 ```
 
-`just cameras` writes snapshots and FPS results to the output path printed from
+`just camera-check` writes snapshots and FPS results to the output path printed from
 System config. Resolve missing devices, stale frames, wrong image shapes, or USB
 bandwidth failures before continuing.
 
 Start or verify the persistent read-only LAN monitor once:
 
 ```bash
-just camera-web
+just cameras
 ```
 
 The live app entrypoints also ensure this monitor automatically, so the command
@@ -53,7 +53,7 @@ sequence numbers and monotonic timestamps. Web JPEG encoding is a low-rate,
 latest-frame-only side branch and is display-only, so a slow browser drops Web
 frames instead of queuing or changing inference and collection data.
 
-`just cameras` is the one explicit exception: the direct hardware diagnostic
+`just camera-check` is the one explicit exception: the direct hardware diagnostic
 temporarily stops the bridge so it can exercise camera construction and USB/FPS
 checks, then restarts it. Normal inference and collection do not perform this
 handoff.
@@ -61,10 +61,10 @@ handoff.
 To explicitly close both cameras and the Web monitor:
 
 ```bash
-just camera-web stop
+just cameras stop
 ```
 
-Use `just camera-web status` or `just camera-web logs` for monitor diagnostics.
+Use `just cameras status` or `just cameras logs` for monitor diagnostics.
 
 The preview is unauthenticated, unencrypted, and LAN-only. Do not port-forward
 it.
@@ -210,10 +210,10 @@ Collection **MOVES THE A1**:
 
 ```bash
 just reset
-just teleop EXPERIMENT
+just collect EXPERIMENT "put the fruit into the bowl"
 ```
 
-Enter the natural-language task once. At the episode prompt:
+At the episode prompt:
 
 - `Enter`: start recording; while recording, request save and validation;
 - `d` + `Enter`: discard, reset both devices, and retry the same index;
@@ -298,8 +298,8 @@ Then build all derivatives, or one independently:
 ```bash
 just derive configs/datasets/EXPERIMENT_derivatives.toml
 just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v3
-just derive configs/datasets/EXPERIMENT_derivatives.toml joint-v2.1
-just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
+just export-v21 configs/datasets/EXPERIMENT_derivatives.toml joint-v2.1
+just export-v21 configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
 ```
 
 The source repo ID and task are read from its committed provenance instead of
@@ -320,7 +320,7 @@ Then diagnose the narrow layer:
 | Symptom | Command or action |
 | --- | --- |
 | serial/device missing | `just hardware` |
-| camera missing, stale, or slow | `just cameras`; inspect USB topology |
+| camera missing, stale, or slow | `just camera-check`; inspect USB topology |
 | Teleop process exited | `just logs` |
 | A1 Robot service socket already exists | run `just stop`, verify the service is absent, then inspect and remove only the exact socket configured in System config |
 | model missing | `just models` |

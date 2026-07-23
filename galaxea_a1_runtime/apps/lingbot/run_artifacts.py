@@ -23,7 +23,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.apps.lingbot.operator_input import validate_scene_note
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.configuration.base import shell_assign
-from galaxea_a1_runtime.configuration.tasks import TaskPrompt
+from embodied_ops import TaskPrompt
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.hardware.video_recorder import recording_run_id
 

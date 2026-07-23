@@ -7,7 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TextIO
 
-from galaxea_a1_runtime.configuration.tasks import (
+from embodied_ops import (
     TaskCatalog,
     TaskPrompt,
     load_task_catalog,

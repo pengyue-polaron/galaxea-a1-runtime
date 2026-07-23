@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
-from galaxea_a1_runtime.configuration.tasks import TaskCatalog
+from embodied_ops import TaskCatalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig
 from galaxea_a1_runtime.models.config import ModelArtifactConfig
 

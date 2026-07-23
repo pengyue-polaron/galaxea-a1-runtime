@@ -1,4 +1,3 @@
-import json
 import shutil
 import sys
 from pathlib import Path
@@ -79,6 +78,8 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
         "--pose",
         str(ROOT / "configs/poses/a1_collection_start.toml"),
     )
+    cameras = adapter.build_launch("camera", {"action": "start"})
+    assert cameras.command[-1] == "start"
 
     with pytest.raises(ValueError, match="repository TOML"):
         adapter.build_launch(
@@ -160,48 +161,8 @@ def test_operator_panel_blocks_registration_while_a_workflow_is_active():
     ).exists()
 
 
-def test_a1_panel_camera_health_normalizes_the_read_only_preview(monkeypatch):
-    payload = {
-        "ok": True,
-        "streams": {
-            "agent": {
-                "ready": True,
-                "fresh": True,
-                "preview_fps": 9.87,
-                "age_s": 0.031,
-                "error": None,
-            }
-        },
-    }
-
-    class Response:
-        status = 200
-
-        def read(self, _limit):
-            return json.dumps(payload).encode()
-
-    class Connection:
-        def __init__(self, host, port, *, timeout):
-            assert host == "127.0.0.1"
-            assert port == 8088
-            assert timeout > 0
-
-        def request(self, method, path, *, headers):
-            assert (method, path) == ("GET", "/healthz")
-            assert headers == {"Cache-Control": "no-store"}
-
-        def getresponse(self):
-            return Response()
-
-        def close(self):
-            return None
-
-    monkeypatch.setattr(
-        "galaxea_a1_runtime.apps.operator_panel.adapter.HTTPConnection", Connection
-    )
-    health = A1OperatorPanelAdapter(ROOT).camera_health()
-
-    assert health == {
+def test_a1_panel_uses_shared_camera_health_provider(monkeypatch):
+    health = {
         "available": True,
         "ok": True,
         "streams": {
@@ -215,26 +176,8 @@ def test_a1_panel_camera_health_normalizes_the_read_only_preview(monkeypatch):
         },
     }
 
-
-def test_a1_panel_camera_health_reports_an_offline_monitor(monkeypatch):
-    class Connection:
-        def __init__(self, _host, _port, *, timeout):
-            assert timeout > 0
-
-        def request(self, _method, _path, *, headers):
-            assert headers == {"Cache-Control": "no-store"}
-            raise ConnectionRefusedError
-
-        def close(self):
-            return None
-
     monkeypatch.setattr(
-        "galaxea_a1_runtime.apps.operator_panel.adapter.HTTPConnection", Connection
+        "galaxea_a1_runtime.apps.operator_panel.adapter.fetch_camera_health",
+        lambda port: health if port == 8088 else None,
     )
-
-    assert A1OperatorPanelAdapter(ROOT).camera_health() == {
-        "available": False,
-        "ok": False,
-        "streams": {},
-        "reason": "Camera monitor is not running.",
-    }
+    assert A1OperatorPanelAdapter(ROOT).camera_health() == health

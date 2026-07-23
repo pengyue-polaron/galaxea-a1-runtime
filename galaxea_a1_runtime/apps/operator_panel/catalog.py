@@ -18,7 +18,7 @@ from galaxea_a1_runtime.configuration.paths import (
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.configuration.system import load_system_config
-from galaxea_a1_runtime.configuration.tasks import load_task_catalog
+from embodied_ops import load_task_catalog
 from galaxea_a1_runtime.models.registry import registered_models
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 

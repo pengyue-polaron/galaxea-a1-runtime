@@ -77,22 +77,24 @@ hardware *args:
 rosbag *args:
     {{repo}}/scripts/apps/recording/a1_rosbag.sh {{args}}
 
-cameras *args:
+camera-check *args:
     #!/usr/bin/env bash
     set -euo pipefail
     scripts/apps/cameras/a1_camera_web_runtime.sh stop
-    trap 'scripts/apps/cameras/a1_camera_web_runtime.sh' EXIT
+    trap 'scripts/apps/cameras/a1_camera_web_runtime.sh start' EXIT
     {{vpy}} scripts/apps/cameras/a1_camera_diagnostics.py {{args}}
 
-camera-web *args:
-    scripts/apps/cameras/a1_camera_web_runtime.sh {{args}}
+cameras action="start":
+    scripts/apps/cameras/a1_camera_web_runtime.sh "{{action}}"
 
 eef-test:
     scripts/runtime/a1_joint_runtime.sh services
     scripts/runtime/a1_joint_runtime.sh eef-nudge --execute
 
-teleop experiment:
-    scripts/apps/teleop/a1_teleop_runtime.sh collect "{{experiment}}"
+collect experiment task:
+    scripts/apps/teleop/a1_teleop_runtime.sh \
+        --task "{{task}}" \
+        collect "{{experiment}}"
 
 teleop-test:
     #!/usr/bin/env bash
@@ -167,6 +169,11 @@ dataset-doctor experiment:
         --experiment "{{experiment}}"
 
 derive config target="all":
+    {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
+        --config "{{config}}" \
+        --target "{{target}}"
+
+export-v21 config target="joint-v2.1":
     {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
         --config "{{config}}" \
         --target "{{target}}"

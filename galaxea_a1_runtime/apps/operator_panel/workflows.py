@@ -138,9 +138,8 @@ def build_a1_workflow_launch(
             str(root / "scripts/apps/cameras/a1_camera_web_runtime.sh"),
             "--config",
             str(system.path),
+            action,
         ]
-        if action == "stop":
-            command.append("stop")
         return WorkflowLaunch(
             workflow="camera",
             name=f"camera:{action}",

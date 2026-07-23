@@ -129,7 +129,7 @@ additional gripper bit latches `FAULT`.
 - The configuration-independent shutdown fallback may stop only marked
   repository-owned containers, host process groups, and tmux sessions. Normal
   `just stop` may preserve the marked read-only camera monitor; explicit
-  `just camera-web stop` closes it.
+  `just cameras stop` closes it.
 - The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
   encryption and must not be port-forwarded or gain control endpoints.
 - The operator control panel is a separate trusted-LAN HTTP service configured

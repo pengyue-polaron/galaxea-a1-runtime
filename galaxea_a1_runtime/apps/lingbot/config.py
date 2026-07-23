@@ -37,7 +37,7 @@ from galaxea_a1_runtime.configuration.base import (
 )
 from galaxea_a1_runtime.configuration.paths import LINGBOT_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
-from galaxea_a1_runtime.configuration.tasks import load_task_catalog
+from embodied_ops import load_task_catalog
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.models.config import ModelArtifactConfig, load_model_config

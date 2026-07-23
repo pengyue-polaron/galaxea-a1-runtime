@@ -31,8 +31,9 @@ galaxea_a1_runtime.apps
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
 - The pinned `external/embodied-ops` package owns hardware-independent collection,
-  evaluation-plan, sample-timing, and transactional artifact primitives. It defines
-  no robot API and has no ROS or LeRobot dependency.
+  evaluation-plan, task-registry, sample-timing, normalized camera-health, and
+  transactional artifact primitives. It defines no robot API and has no ROS or
+  LeRobot dependency.
 - The pinned `external/lerobot-robot-galaxea-a1` and
   `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
   LeRobot adapters. The Robot plugin also owns its private A1 Runtime transport;
@@ -56,7 +57,7 @@ open devices, define datasets, or execute policies.
 
 This repository supplies the A1 semantics around those primitives: the
 canonical observation/action schema, LeRobotDataset versions and conversions,
-camera pairing, reset behavior, task catalogs, model contracts, ROS ownership,
+camera pairing, reset behavior, task-catalog selection, model contracts, ROS ownership,
 and safety gates. Hardware interoperability uses LeRobot's existing `Robot`
 and `Teleoperator` plugin contracts; the local A1 transport remains private to
 the A1 Robot plugin and Runtime.

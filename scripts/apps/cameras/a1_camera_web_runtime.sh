@@ -161,7 +161,7 @@ show_status() {
 }
 
 case "${1:-}" in
-  "") ensure_viewer ;;
+  ""|start) ensure_viewer ;;
   stop) stop_viewer ;;
   status) show_status ;;
   logs)
@@ -172,11 +172,11 @@ case "${1:-}" in
     fi
     ;;
   help|-h|--help)
-    a1_usage "$0 [--config <path>] [stop|status|logs]"
+    a1_usage "$0 [--config <path>] [start|stop|status|logs]"
     ;;
   *)
-    a1_fail "Unknown camera-web command: ${1:-}"
-    a1_usage "$0 [--config <path>] [stop|status|logs]" >&2
+    a1_fail "Unknown cameras command: ${1:-}"
+    a1_usage "$0 [--config <path>] [start|stop|status|logs]" >&2
     exit 2
     ;;
 esac
