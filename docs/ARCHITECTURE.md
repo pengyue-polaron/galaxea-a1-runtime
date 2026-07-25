@@ -172,6 +172,17 @@ preview at its configured lower rate. Slow browsers or JPEG encoding may drop
 preview frames but cannot queue work in, rewrite, or block the raw observation
 contract. Web JPEGs are never fed back into policy, recording, or collection.
 
+External OpenRAL deployment uses two versioned, private local-service
+boundaries. Camera Bridge protocol `describe` exposes its exact digest and raw
+frame shapes before streaming. The LingBot OpenRAL policy gateway loads the
+authoritative Runtime deployment/model contract, owns episode-relative EEF
+transforms, temporal-cache replay, and bounded URDF IK, and returns only six
+absolute joint proposals plus one normalized gripper proposal. The gateway has
+no ROS imports, hardware handle, or command publisher. OpenRAL supplies its
+narrower ordered joint envelope during handshake, then remains the sole
+candidate-action safety and HAL execution owner. Neither side imports the
+other repository's source tree.
+
 The generic Operator Panel is a separate control plane. The A1 instance binds
 its System-owned endpoint on the trusted LAN; it has request-integrity tokens
 but no user authentication or transport encryption and must not be exposed

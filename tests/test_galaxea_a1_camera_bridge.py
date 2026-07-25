@@ -119,6 +119,10 @@ def test_camera_bridge_preserves_exact_raw_arrays_sequence_and_timestamps(
         socket_path=socket_path,
     )
     client = CameraBridgeReaders(config, socket_path=socket_path)
+    description = server.next_response({"version": 2, "op": "describe"})
+    assert description["ok"] is True
+    assert description["metadata"]["front_color_shape"] == (6, 8, 3)
+    assert description["metadata"]["wrist_color_shape"] == (6, 8, 3)
     server.start()
     try:
         client.start(timeout_s=2.0)

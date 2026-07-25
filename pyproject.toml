@@ -23,6 +23,7 @@ dependencies = [
 
 [project.scripts]
 galaxea-a1-runtime = "galaxea_a1_runtime.cli:main"
+galaxea-a1-openral-policy = "galaxea_a1_runtime.apps.lingbot.openral_gateway:main"
 
 [build-system]
 requires = ["setuptools"]

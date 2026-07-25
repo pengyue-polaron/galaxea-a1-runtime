@@ -4,11 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import socket
 import socketserver
-import stat
-import struct
 import threading
 import time
 from contextlib import suppress
@@ -16,7 +13,6 @@ from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
 
-import msgpack
 import numpy as np
 
 from galaxea_a1_runtime.configuration.cameras import (
@@ -25,9 +21,14 @@ from galaxea_a1_runtime.configuration.cameras import (
 )
 from galaxea_a1_runtime.hardware.camera_reader import CameraReader, CameraSample
 from galaxea_a1_runtime.hardware.cameras import RealSenseFrameSet
+from galaxea_a1_runtime.runtime.local_ipc import (
+    prepare_unix_socket,
+    process_socket_path,
+    receive_packet,
+    send_packet,
+)
 
-_PROTOCOL_VERSION = 1
-_LENGTH = struct.Struct("!I")
+_PROTOCOL_VERSION = 2
 _MAX_REQUEST_BYTES = 64 * 1024
 _MAX_RESPONSE_BYTES = 128 * 1024 * 1024
 _REQUEST_WAIT_S = 0.25
@@ -40,19 +41,14 @@ class CameraBridgeMetadata:
     wrist_source: str
     front_usb_type: str
     depth_enabled: bool
+    front_color_shape: tuple[int, int, int]
+    wrist_color_shape: tuple[int, int, int]
 
 
 def camera_bridge_socket_path(*, state_root: Path | None = None) -> Path:
     """Return the per-user lifecycle socket shared by scripts and apps."""
 
-    if state_root is None:
-        configured = os.environ.get("A1_PROCESS_STATE_ROOT", "").strip()
-        if configured:
-            state_root = Path(configured)
-        else:
-            runtime_root = Path(os.environ.get("XDG_RUNTIME_DIR", "/tmp"))
-            state_root = runtime_root / f"galaxea-a1-runtime-{os.getuid()}"
-    return state_root.expanduser().resolve() / "a1-camera-bridge.sock"
+    return process_socket_path("a1-camera-bridge.sock", state_root=state_root)
 
 
 def camera_contract_digest(config: SystemCamerasConfig) -> str:
@@ -94,6 +90,8 @@ class CameraBridgeServer:
                 isinstance(config.front, SystemRealSenseCameraConfig)
                 and config.front.depth
             ),
+            front_color_shape=(config.front.height, config.front.width, 3),
+            wrist_color_shape=(config.wrist.height, config.wrist.width, 3),
         )
         self._server = _CameraUnixServer(self.socket_path, self)
         self._thread: threading.Thread | None = None
@@ -146,7 +144,14 @@ class CameraBridgeServer:
             raise ValueError("camera bridge request must be a map")
         if request.get("version") != _PROTOCOL_VERSION:
             raise ValueError("camera bridge protocol version mismatch")
-        if request.get("op") != "next_pair":
+        operation = request.get("op")
+        if operation == "describe":
+            return {
+                "ok": True,
+                "version": _PROTOCOL_VERSION,
+                "metadata": asdict(self.metadata),
+            }
+        if operation != "next_pair":
             raise ValueError("unsupported camera bridge operation")
         if request.get("contract_digest") != self.metadata.contract_digest:
             raise ValueError(
@@ -355,7 +360,7 @@ class CameraBridgeReaders:
                 self._socket = active_socket
             after = {"front": -1, "wrist": -1}
             while not self._stop.is_set():
-                _send_packet(
+                send_packet(
                     active_socket,
                     {
                         "version": _PROTOCOL_VERSION,
@@ -364,7 +369,7 @@ class CameraBridgeReaders:
                         "after": after,
                     },
                 )
-                response = _receive_packet(active_socket, max_bytes=_MAX_RESPONSE_BYTES)
+                response = receive_packet(active_socket, max_bytes=_MAX_RESPONSE_BYTES)
                 if response is None:
                     raise ConnectionError("camera bridge closed the raw stream")
                 metadata = self._decode_metadata(response)
@@ -407,6 +412,8 @@ class CameraBridgeReaders:
             wrist_source=str(raw["wrist_source"]),
             front_usb_type=str(raw["front_usb_type"]),
             depth_enabled=raw["depth_enabled"],
+            front_color_shape=_shape3(raw["front_color_shape"], label="front color"),
+            wrist_color_shape=_shape3(raw["wrist_color_shape"], label="wrist color"),
         )
         if metadata.contract_digest != self.contract_digest:
             raise ValueError("camera bridge metadata contract mismatch")
@@ -419,6 +426,18 @@ class CameraBridgeReaders:
             or metadata.depth_enabled != expected_depth
         ):
             raise ValueError("camera bridge depth contract mismatch")
+        if metadata.front_color_shape != (
+            self.config.front.height,
+            self.config.front.width,
+            3,
+        ):
+            raise ValueError("camera bridge front color contract mismatch")
+        if metadata.wrist_color_shape != (
+            self.config.wrist.height,
+            self.config.wrist.width,
+            3,
+        ):
+            raise ValueError("camera bridge wrist color contract mismatch")
         return metadata
 
 
@@ -434,10 +453,10 @@ class _CameraRequestHandler(socketserver.BaseRequestHandler):
         assert isinstance(server, _CameraUnixServer)
         try:
             while True:
-                request = _receive_packet(self.request, max_bytes=_MAX_REQUEST_BYTES)
+                request = receive_packet(self.request, max_bytes=_MAX_REQUEST_BYTES)
                 if request is None:
                     return
-                _send_packet(self.request, server.bridge.next_response(request))
+                send_packet(self.request, server.bridge.next_response(request))
         except (ConnectionError, OSError):
             return
 
@@ -452,9 +471,7 @@ class _CameraUnixServer(socketserver.ThreadingUnixStreamServer):
     daemon_threads = True
 
     def __init__(self, path: Path, bridge: CameraBridgeServer) -> None:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.parent.chmod(0o700)
-        _remove_stale_socket(path)
+        prepare_unix_socket(path)
         self.bridge = bridge
         self._clients: set[socket.socket] = set()
         self._clients_lock = threading.Lock()
@@ -478,55 +495,17 @@ class _CameraUnixServer(socketserver.ThreadingUnixStreamServer):
             client.close()
 
 
-def _remove_stale_socket(path: Path) -> None:
-    try:
-        mode = path.lstat().st_mode
-    except FileNotFoundError:
-        return
-    if not stat.S_ISSOCK(mode):
-        raise RuntimeError(f"camera bridge path exists and is not a socket: {path}")
-    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    probe.settimeout(0.2)
-    try:
-        probe.connect(str(path))
-    except OSError:
-        path.unlink()
-    else:
-        raise RuntimeError(f"camera bridge is already listening: {path}")
-    finally:
-        probe.close()
-
-
-def _send_packet(active_socket: socket.socket, value: Any) -> None:
-    payload = msgpack.packb(value, use_bin_type=True)
-    active_socket.sendall(_LENGTH.pack(len(payload)) + payload)
-
-
-def _receive_packet(active_socket: socket.socket, *, max_bytes: int) -> Any | None:
-    header = _receive_exact(active_socket, _LENGTH.size)
-    if header is None:
-        return None
-    (size,) = _LENGTH.unpack(header)
-    if size <= 0 or size > max_bytes:
-        raise ValueError(f"invalid camera bridge packet size: {size}")
-    payload = _receive_exact(active_socket, size)
-    if payload is None:
-        raise ConnectionError("camera bridge packet ended early")
-    return msgpack.unpackb(payload, raw=False, strict_map_key=False)
-
-
-def _receive_exact(active_socket: socket.socket, size: int) -> bytes | None:
-    chunks: list[bytes] = []
-    remaining = size
-    while remaining:
-        chunk = active_socket.recv(remaining)
-        if not chunk:
-            if remaining == size:
-                return None
-            raise ConnectionError("camera bridge connection ended mid-packet")
-        chunks.append(chunk)
-        remaining -= len(chunk)
-    return b"".join(chunks)
+def _shape3(value: Any, *, label: str) -> tuple[int, int, int]:
+    if (
+        not isinstance(value, (list, tuple))
+        or len(value) != 3
+        or any(
+            isinstance(item, bool) or not isinstance(item, int) or item <= 0
+            for item in value
+        )
+    ):
+        raise ValueError(f"camera bridge {label} shape is invalid")
+    return tuple(value)
 
 
 def _encode_array(

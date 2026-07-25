@@ -360,6 +360,23 @@ registry](../models/README.md) to review the exact input/action contract. A new
 weight revision gets a new model descriptor and manifest; do not repoint a
 mutable alias or edit an existing revision in place.
 
+For an OpenRAL-owned deployment, keep the Runtime ROS execution bridge stopped.
+Start only the persistent cameras, the contract-checked LingBot model server,
+and the ROS-free policy gateway:
+
+```bash
+just cameras start
+scripts/apps/lingbot/a1_lingbot_runtime.sh server
+uv run galaxea-a1-openral-policy \
+  --config configs/deployments/lingbot/fruit_placement_eef.toml \
+  --repo-root .
+```
+
+The gateway and Camera Bridge publish private per-user Unix sockets under
+`A1_PROCESS_STATE_ROOT` (or the standard runtime directory). OpenRAL discovers
+their versioned contracts directly; it does not need the Runtime checkout on
+`PYTHONPATH`. Stop the OpenRAL process before stopping either provider.
+
 For a hardware-free replay against the real processed training episodes:
 
 ```bash
