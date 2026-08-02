@@ -14,18 +14,10 @@ ROOT_DIR = Path(__file__).resolve().parents[3]
 if str(ROOT_DIR) not in sys.path:
     sys.path.insert(0, str(ROOT_DIR))
 
-from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
-
-# The tracked Python 3.12 overlay contains the reset's ROS messages. Avoid
-# exposing ABI-incompatible Ubuntu Python 3.10 packages to this process.
-configure_ros1_python(ROOT_DIR, include_system_site=False)
-
-from galaxea_a1_runtime.apps.reset.runner import A1HomeRunner
 from galaxea_a1_runtime.apps.reset.progress import ResetProgress
 from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose
 from galaxea_a1_runtime.configuration.paths import TELEOP_CONFIG
 from galaxea_a1_runtime.console import ArgumentParser
-from galaxea_a1_runtime.apps.teleop.reset_leader import reset_leader_home
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
 
@@ -46,6 +38,16 @@ def parse_args() -> Namespace:
 
 
 def main() -> int:
+    # Keep ROS and hardware adapters out of module import so pure orchestration
+    # tests can run in environments without ROS. Runtime entrypoints load the
+    # tracked Python 3.12 overlay before importing either adapter.
+    from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
+
+    configure_ros1_python(ROOT_DIR, include_system_site=False)
+
+    from galaxea_a1_runtime.apps.reset.runner import A1HomeRunner
+    from galaxea_a1_runtime.apps.teleop.reset_leader import reset_leader_home
+
     teleop = load_teleop_config(parse_args().config, repo_root=ROOT_DIR)
     pose = load_home_pose(teleop.reset.config, teleop=teleop)
     devices = ("A1", "Leader") if pose.leader.enabled else ("A1",)
