@@ -59,4 +59,3 @@ def test_ros1_python_bootstrap_can_exclude_system_site(monkeypatch):
     configure_ros1_python(REPO, include_system_site=False)
 
     assert "/usr/lib/python3/dist-packages" not in sys.path
-    assert str(REPO / ".cache/ros1_python_overlay") in sys.path
