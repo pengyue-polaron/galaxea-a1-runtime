@@ -15,6 +15,7 @@ from galaxea_a1_runtime.configuration.base import (
     boolean,
     float_tuple,
     floating,
+    integer,
     load_toml,
     repo_path,
     require_exact_keys,
@@ -41,6 +42,7 @@ class LeaderMotion:
     min_duration_s: float
     max_velocity_units_s: float
     hold_s: float
+    max_goal_attempts: int
     goal_tolerance_units: float
     gripper_goal_tolerance_units: float
 
@@ -120,6 +122,7 @@ def _load_leader_motion(data: dict) -> LeaderMotion:
             "min_duration_s",
             "max_velocity_units_s",
             "hold_s",
+            "max_goal_attempts",
             "goal_tolerance_units",
             "gripper_goal_tolerance_units",
         },
@@ -130,6 +133,7 @@ def _load_leader_motion(data: dict) -> LeaderMotion:
         min_duration_s=floating(data, "min_duration_s"),
         max_velocity_units_s=floating(data, "max_velocity_units_s"),
         hold_s=floating(data, "hold_s"),
+        max_goal_attempts=integer(data, "max_goal_attempts"),
         goal_tolerance_units=floating(data, "goal_tolerance_units"),
         gripper_goal_tolerance_units=floating(data, "gripper_goal_tolerance_units"),
     )

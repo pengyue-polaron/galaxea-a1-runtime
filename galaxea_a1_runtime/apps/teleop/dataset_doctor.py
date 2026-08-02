@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from galaxea_a1_runtime.apps.teleop.collection_task import prepare_collection_task
+from galaxea_a1_runtime.apps.teleop.collection_task import normalize_collection_task
 from galaxea_a1_runtime.apps.teleop.dataset_contract import direct_dataset_identity
 from galaxea_a1_runtime.collection import validate_experiment_name
 from galaxea_a1_runtime.console import ArgumentParser
@@ -31,11 +31,7 @@ def main(argv: list[str] | None = None) -> int:
     validate_collection_config(config)
     experiment = validate_experiment_name(args.experiment)
     identity = direct_dataset_identity(config, experiment)
-    task = (
-        prepare_collection_task(identity.target_root, args.task)
-        if args.task is not None
-        else None
-    )
+    task = normalize_collection_task(args.task) if args.task is not None else None
     state = inspect_direct_dataset(identity, expected_task=task)
     print(
         json.dumps(
@@ -43,7 +39,7 @@ def main(argv: list[str] | None = None) -> int:
                 "root": str(identity.target_root),
                 "repo_id": identity.repo_id,
                 "experiment": identity.experiment,
-                "task": state.task,
+                "tasks": list(state.tasks),
                 "total_episodes": state.total_episodes,
                 "total_frames": state.total_frames,
                 "status": "absent" if state.total_episodes == 0 else "valid",

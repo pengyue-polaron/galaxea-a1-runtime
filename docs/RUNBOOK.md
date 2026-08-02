@@ -215,6 +215,18 @@ just reset
 just collect EXPERIMENT "put the fruit into the bowl"
 ```
 
+Reuse the same `EXPERIMENT` for related prompts. For example, four socket
+positions belong to one `plug_insertion_v1` dataset:
+
+```bash
+just collect plug_insertion_v1 "pick up the charger and insert it into the first socket from the left on the power strip"
+just collect plug_insertion_v1 "pick up the charger and insert it into the second socket from the left on the power strip"
+```
+
+Each invocation appends episodes to the same dataset while standard LeRobot
+task metadata keeps the prompts distinct. The panel's Collect task field offers
+tracked training prompts and still accepts an exact new prompt.
+
 At the episode prompt:
 
 - `Enter`: start recording; while recording, request save and validation;
@@ -227,7 +239,13 @@ Save validates continuity and finalizes a standard LeRobotDataset v3 episode in
 a hidden sibling snapshot, then atomically installs the complete dataset under
 `data/datasets/EXPERIMENT/`. A rejected save removes only its snapshot, reuses
 its index, and resets before retry when configured. A successful save resets
-before the next episode when configured.
+before the next episode when configured. Leader reset keeps the tracked goal
+tolerance strict while making a bounded number of smooth corrective passes for
+servo lag or backlash; a final failure reports the offending joint errors.
+
+The collector loads ROS1 from the tracked Python 3.12 overlay and A1 SDK without
+adding Ubuntu's system Python packages. This keeps LeRobot resume isolated from
+ABI-incompatible optional packages such as the system SciPy build.
 
 Do not hand-edit a dataset while collecting. The exact feature contract and
 atomic append behavior are documented in

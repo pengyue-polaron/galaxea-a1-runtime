@@ -6,6 +6,7 @@ import time
 
 from galaxea_a1_runtime.apps.teleop.reset_config import HomePose, LeaderMotion
 from galaxea_a1_runtime.apps.reset.progress import ResetProgress
+from galaxea_a1_runtime.console import warning
 from lerobot_teleoperator_galaxea_a1_so_leader import (
     GalaxeaA1SOLeader,
     GalaxeaA1SOLeaderConfig,
@@ -36,34 +37,68 @@ def reset_leader_home(home: HomePose, progress: ResetProgress) -> None:
         start = {key: current[key] for key in target}
         progress.update("Leader", 0)
         leader.enable_torque()
-        move_leader_smooth(leader, start, target, motion, progress)
-        final = {
-            key: float(value)
-            for key, value in leader.get_action().items()
-            if key in target
-        }
-        errors = mapping_errors(final, target)
-        body_error = max(
-            (error for key, error in errors.items() if key != "gripper.pos"),
-            default=0.0,
-        )
-        gripper_error = errors.get("gripper.pos", 0.0)
-        if body_error > motion.goal_tolerance_units:
-            raise RuntimeError(
-                f"Leader body reset error {body_error:.3f} exceeds tolerance "
-                f"{motion.goal_tolerance_units:.3f}"
-            )
-        if gripper_error > motion.gripper_goal_tolerance_units:
-            raise RuntimeError(
-                f"Leader gripper reset error {gripper_error:.3f} exceeds tolerance "
-                f"{motion.gripper_goal_tolerance_units:.3f}"
-            )
+        move_leader_to_goal(leader, start, target, motion, progress)
         progress.update("Leader", 100)
     finally:
         try:
             leader.disable_torque()
         finally:
             leader.disconnect()
+
+
+def move_leader_to_goal(
+    leader: GalaxeaA1SOLeader,
+    start: dict[str, float],
+    target: dict[str, float],
+    motion: LeaderMotion,
+    progress: ResetProgress,
+) -> None:
+    current = start
+    failures: dict[str, tuple[float, float]] = {}
+    for attempt in range(1, motion.max_goal_attempts + 1):
+        move_leader_smooth(leader, current, target, motion, progress)
+        final = {
+            key: float(value)
+            for key, value in leader.get_action().items()
+            if key in target
+        }
+        errors = mapping_errors(final, target)
+        failures = goal_failures(errors, motion)
+        if not failures:
+            return
+        if attempt < motion.max_goal_attempts:
+            warning(
+                f"Leader reset attempt {attempt}/{motion.max_goal_attempts} "
+                f"needs correction ({format_goal_failures(failures)})"
+            )
+            current = final
+
+    raise RuntimeError(
+        f"Leader reset did not converge after {motion.max_goal_attempts} attempts "
+        f"({format_goal_failures(failures)})"
+    )
+
+
+def goal_failures(
+    errors: dict[str, float], motion: LeaderMotion
+) -> dict[str, tuple[float, float]]:
+    failures = {}
+    for key, error in errors.items():
+        tolerance = (
+            motion.gripper_goal_tolerance_units
+            if key == "gripper.pos"
+            else motion.goal_tolerance_units
+        )
+        if error > tolerance:
+            failures[key] = (error, tolerance)
+    return failures
+
+
+def format_goal_failures(failures: dict[str, tuple[float, float]]) -> str:
+    return ", ".join(
+        f"{key} error {error:.3f} > {tolerance:.3f}"
+        for key, (error, tolerance) in sorted(failures.items())
+    )
 
 
 def move_leader_smooth(

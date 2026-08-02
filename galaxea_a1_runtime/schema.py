@@ -55,7 +55,7 @@ DEFAULT_RGB_IMAGE_KEYS = (
     FRONT_IMAGE_FEATURE_KEY,
     WRIST_IMAGE_FEATURE_KEY,
 )
-DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v2"
+DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v3"
 
 
 @dataclass(frozen=True)

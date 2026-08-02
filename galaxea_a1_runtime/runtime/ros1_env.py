@@ -34,6 +34,10 @@ def configure_ros1_python(
 
     if remove_ros2:
         sys.path[:] = [path for path in sys.path if "/opt/ros/humble" not in path]
+    if not include_system_site:
+        sys.path[:] = [
+            path for path in sys.path if path != "/usr/lib/python3/dist-packages"
+        ]
     candidates = ["/opt/ros/noetic/lib/python3/dist-packages"]
     if include_system_site:
         candidates.append("/usr/lib/python3/dist-packages")

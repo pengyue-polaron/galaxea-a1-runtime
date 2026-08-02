@@ -86,6 +86,7 @@ def build_a1_catalog(
         for model in registered_models(root, backend="lingbot_va")
     )
     prompt_catalog_options = []
+    collection_task_options = []
     for path in sorted((root / "configs/tasks").glob("*/catalog.json")):
         task_catalog = load_task_catalog(path, repo_root=root)
         prompt_catalog_options.append(
@@ -93,6 +94,16 @@ def build_a1_catalog(
                 "value": _reference(task_catalog.path, root),
                 "label": task_catalog.catalog_id,
             }
+        )
+        collection_task_options.extend(
+            {
+                "value": task.prompt,
+                "label": (
+                    f"{task_catalog.catalog_id} · {task.task_id} · {task.prompt}"
+                ),
+            }
+            for task in task_catalog.tasks
+            if task.distribution == "train"
         )
     return {
         "product": {"brand": "GALAXEA A1", "title": "Control"},
@@ -127,6 +138,7 @@ def build_a1_catalog(
         "workflows": _workflow_forms(
             teleop_options=teleop_options,
             experiment_options=experiment_options,
+            collection_task_options=collection_task_options,
             deployment_options=deployment_options,
             task_options=task_options,
             batch_options=batch_options,
@@ -189,6 +201,7 @@ def _workflow_forms(
     *,
     teleop_options: list[dict[str, str]],
     experiment_options: list[dict[str, str]],
+    collection_task_options: list[dict[str, str]],
     deployment_options: list[dict[str, str]],
     task_options: list[dict[str, str]],
     batch_options: list[dict[str, str]],
@@ -221,7 +234,16 @@ def _workflow_forms(
                     ),
                     depends_on="config",
                 ),
-                _text_field("task", "Task", placeholder="put the fruit into the bowl"),
+                _combobox_field(
+                    "task",
+                    "Task prompt",
+                    collection_task_options,
+                    placeholder="pick up the object and place it at the target",
+                    help_text=(
+                        "Select a tracked training prompt or type an exact new prompt. "
+                        "One experiment may contain episodes from multiple prompts."
+                    ),
+                ),
             ],
         },
         {

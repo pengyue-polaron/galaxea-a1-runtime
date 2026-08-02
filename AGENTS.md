@@ -84,9 +84,11 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 - Gripper state/actions are continuous normalized `0..1` above hardware and map
   exactly once to the System-owned physical stroke. Use
   `/gripper_stroke_host` as feedback; never reinterpret joint-state element 7.
-- Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v2`
+- Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v3`
   contract directly. Raw v3 is not a supported input or collection
   intermediate.
+- One collection experiment may contain multiple exact prompts; preserve their
+  standard LeRobot task table, per-frame task indices, and episode mapping.
 - Collection must record reproducibility metadata and fresh joint, EEF, action,
   gripper, and paired-camera samples. Enforce configured camera skew and sample
   freshness.

@@ -20,7 +20,7 @@ def validate_lerobot_v3_payloads(
     info: dict[str, Any],
     total_episodes: int,
     total_frames: int,
-    expected_task: str,
+    expected_tasks: tuple[str, ...],
 ) -> None:
     """Validate task/episode metadata and every referenced data/video payload."""
 
@@ -31,19 +31,13 @@ def validate_lerobot_v3_payloads(
     if ACTION_FEATURE_KEY not in stats or STATE_FEATURE_KEY not in stats:
         raise ValueError("LeRobot stats are missing canonical vector features")
 
-    tasks_path = root / "meta/tasks.parquet"
-    try:
-        tasks = pd.read_parquet(tasks_path)
-    except (OSError, ValueError) as exc:
-        raise ValueError(f"cannot read LeRobot tasks: {tasks_path}: {exc}") from exc
-    if list(tasks.columns) != ["task_index"]:
-        raise ValueError("LeRobot tasks must contain exactly the task_index column")
-    task_records = {int(row["task_index"]): str(task) for task, row in tasks.iterrows()}
-    total_tasks = non_negative_json_int(info, "total_tasks")
-    if total_tasks != 1 or task_records != {0: expected_task}:
+    tasks = read_lerobot_v3_tasks(root, info=info)
+    if tasks != expected_tasks:
         raise ValueError(
-            "direct dataset must contain exactly its canonical collection task"
+            "LeRobot task metadata does not match Galaxea provenance: "
+            f"metadata={tasks!r}, provenance={expected_tasks!r}"
         )
+    task_set = set(tasks)
 
     episode_paths = sorted((root / "meta/episodes").glob("**/*.parquet"))
     if not episode_paths:
@@ -86,6 +80,7 @@ def validate_lerobot_v3_payloads(
         if isinstance(feature, dict) and feature.get("dtype") == "video"
     )
     video_template = _path_template(info, "video_path") if video_keys else None
+    episode_tasks: set[str] = set()
     for _, row in episodes.iterrows():
         episode_index = _plain_int(row["episode_index"], label="episode_index")
         length = _positive_int(row["length"], label=f"episode {episode_index} length")
@@ -100,10 +95,12 @@ def validate_lerobot_v3_payloads(
                 f"episode {episode_index} has a non-contiguous dataset frame range"
             )
         next_frame = end
-        if tuple(str(value) for value in row["tasks"]) != (expected_task,):
+        row_tasks = tuple(str(value) for value in row["tasks"])
+        if len(row_tasks) != 1 or row_tasks[0] not in task_set:
             raise ValueError(
-                f"episode {episode_index} task metadata does not match provenance"
+                f"episode {episode_index} task metadata is not a registered dataset task"
             )
+        episode_tasks.add(row_tasks[0])
         data_path = _format_dataset_path(
             root,
             data_template,
@@ -125,8 +122,37 @@ def validate_lerobot_v3_payloads(
 
     if next_frame != total_frames:
         raise ValueError("LeRobot episode frame ranges do not match info.json")
+    if episode_tasks != task_set:
+        raise ValueError("LeRobot task metadata includes a task with no episode")
     for path, expected_rows in expected_rows_by_data_file.items():
         _validate_data_file(path, expected_rows=expected_rows, parquet=parquet)
+
+
+def read_lerobot_v3_tasks(root: Path, *, info: dict[str, Any]) -> tuple[str, ...]:
+    """Return canonical task text ordered by LeRobot task index."""
+
+    import pandas as pd
+
+    tasks_path = root / "meta/tasks.parquet"
+    try:
+        tasks = pd.read_parquet(tasks_path)
+    except (OSError, ValueError) as exc:
+        raise ValueError(f"cannot read LeRobot tasks: {tasks_path}: {exc}") from exc
+    if list(tasks.columns) != ["task_index"]:
+        raise ValueError("LeRobot tasks must contain exactly the task_index column")
+    task_records = {int(row["task_index"]): str(task) for task, row in tasks.iterrows()}
+    total_tasks = non_negative_json_int(info, "total_tasks")
+    if total_tasks <= 0 or sorted(task_records) != list(range(total_tasks)):
+        raise ValueError("LeRobot task indices must be contiguous from zero")
+    ordered = tuple(task_records[index] for index in range(total_tasks))
+    if any(
+        not task or task.strip() != task or "\n" in task or "\r" in task
+        for task in ordered
+    ):
+        raise ValueError("LeRobot tasks must be non-empty normalized single lines")
+    if len(set(ordered)) != len(ordered):
+        raise ValueError("LeRobot tasks must be unique")
+    return ordered
 
 
 def _validate_episode_videos(

@@ -164,7 +164,6 @@ class TeleopEpisodeSession:
     def _provenance(self) -> dict:
         return build_dataset_provenance(
             DatasetProvenanceRequest(
-                task=self.task,
                 experiment=self.identity.experiment,
                 front_crop=self.front_crop,
                 wrist_label=self.cameras.wrist_label,

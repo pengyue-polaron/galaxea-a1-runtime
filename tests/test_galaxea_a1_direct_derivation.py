@@ -158,7 +158,7 @@ def test_v21_exports_and_eef_v3_accept_the_direct_canonical_contract(tmp_path: P
 
     discovered = discover_direct_dataset(source_root, contract=identity.contract)
     assert discovered.identity.repo_id == identity.repo_id
-    assert discovered.state.task == "test direct derivation"
+    assert discovered.state.tasks == ("test direct derivation",)
 
     joint = export_v21_dataset(
         source_root=source_root,

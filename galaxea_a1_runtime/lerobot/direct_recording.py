@@ -23,7 +23,10 @@ from galaxea_a1_runtime.lerobot.dataset_package import (
     non_negative_json_int,
     read_json,
 )
-from galaxea_a1_runtime.lerobot.integrity import validate_lerobot_v3_payloads
+from galaxea_a1_runtime.lerobot.integrity import (
+    read_lerobot_v3_tasks,
+    validate_lerobot_v3_payloads,
+)
 from galaxea_a1_runtime.schema import DIRECT_DATASET_SCHEMA_VERSION, DatasetContract
 
 PROVENANCE_PATH = Path("meta/galaxea_a1.json")
@@ -33,7 +36,7 @@ PROVENANCE_PATH = Path("meta/galaxea_a1.json")
 class DirectDatasetState:
     total_episodes: int
     total_frames: int
-    task: str | None
+    tasks: tuple[str, ...]
 
 
 @dataclass(frozen=True)
@@ -117,7 +120,7 @@ def inspect_direct_dataset(
     target_root = identity.target_root
     validate_no_staging_outputs(target_root)
     if not target_root.exists():
-        return DirectDatasetState(0, 0, None)
+        return DirectDatasetState(0, 0, ())
     if not target_root.is_dir():
         raise ValueError(f"direct dataset target is not a directory: {target_root}")
 
@@ -150,19 +153,11 @@ def inspect_direct_dataset(
         raise ValueError(
             "direct dataset experiment identity does not match its directory"
         )
-    task = provenance.get("task")
-    if not isinstance(task, str):
-        raise ValueError("direct dataset provenance has no valid task")
-    try:
-        normalized_task = normalize_dataset_task(task)
-    except ValueError as exc:
-        raise ValueError("direct dataset provenance has no valid task") from exc
-    if normalized_task != task:
-        raise ValueError("direct dataset provenance task is not normalized")
-    if expected_task is not None and task != expected_task:
+    tasks = _provenance_tasks(provenance)
+    if expected_task is not None and expected_task not in tasks:
         raise ValueError(
-            f"collection task mismatch for {identity.experiment}: "
-            f"existing={task!r}, requested={expected_task!r}"
+            f"collection task is absent from {identity.experiment}: "
+            f"available={tasks!r}, requested={expected_task!r}"
         )
     total_episodes = non_negative_json_int(info, "total_episodes")
     total_frames = non_negative_json_int(info, "total_frames")
@@ -177,9 +172,9 @@ def inspect_direct_dataset(
         info=info,
         total_episodes=total_episodes,
         total_frames=total_frames,
-        expected_task=task,
+        expected_tasks=tasks,
     )
-    return DirectDatasetState(total_episodes, total_frames, task)
+    return DirectDatasetState(total_episodes, total_frames, tasks)
 
 
 def discover_direct_dataset(
@@ -228,10 +223,7 @@ class DirectLeRobotEpisode:
         self._committed = False
 
     def __enter__(self) -> DirectLeRobotEpisode:
-        state = inspect_direct_dataset(
-            self.identity,
-            expected_task=self.task,
-        )
+        state = inspect_direct_dataset(self.identity)
         exists = state.total_episodes > 0
         if exists:
             existing_provenance = read_json(
@@ -304,12 +296,13 @@ class DirectLeRobotEpisode:
         info = read_json(
             self._transaction.path / "meta/info.json", label="staged LeRobot info"
         )
+        tasks = read_lerobot_v3_tasks(self._transaction.path, info=info)
         payload = {
             **self.provenance,
             "schema_version": DIRECT_DATASET_SCHEMA_VERSION,
             "repo_id": self.identity.repo_id,
             "experiment": self.identity.experiment,
-            "task": self.task,
+            "tasks": list(tasks),
             "total_episodes": non_negative_json_int(info, "total_episodes"),
             "total_frames": non_negative_json_int(info, "total_frames"),
         }
@@ -393,6 +386,23 @@ def _non_empty_string(data: dict[str, Any], key: str) -> str:
     if not isinstance(value, str) or not value or value.strip() != value:
         raise ValueError(f"{key} must be a non-empty string")
     return value
+
+
+def _provenance_tasks(data: dict[str, Any]) -> tuple[str, ...]:
+    value = data.get("tasks")
+    if not isinstance(value, list) or not value:
+        raise ValueError("direct dataset provenance has no valid tasks")
+    if not all(isinstance(task, str) for task in value):
+        raise ValueError("direct dataset provenance has no valid tasks")
+    try:
+        tasks = tuple(normalize_dataset_task(task) for task in value)
+    except ValueError as exc:
+        raise ValueError("direct dataset provenance has no valid tasks") from exc
+    if list(tasks) != value:
+        raise ValueError("direct dataset provenance tasks are not normalized")
+    if len(set(tasks)) != len(tasks):
+        raise ValueError("direct dataset provenance tasks must be unique")
+    return tasks
 
 
 def _positive_int(value: Any, *, label: str) -> int:

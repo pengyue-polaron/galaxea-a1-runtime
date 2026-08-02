@@ -45,11 +45,14 @@ class ResetProgress:
             elif value in {0, 25, 50, 75, 100}:
                 emit("STEP", f"Reset {device}: {value}%")
 
-    def finish(self, *, success: bool) -> None:
+    def finish(self, *, success: bool, detail: str | None = None) -> None:
         if self.interactive:
             print("\r\033[2K", end="")
+        message = "Reset complete" if success else "Reset failed"
+        if detail:
+            message = f"{message}: {detail}"
         emit(
             "PASS" if success else "FAIL",
-            "Reset complete" if success else "Reset failed",
+            message,
             stream=sys.stdout if success else sys.stderr,
         )

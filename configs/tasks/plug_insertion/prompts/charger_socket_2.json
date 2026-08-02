@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 20,
+  "id": "charger_socket_2",
+  "prompt": "pick up the charger and insert it into the second socket from the left on the power strip",
+  "distribution": "train"
+}

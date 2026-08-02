@@ -148,6 +148,7 @@ def test_a1_panel_suggests_existing_experiments_but_allows_a_new_name(tmp_path):
     experiment = next(
         field for field in collect["fields"] if field["name"] == "experiment"
     )
+    task = next(field for field in collect["fields"] if field["name"] == "task")
 
     assert experiment["type"] == "combobox"
     assert experiment["depends_on"] == "config"
@@ -160,6 +161,18 @@ def test_a1_panel_suggests_existing_experiments_but_allows_a_new_name(tmp_path):
         option["depends_value"] == "configs/teleop/a1_so100.toml"
         for option in experiment["options"]
     )
+    assert task["type"] == "combobox"
+    assert "multiple prompts" in task["help_text"]
+    assert {
+        option["value"]
+        for option in task["options"]
+        if option["label"].startswith("plug-insertion-v1")
+    } == {
+        "pick up the charger and insert it into the first socket from the left on the power strip",
+        "pick up the charger and insert it into the second socket from the left on the power strip",
+        "pick up the charger and insert it into the third socket from the left on the power strip",
+        "pick up the charger and insert it into the fourth socket from the left on the power strip",
+    }
 
 
 def test_operator_panel_blocks_registration_while_a_workflow_is_active():

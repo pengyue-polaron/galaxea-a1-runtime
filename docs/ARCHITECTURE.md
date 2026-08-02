@@ -320,7 +320,7 @@ System limit.
 
 ## Episode and dataset commit
 
-Formal collection writes `galaxea_a1_lerobot_dataset_v3_v2` directly under
+Formal collection writes `galaxea_a1_lerobot_dataset_v3_v3` directly under
 `data/datasets/EXPERIMENT/`. The standard LeRobot v3 contract is immediately
 usable by LeRobot readers:
 
@@ -334,7 +334,8 @@ observation.images.front_depth       optional, uint16 millimeters
 task                              standard LeRobot per-frame task
 ```
 
-`meta/galaxea_a1.json` adds the tracked config identity, topic/control path,
+`meta/galaxea_a1.json` adds the tracked config identity, ordered task list,
+topic/control path,
 camera sources and crop, feature semantics, freshness limits, and gripper
 mapping. It supplements rather than forks LeRobot's `info.json`, tasks, episode
 metadata, stats, Parquet, and image/video layout.
@@ -345,10 +346,16 @@ the sibling transaction fails clearly if its filesystem cannot preserve those
 links instead of silently copying the complete dataset. Mutable metadata is
 copied. LeRobot resume starts new payload files, finalizes the new episode, then
 the runtime validates format, robot type, FPS, the exact feature contract,
-experiment/task identity, and frame/episode counts before an atomic directory
+experiment/task identities, and frame/episode counts before an atomic directory
 replacement. Failure or discard preserves the previous complete dataset.
 Rejected saves reuse the episode index, and crash leftovers block the next run
 for inspection.
+
+One experiment is one LeRobot dataset and may contain episodes from multiple
+exact prompts. Standard `task_index`, `meta/tasks.parquet`, per-frame task, and
+per-episode task metadata preserve the mapping. Starting collection again with
+the same experiment and a new prompt appends that prompt and its episodes to the
+same atomic dataset; it does not require a new experiment identity.
 
 Canonical image storage is always video and is therefore not an operator
 configuration option. Before ROS or cameras start, dataset preflight validates

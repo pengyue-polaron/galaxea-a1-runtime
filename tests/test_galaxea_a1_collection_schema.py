@@ -1,23 +1,12 @@
-from pathlib import Path
-
-import pytest
-
-from galaxea_a1_runtime.apps.teleop.collection_task import prepare_collection_task
+from galaxea_a1_runtime.apps.teleop.collection_task import normalize_collection_task
 from galaxea_a1_runtime.collection import (
     find_joint_action_step_violation,
 )
 
 
-def test_collection_task_is_created_once_and_cannot_drift(tmp_path: Path):
-    experiment_dir = tmp_path / "fruit_v1"
-
-    assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
-    provenance = experiment_dir / "meta/galaxea_a1.json"
-    provenance.parent.mkdir(parents=True)
-    provenance.write_text('{"task": "pick fruit"}')
-    assert prepare_collection_task(experiment_dir, "pick fruit") == "pick fruit"
-    with pytest.raises(ValueError, match="task mismatch"):
-        prepare_collection_task(experiment_dir, "place fruit")
+def test_collection_tasks_are_normalized_per_episode():
+    assert normalize_collection_task("  pick fruit  ") == "pick fruit"
+    assert normalize_collection_task("place fruit") == "place fruit"
 
 
 def test_joint_action_quality_check_rejects_discontinuity():

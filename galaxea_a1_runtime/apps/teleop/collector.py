@@ -17,7 +17,10 @@ if str(ROOT_DIR) not in sys.path:
 
 from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
 
-configure_ros1_python(ROOT_DIR)
+# The tracked Python 3.12 ROS overlay and A1 SDK provide every collector message
+# dependency. Do not expose Ubuntu's Python 3.10 site-packages: optional imports
+# in Hugging Face datasets can otherwise load ABI-incompatible binary wheels.
+configure_ros1_python(ROOT_DIR, include_system_site=False)
 
 import rospy
 
@@ -30,8 +33,7 @@ from galaxea_a1_runtime.apps.teleop.dataset_contract import (
     tracked_config_reference,
 )
 from galaxea_a1_runtime.apps.teleop.collection_task import (
-    prepare_collection_task,
-    read_collection_task,
+    normalize_collection_task,
 )
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
@@ -46,15 +48,19 @@ from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
 def load_or_prompt_task(
-    experiment_dir: Path, *, provided_task: str | None = None
+    existing_tasks: tuple[str, ...], *, provided_task: str | None = None
 ) -> str:
     if provided_task is not None:
-        return prepare_collection_task(experiment_dir, provided_task)
-    if existing := read_collection_task(experiment_dir):
-        return existing
-    info("First run: enter the task prompt.")
+        return normalize_collection_task(provided_task)
+    if existing_tasks:
+        info("Existing experiment prompts:")
+        for existing in existing_tasks:
+            info(f"  - {existing}")
+        info("Enter the exact prompt for the next episode.")
+    else:
+        info("First run: enter the task prompt.")
     task = input(style("Task > ", Tone.STEP)).strip()
-    return prepare_collection_task(experiment_dir, task)
+    return normalize_collection_task(task)
 
 
 def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> int:
@@ -65,12 +71,7 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     existing = inspect_direct_dataset(
         identity,
     )
-    task = load_or_prompt_task(identity.target_root, provided_task=task)
-    if existing.task is not None and existing.task != task:
-        raise ValueError(
-            f"collection task mismatch for {experiment}: "
-            f"existing={existing.task!r}, requested={task!r}"
-        )
+    task = load_or_prompt_task(existing.tasks, provided_task=task)
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(config)

@@ -7,6 +7,7 @@ from __future__ import annotations
 import concurrent.futures
 import sys
 from argparse import Namespace
+from collections.abc import Callable
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
@@ -15,7 +16,9 @@ if str(ROOT_DIR) not in sys.path:
 
 from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python
 
-configure_ros1_python(ROOT_DIR)
+# The tracked Python 3.12 overlay contains the reset's ROS messages. Avoid
+# exposing ABI-incompatible Ubuntu Python 3.10 packages to this process.
+configure_ros1_python(ROOT_DIR, include_system_site=False)
 
 from galaxea_a1_runtime.apps.reset.runner import A1HomeRunner
 from galaxea_a1_runtime.apps.reset.progress import ResetProgress
@@ -52,19 +55,23 @@ def main() -> int:
     if pose.leader.enabled:
         jobs["leader"] = lambda: reset_leader_home(pose, progress)
 
-    errors: list[tuple[str, BaseException]] = []
+    return run_reset_jobs(jobs, progress)
+
+
+def run_reset_jobs(jobs: dict[str, Callable[[], None]], progress: ResetProgress) -> int:
+    errors: list[tuple[str, Exception]] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=len(jobs)) as executor:
         futures = {executor.submit(job): name for name, job in jobs.items()}
         for future in concurrent.futures.as_completed(futures):
             name = futures[future]
             try:
                 future.result()
-            except BaseException as exc:
+            except (RuntimeError, ValueError, OSError) as exc:
                 errors.append((name, exc))
     if errors:
-        progress.finish(success=False)
         details = "; ".join(f"{name}: {exc}" for name, exc in errors)
-        raise RuntimeError(f"Reset failed ({details})") from errors[0][1]
+        progress.finish(success=False, detail=details)
+        return 1
     progress.finish(success=True)
     return 0
 

@@ -33,6 +33,9 @@ def test_reset_pose_derives_hardware_identity_and_joint_schema_from_teleop():
     assert pose.a1.path == REPO / "configs/poses/a1_collection_start.toml"
     assert pose.leader.config.port.startswith("/dev/serial/by-id/")
     assert pose.leader.config.motor_write_retries == 5
+    assert pose.leader_motion.max_goal_attempts == 3
+    assert pose.leader_motion.goal_tolerance_units == 2.5
+    assert pose.leader.action["joint0.pos"] == pytest.approx(10.68131868131868)
     assert tuple(pose.leader.action) == (
         "joint0.pos",
         "joint1.pos",

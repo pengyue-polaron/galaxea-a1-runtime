@@ -18,7 +18,6 @@ from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 @dataclass(frozen=True)
 class DatasetProvenanceRequest:
-    task: str
     experiment: str
     front_crop: ImageRoi | None
     wrist_label: str
@@ -79,7 +78,6 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
         "collection_mode": "teleop",
         "dataset_format": "LeRobotDataset v3.0",
         "experiment": request.experiment,
-        "task": request.task,
         "config_path": request.config_path,
         "robot_type": "galaxea_a1",
         "image_storage": "video",

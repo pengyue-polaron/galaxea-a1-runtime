@@ -336,7 +336,7 @@ reset_live() {
   if ! PYTHONPATH="${ROOT}/third_party/A1_SDK/install/lib/python3/dist-packages:${ROOT}/.cache/ros1_python_overlay:${PYTHONPATH:-}" \
     uv run --project "${ROOT}" python "${ROOT}/scripts/apps/teleop/a1_so100_reset.py" \
       --config "${CONFIG_PATH}"; then
-    a1_fail "Reset failed; teleop remains stopped."
+    a1_info "Teleop remains stopped after the reset failure."
     return 1
   fi
   start_bridge --quiet

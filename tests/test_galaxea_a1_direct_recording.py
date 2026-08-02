@@ -17,17 +17,17 @@ from galaxea_a1_runtime.lerobot.direct_recording import (
 from galaxea_a1_runtime.schema import CameraSpec, canonical_dataset_contract
 
 
-def _frame(value: float) -> dict:
+def _frame(value: float, *, task: str = "pick cube") -> dict:
     return {
         "observation.state": np.full(14, value, dtype=np.float32),
         "action": np.full(7, value, dtype=np.float32),
         "observation.images.front": np.full((64, 64, 3), 10, dtype=np.uint8),
         "observation.images.wrist": np.full((64, 64, 3), 20, dtype=np.uint8),
-        "task": "pick cube",
+        "task": task,
     }
 
 
-def _episode(root: Path) -> DirectLeRobotEpisode:
+def _episode(root: Path, *, task: str = "pick cube") -> DirectLeRobotEpisode:
     return DirectLeRobotEpisode(
         identity=DirectDatasetIdentity(
             target_root=root,
@@ -41,7 +41,7 @@ def _episode(root: Path) -> DirectLeRobotEpisode:
             ),
             experiment="direct-test",
         ),
-        task="pick cube",
+        task=task,
         provenance={"quality_checks": {"max_camera_pair_skew_s": 0.1}},
     )
 
@@ -76,6 +76,38 @@ def test_direct_lerobot_dataset_records_and_atomically_appends(tmp_path: Path):
     assert dataset.meta.features["action"]["names"][-1] == "gripper_normalized"
     assert dataset.meta.features["observation.images.front"]["dtype"] == "video"
     assert len(list((root / "videos").rglob("*.mp4"))) == 4
+
+
+def test_direct_lerobot_dataset_appends_multiple_tasks_to_one_experiment(
+    tmp_path: Path,
+):
+    root = tmp_path / "plug_insertion_v1"
+    first = "insert into the first socket"
+    second = "insert into the second socket"
+
+    with _episode(root, task=first) as episode:
+        episode.add_frame(_frame(0.1, task=first))
+        episode.commit()
+    with _episode(root, task=second) as episode:
+        episode.add_frame(_frame(0.2, task=second))
+        episode.commit()
+
+    state = inspect_direct_dataset(
+        _episode(root, task=first).identity,
+        expected_task=second,
+    )
+    assert state.tasks == (first, second)
+    assert (state.total_episodes, state.total_frames) == (2, 2)
+    provenance = json.loads((root / "meta/galaxea_a1.json").read_text())
+    assert provenance["tasks"] == [first, second]
+    assert "task" not in provenance
+
+    from lerobot.datasets import LeRobotDataset
+
+    dataset = LeRobotDataset(repo_id="galaxea-a1/direct-test", root=root)
+    assert dataset.meta.total_tasks == 2
+    assert dataset[0]["task"] == first
+    assert dataset[1]["task"] == second
 
 
 def test_discard_preserves_the_previous_complete_dataset(tmp_path: Path):

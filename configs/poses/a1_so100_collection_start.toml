@@ -29,7 +29,11 @@ hz = 30.0
 min_duration_s = 2.0
 max_velocity_units_s = 60.0
 hold_s = 1.0
-goal_tolerance_units = 2.0
+# Allow bounded corrective passes when servo lag leaves a joint outside the
+# goal. Joint0 has a repeatable 24-26 tick holding deadband (2.11-2.29 degrees).
+max_goal_attempts = 3
+# Keep this below the downstream A1 alignment limit of 0.05 rad (2.865 degrees).
+goal_tolerance_units = 2.5
 # The leader gripper is commanded fully closed at 0.0. Its normalized feedback
 # can stop a few units above zero at the mechanical closed stop.
 gripper_goal_tolerance_units = 5.0
