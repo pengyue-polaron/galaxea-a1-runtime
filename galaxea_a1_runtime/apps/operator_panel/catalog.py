@@ -10,6 +10,7 @@ from embodied_ops.operator_panel import RepositoryDocumentStore
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
+from galaxea_a1_runtime.collection import validate_experiment_name
 from galaxea_a1_runtime.configuration.paths import (
     A1_RESET_POSE,
     LINGBOT_BATCH_CONFIG,
@@ -31,9 +32,17 @@ def build_a1_catalog(
     root = repo_root.resolve()
     system = load_system_config(root / SYSTEM_CONFIG, repo_root=root)
     teleop_options = []
+    experiment_options = []
     for path in sorted((root / "configs/teleop").glob("*.toml")):
         config = load_teleop_config(path, repo_root=root)
+        config_reference = _reference(config.path, root)
         teleop_options.append(_option(config.path, root))
+        experiment_options.extend(
+            _experiment_options(
+                config.collection.dataset_root,
+                depends_value=config_reference,
+            )
+        )
 
     deployment_options = []
     task_options = []
@@ -117,6 +126,7 @@ def build_a1_catalog(
         ],
         "workflows": _workflow_forms(
             teleop_options=teleop_options,
+            experiment_options=experiment_options,
             deployment_options=deployment_options,
             task_options=task_options,
             batch_options=batch_options,
@@ -178,6 +188,7 @@ def _registration_forms(
 def _workflow_forms(
     *,
     teleop_options: list[dict[str, str]],
+    experiment_options: list[dict[str, str]],
     deployment_options: list[dict[str, str]],
     task_options: list[dict[str, str]],
     batch_options: list[dict[str, str]],
@@ -199,8 +210,16 @@ def _workflow_forms(
                     teleop_options,
                     default=TELEOP_CONFIG.as_posix(),
                 ),
-                _text_field(
-                    "experiment", "Experiment", placeholder="fruit_placement_v1"
+                _combobox_field(
+                    "experiment",
+                    "Experiment",
+                    experiment_options,
+                    placeholder="fruit_placement_v1",
+                    help_text=(
+                        "Select an existing experiment to append episodes, or type "
+                        "a new name to create one."
+                    ),
+                    depends_on="config",
                 ),
                 _text_field("task", "Task", placeholder="put the fruit into the bowl"),
             ],
@@ -308,6 +327,52 @@ def _text_field(name: str, label: str, *, placeholder: str) -> dict[str, Any]:
         "required": True,
         "placeholder": placeholder,
     }
+
+
+def _combobox_field(
+    name: str,
+    label: str,
+    options: list[dict[str, str]],
+    *,
+    placeholder: str,
+    help_text: str,
+    depends_on: str | None = None,
+) -> dict[str, Any]:
+    field: dict[str, Any] = {
+        "name": name,
+        "label": label,
+        "type": "combobox",
+        "required": True,
+        "placeholder": placeholder,
+        "help_text": help_text,
+        "options": options,
+    }
+    if depends_on is not None:
+        field["depends_on"] = depends_on
+    return field
+
+
+def _experiment_options(
+    dataset_root: Path, *, depends_value: str
+) -> list[dict[str, str]]:
+    if not dataset_root.is_dir():
+        return []
+    options = []
+    for path in sorted(dataset_root.iterdir(), key=lambda item: item.name):
+        if not path.is_dir() or path.name.startswith("."):
+            continue
+        try:
+            experiment = validate_experiment_name(path.name)
+        except ValueError:
+            continue
+        options.append(
+            {
+                "value": experiment,
+                "label": experiment,
+                "depends_value": depends_value,
+            }
+        )
+    return options
 
 
 def _option(path: Path, root: Path) -> dict[str, str]:

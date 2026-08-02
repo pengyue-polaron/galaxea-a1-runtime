@@ -19,5 +19,9 @@ def test_plugin_processor_mapping_is_derived_from_the_tracked_teleop_config():
     assert step.mapping.sign == config.bridge.mapping.sign
     assert step.mapping.lower_limits_rad == config.system.joint_safety.lower_limits
     assert step.mapping.upper_limits_rad == config.system.joint_safety.upper_limits
+    assert (
+        step.mapping.max_joint_action_step_rad
+        == config.bridge.max_joint_action_step_rad
+    )
     assert step.mapping.gripper_source_min == config.gripper.source_min
     assert step.mapping.gripper_source_max == config.gripper.source_max

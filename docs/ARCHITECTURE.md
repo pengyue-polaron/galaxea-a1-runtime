@@ -37,7 +37,7 @@ galaxea_a1_runtime.apps
 - The pinned `external/lerobot-robot-galaxea-a1` and
   `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
   LeRobot adapters. The Robot plugin also owns its private A1 Runtime transport;
-  A1-Research hosts that service and remains the ROS/safety/process composition root.
+  Galaxea A1 Runtime hosts that service and remains the ROS/safety/process composition root.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
 - `lerobot/` owns direct LeRobotDataset recording, atomic episode commits, and
   deterministic derived packages.
@@ -237,6 +237,28 @@ rejection records `safety_stopped`; batch resume validates both videos, the
 timeline/sidecar, exact scene/plan slot, and durable operator count/discard
 decision before treating it as finished.
 
+The local LingBot server adapter can reconstruct a bounded cache-aware,
+multi-layer WAM diagnostic on an explicit audit request. It captures all 30
+self-attention layers at both the trailing video `t=0` cache commit whose
+predicted KV is actually consumed by action inference and the final
+scheduler-consumed action denoise. It does not use the trailing action
+cache-only call as the returned action's source. Each layer performs the
+full-key softmax and retains only the current-query transition and selected
+visual-key blocks. Residual rollout exposes action-to-predicted-future,
+predicted-future-to-each-actual-history latent anchor, and direct
+action-to-each-actual-history latent anchor maps. It also composes the first
+two rollouts to report an action-via-predicted-future-to-history diagnostic.
+The adapter uses the model-owned temporal scale both to align cached actual
+latents to raw observation anchors 0/4 and to align its four generated latent
+frames to RGB anchors 0/4/8/12 of the 13-frame decode. It undoes the VAE's
+front/wrist width packing for both pixels and tokens, and writes every 8×8 map
+over its corresponding actual or predicted image. Action maps average only the
+queries for frames the runtime will execute. Text cross-attention, MLP/gating
+paths, cached-action paths, and cross-layer paths through other unselected
+cache groups remain omitted, so these maps are association diagnostics rather
+than causal attribution. Normal inference requests do not pay the
+reconstruction or VAE decode cost.
+
 The LingBot batch exporter derives only from those finalized recording roots.
 It requires one unambiguous valid run for every tracked plan slot, then writes a
 manifest and the selected videos/timeline/sidecar/metadata/logs to a hidden tar staging path
@@ -252,7 +274,10 @@ relative to both startup poses using the tracked signs and limits; unknown
 layouts fail instead of being sorted heuristically. The plugin reports truthful
 leader units; pair-specific degree-to-radian, gripper, sign, scale, bias, and
 limit mapping is a LeRobot processor derived from this repository's tracked
-Teleop and System configs.
+Teleop and System configs. The processor accumulates shortest-path degree deltas
+so a Feetech `4095 <-> 0` encoder crossing remains continuous, then rejects any
+processed per-frame joint step beyond the tracked bridge threshold before the
+Robot can submit it to the Runtime.
 
 The production Teleop bridge is the pair composition root. It constructs the
 auto-discovered Teleoperator and Robot plugins, then applies LeRobot's
@@ -280,10 +305,13 @@ The default collection contract contains:
 
 Application gripper state and action are continuous normalized `0..1`. The
 leader input maps to that interval, which maps exactly once to the System-owned
-physical A1 stroke. The System-owned normalized endpoint tolerance absorbs only
-the documented LingBot quantile roundoff before this mapping; material
-overshoot remains invalid. `/gripper_stroke_host` is the only gripper feedback
-source.
+physical A1 stroke. LingBot's model contract owns a gripper-only latent
+projection: values inside the tracked training envelope are projected to the
+quantile interval before de-normalization, while non-finite or farther-out
+outputs are rejected. The System-owned normalized endpoint tolerance then
+absorbs only quantile arithmetic roundoff before the physical mapping;
+material protocol-level overshoot remains invalid. `/gripper_stroke_host` is
+the only gripper feedback source.
 
 The raw consumer applies the configured camera crop before recording or policy
 input. The minimal Web preview shows both full unoverlaid images. A valid

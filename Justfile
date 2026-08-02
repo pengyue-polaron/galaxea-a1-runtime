@@ -130,6 +130,9 @@ lingbot-verify *args:
 lingbot-smoke *args:
     scripts/apps/lingbot/a1_lingbot_runtime.sh smoke {{args}}
 
+lingbot-attention *args:
+    scripts/apps/lingbot/a1_lingbot_runtime.sh attention {{args}}
+
 pi05-setup:
     scripts/apps/pi05/a1_pi05_runtime.sh setup
 

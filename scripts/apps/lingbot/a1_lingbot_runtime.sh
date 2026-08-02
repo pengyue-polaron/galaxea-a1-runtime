@@ -10,7 +10,7 @@ MODEL_SELECTOR=""
 TASK_SELECTOR=""
 SCENE_NOTE_INPUT=""
 source "${ROOT}/scripts/runtime/a1_processes.sh"
-A1_REPO_PYTHONPATH="${ROOT}"
+A1_REPO_PYTHONPATH="${ROOT}:${ROOT}/external/embodied-ops/src"
 
 runtime_args=()
 while (( $# > 0 )); do
@@ -87,6 +87,7 @@ fi
 BRIDGE_SCRIPT="${ROOT}/scripts/apps/lingbot/lingbot_va_ee_bridge.py"
 SETUP_SCRIPT="${ROOT}/scripts/apps/lingbot/setup_lingbot_inference.py"
 SMOKE_SCRIPT="${ROOT}/scripts/apps/lingbot/smoke_lingbot_inference.py"
+ATTENTION_SCRIPT="${ROOT}/scripts/apps/lingbot/attention_lingbot_inference.py"
 VERIFY_SCRIPT="${ROOT}/scripts/apps/lingbot/verify_lingbot_inference.py"
 PROBE_SCRIPT="${ROOT}/scripts/apps/lingbot/probe_lingbot_server.py"
 BRIDGE_ENVIRONMENT_CHECKED=false
@@ -302,6 +303,13 @@ smoke_inference() {
   start_model_server
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
     "${SMOKE_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
+    --model "${MODEL_ID}"
+}
+
+attention_audit() {
+  start_model_server
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    "${ATTENTION_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
     --model "${MODEL_ID}"
 }
 
@@ -763,6 +771,9 @@ case "${1:-help}" in
   smoke)
     smoke_inference
     ;;
+  attention)
+    attention_audit
+    ;;
   server-stop)
     a1_process_stop "${MODEL_PROCESS_NAME}" "${MODEL_SHUTDOWN_TIMEOUT}"
     ;;
@@ -784,7 +795,7 @@ case "${1:-help}" in
     tail_model_log 160
     ;;
   *)
-    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] [--task TASK_ID] [--scene-note TEXT] <setup|verify|run|batch|server|smoke|server-stop|server-logs|services|stop|doctor|status|logs>"
+    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] [--task TASK_ID] [--scene-note TEXT] <setup|verify|run|batch|server|smoke|attention|server-stop|server-logs|services|stop|doctor|status|logs>"
     cat <<EOF
   setup     Clone, pin, install, download, and verify LingBot
   verify    Hash-check registered LingBot inputs without opening hardware
@@ -792,6 +803,7 @@ case "${1:-help}" in
   batch     Run a tracked plan; add --resume to skip finished matching slots
   server    Start only the marked background policy server (offline workflows)
   smoke     Start the server and run one synthetic inference (no ROS/cameras)
+  attention Start the server and save real-episode front/wrist WAM overlays
   server-stop  Stop only the managed policy server
   server-logs  Show recent policy server output
   services  Start only the decoupled A1 base runtime

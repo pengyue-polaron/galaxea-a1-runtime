@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 import sys
+from math import isfinite
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.base import (
@@ -87,6 +88,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "scale",
             "sign",
             "bias_rad",
+            "max_joint_action_step_rad",
         },
         label="bridge",
     )
@@ -110,7 +112,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "auto_reset_after_save",
             "auto_reset_after_discard",
             "ready_timeout_s",
-            "max_joint_action_step_rad",
         },
         label="collection",
     )
@@ -144,6 +145,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         bridge=TeleopBridgeConfig(
             hz=floating(bridge, "hz"),
             mapping=mapping,
+            max_joint_action_step_rad=floating(bridge, "max_joint_action_step_rad"),
         ),
         gripper=TeleopGripperConfig(
             source_min=floating(gripper, "source_min"),
@@ -159,7 +161,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             auto_reset_after_save=boolean(collection, "auto_reset_after_save"),
             auto_reset_after_discard=boolean(collection, "auto_reset_after_discard"),
             ready_timeout_s=floating(collection, "ready_timeout_s"),
-            max_joint_action_step_rad=floating(collection, "max_joint_action_step_rad"),
         ),
     )
     validate_teleop_config(config)
@@ -185,6 +186,11 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         raise ValueError("gripper source_max must be greater than source_min")
     if config.bridge.hz <= 0:
         raise ValueError("bridge.hz must be positive")
+    if (
+        not isfinite(config.bridge.max_joint_action_step_rad)
+        or config.bridge.max_joint_action_step_rad <= 0
+    ):
+        raise ValueError("bridge.max_joint_action_step_rad must be finite and positive")
     minimum_startup_timeout_s = (
         2 * config.system.robot_service.device_connect_timeout_s
         + config.system.relay.enable_timeout_s
@@ -207,8 +213,6 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         )
     if config.collection.ready_timeout_s <= 0:
         raise ValueError("collection.ready_timeout_s must be positive")
-    if config.collection.max_joint_action_step_rad <= 0:
-        raise ValueError("collection.max_joint_action_step_rad must be positive")
 
 
 def validate_collection_config(config: TeleopConfig) -> None:

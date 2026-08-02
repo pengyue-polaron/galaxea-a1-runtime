@@ -80,7 +80,7 @@ feedback_wait_timeout_s = 5.0
 
 [eef_ik]
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
-max_iterations = 200
+max_iterations = 400
 damping = 0.01
 orientation_weight = 0.2
 max_iteration_step_rad = 0.08

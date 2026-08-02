@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 10,
+  "id": "plug_into_socket",
+  "prompt": "insert the plug into the socket",
+  "distribution": "ood"
+}

@@ -82,6 +82,11 @@ The relay's stricter input-freshness checks remain independent of both RPC deadl
   tracking-error, speed, or action-step clamp is applied.
 - The complete episode-relative model pose is always composed into the absolute
   IK target; its quaternion is never replaced with current feedback.
+- LingBot projects only its gripper diffusion latent from the model contract's
+  trained envelope (currently `[-1.5, 1.5]`) into the quantile interval
+  `[-1, 1]` before de-normalization. Non-finite or farther-out latent values
+  are rejected. The Runtime still independently enforces the normalized
+  physical gripper range and its narrow endpoint-roundoff tolerance.
 - Verbose action logging reports IK residuals and maximum joint deltas when
   enabled by the deployment; the tracked Cartesian tolerance is 3 mm and the
   maximum single-joint IK solution delta from fresh feedback is 1.70 rad.
@@ -118,6 +123,10 @@ additional gripper bit latches `FAULT`.
   creating processes.
 - One process owns each driver, tracker, camera, serial bus, and command
   publisher. The persistent Camera Bridge is the only camera-handle owner.
+- Teleop unwraps periodic leader degree feedback before relative mapping. The
+  tracked bridge action-step threshold rejects a remaining discontinuity before
+  the Robot submits that frame to the Runtime; normal absolute joint limits and
+  relay checks remain independent.
   Camera-consuming apps attach to its local raw-frame channel and never reopen
   the physical devices.
 - The bridge preserves source sequence numbers and monotonic timestamps on

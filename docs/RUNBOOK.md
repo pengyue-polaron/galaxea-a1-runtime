@@ -198,9 +198,11 @@ just teleop-test
 Exercise all six joint directions and the continuous gripper over a small
 range. This starts the modified leader Teleoperator, the tracked relative-anchor
 processor, the A1 Robot plugin, and the supervised A1 Robot service as one owned
-control chain. The Robot reaches the Runtime-owned backend through the tracked
-local Unix socket; it does not load ROS or Runtime Python code. Do not substitute
-the generic `lerobot-teleoperate` command: in
+control chain. Leader degree feedback is unwrapped across the encoder zero; a
+remaining processed joint jump above the tracked per-frame threshold stops the
+session before publication. The Robot reaches the Runtime-owned backend through
+the tracked local Unix socket; it does not load ROS or Runtime Python code. Do
+not substitute the generic `lerobot-teleoperate` command: in
 LeRobot 0.6 it uses identity processors and cannot safely pair leader degrees
 with A1 radians. Use `just logs` for failures and `just stop` when finished.
 
@@ -345,6 +347,7 @@ I/O:
 ```bash
 just lingbot-setup
 just lingbot-smoke
+just lingbot-attention
 scripts/apps/lingbot/a1_lingbot_runtime.sh server-stop
 
 just pi05-setup
@@ -353,12 +356,28 @@ scripts/apps/pi05/a1_pi05_runtime.sh server-stop
 ```
 
 LingBot smoke validates reset, inference, temporal-cache synchronization, and
-reinference. Pi0.5 smoke runs one synthetic two-camera/state inference and
-validates the returned horizon. Both leave the managed GPU server available for
-log inspection; the matching `server-stop` command releases it. Follow [Model
-registry](../models/README.md) to review the exact input/action contract. A new
-weight revision gets a new model descriptor and manifest; do not repoint a
-mutable alias or edit an existing revision in place.
+reinference. `just lingbot-attention` loads the tracked real teacher-forcing
+episode without opening hardware, populates the actual-observation KV cache,
+decodes the model's exact paired-camera prediction, aligns the four latent
+attention frames to RGB anchors 0/4/8/12 of the 13-frame VAE decode, and writes
+source images plus 30-layer WAM overlays under
+`outputs/inference/lingbot-fruit-placement-eef/attention-audits/`. The audit
+separates action-to-predicted-future, predicted-future-to-actual-history,
+direct action-to-actual-history, and the composed
+action-via-predicted-future-to-history paths. The four cached real
+observations produce one new streaming-VAE latent, so actual-history maps align
+to raw frame anchors 0/4 rather than inventing maps for frames 1–3. Every
+front/wrist 8×8 map is overlaid on the actual or decoded future image that owns
+those tokens. These are diagnostic associations: the rollout averages heads,
+averages only the configured executed-action queries, and omits text
+cross-attention, MLP/gating, cached-action, and other unselected cache paths. It
+is not causal attribution.
+Pi0.5 smoke runs one synthetic two-camera/state inference and validates the
+returned horizon. Both leave the managed GPU server available for log
+inspection; the matching `server-stop` command releases it. Follow the
+[Model registry](../models/README.md) to review the exact input/action contract.
+A new weight revision gets a new model descriptor and manifest; do not repoint
+a mutable alias or edit an existing revision in place.
 
 For an OpenRAL-owned deployment, keep the Runtime ROS execution bridge stopped.
 Start only the persistent cameras, the contract-checked LingBot model server,

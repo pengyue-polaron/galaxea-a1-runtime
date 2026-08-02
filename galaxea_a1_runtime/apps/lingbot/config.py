@@ -76,6 +76,7 @@ class _ModelContract:
     action_channel_ids: tuple[int, ...]
     q01_source: tuple[float, ...]
     q99_source: tuple[float, ...]
+    gripper_latent_reject_limit: float
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -100,6 +101,7 @@ def load_lingbot_config(
             "session",
             "server",
             "observations",
+            "attention",
             "execution",
             "recording",
         },
@@ -138,6 +140,7 @@ def load_lingbot_config(
     session = required_table(data, "session")
     server = required_table(data, "server")
     observations = required_table(data, "observations")
+    attention = required_table(data, "attention")
     execution = required_table(data, "execution")
     recording = required_table(data, "recording")
     require_exact_keys(deployment, required={"id", "ready"}, label="LingBot deployment")
@@ -157,6 +160,11 @@ def load_lingbot_config(
     )
     require_exact_keys(
         observations, required={"front_key", "wrist_key"}, label="observations"
+    )
+    require_exact_keys(
+        attention,
+        required={"capture_layers"},
+        label="attention",
     )
     require_exact_keys(
         execution,
@@ -216,6 +224,9 @@ def load_lingbot_config(
             text_encoder_device=engine.text_encoder_device,
             enable_offload=engine.enable_offload,
             attention_mode=engine.attention_mode,
+            attention_capture_layers=integer_tuple(
+                attention, "capture_layers", min_len=1
+            ),
             seed=engine.seed,
             height=engine.height,
             width=engine.width,
@@ -230,6 +241,7 @@ def load_lingbot_config(
             action_snr_shift=engine.action_snr_shift,
             q01_source=contract.q01_source,
             q99_source=contract.q99_source,
+            gripper_latent_reject_limit=contract.gripper_latent_reject_limit,
             deployment_ready=deployment_ready,
         ),
         execution=LingBotExecutionConfig(
@@ -339,7 +351,12 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
     )
     require_exact_keys(
         normalization,
-        required={"method", "q01_source", "q99_source"},
+        required={
+            "method",
+            "q01_source",
+            "q99_source",
+            "gripper_latent_reject_limit",
+        },
         label="LingBot normalization contract",
     )
     if string(normalization, "method") != "quantiles":
@@ -353,6 +370,9 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
         action_channel_ids=integer_tuple(lingbot, "action_channel_ids", min_len=1),
         q01_source=float_tuple(normalization, "q01_source"),
         q99_source=float_tuple(normalization, "q99_source"),
+        gripper_latent_reject_limit=floating(
+            normalization, "gripper_latent_reject_limit"
+        ),
     )
 
 
@@ -371,6 +391,14 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         )
     if policy.world_size != 1:
         raise ValueError("LingBot backend world_size must be 1")
+    if (
+        tuple(sorted(set(policy.attention_capture_layers)))
+        != policy.attention_capture_layers
+        or policy.attention_capture_layers[0] < 0
+    ):
+        raise ValueError(
+            "attention.capture_layers must be unique, sorted, non-negative indices"
+        )
     if (
         min(
             policy.height,
@@ -412,6 +440,11 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         lo >= hi for lo, hi in zip(policy.q01_source, policy.q99_source, strict=True)
     ):
         raise ValueError("LingBot q01 values must be lower than q99 values")
+    if not 1.0 <= policy.gripper_latent_reject_limit <= 1.5:
+        raise ValueError(
+            "LingBot gripper_latent_reject_limit must be in the trained "
+            "normalized envelope [1.0, 1.5]"
+        )
     if config.execution.max_model_calls < 0:
         raise ValueError("execution.max_model_calls must be >= 0")
     if (

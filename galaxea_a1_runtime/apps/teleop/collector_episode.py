@@ -106,7 +106,7 @@ class TeleopEpisodeSession:
                 violation = find_joint_action_step_violation(
                     recording.actions,
                     action_names=JOINT_ACTION_NAMES_RAD,
-                    max_step_rad=self.config.collection.max_joint_action_step_rad,
+                    max_step_rad=self.config.bridge.max_joint_action_step_rad,
                 )
                 if violation is not None:
                     failure(

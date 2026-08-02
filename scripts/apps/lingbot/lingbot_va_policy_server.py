@@ -15,8 +15,15 @@ if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.apps.lingbot.attention import (
+    LingBotAttentionCapture,
+    decoded_temporal_alignment,
+)
 from galaxea_a1_runtime.console import ArgumentParser, info
-from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
+from galaxea_a1_runtime.apps.lingbot.protocol import (
+    project_gripper_quantile_latent,
+    server_metadata,
+)
 
 
 def main() -> int:
@@ -100,12 +107,31 @@ def main() -> int:
         path, torch_dtype, torch_device, attn_mode
     ):
         del attn_mode
-        return original_load_transformer(
+        transformer = original_load_transformer(
             path,
             torch_dtype=torch_dtype,
             torch_device=torch_device,
             attn_mode=policy.attention_mode,
         )
+        patch_height, patch_width = job.patch_size[1:]
+        capture = LingBotAttentionCapture(
+            layers=policy.attention_capture_layers,
+            frame_chunk_size=policy.frame_chunk_size,
+            action_query_tokens=(policy.frame_chunk_size * policy.action_per_frame),
+            selected_action_query_tokens=(
+                config.execution.execute_frames * policy.action_per_frame
+            ),
+            grid_height=policy.height // 16 // patch_height,
+            grid_width_per_camera=policy.width // 16 // patch_width,
+            # Action consumes the predicted visual KV written by the trailing
+            # video t=0 call, so the WAM path must capture that exact commit.
+            # The returned action itself is updated by the preceding action
+            # denoise call, not its own trailing cache-only call.
+            video_forward_calls=policy.video_inference_steps + 1,
+            action_forward_calls=policy.action_inference_steps,
+        )
+        capture.install(transformer)
+        return transformer
 
     server_module.load_transformer = load_transformer_with_tracked_attention
 
@@ -144,6 +170,122 @@ def main() -> int:
 
     server_module.VA_Server.preprocess_action = preprocess_protocol_action
 
+    original_postprocess_action = server_module.VA_Server.postprocess_action
+    gripper_model_channel = policy.action_channel_ids[-1]
+
+    def postprocess_protocol_action(self, action):
+        # LingBot diffusion latents are unbounded even though the gripper is a
+        # bounded physical channel. Accept only the tracked training envelope,
+        # then project that one channel to the quantile interval before the
+        # vendor de-normalizer. The Runtime independently retains its strict
+        # normalized [0, 1] command validation.
+        gripper = action[:, gripper_model_channel, ...]
+        gripper_numpy = gripper.detach().float().cpu().numpy()
+        projected = project_gripper_quantile_latent(
+            gripper_numpy,
+            reject_limit=policy.gripper_latent_reject_limit,
+        )
+        if not np.array_equal(projected, gripper_numpy):
+            action = action.clone()
+            action[:, gripper_model_channel, ...] = torch.as_tensor(
+                projected,
+                dtype=action.dtype,
+                device=action.device,
+            )
+        return original_postprocess_action(self, action)
+
+    server_module.VA_Server.postprocess_action = postprocess_protocol_action
+
+    original_infer = server_module.VA_Server.infer
+
+    def infer_with_optional_attention(self, observation):
+        requested = observation.get("capture_attention", False)
+        if not isinstance(requested, bool):
+            raise ValueError("capture_attention must be a boolean")
+        if requested and (
+            observation.get("reset", False)
+            or observation.get("compute_kv_cache", False)
+        ):
+            raise ValueError(
+                "capture_attention applies only to action inference requests"
+            )
+        capture = self.transformer._galaxea_attention_capture
+        if not requested:
+            return original_infer(self, observation)
+        capture.begin()
+        try:
+            action, latents = self._infer(
+                observation,
+                frame_st_id=self.frame_st_id,
+            )
+            if not hasattr(self, "video_processor"):
+                self.video_processor = server_module.VideoProcessor(vae_scale_factor=1)
+            if self.enable_offload:
+                self.vae = self.vae.to(self.device).to(self.dtype)
+            with torch.no_grad():
+                decoded = np.asarray(self.decode_one_video(latents, "np"))
+            if decoded.ndim == 5 and decoded.shape[0] == 1:
+                decoded = decoded[0]
+            temporal_scale = int(self.vae.config.scale_factor_temporal)
+            if temporal_scale <= 0:
+                raise RuntimeError("LingBot VAE temporal scale factor must be positive")
+            temporal_alignment = decoded_temporal_alignment(
+                latent_frames=policy.frame_chunk_size,
+                temporal_scale=temporal_scale,
+            )
+            expected_shape = (
+                temporal_alignment.decoded_frame_count,
+                policy.height,
+                2 * policy.width,
+                3,
+            )
+            if decoded.shape != expected_shape:
+                raise RuntimeError(
+                    "decoded LingBot prediction has the wrong paired-camera "
+                    f"shape: expected {expected_shape}, got {decoded.shape}"
+                )
+            if np.issubdtype(decoded.dtype, np.floating):
+                if (
+                    not np.isfinite(decoded).all()
+                    or decoded.min(initial=0.0) < 0.0
+                    or decoded.max(initial=0.0) > 1.0
+                ):
+                    raise RuntimeError(
+                        "decoded LingBot prediction is not finite RGB in [0, 1]"
+                    )
+                decoded = np.rint(decoded * 255.0).astype(np.uint8)
+            elif decoded.dtype != np.uint8:
+                raise RuntimeError(
+                    f"decoded LingBot prediction has unsupported dtype: {decoded.dtype}"
+                )
+            predicted_observations = [
+                {
+                    config.observations.front_key: frame[:, : policy.width].copy(),
+                    config.observations.wrist_key: frame[:, policy.width :].copy(),
+                }
+                for frame in decoded[list(temporal_alignment.anchor_indices)]
+            ]
+            result = {
+                "action": action,
+                "predicted_observations": predicted_observations,
+            }
+            result["attention"] = capture.finish()
+            result["attention"]["token_layout"].update(
+                {
+                    "vae_temporal_scale_factor": temporal_scale,
+                    "decoded_rgb_frames": temporal_alignment.decoded_frame_count,
+                    "decoded_rgb_anchor_indices": list(
+                        temporal_alignment.anchor_indices
+                    ),
+                }
+            )
+            return result
+        except BaseException:
+            capture.cancel()
+            raise
+
+    server_module.VA_Server.infer = infer_with_optional_attention
+
     original_policy_server = server_module.run_async_server_mode.__globals__[
         "WebsocketPolicyServer"
     ]
@@ -174,6 +316,7 @@ def main() -> int:
         f"actions_per_frame={policy.action_per_frame} cameras={job.obs_cam_keys} "
         f"text_encoder={policy.text_encoder_device} "
         f"attention={policy.attention_mode} offload={policy.enable_offload} "
+        f"attention_capture_layers={policy.attention_capture_layers} "
         f"world_size={policy.world_size} fsdp=False "
         f"seed={policy.seed} contract={metadata['contract_sha256']}"
     )

@@ -119,7 +119,7 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
         "cameras": cameras,
         "image_color_space": "RGB",
         "quality_checks": {
-            "max_joint_action_step_rad": config.collection.max_joint_action_step_rad,
+            "max_joint_action_step_rad": config.bridge.max_joint_action_step_rad,
             "max_camera_age_s": system.cameras.max_age_s,
             "max_camera_pair_skew_s": system.cameras.max_pair_skew_s,
             "max_joint_feedback_age_s": system.joint_safety.max_feedback_age_s,

@@ -321,3 +321,36 @@ def test_offline_lerobot_loop_disconnects_both_devices_after_command_failure() -
         )
 
     assert events[-2:] == ["robot.disconnect", "leader.disconnect"]
+
+
+def test_offline_lerobot_loop_rejects_action_jump_before_runtime_submission() -> None:
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+    stop_requested = threading.Event()
+    events: list[str] = []
+    observation = {**{name: 0.0 for name in JOINT_KEYS}, "gripper_normalized": 0.0}
+    leader = FakeLeader(
+        [
+            _leader_action(joints_deg=0.0, gripper=0.0),
+            _leader_action(joints_deg=30.0, gripper=0.0),
+        ],
+        events,
+    )
+    robot = FakeRobot(
+        observation=observation,
+        events=events,
+        stop_requested=stop_requested,
+        stop_after=100,
+    )
+
+    with pytest.raises(ValueError, match="live joint action discontinuity"):
+        run_teleop_session(
+            teleop=leader,
+            robot=robot,
+            processors=make_a1_teleop_processors(config),
+            hz=config.bridge.hz,
+            stop_requested=stop_requested,
+            sleep=lambda _seconds: None,
+        )
+
+    assert len(robot.actions) == 1
+    assert events[-2:] == ["robot.disconnect", "leader.disconnect"]

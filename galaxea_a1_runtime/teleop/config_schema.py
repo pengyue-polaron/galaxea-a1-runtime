@@ -55,6 +55,7 @@ class TeleopLeaderConfig:
 class TeleopBridgeConfig:
     hz: float
     mapping: JointMappingConfig
+    max_joint_action_step_rad: float
 
 
 @dataclass(frozen=True)
@@ -74,7 +75,6 @@ class TeleopCollectionConfig:
     auto_reset_after_save: bool
     auto_reset_after_discard: bool
     ready_timeout_s: float
-    max_joint_action_step_rad: float
 
 
 @dataclass(frozen=True)

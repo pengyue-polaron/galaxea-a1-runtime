@@ -52,7 +52,7 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert config.execution.execute is True
     assert config.execution.step_mode is False
     assert config.execution.step_actions is False
-    assert config.execution.max_model_calls == 66
+    assert config.execution.max_model_calls == 132
     assert config.execution.execute_frames == 2
     assert config.execution.print_actions is False
     assert config.policy_server.deployment_ready is True
@@ -72,8 +72,10 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     )
     assert len(config.policy_server.q01_source) == 8
     assert len(config.policy_server.q99_source) == 8
+    assert config.policy_server.gripper_latent_reject_limit == 1.5
     assert config.policy_server.vendor_config == "a1"
     assert config.policy_server.attention_mode == "torch"
+    assert config.policy_server.attention_capture_layers == tuple(range(30))
     assert config.policy_server.enable_offload is False
     assert config.policy_server.world_size == 1
     assert config.policy_server.shutdown_timeout_s == 10.0
@@ -194,6 +196,17 @@ def test_lingbot_ready_accepts_complete_checkpoint_statistics(tmp_path):
 
     assert config.policy_server.deployment_ready is True
     assert len(config.policy_server.q01_source) == 8
+
+
+def test_lingbot_rejects_gripper_latent_limit_beyond_training_envelope(tmp_path):
+    text = CONTRACT.read_text().replace(
+        "gripper_latent_reject_limit = 1.5",
+        "gripper_latent_reject_limit = 1.6",
+    )
+    path = _deployment_copy(tmp_path, contract_text=text)
+
+    with pytest.raises(ValueError, match="trained normalized envelope"):
+        load_lingbot_config(path, repo_root=REPO)
 
 
 def test_lingbot_rejects_abbreviated_model_revision(tmp_path):

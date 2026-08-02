@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+import numpy as np
+
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.inference.protocol import (
@@ -12,7 +14,26 @@ from galaxea_a1_runtime.inference.protocol import (
 )
 
 
-PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v2"
+PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v5"
+
+
+def project_gripper_quantile_latent(
+    values: object,
+    *,
+    reject_limit: float,
+) -> np.ndarray:
+    """Project finite gripper latents to the quantile interval or reject them."""
+
+    latent = np.asarray(values, dtype=np.float64)
+    if latent.size == 0 or not np.isfinite(latent).all():
+        raise ValueError("LingBot gripper latent must be non-empty and finite")
+    maximum = float(np.max(np.abs(latent)))
+    if maximum > reject_limit:
+        raise ValueError(
+            "LingBot gripper latent exceeds the tracked training envelope: "
+            f"max_abs={maximum:.17g}, limit={reject_limit:.17g}"
+        )
+    return np.clip(latent, -1.0, 1.0)
 
 
 def server_metadata(config: LingBotConfig) -> dict[str, Any]:
@@ -56,8 +77,17 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
             "method": "quantiles",
             "q01_source": list(policy.q01_source),
             "q99_source": list(policy.q99_source),
+            "gripper_latent_projection": {
+                "quantile_interval": [-1.0, 1.0],
+                "reject_limit": policy.gripper_latent_reject_limit,
+            },
         },
         "attention_mode": policy.attention_mode,
+        "attention_capture": {
+            "request_key": "capture_attention",
+            "layers": list(policy.attention_capture_layers),
+            "map_kind": "wam_multistage_cache_aware_attention_rollout",
+        },
         "enable_offload": policy.enable_offload,
         "text_encoder_device": policy.text_encoder_device,
         "parallelism": {

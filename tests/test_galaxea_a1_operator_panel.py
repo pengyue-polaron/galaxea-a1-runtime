@@ -131,6 +131,37 @@ def test_a1_panel_registers_a_prompt_and_selects_it_for_evaluation(tmp_path):
     assert any(option["value"] == "green_apple_bowl" for option in task_options)
 
 
+def test_a1_panel_suggests_existing_experiments_but_allows_a_new_name(tmp_path):
+    shutil.copytree(ROOT / "configs", tmp_path / "configs")
+    (tmp_path / "third_party").symlink_to(
+        ROOT / "third_party", target_is_directory=True
+    )
+    (tmp_path / "external").symlink_to(ROOT / "external", target_is_directory=True)
+    dataset_root = tmp_path / "data/datasets"
+    (dataset_root / "fruit_placement_v1").mkdir(parents=True)
+    (dataset_root / "plug_insertion_v1").mkdir()
+    (dataset_root / ".incomplete-staging").mkdir()
+    (dataset_root / "invalid name").mkdir()
+
+    catalog = A1OperatorPanelAdapter(tmp_path).catalog()
+    collect = next(item for item in catalog["workflows"] if item["id"] == "collect")
+    experiment = next(
+        field for field in collect["fields"] if field["name"] == "experiment"
+    )
+
+    assert experiment["type"] == "combobox"
+    assert experiment["depends_on"] == "config"
+    assert "append episodes" in experiment["help_text"]
+    assert [option["value"] for option in experiment["options"]] == [
+        "fruit_placement_v1",
+        "plug_insertion_v1",
+    ]
+    assert all(
+        option["depends_value"] == "configs/teleop/a1_so100.toml"
+        for option in experiment["options"]
+    )
+
+
 def test_operator_panel_blocks_registration_while_a_workflow_is_active():
     app = OperatorPanelApplication(A1OperatorPanelAdapter(ROOT))
     app.workflow.start(

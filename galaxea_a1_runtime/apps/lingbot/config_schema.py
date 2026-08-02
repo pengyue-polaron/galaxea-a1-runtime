@@ -42,6 +42,7 @@ class LingBotPolicyServerConfig:
     text_encoder_device: TextEncoderDevice
     enable_offload: bool
     attention_mode: AttentionMode
+    attention_capture_layers: tuple[int, ...]
     seed: int
     height: int
     width: int
@@ -56,6 +57,7 @@ class LingBotPolicyServerConfig:
     action_snr_shift: float
     q01_source: tuple[float, ...]
     q99_source: tuple[float, ...]
+    gripper_latent_reject_limit: float
     deployment_ready: bool
 
 

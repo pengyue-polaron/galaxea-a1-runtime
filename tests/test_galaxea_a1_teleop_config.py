@@ -37,6 +37,7 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
         "arm_joint6",
     )
     assert config.bridge.mapping.sign == (-1.0, 1.0, 1.0, -1.0, 1.0, -1.0)
+    assert config.bridge.max_joint_action_step_rad == 0.35
     assert config.system.robot_service.endpoint == (
         "unix:///tmp/galaxea-a1-runtime/robot-service.sock"
     )
@@ -65,7 +66,6 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.eef.xyz_max == pytest.approx((0.47, 0.17, 0.50))
     assert config.collection.auto_reset_after_save is True
     assert config.collection.auto_reset_after_discard is True
-    assert config.collection.max_joint_action_step_rad == 0.35
     assert config.system.cameras.wrist.backend == "realsense"
     assert config.system.cameras.wrist.serial == "218622276998"
     assert config.system.cameras.wrist.crop is None
@@ -148,6 +148,11 @@ def test_realsense_is_required_by_collection_not_general_teleop():
             "bridge_startup_timeout_s = 65.0",
             "bridge_startup_timeout_s = 15.0",
             "must cover two System robot_service.device_connect_timeout_s",
+        ),
+        (
+            "max_joint_action_step_rad = 0.35",
+            "max_joint_action_step_rad = 0.0",
+            "must be finite and positive",
         ),
     ],
 )

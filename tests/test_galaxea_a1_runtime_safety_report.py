@@ -40,7 +40,7 @@ def test_safety_report_discloses_non_obvious_motion_controls():
     assert "max_joint_delta=1.7rad" in settings["eef_policy_ik"].default
     assert settings["gripper_position_jump_compatibility"].default == "mask=8"
     assert settings["lingbot_execution_gate"].default == (
-        "execute=true, step_mode=false, step_actions=false, max_model_calls=66"
+        "execute=true, step_mode=false, step_actions=false, max_model_calls=132"
     )
     assert settings["pi05_execution_gate"].default == (
         "execute=true, step_mode=false, step_actions=false, max_model_calls=53"
