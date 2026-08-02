@@ -10,7 +10,6 @@ MODEL_SELECTOR=""
 TASK_SELECTOR=""
 SCENE_NOTE_INPUT=""
 source "${ROOT}/scripts/runtime/a1_processes.sh"
-A1_REPO_PYTHONPATH="${ROOT}:${ROOT}/external/embodied-ops/src"
 
 runtime_args=()
 while (( $# > 0 )); do
@@ -122,7 +121,7 @@ export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 if [[ -n "${TASK_SELECTOR}" ]]; then
   SELECTED_TASK_ID="$(
     PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-      -m galaxea_a1_runtime.apps.task_selection \
+      -m embodied_ops.task_selection \
       --catalog "${TASK_CATALOG_PATH}" \
       --task-id "${TASK_SELECTOR}"
   )"
@@ -329,7 +328,7 @@ select_task() {
   local selected
   if ! selected="$(
     PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-      -m galaxea_a1_runtime.apps.task_selection \
+      -m embodied_ops.task_selection \
       --catalog "${TASK_CATALOG_PATH}"
   )"; then
     a1_fail "LingBot task selection cancelled; no model or motion runtime was started; the camera monitor remains available."

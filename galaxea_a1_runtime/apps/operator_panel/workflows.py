@@ -5,6 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from embodied_ops import STANDARD_COLLECTION_INTERACTION
 from embodied_ops.operator_panel import InputAction, WorkflowLaunch
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
@@ -39,11 +40,7 @@ def build_a1_workflow_launch(
                 "collect",
                 experiment,
             ),
-            input_actions=(
-                InputAction("enter", "Next / Save", "\n", "primary"),
-                InputAction("discard", "Discard", "d\n", "danger"),
-                InputAction("quit", "Quit", "q\n", "quiet"),
-            ),
+            input_actions=STANDARD_COLLECTION_INTERACTION.input_actions,
         )
 
     if workflow == "evaluate":

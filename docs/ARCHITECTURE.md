@@ -26,14 +26,17 @@ galaxea_a1_runtime.apps
 - `galaxea_a1_runtime/apps/` implements Teleop, LingBot, and OpenPI
   orchestration. Shared EEF-policy state and transforms live directly under
   `apps/`; model-specific packages remain adapters.
-- `models/` owns backend-independent artifact identity, provenance, manifests,
-  download, and validation. `inference/` owns the shared wire protocol.
+- `models/` owns A1 model descriptors, contract parsing, registry values, and
+  the thin composition of generic artifact and code-environment workflows.
+  `inference/` owns the A1 inference transports.
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
-- The pinned `external/embodied-ops` package owns hardware-independent collection,
-  evaluation-plan, task-registry, sample-timing, normalized camera-health, and
-  transactional artifact primitives. It defines no robot API and has no ROS or
-  LeRobot dependency.
+- The pinned `external/embodied-ops` package owns the standard CLI presentation,
+  collection interaction, task selection, evaluation progress, strict Operator
+  Panel catalog and Web presentation, contract digests, verified external
+  artifact/code-environment workflows, sample timing, normalized camera health,
+  and transactional artifact primitives. It defines no robot API and has no ROS
+  or LeRobot dependency.
 - The pinned `external/lerobot-robot-galaxea-a1` and
   `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
   LeRobot adapters. The Robot plugin also owns its private A1 Runtime transport;
@@ -49,16 +52,18 @@ devices, Torch, or a model checkout.
 
 ## Reusable workflow boundary
 
-`embodied-ops` is deliberately a workflow library, not an embodied-hardware
-standard. Its inputs are ordinary paths, identifiers, timestamps, episode
-decisions, and task IDs. It knows how to validate lifecycle transitions and
-publish complete artifacts, but it does not name joints, interpret actions,
-open devices, define datasets, or execute policies.
+`embodied-ops` is deliberately an operator-workflow standard, not an
+embodied-hardware abstraction. Its inputs are ordinary paths, identifiers,
+timestamps, episode decisions, task IDs, declarative form catalogs, and narrow
+adapter protocols. It standardizes CLI levels, task selection, Enter-to-Start/
+Save collection behavior, Web layout and form structure, progress, locked
+environment setup, and complete artifact publication. It does not name joints,
+interpret actions, open devices, define datasets, or execute policies.
 
 This repository supplies the A1 semantics around those primitives: the
 canonical observation/action schema, LeRobotDataset versions and conversions,
-camera pairing, reset behavior, task-catalog selection, model contracts, ROS ownership,
-and safety gates. Hardware interoperability uses LeRobot's existing `Robot`
+camera identities, reset behavior, task-catalog values, model contracts, ROS
+ownership, and safety gates. Hardware interoperability uses LeRobot's existing `Robot`
 and `Teleoperator` plugin contracts; the local A1 transport remains private to
 the A1 Robot plugin and Runtime.
 
@@ -188,9 +193,10 @@ its System-owned endpoint on the trusted LAN; it has request-integrity tokens
 but no user authentication or transport encryption and must not be exposed
 beyond that LAN. The
 repository-independent `embodied_ops.operator_panel` package in the pinned
-`external/embodied-ops` repository owns HTTP, static rendering, create-only
-document staging, subprocess supervision, and a small child presentation protocol
-for input readiness and typed progress. Its minimal adapter owns only catalog and
+`external/embodied-ops` repository owns the versioned catalog schema and form
+builders, HTTP, packaged static rendering, create-only document staging,
+subprocess supervision, and a small child presentation protocol for input
+readiness and typed progress. Its minimal adapter owns only catalog values and
 workflow launch contracts; camera health, configuration, and registration are
 independent optional providers. Document suffix and editor language come from the
 A1 provider rather than the generic core. Progress is display-only, retained by
@@ -422,15 +428,17 @@ bridge. Configuration is composed from five exclusive owners:
 System + inference backend + immutable model + task catalog + deployment
 ```
 
-Each supervisor exposes only the repository runtime source to its isolated
-backend interpreter; it never leaks the main virtual environment into a model
-environment. LingBot uses Python 3.12 and
+Each supervisor exposes only the repository runtime source and the pinned,
+dependency-free `embodied-ops` source used by its typed task-catalog contract to
+the isolated backend interpreter; it never leaks the main virtual environment
+into a model environment. LingBot uses Python 3.12 and
 OpenPI uses its pinned Python 3.11 environment, so the shared runtime import
 surface remains Python 3.11-parseable even though the main runtime environment
 is formally Python 3.12. Repository-owned ROS containers likewise receive only
-the runtime source through their fixed container `PYTHONPATH`. Workflow modules
-use the installed `embodied-ops` dependency only in the main application
-environment.
+the runtime source through their fixed container `PYTHONPATH`. The backend
+source path is one rendered lifecycle contract shared by the LingBot and OpenPI
+supervisors; model environments do not install or own a second version of
+`embodied-ops`.
 
 The backend pins source code and its dependency lock. The model descriptor pins
 one Hugging Face commit, checkpoint step, artifact format, complete file

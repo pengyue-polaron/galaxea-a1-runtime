@@ -5,13 +5,10 @@ from __future__ import annotations
 from typing import Any
 
 import numpy as np
+from embodied_ops import add_contract_digest, validate_exact_metadata
 
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
-from galaxea_a1_runtime.inference.protocol import (
-    add_contract_digest,
-    validate_exact_metadata,
-)
 
 
 PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v5"

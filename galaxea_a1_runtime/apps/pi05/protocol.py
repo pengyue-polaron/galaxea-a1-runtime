@@ -4,12 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from embodied_ops import add_contract_digest, validate_exact_metadata
+
 from galaxea_a1_runtime.apps.pi05.config_schema import Pi05Config
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
-from galaxea_a1_runtime.inference.protocol import (
-    add_contract_digest,
-    validate_exact_metadata,
-)
 from galaxea_a1_runtime.schema import A1_STATE_NAMES, EEF_ACTION_NAMES
 
 

@@ -5,6 +5,7 @@ from types import SimpleNamespace
 import pytest
 
 from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
+from galaxea_a1_runtime.apps.pi05.config_runtime import bash_config
 from galaxea_a1_runtime.apps.pi05 import probe as probe_module
 from galaxea_a1_runtime.apps.pi05.protocol import (
     PROTOCOL_VERSION,
@@ -61,6 +62,15 @@ def test_pi05_deployment_pins_final_checkpoint_and_shared_contracts():
     assert config.execution.max_model_calls == 53
     assert config.execution.execute_actions_per_inference == 10
     assert config.deployment_ready is True
+
+
+def test_pi05_shell_contract_exposes_first_party_backend_imports():
+    config = load_pi05_config(CONFIG, repo_root=REPO)
+
+    shell_values = bash_config(config)
+
+    expected = f"A1_REPO_PYTHONPATH={REPO}:{REPO}/external/embodied-ops/src"
+    assert expected in shell_values.splitlines()
 
 
 def test_pi05_config_rejects_unknown_keys(tmp_path):

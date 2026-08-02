@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from embodied_ops import STANDARD_COLLECTION_INTERACTION
 from embodied_ops.artifacts import PublishedOutputCleanupError
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
@@ -55,10 +56,7 @@ class TeleopEpisodeSession:
         self.config_reference = config_reference
 
     def record(self, episode_index: int) -> EpisodeCompletion:
-        warning(
-            f"Episode {episode_index} recording: "
-            "Enter=save, d+Enter=discard, q+Enter=quit"
-        )
+        warning(STANDARD_COLLECTION_INTERACTION.recording_notice(episode_index))
         front_reader, wrist_reader = self.cameras.readers
         try:
             with DirectLeRobotEpisode(

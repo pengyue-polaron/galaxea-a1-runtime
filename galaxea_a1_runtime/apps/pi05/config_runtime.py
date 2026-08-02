@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 from galaxea_a1_runtime.apps.pi05.config_schema import Pi05Config
-from galaxea_a1_runtime.configuration.base import number, shell_assign
+from galaxea_a1_runtime.configuration.base import (
+    discover_repo_root,
+    number,
+    shell_assign,
+)
 from galaxea_a1_runtime.configuration.system import render_shell_values
+from galaxea_a1_runtime.models.backend import isolated_backend_pythonpath
 
 
 def bash_config(config: Pi05Config) -> str:
+    repo_root = discover_repo_root(config.path)
     system_exports = render_shell_values(
         config.system,
         (
@@ -21,6 +27,7 @@ def bash_config(config: Pi05Config) -> str:
         ("MODEL_SESSION", config.session.model_tmux),
         ("MODEL_CHECKOUT", str(config.backend.source.checkout)),
         ("MODEL_PYTHON", str(config.backend.environment.python)),
+        ("A1_REPO_PYTHONPATH", isolated_backend_pythonpath(repo_root)),
         ("TASK_CATALOG_PATH", str(config.task_catalog.path)),
         ("MODEL_HOST", config.server.host),
         ("MODEL_PORT", str(config.server.port)),

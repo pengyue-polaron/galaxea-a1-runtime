@@ -6,6 +6,12 @@ import json
 from dataclasses import dataclass
 from pathlib import Path
 
+from embodied_ops import (
+    EvaluationPlan,
+    EvaluationProgress,
+    summarize_evaluation_progress,
+)
+
 from galaxea_a1_runtime.apps.lingbot.batch_config import (
     DEFAULT_BATCH_CONFIG,
     LingBotBatchConfig,
@@ -33,28 +39,34 @@ class LingBotValidBatchRun:
 @dataclass(frozen=True)
 class LingBotBatchProgress:
     valid_runs: tuple[LingBotValidBatchRun, ...]
-    total: int
+    plan: EvaluationPlan
 
     @property
-    def completed_sequences(self) -> tuple[int, ...]:
-        return tuple(sorted({run.sequence for run in self.valid_runs}))
+    def total(self) -> int:
+        return self.plan.total_slots
 
     @property
-    def duplicate_sequences(self) -> tuple[int, ...]:
-        counts: dict[int, int] = {}
-        for run in self.valid_runs:
-            counts[run.sequence] = counts.get(run.sequence, 0) + 1
-        return tuple(
-            sorted(sequence for sequence, count in counts.items() if count > 1)
+    def summary(self) -> EvaluationProgress:
+        return summarize_evaluation_progress(
+            self.plan,
+            tuple(run.sequence for run in self.valid_runs),
         )
 
     @property
+    def completed_sequences(self) -> tuple[int, ...]:
+        return self.summary.completed_sequences
+
+    @property
+    def duplicate_sequences(self) -> tuple[int, ...]:
+        return self.summary.duplicate_sequences
+
+    @property
     def completed_count(self) -> int:
-        return len(self.completed_sequences)
+        return self.summary.completed_count
 
     @property
     def pending_count(self) -> int:
-        return self.total - self.completed_count
+        return self.summary.pending_count
 
     def shell(self) -> str:
         values = (
@@ -91,7 +103,7 @@ def inspect_lingbot_batch_progress(
         valid_runs=tuple(
             sorted(valid_runs, key=lambda run: (run.sequence, run.run_id))
         ),
-        total=config.total_attempts,
+        plan=config.plan,
     )
 
 

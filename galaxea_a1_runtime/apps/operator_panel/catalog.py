@@ -5,7 +5,14 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-from embodied_ops.operator_panel import RepositoryDocumentStore
+from embodied_ops.operator_panel import (
+    PANEL_CATALOG_SCHEMA_VERSION,
+    RepositoryDocumentStore,
+    checkbox_field,
+    combobox_field,
+    select_field,
+    text_field,
+)
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
@@ -106,6 +113,7 @@ def build_a1_catalog(
             if task.distribution == "train"
         )
     return {
+        "schema_version": PANEL_CATALOG_SCHEMA_VERSION,
         "product": {"brand": "GALAXEA A1", "title": "Control"},
         "cameras": [
             {
@@ -172,18 +180,18 @@ def _registration_forms(
             "submit_label": "Register prompt",
             "confirm": "Register this prompt in the repository?",
             "fields": [
-                _select_field("catalog", "Catalog", prompt_catalog_options),
-                _text_field(
+                select_field("catalog", "Catalog", prompt_catalog_options),
+                text_field(
                     "prompt",
                     "Prompt",
                     placeholder="put the green apple into the bowl",
                 ),
                 {
-                    **_text_field("task_id", "Task ID", placeholder="green_apple_bowl"),
+                    **text_field("task_id", "Task ID", placeholder="green_apple_bowl"),
                     "derive_from": "prompt",
                     "transform": "snake_case",
                 },
-                _select_field(
+                select_field(
                     "distribution",
                     "Distribution",
                     [
@@ -217,13 +225,13 @@ def _workflow_forms(
             "description": "Record directly into the canonical LeRobot dataset.",
             "submit_label": "Start collection",
             "fields": [
-                _select_field(
+                select_field(
                     "config",
                     "Teleop config",
                     teleop_options,
                     default=TELEOP_CONFIG.as_posix(),
                 ),
-                _combobox_field(
+                combobox_field(
                     "experiment",
                     "Experiment",
                     experiment_options,
@@ -234,7 +242,7 @@ def _workflow_forms(
                     ),
                     depends_on="config",
                 ),
-                _combobox_field(
+                combobox_field(
                     "task",
                     "Task prompt",
                     collection_task_options,
@@ -254,15 +262,15 @@ def _workflow_forms(
             "description": "Run one tracked task and preserve its result.",
             "submit_label": "Start evaluation",
             "fields": [
-                _select_field(
+                select_field(
                     "config",
                     "Deployment config",
                     deployment_options,
                     default=LINGBOT_CONFIG.as_posix(),
                 ),
-                _select_field("model", "Model", model_options, required=False),
-                _select_field("task", "Task", task_options, depends_on="config"),
-                _text_field(
+                select_field("model", "Model", model_options, required=False),
+                select_field("task", "Task", task_options, depends_on="config"),
+                text_field(
                     "scene_note",
                     "Scene note",
                     placeholder="table centered, normal lighting",
@@ -277,24 +285,19 @@ def _workflow_forms(
             "description": "Execute the selected tracked evaluation plan.",
             "submit_label": "Start batch",
             "fields": [
-                _select_field(
+                select_field(
                     "config",
                     "Batch config",
                     batch_options,
                     default=LINGBOT_BATCH_CONFIG.as_posix(),
                 ),
-                _select_field("model", "Model", model_options, required=False),
-                _text_field(
+                select_field("model", "Model", model_options, required=False),
+                text_field(
                     "scene_note",
                     "Scene note",
                     placeholder="randomized setup A",
                 ),
-                {
-                    "name": "resume",
-                    "label": "Resume completed plan",
-                    "type": "checkbox",
-                    "default": False,
-                },
+                checkbox_field("resume", "Resume completed plan"),
             ],
         },
         {
@@ -307,7 +310,7 @@ def _workflow_forms(
             "tone": "danger",
             "confirm": "Run the selected repository A1 reset now?",
             "fields": [
-                _select_field(
+                select_field(
                     "pose",
                     "Pose config",
                     reset_options,
@@ -316,62 +319,6 @@ def _workflow_forms(
             ],
         },
     ]
-
-
-def _select_field(
-    name: str,
-    label: str,
-    options: list[dict[str, str]],
-    *,
-    default: str | None = None,
-    required: bool = True,
-    depends_on: str | None = None,
-) -> dict[str, Any]:
-    field: dict[str, Any] = {
-        "name": name,
-        "label": label,
-        "type": "select",
-        "required": required,
-        "options": options,
-    }
-    if default is not None:
-        field["default"] = default
-    if depends_on is not None:
-        field["depends_on"] = depends_on
-    return field
-
-
-def _text_field(name: str, label: str, *, placeholder: str) -> dict[str, Any]:
-    return {
-        "name": name,
-        "label": label,
-        "type": "text",
-        "required": True,
-        "placeholder": placeholder,
-    }
-
-
-def _combobox_field(
-    name: str,
-    label: str,
-    options: list[dict[str, str]],
-    *,
-    placeholder: str,
-    help_text: str,
-    depends_on: str | None = None,
-) -> dict[str, Any]:
-    field: dict[str, Any] = {
-        "name": name,
-        "label": label,
-        "type": "combobox",
-        "required": True,
-        "placeholder": placeholder,
-        "help_text": help_text,
-        "options": options,
-    }
-    if depends_on is not None:
-        field["depends_on"] = depends_on
-    return field
 
 
 def _experiment_options(

@@ -93,6 +93,8 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     shell_values = bash_config(config)
     assert "MODEL_SHUTDOWN_TIMEOUT=10" in shell_values
     assert f"RECORDING_OUTPUT_ROOT={config.recording.output_root}" in shell_values
+    expected_pythonpath = f"A1_REPO_PYTHONPATH={REPO}:{REPO}/external/embodied-ops/src"
+    assert expected_pythonpath in shell_values.splitlines()
     assert "MODEL_SESSION=" not in shell_values
     assert "TMUX_" not in shell_values
 

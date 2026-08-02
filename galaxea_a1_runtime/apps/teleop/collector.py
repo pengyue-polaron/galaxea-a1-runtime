@@ -24,6 +24,11 @@ configure_ros1_python(ROOT_DIR, include_system_site=False)
 
 import rospy
 
+from embodied_ops import (
+    EpisodeDecision,
+    STANDARD_COLLECTION_INTERACTION,
+    normalize_collection_start,
+)
 from embodied_ops.operator_panel import announce_input
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
@@ -38,8 +43,6 @@ from galaxea_a1_runtime.apps.teleop.collection_task import (
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
-    EpisodeDecision,
-    normalize_episode_decision,
     validate_experiment_name,
 )
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
@@ -103,20 +106,20 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             config_reference=config_reference,
         )
         while not rospy.is_shutdown():
-            announce_input(("enter", "quit"))
+            announce_input(STANDARD_COLLECTION_INTERACTION.start_action_ids)
             command = (
                 input(
                     style(
-                        f"  [{episode_index}] Enter=start recording, q=quit > ",
+                        STANDARD_COLLECTION_INTERACTION.start_prompt(episode_index),
                         Tone.STEP,
                     )
                 )
                 .strip()
                 .lower()
             )
-            if normalize_episode_decision(command) == EpisodeDecision.QUIT:
+            if normalize_collection_start(command) == EpisodeDecision.QUIT:
                 break
-            announce_input(("enter", "discard", "quit"))
+            announce_input(STANDARD_COLLECTION_INTERACTION.recording_action_ids)
             completion = episodes.record(episode_index)
             if completion.decision == EpisodeDecision.QUIT:
                 break

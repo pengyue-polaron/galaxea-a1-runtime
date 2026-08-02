@@ -4,7 +4,6 @@ set -eo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
 source "${ROOT}/scripts/runtime/a1_tmux.sh"
-A1_REPO_PYTHONPATH="${ROOT}"
 BASE_RUNTIME="${ROOT}/scripts/runtime/a1_joint_runtime.sh"
 CONFIG_PATH=""
 
@@ -107,7 +106,7 @@ select_task() {
   local selected
   if ! selected="$(
     PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
-      -m galaxea_a1_runtime.apps.task_selection \
+      -m embodied_ops.task_selection \
       --catalog "${TASK_CATALOG_PATH}"
   )"; then
     a1_fail "Pi0.5 task selection cancelled; no model or motion runtime was started; the camera monitor remains available."
