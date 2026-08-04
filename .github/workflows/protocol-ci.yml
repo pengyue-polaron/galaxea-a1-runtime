@@ -22,9 +22,9 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e ".[dev]"
+      - run: python -m pip install -e . build pytest ruff twine
         working-directory: packages/galaxea-a1-runtime-protocol
-      - run: pytest
+      - run: python -m pytest
         working-directory: packages/galaxea-a1-runtime-protocol
       - run: ruff check .
         working-directory: packages/galaxea-a1-runtime-protocol
