@@ -5,12 +5,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-from lerobot_robot_galaxea_a1 import (
+from galaxea_a1_runtime.apps.reset.config import A1HomePose, load_a1_home_pose
+from galaxea_a1_runtime.apps.teleop.pairing import (
     DEFAULT_GRIPPER_INPUT_KEY,
     DEFAULT_LEADER_JOINT_KEYS,
 )
-
-from galaxea_a1_runtime.apps.reset.config import A1HomePose, load_a1_home_pose
 from galaxea_a1_runtime.configuration.base import (
     boolean,
     float_tuple,
@@ -24,7 +23,6 @@ from galaxea_a1_runtime.configuration.base import (
     string_tuple,
 )
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig, TeleopLeaderConfig
-
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 

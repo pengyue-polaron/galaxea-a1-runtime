@@ -88,10 +88,10 @@ def _camera_config(*, depth: bool) -> SystemCamerasConfig:
 
 
 def test_camera_bridge_preserves_exact_raw_arrays_sequence_and_timestamps(
-    tmp_path: Path,
+    short_socket_dir: Path,
 ):
     config = _camera_config(depth=True)
-    socket_path = tmp_path / "camera.sock"
+    socket_path = short_socket_dir / "camera.sock"
     front_color = np.arange(6 * 8 * 3, dtype=np.uint8).reshape(6, 8, 3)
     front_depth = np.arange(6 * 8, dtype=np.uint16).reshape(6, 8)
     wrist_color = np.flip(front_color, axis=1).copy()
@@ -151,10 +151,10 @@ def test_camera_bridge_preserves_exact_raw_arrays_sequence_and_timestamps(
 
 
 def test_camera_bridge_rejects_a_consumer_with_a_different_camera_contract(
-    tmp_path: Path,
+    short_socket_dir: Path,
 ):
     config = _camera_config(depth=False)
-    socket_path = tmp_path / "camera.sock"
+    socket_path = short_socket_dir / "camera.sock"
     now = time.perf_counter()
     image = np.zeros((6, 8, 3), dtype=np.uint8)
     server = CameraBridgeServer(

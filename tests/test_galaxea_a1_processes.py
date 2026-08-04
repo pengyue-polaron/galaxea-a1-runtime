@@ -1,11 +1,17 @@
 from __future__ import annotations
 
+import shutil
 import subprocess
 from pathlib import Path
 
+import pytest
 
 REPO = Path(__file__).resolve().parents[1]
 PROCESSES = REPO / "scripts/runtime/a1_processes.sh"
+requires_setsid = pytest.mark.skipif(
+    shutil.which("setsid") is None,
+    reason="managed process-group tests require setsid",
+)
 
 
 def _bash(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
@@ -13,8 +19,10 @@ def _bash(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
         [
             "bash",
             "-c",
-            f'export A1_PROCESS_STATE_ROOT="{tmp_path / "state"}"\n'
-            f'source "{PROCESSES}"\n{body}',
+            (
+                f'export A1_PROCESS_STATE_ROOT="{tmp_path / "state"}"\n'
+                f'source "{PROCESSES}"\n{body}'
+            ),
         ],
         text=True,
         capture_output=True,
@@ -22,6 +30,7 @@ def _bash(tmp_path: Path, body: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+@requires_setsid
 def test_marked_process_group_starts_reports_and_stops(tmp_path: Path):
     result = _bash(
         tmp_path,
@@ -62,6 +71,7 @@ exit "${rc}"
     assert "Refusing to stop unmarked PID" in result.stderr
 
 
+@requires_setsid
 def test_emergency_cleanup_stops_every_marked_process(tmp_path: Path):
     result = _bash(
         tmp_path,
@@ -80,6 +90,7 @@ a1_process_stop_all_managed 2
     assert result.returncode == 0, result.stderr
 
 
+@requires_setsid
 def test_managed_cleanup_can_preserve_named_read_only_monitor(tmp_path: Path):
     result = _bash(
         tmp_path,

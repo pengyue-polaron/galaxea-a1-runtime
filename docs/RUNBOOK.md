@@ -196,13 +196,17 @@ just teleop-test
 ```
 
 Exercise all six joint directions and the continuous gripper over a small
-range. This starts the modified leader Teleoperator, the tracked relative-anchor
-processor, the A1 Robot plugin, and the supervised A1 Robot service as one owned
-control chain. Leader degree feedback is unwrapped across the encoder zero; a
+range. This starts the modified leader Teleoperator, the Runtime-owned
+relative-anchor processor, the narrow A1 Robot protocol client, and the
+supervised A1 Runtime service as one owned control chain. The first submitted
+command must exactly hold the A1's observed six joints and normalized gripper;
+relative mapping, configured bias, and leader gripper input begin on the second
+frame. Leader degree feedback is unwrapped across the encoder zero; a
 remaining processed joint jump above the tracked per-frame threshold stops the
 session before publication. The Robot reaches the Runtime-owned backend through
-the tracked local Unix socket; it does not load ROS or Runtime Python code. Do
-not substitute the generic `lerobot-teleoperate` command: in
+the lightweight `galaxea-a1-runtime-protocol` package and tracked local Unix
+socket; it does not load ROS or Runtime Python code. Do not substitute the
+generic `lerobot-teleoperate` command: in
 LeRobot 0.6 it uses identity processors and cannot safely pair leader degrees
 with A1 radians. Use `just logs` for failures and `just stop` when finished.
 

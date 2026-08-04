@@ -117,9 +117,9 @@ def test_openral_gateway_latches_chunk_boundary_failure() -> None:
 
 
 def test_openral_gateway_rejects_a_competing_client_and_stops_active_session(
-    tmp_path: Path,
+    short_socket_dir: Path,
 ) -> None:
-    socket_path = tmp_path / "openral-policy.sock"
+    socket_path = short_socket_dir / "openral-policy.sock"
     policy = _FakePolicy()
     gateway = OpenRalPolicyGateway(policy, socket_path=socket_path)  # type: ignore[arg-type]
     stop_requested = threading.Event()

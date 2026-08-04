@@ -45,14 +45,18 @@ Normal gripper applications publish only:
 App and policy code must never publish host commands directly. The relay is the
 only normal owner of both host command topics.
 
-The tracked Teleop bridge composes the out-of-tree LeRobot Teleoperator,
-pair-specific processor, and Robot. The plugins never import ROS or publish host
-commands. The Robot uses its A1-specific Unix-socket client to reach the Runtime-owned
-Robot service. An observation session attaches only read-only feedback and relay-status
+The tracked Teleop bridge composes the out-of-tree LeRobot Teleoperator and
+Robot with the Runtime-owned pair processor. The plugins never import ROS or
+publish host commands. The Robot uses the lightweight A1 protocol client to
+reach the Runtime-owned service; the server, leases, watchdog, and socket
+security stay here. An observation session attaches only read-only feedback and relay-status
 subscribers and does not require the relay to be `LOCKED`. Acquiring the exclusive
 command lease separately requires fresh feedback and a fresh `LOCKED` relay, refuses a
 competing `ACTIVE`/`ARMING` owner, and only then creates staged-control resources. The
 first command stages the current named-joint hold before enabling motion.
+That first paired command copies the current observed gripper as well as every
+current joint; leader-relative mapping, configured bias, and leader gripper
+normalization begin only on the following frame.
 
 Every command carries a session id, contiguous sequence, and monotonic timestamp. A
 command-inactivity deadline is independent of session heartbeats, so a live but idle

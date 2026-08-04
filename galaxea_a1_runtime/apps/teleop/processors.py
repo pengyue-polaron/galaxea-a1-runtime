@@ -1,12 +1,11 @@
-"""Teleop processor composition for the out-of-tree LeRobot plugins."""
+"""Runtime-owned composition for the SO-Leader and A1 Robot pair."""
 
 from __future__ import annotations
 
-from lerobot_robot_galaxea_a1 import (
+from galaxea_a1_runtime.apps.teleop.pairing import (
     GalaxeaA1TeleopMapping,
     make_galaxea_a1_processors,
 )
-
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 

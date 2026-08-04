@@ -2,29 +2,33 @@ from __future__ import annotations
 
 import json
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from types import ModuleType, SimpleNamespace
-from typing import Mapping
 
 import pytest
-from lerobot_robot_galaxea_a1.runtime.contracts import (
+from galaxea_a1_protocol.contracts import (
     A1_CONTROL_FEATURE_NAMES,
     HealthReport,
     HealthStatus,
+)
+from galaxea_a1_protocol.contracts import (
     RuntimeContractError as ContractError,
+)
+from galaxea_a1_protocol.contracts import (
     RuntimeLifecycleError as LifecycleError,
 )
 
-from galaxea_a1_runtime.configuration.system import load_system_config
-from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
-from galaxea_a1_runtime.apps.robot_service.server import build_server
 from galaxea_a1_runtime.apps.robot_service.device import (
-    A1RuntimeDevice,
     GRIPPER_FEATURE_KEY,
     JOINT_FEATURE_KEYS,
+    A1RuntimeDevice,
     _RosA1Session,
 )
+from galaxea_a1_runtime.apps.robot_service.server import build_server
+from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
 
 REPO = Path(__file__).resolve().parents[1]
 SYSTEM_CONFIG = REPO / "configs/system/a1.toml"

@@ -1,0 +1,52 @@
+[project]
+name = "galaxea-a1-runtime-protocol"
+version = "0.1.0"
+description = "Lightweight wire contract and client for the Galaxea A1 Runtime"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+license = "Apache-2.0"
+authors = [{ name = "PengYue" }]
+keywords = ["galaxea", "a1", "robotics", "grpc"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Typing :: Typed",
+]
+dependencies = [
+    "grpcio>=1.82.0,<2.0.0",
+    "protobuf>=7.35.0,<8.0.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/pengyue-polaron/galaxea-a1-runtime"
+Repository = "https://github.com/pengyue-polaron/galaxea-a1-runtime"
+Issues = "https://github.com/pengyue-polaron/galaxea-a1-runtime/issues"
+
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+galaxea_a1_protocol = ["py.typed", "v1/*.proto"]
+
+[dependency-groups]
+dev = [
+    "build>=1.2",
+    "pytest>=9.0",
+    "ruff>=0.14",
+    "twine>=6.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+extend-exclude = ["src/galaxea_a1_protocol/v1/*_pb2*.py"]

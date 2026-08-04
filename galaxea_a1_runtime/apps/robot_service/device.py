@@ -8,14 +8,16 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Protocol
 
-from lerobot_robot_galaxea_a1.runtime.contracts import (
+from galaxea_a1_protocol.contracts import (
     A1_CONTROL_FEATURE_NAMES,
     FeatureSpec,
     HealthReport,
     HealthStatus,
-    RuntimeLifecycleError as LifecycleError,
     RuntimeManifest,
     validate_feature_values,
+)
+from galaxea_a1_protocol.contracts import (
+    RuntimeLifecycleError as LifecycleError,
 )
 
 from galaxea_a1_runtime.configuration.base import discover_repo_root

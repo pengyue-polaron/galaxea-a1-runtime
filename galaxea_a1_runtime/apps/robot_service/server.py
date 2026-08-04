@@ -8,9 +8,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from lerobot_robot_galaxea_a1.runtime.server import A1RuntimeServer
-
 from galaxea_a1_runtime.apps.robot_service.device import A1RuntimeDevice, SessionFactory
+from galaxea_a1_runtime.apps.robot_service.runtime_server import A1RuntimeServer
 from galaxea_a1_runtime.configuration.system import SystemConfig, load_system_config
 from galaxea_a1_runtime.console import ArgumentParser, info, success
 
@@ -50,7 +49,7 @@ def serve(system: SystemConfig, *, stop_requested: threading.Event) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = ArgumentParser(description="Serve the Galaxea A1 Robot plugin")
+    parser = ArgumentParser(description="Serve the Galaxea A1 Runtime protocol")
     parser.add_argument("--system-config", type=Path, required=True)
     args = parser.parse_args(argv)
     system = load_system_config(args.system_config)

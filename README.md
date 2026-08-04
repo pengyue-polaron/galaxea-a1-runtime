@@ -62,18 +62,21 @@ follow the acceptance and workspace checks in the
 
 | Repository | Responsibility |
 | --- | --- |
-| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent collection, evaluation, and atomic artifact workflows |
+| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent workflow, artifact, and shared LeRobot format mechanics |
 | [lerobot-robot-galaxea-a1](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1) | Auto-discovered LeRobot `Robot` client for the A1 Runtime |
 | [lerobot-teleoperator-galaxea-a1-so-leader](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader) | Auto-discovered LeRobot `Teleoperator` for the modified SO-101 leader |
 
-The Robot plugin communicates with this Runtime through its own A1-specific local
-Unix-socket transport. It does not import the Runtime package or own ROS. The
+The Robot plugin communicates through the lightweight
+`galaxea-a1-runtime-protocol` package released from this repository. It does
+not import the Runtime package or own ROS; the Runtime owns the server, leases,
+watchdog, and Unix-socket security. The
 Teleoperator plugin owns only its serial bus and reports truthful leader units.
 
 Both plugins follow LeRobot's third-party discovery conventions. The A1 pair
-must still be composed by this Runtime: LeRobot 0.6's generic CLI selects
-identity processors, while this setup requires pair-specific degree-to-radian,
-relative-anchor, sign, scale, bias, limit, and gripper mapping.
+and its first-frame hold/relative mapping processor are composed by this
+Runtime: LeRobot 0.6's generic CLI selects identity processors, while this
+setup requires pair-specific degree-to-radian, relative-anchor, sign, scale,
+bias, limit, and gripper mapping.
 
 ## Hardware
 

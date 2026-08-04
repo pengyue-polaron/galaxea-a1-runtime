@@ -1,0 +1,36 @@
+name: protocol-ci
+
+on:
+  push:
+    paths:
+      - "packages/galaxea-a1-runtime-protocol/**"
+      - ".github/workflows/protocol-ci.yml"
+  pull_request:
+    paths:
+      - "packages/galaxea-a1-runtime-protocol/**"
+      - ".github/workflows/protocol-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install --upgrade pip
+      - run: python -m pip install -e ".[dev]"
+        working-directory: packages/galaxea-a1-runtime-protocol
+      - run: pytest
+        working-directory: packages/galaxea-a1-runtime-protocol
+      - run: ruff check .
+        working-directory: packages/galaxea-a1-runtime-protocol
+      - run: ruff format --check .
+        working-directory: packages/galaxea-a1-runtime-protocol
+      - run: python -m build
+        working-directory: packages/galaxea-a1-runtime-protocol
+      - run: twine check dist/*
+        working-directory: packages/galaxea-a1-runtime-protocol

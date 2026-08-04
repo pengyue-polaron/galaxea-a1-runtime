@@ -44,8 +44,10 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
   the A1 panel adapter, catalog values, validators, and hardware commands.
 - Do not patch `third_party/lerobot` for A1 behavior. Hardware-independent
   collection/evaluation workflows and the two LeRobot adapters live in the pinned
-  first-party repositories under `external/`. The Robot plugin owns its private
-  A1 Runtime transport; ROS, hardware, and safety behavior stays here.
+  first-party repositories under `external/`. The lightweight A1 wire contract
+  is released from `packages/galaxea-a1-runtime-protocol`; the Robot plugin owns
+  only its LeRobot adapter/client use. Server sessions, leases, watchdogs, ROS,
+  hardware, pairing policy, and safety behavior stay here.
 - Reuse `galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python` before ROS1
   imports; do not duplicate path surgery.
 - Keep runtime modules parseable as Python 3.11 even though the main environment

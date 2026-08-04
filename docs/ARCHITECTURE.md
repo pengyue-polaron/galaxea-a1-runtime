@@ -35,15 +35,19 @@ galaxea_a1_runtime.apps
   collection interaction, task selection, evaluation progress, strict Operator
   Panel catalog and Web presentation, contract digests, verified external
   artifact/code-environment workflows, sample timing, normalized camera health,
-  and transactional artifact primitives. It defines no robot API and has no ROS
-  or LeRobot dependency.
+  transactional artifact primitives, and shared LeRobot v3 validation/v2.1
+  format conversion behind an optional extra. It defines no robot API and has
+  no ROS dependency.
 - The pinned `external/lerobot-robot-galaxea-a1` and
   `external/lerobot-teleoperator-galaxea-a1-so-leader` packages own only their
-  LeRobot adapters. The Robot plugin also owns its private A1 Runtime transport;
-  Galaxea A1 Runtime hosts that service and remains the ROS/safety/process composition root.
+  LeRobot adapters. The Robot plugin depends on the lightweight protocol/client
+  distribution released from `packages/galaxea-a1-runtime-protocol`; this
+  Runtime owns the server, sessions, leases, watchdog, ROS, safety, and process
+  composition.
 - `configuration/`, schema, safety, and collection modules remain hardware-free.
 - `lerobot/` owns direct LeRobotDataset recording, atomic episode commits, and
-  deterministic derived packages.
+  deterministic derived packages, while `embodied-ops` supplies the shared
+  LeRobot file-graph and format mechanics.
 - `third_party/` contains pinned vendor snapshots, not A1-specific behavior.
 
 Heavy dependencies are loaded only at hardware or model boundaries. Static
@@ -57,15 +61,16 @@ embodied-hardware abstraction. Its inputs are ordinary paths, identifiers,
 timestamps, episode decisions, task IDs, declarative form catalogs, and narrow
 adapter protocols. It standardizes CLI levels, task selection, Enter-to-Start/
 Save collection behavior, Web layout and form structure, progress, locked
-environment setup, and complete artifact publication. It does not name joints,
-interpret actions, open devices, define datasets, or execute policies.
+environment setup, complete artifact publication, and shared dataset-format
+mechanics. It does not name joints, interpret actions, open devices, define a
+robot schema/provenance policy, or execute policies.
 
 This repository supplies the A1 semantics around those primitives: the
-canonical observation/action schema, LeRobotDataset versions and conversions,
+canonical observation/action schema, LeRobotDataset policy and provenance,
 camera identities, reset behavior, task-catalog values, model contracts, ROS
 ownership, and safety gates. Hardware interoperability uses LeRobot's existing `Robot`
-and `Teleoperator` plugin contracts; the local A1 transport remains private to
-the A1 Robot plugin and Runtime.
+and `Teleoperator` plugin contracts. The A1 wire schema and thin client are a
+lightweight distribution in this repository; the server is Runtime-only.
 
 ## Configuration graph
 
@@ -129,9 +134,9 @@ prompt file.
 
 ```text
 LeRobot Robot plugin
-  -> plugin-private A1 Runtime client
+  -> galaxea-a1-runtime-protocol client
   -> A1-specific gRPC over System-owned Unix socket
-  -> A1 Runtime Robot service
+  -> Runtime-owned server/session/lease/watchdog
   -> ROS staged tracker -> locked relay -> host driver
 ```
 
@@ -288,8 +293,10 @@ Robot can submit it to the Runtime.
 The production Teleop bridge is the pair composition root. It constructs the
 auto-discovered Teleoperator and Robot plugins, then applies LeRobot's
 teleoperator-action and robot-action processor ordering. The first processed
-action is the current A1 pose and normalized gripper state; the Robot sends that hold
-through its private local transport. The A1 Robot service alone attaches to ROS and
+action is the exact current A1 joint pose and current normalized gripper state,
+even when configured bias or the leader gripper differs. Only the second frame
+begins relative mapping and rate checks. The Robot sends the hold through the
+lightweight protocol client. The A1 Runtime service alone attaches to ROS and
 requests the relay. The previous in-app joint mapping and ROS publishers are not
 retained as a second control path. Generic LeRobot 0.6 CLI entrypoints use
 identity processors and are not valid for this degree-to-radian hardware pair.
@@ -367,7 +374,10 @@ Canonical image storage is always video and is therefore not an operator
 configuration option. Before ROS or cameras start, dataset preflight validates
 the task table, contiguous episode graph, Parquet row counts and schemas, and
 every referenced data/video payload. `just dataset-doctor EXPERIMENT` exposes
-the same hardware-free validation explicitly.
+the same hardware-free validation explicitly. Shared LeRobot graph traversal,
+path safety, Parquet accounting, v2.1 episode layout, and video slicing come
+from `embodied-ops[lerobot-dataset]`; this Runtime supplies the A1 feature,
+task, provenance, derivation, and publication constraints.
 
 This canonical dataset intentionally stores the richest model-agnostic A1
 observation and the command actually sent by Teleop. A training adapter can

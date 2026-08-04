@@ -4,27 +4,25 @@ import math
 import threading
 from pathlib import Path
 
+import lerobot_teleoperator_galaxea_a1_so_leader.galaxea_a1_so_leader as leader_module
 import pytest
-from lerobot_robot_galaxea_a1.runtime.contracts import (
+from galaxea_a1_protocol.contracts import (
     FeatureSpec,
     HealthReport,
     HealthStatus,
     RuntimeManifest,
 )
-from lerobot_robot_galaxea_a1.runtime.server import A1RuntimeServer
 from lerobot_robot_galaxea_a1 import GalaxeaA1, GalaxeaA1Config
 from lerobot_teleoperator_galaxea_a1_so_leader import (
     GalaxeaA1SOLeader,
     GalaxeaA1SOLeaderConfig,
 )
 
-import lerobot_teleoperator_galaxea_a1_so_leader.galaxea_a1_so_leader as leader_module
-
 import galaxea_a1_runtime.apps.teleop.bridge as bridge_module
+from galaxea_a1_runtime.apps.robot_service.runtime_server import A1RuntimeServer
 from galaxea_a1_runtime.apps.teleop.bridge import run_teleop_session
 from galaxea_a1_runtime.apps.teleop.processors import make_a1_teleop_processors
 from galaxea_a1_runtime.teleop.config import load_teleop_config
-
 
 REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "configs/teleop/a1_so100.toml"
@@ -223,7 +221,7 @@ def test_tracked_bridge_wires_both_plugin_configs_and_processor(
 
 def test_offline_lerobot_plugins_run_one_composed_control_session(
     monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+    short_socket_dir: Path,
 ) -> None:
     config = load_teleop_config(CONFIG, repo_root=REPO)
     stop_requested = threading.Event()
@@ -237,7 +235,7 @@ def test_offline_lerobot_plugins_run_one_composed_control_session(
         lambda **kwargs: OfflineLeaderBus(**kwargs, frames=frames),
     )
     device = OfflineA1RuntimeDevice(stop_requested)
-    endpoint = f"unix://{tmp_path / 'a1.sock'}"
+    endpoint = f"unix://{short_socket_dir / 'a1.sock'}"
     server = A1RuntimeServer(device, endpoint=endpoint, lease_timeout_s=1.0)
     server.start()
     try:
