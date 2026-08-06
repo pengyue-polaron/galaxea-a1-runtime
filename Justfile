@@ -176,7 +176,15 @@ derive config target="all":
         --config "{{config}}" \
         --target "{{target}}"
 
-export-v21 experiment:
-    {{vpy}} -m galaxea_a1_runtime.cli dataset export-v21 \
-        --repo-root "{{repo}}" \
-        "{{experiment}}"
+export-v21 experiment target="joint-v2.1":
+    #!/usr/bin/env bash
+    set -euo pipefail
+    if [[ "{{target}}" == "joint-v2.1" ]]; then
+        {{vpy}} -m galaxea_a1_runtime.cli dataset export-v21 \
+            --repo-root "{{repo}}" \
+            "{{experiment}}"
+    else
+        {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
+            --config "{{repo}}/configs/datasets/{{experiment}}_derivatives.toml" \
+            --target "{{target}}"
+    fi
