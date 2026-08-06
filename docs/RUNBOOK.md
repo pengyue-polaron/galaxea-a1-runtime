@@ -135,7 +135,9 @@ The same configuration registry is available from the unified CLI:
 .venv/bin/galaxea-a1-runtime hardware
 .venv/bin/galaxea-a1-runtime collect EXPERIMENT --task "TASK"
 .venv/bin/galaxea-a1-runtime dataset doctor EXPERIMENT
+.venv/bin/galaxea-a1-runtime dataset doctor EXPERIMENT --json
 .venv/bin/galaxea-a1-runtime dataset export-v21 EXPERIMENT
+.venv/bin/galaxea-a1-runtime dataset export-v21 EXPERIMENT --json
 .venv/bin/galaxea-a1-runtime evaluate TASK_ID --scene-note "SCENE"
 .venv/bin/galaxea-a1-runtime batch configs/runs/lingbot/mango_placement.toml \
   --scene-note "SCENE" --resume
@@ -272,6 +274,7 @@ After quitting:
 ```bash
 just stop
 just dataset-doctor EXPERIMENT
+just dataset-doctor EXPERIMENT --json
 find data/datasets/EXPERIMENT -maxdepth 3 -type f | sort | head
 .venv/bin/python - <<'PY'
 from pathlib import Path
@@ -333,6 +336,7 @@ Then build all derivatives, or one independently:
 just derive configs/datasets/EXPERIMENT_derivatives.toml
 just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v3
 just export-v21 EXPERIMENT
+just export-v21 EXPERIMENT --json
 just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
 ```
 

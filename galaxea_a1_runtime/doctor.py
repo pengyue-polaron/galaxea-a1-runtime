@@ -11,13 +11,14 @@ import re
 import tomllib
 from pathlib import Path
 
+from embodied_ops import CheckResult as Check
+
 from galaxea_a1_runtime.configuration.paths import (
     LINGBOT_CONFIG,
     PI05_CONFIG,
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.constants import SAFE_RELAY_SCRIPT
-from galaxea_a1_runtime.runtime.health_checks import Check
 
 GIT_COMMIT = re.compile(r"^[0-9a-f]{40}$")
 

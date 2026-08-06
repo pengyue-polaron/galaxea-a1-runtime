@@ -18,11 +18,11 @@ from galaxea_a1_runtime.kinematics import (
 )
 from embodied_ops.artifacts import (
     atomic_output_directory,
+    directory_sha256,
     file_sha256,
 )
 from galaxea_a1_runtime.lerobot.dataset_package import (
     copy_dataset_tree,
-    dataset_digest,
     namespace_source_provenance,
     portable_metadata_id,
     read_json,
@@ -209,7 +209,10 @@ def _build_eef_v3_dataset(
     (target_root / "TRAINING.md").write_text(
         _training_doc(gripper_stroke_min_mm, gripper_stroke_max_mm), encoding="utf-8"
     )
-    package_sha256 = dataset_digest(target_root, exclude={Path("meta/eef.json")})
+    package_sha256 = directory_sha256(
+        target_root,
+        exclude={Path("meta/eef.json")},
+    )
     manifest["package_sha256"] = package_sha256
     write_json(target_root / "meta/eef.json", manifest)
 

@@ -27,6 +27,8 @@ import rospy
 from embodied_ops import (
     EpisodeDecision,
     STANDARD_COLLECTION_INTERACTION,
+    announce_collection_session,
+    announce_collection_summary,
     normalize_collection_start,
 )
 from embodied_ops.operator_panel import announce_input
@@ -79,6 +81,18 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         {"collection_lifecycle": collection_lifecycle_provenance(config)},
     )
     task = load_or_prompt_task(existing.tasks, provided_task=task)
+    episode_index = existing.total_episodes
+    announce_collection_session(
+        experiment=experiment,
+        task=task,
+        repo_id=identity.repo_id,
+        dataset_root=str(identity.target_root),
+        next_episode=episode_index,
+        configuration=(
+            "contract=canonical A1 state and absolute joint action "
+            f"· agent_view_roi={'full-frame' if front_crop is None else front_crop.xywh}"
+        ),
+    )
 
     rospy.init_node("a1_teleop_collect", anonymous=False, disable_signals=True)
     ros_state = RosTeleopState(config)
@@ -86,7 +100,9 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
     success("ROS state ready.")
 
-    episode_index = existing.total_episodes
+    saved = 0
+    discarded = 0
+    saved_frames = 0
     cameras = TeleopCameraSession(config)
     try:
         step("Starting cameras")
@@ -97,14 +113,6 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             reset_for_next_episode(config.path)
             ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
             success("Pre-collection Reset complete; fresh ROS state ready.")
-        _print_collection_summary(
-            experiment=experiment,
-            task=task,
-            dataset_root=identity.target_root,
-            repo_id=identity.repo_id,
-            front_crop=front_crop,
-            episode_index=episode_index,
-        )
         episodes = TeleopEpisodeSession(
             config=config,
             identity=identity,
@@ -133,35 +141,23 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             if completion.decision == EpisodeDecision.QUIT:
                 break
             if completion.decision == EpisodeDecision.SAVE:
+                saved += 1
+                saved_frames += completion.frame_count
                 episode_index += 1
+            elif completion.decision == EpisodeDecision.DISCARD:
+                discarded += 1
             if completion.reset_required:
                 reset_for_next_episode(config.path)
     except (KeyboardInterrupt, EOFError):
         print()
-        info(f"Collection stopped. Next episode index: {episode_index}.")
     finally:
         cameras.close()
+    announce_collection_summary(
+        saved=saved,
+        discarded=discarded,
+        saved_frames=saved_frames,
+    )
     return 0
-
-
-def _print_collection_summary(
-    *,
-    experiment: str,
-    task: str,
-    dataset_root: Path,
-    repo_id: str,
-    front_crop,
-    episode_index: int,
-) -> None:
-    print()
-    info(f"Experiment: {experiment}")
-    info(f"Task: {task}")
-    info("Contract: canonical A1 state and absolute joint action")
-    info(f"LeRobot repo ID: {repo_id}")
-    info(f"Output: {dataset_root}")
-    info(f"AgentView ROI: {'full frame' if front_crop is None else front_crop.xywh}")
-    info(f"Next episode: {episode_index}; Ctrl+C quits.")
-    print()
 
 
 def reset_for_next_episode(teleop_config: Path) -> None:

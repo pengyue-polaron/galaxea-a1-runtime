@@ -33,6 +33,8 @@ class RecordedEpisode:
     frame_count: int
     sampled_frame_count: int
     trimmed_frame_count: int
+    elapsed_s: float
+    effective_fps: float
     decision: EpisodeDecision
     actions: tuple[tuple[float, ...], ...]
 
@@ -188,10 +190,13 @@ def record_episode(
         if sleep_s > 0:
             time.sleep(sleep_s)
 
+    elapsed_s = time.perf_counter() - t0
     return RecordedEpisode(
         frame_count=stored_frames,
         sampled_frame_count=sampled_frames,
         trimmed_frame_count=trimmer.result.trimmed_frames,
+        elapsed_s=elapsed_s,
+        effective_fps=sampled_frames / elapsed_s if elapsed_s > 0 else 0.0,
         decision=normalize_episode_decision(user_input),
         actions=tuple(actions),
     )

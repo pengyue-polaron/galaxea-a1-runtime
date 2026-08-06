@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import argparse
-import json
 from pathlib import Path
+
+from embodied_ops import print_dataset_report, standard_dataset_report
 
 from galaxea_a1_runtime.apps.teleop.collection_task import normalize_collection_task
 from galaxea_a1_runtime.apps.teleop.dataset_contract import direct_dataset_identity
@@ -40,15 +41,15 @@ def dataset_report(
     )
     if state.total_episodes == 0 and not allow_absent:
         raise ValueError(f"canonical dataset does not exist: {identity.target_root}")
-    return {
-        "status": "PASS",
-        "experiment": identity.experiment,
-        "root": str(identity.target_root),
-        "repo_id": identity.repo_id,
-        "episodes": state.total_episodes,
-        "frames": state.total_frames,
-        "tasks": list(state.tasks),
-    }
+    return standard_dataset_report(
+        robot="galaxea-a1",
+        experiment=identity.experiment,
+        root=str(identity.target_root),
+        repo_id=identity.repo_id,
+        episodes=state.total_episodes,
+        frames=state.total_frames,
+        tasks=state.tasks,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -57,6 +58,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--config", type=Path)
     parser.add_argument("--experiment", required=True)
     parser.add_argument("--task")
+    parser.add_argument("--json", action="store_true")
     parser.add_argument("--allow-absent", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
 
@@ -64,18 +66,13 @@ def main(argv: list[str] | None = None) -> int:
         root = args.repo_root.resolve()
         config_path = args.config or default_config_path(root)
         config = load_teleop_config(config_path, repo_root=root)
-        print(
-            json.dumps(
-                dataset_report(
-                    config,
-                    experiment=args.experiment,
-                    task=args.task,
-                    allow_absent=args.allow_absent,
-                ),
-                indent=2,
-                sort_keys=True,
-            )
+        report = dataset_report(
+            config,
+            experiment=args.experiment,
+            task=args.task,
+            allow_absent=args.allow_absent,
         )
+        print_dataset_report(report, json_output=args.json)
     except (OSError, RuntimeError, ValueError) as exc:
         failure(str(exc))
         return 2

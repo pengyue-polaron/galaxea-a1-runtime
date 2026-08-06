@@ -2,22 +2,14 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable
-from dataclasses import asdict, dataclass
 from typing import Any
 
-from galaxea_a1_runtime.console import padded_label
+from embodied_ops import CheckResult as Check
+
 from galaxea_a1_runtime.constants import ARM_JOINT_COUNT, IDLE_TIMEOUT_CODE
 from galaxea_a1_runtime.runtime.relay import decode_relay_status
 from galaxea_a1_runtime.safety import validate_arm_control_command
-
-
-@dataclass(frozen=True)
-class Check:
-    name: str
-    level: str
-    detail: str
 
 
 def arm_control_result(
@@ -175,28 +167,6 @@ def add_check(
 
 def add_level(checks: list[Check], name: str, level: str, detail: str) -> None:
     checks.append(Check(name, level, detail))
-
-
-def checks_to_json(checks: list[Check]) -> str:
-    return json.dumps([asdict(item) for item in checks], indent=2, sort_keys=True)
-
-
-def checks_exit_code(checks: list[Check]) -> int:
-    return 1 if any(item.level == "FAIL" for item in checks) else 0
-
-
-def print_checks(checks: list[Check]) -> None:
-    width = max((len(item.name) for item in checks), default=0)
-    for item in checks:
-        print(f"{padded_label(item.level)} {item.name:<{width}}  {item.detail}")
-
-
-def finish_checks(checks: list[Check], *, json_output: bool) -> int:
-    if json_output:
-        print(checks_to_json(checks))
-    else:
-        print_checks(checks)
-    return checks_exit_code(checks)
 
 
 def motor_status_level(msg: Any) -> tuple[str, str]:

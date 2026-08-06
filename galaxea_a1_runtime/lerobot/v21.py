@@ -6,7 +6,7 @@ import shutil
 from pathlib import Path
 from typing import Any
 
-from embodied_ops.artifacts import atomic_output_directory
+from embodied_ops.artifacts import atomic_output_directory, directory_sha256
 from embodied_ops.datasets.lerobot import (
     V21_CHUNK_SIZE as CHUNK_SIZE,
 )
@@ -18,7 +18,6 @@ from embodied_ops.datasets.lerobot import (
 )
 
 from galaxea_a1_runtime.lerobot.dataset_package import (
-    dataset_digest,
     portable_metadata_id,
     read_json,
     write_json,
@@ -51,7 +50,7 @@ def export_v21_dataset(
             {
                 "repo_id": repo_id,
                 "root": str(final_target),
-                "sha256": dataset_digest(staging),
+                "sha256": directory_sha256(staging),
             }
         )
         if archive_path is not None:

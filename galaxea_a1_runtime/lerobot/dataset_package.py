@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import shutil
@@ -153,18 +152,6 @@ def json_value(value: Any) -> Any:
     if isinstance(value, (list, tuple)):
         return [json_value(item) for item in value]
     return value
-
-
-def dataset_digest(root: Path, *, exclude: set[Path] | None = None) -> str:
-    excluded = exclude or set()
-    digest = hashlib.sha256()
-    for path in sorted(item for item in root.rglob("*") if item.is_file()):
-        relative = path.relative_to(root)
-        if relative in excluded:
-            continue
-        digest.update(str(relative).encode())
-        digest.update(file_sha256(path).encode())
-    return digest.hexdigest()
 
 
 def write_tar_archive(

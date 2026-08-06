@@ -32,9 +32,11 @@ check:
     {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     just test
 
+# List tracked operator configurations.
 operator-configs:
     {{vpy}} -m galaxea_a1_runtime.cli configs --repo-root "{{repo}}"
 
+# Open the Operator Panel.
 panel:
     {{vpy}} -m galaxea_a1_runtime.cli panel --repo-root "{{repo}}"
 
@@ -71,6 +73,7 @@ model-verify config:
 
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
+# Check configured serial devices and cameras without moving the robot.
 hardware *args:
     {{vpy}} -m galaxea_a1_runtime.cli hardware --repo-root "{{repo}}" {{args}}
 
@@ -84,6 +87,7 @@ camera-check *args:
     trap 'scripts/apps/cameras/a1_camera_web_runtime.sh start' EXIT
     {{vpy}} scripts/apps/cameras/a1_camera_diagnostics.py {{args}}
 
+# Start, stop, inspect, or read logs from the persistent cameras.
 cameras action="start":
     scripts/apps/cameras/a1_camera_web_runtime.sh "{{action}}"
 
@@ -91,6 +95,7 @@ eef-test:
     scripts/runtime/a1_joint_runtime.sh services
     scripts/runtime/a1_joint_runtime.sh eef-nudge --execute
 
+# Reset and collect episodes into one experiment.
 collect experiment task:
     scripts/apps/teleop/a1_teleop_runtime.sh \
         --task "{{task}}" \
@@ -103,6 +108,7 @@ teleop-test:
     source {{repo}}/scripts/runtime/a1_console.sh
     a1_info "Teleop is live. Check leader keys with: just logs"
 
+# Move the robot to its tracked collection reset state.
 reset:
     scripts/apps/teleop/a1_teleop_runtime.sh reset
 
@@ -151,6 +157,7 @@ offline-eval run_id="":
 teacher-force run_id="":
     scripts/apps/eef_policy_teacher_forcing.sh {{run_id}}
 
+# Stop repository-owned motion and inference runtimes.
 stop:
     scripts/apps/teleop/a1_teleop_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true
@@ -166,25 +173,19 @@ logs:
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
-dataset-doctor experiment:
+# Validate a canonical dataset.
+dataset-doctor experiment *args:
     {{vpy}} -m galaxea_a1_runtime.cli dataset doctor \
         --repo-root "{{repo}}" \
-        "{{experiment}}"
+        "{{experiment}}" {{args}}
 
 derive config target="all":
     {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
         --config "{{config}}" \
         --target "{{target}}"
 
-export-v21 experiment target="joint-v2.1":
-    #!/usr/bin/env bash
-    set -euo pipefail
-    if [[ "{{target}}" == "joint-v2.1" ]]; then
-        {{vpy}} -m galaxea_a1_runtime.cli dataset export-v21 \
-            --repo-root "{{repo}}" \
-            "{{experiment}}"
-    else
-        {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
-            --config "{{repo}}/configs/datasets/{{experiment}}_derivatives.toml" \
-            --target "{{target}}"
-    fi
+# Export a canonical dataset to joint-action LeRobot v2.1.
+export-v21 experiment *args:
+    {{vpy}} -m galaxea_a1_runtime.cli dataset export-v21 \
+        --repo-root "{{repo}}" \
+        "{{experiment}}" {{args}}

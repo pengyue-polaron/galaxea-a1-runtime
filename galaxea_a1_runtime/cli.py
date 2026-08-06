@@ -7,6 +7,15 @@ import subprocess
 import sys
 from pathlib import Path
 
+from embodied_ops import (
+    checks_exit_code,
+    checks_to_json,
+    print_dataset_report,
+    print_export_report,
+    print_checks,
+    standard_export_report,
+)
+
 from galaxea_a1_runtime.configuration.paths import (
     A1_RESET_POSE,
     LINGBOT_BATCH_CONFIG,
@@ -15,11 +24,6 @@ from galaxea_a1_runtime.configuration.paths import (
 )
 from galaxea_a1_runtime.console import ArgumentParser, failure, success
 from galaxea_a1_runtime.doctor import run_static_doctor
-from galaxea_a1_runtime.runtime.health_checks import (
-    checks_exit_code,
-    checks_to_json,
-    print_checks,
-)
 from galaxea_a1_runtime.safety_report import (
     format_safety_report,
     safety_report_as_dict,
@@ -88,11 +92,13 @@ def main(argv: list[str] | None = None) -> int:
     dataset_doctor.add_argument("experiment")
     dataset_doctor.add_argument("--config", type=Path, default=TELEOP_CONFIG)
     dataset_doctor.add_argument("--repo-root", type=Path, default=Path.cwd())
+    dataset_doctor.add_argument("--json", action="store_true")
     dataset_export = dataset_commands.add_parser(
         "export-v21", help="export one canonical dataset to joint-action LeRobot v2.1"
     )
     dataset_export.add_argument("experiment")
     dataset_export.add_argument("--repo-root", type=Path, default=Path.cwd())
+    dataset_export.add_argument("--json", action="store_true")
 
     collect = subparsers.add_parser(
         "collect", help="MOVES HARDWARE: reset, then run tracked Teleop collection"
@@ -302,11 +308,18 @@ def _run_dataset_command(args) -> int:
                 load_derivation_config(config_path),
                 targets=(JOINT_V21,),
             )[JOINT_V21]
-            result = {"status": "PASS", "experiment": experiment, **result}
+            result = standard_export_report(
+                robot="galaxea-a1",
+                experiment=experiment,
+                result=result,
+            )
     except (OSError, RuntimeError, ValueError) as exc:
         failure(str(exc))
         return 2
-    print(json.dumps(result, indent=2, sort_keys=True))
+    if args.dataset_command == "doctor":
+        print_dataset_report(result, json_output=args.json)
+    else:
+        print_export_report(result, json_output=args.json)
     return 0
 
 

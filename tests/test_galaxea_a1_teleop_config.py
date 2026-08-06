@@ -153,6 +153,8 @@ def test_dataset_doctor_uses_the_shared_cli_report_shape(monkeypatch):
 
     assert report == {
         "status": "PASS",
+        "workflow": "dataset-doctor",
+        "robot": "galaxea-a1",
         "experiment": "fruit_v1",
         "root": str(REPO / "data/datasets/fruit_v1"),
         "repo_id": "pengyue-polaron/galaxea-a1-fruit_v1",

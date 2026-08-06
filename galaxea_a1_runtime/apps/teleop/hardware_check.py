@@ -6,6 +6,9 @@ import os
 import subprocess
 from pathlib import Path
 
+from embodied_ops import CheckResult as Check
+from embodied_ops import finish_checks
+
 from galaxea_a1_runtime.apps.teleop.reset_config import load_home_pose
 from galaxea_a1_runtime.console import ArgumentParser
 from galaxea_a1_runtime.hardware.cameras import (
@@ -14,10 +17,8 @@ from galaxea_a1_runtime.hardware.cameras import (
     resolve_video_source,
 )
 from galaxea_a1_runtime.runtime.health_checks import (
-    Check,
     add_check,
     add_level,
-    finish_checks,
 )
 from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig

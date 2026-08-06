@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from embodied_ops import STANDARD_COLLECTION_INTERACTION
+from embodied_ops import (
+    STANDARD_COLLECTION_INTERACTION,
+    EpisodeCaptureReport,
+    announce_episode_capture,
+    announce_episode_outcome,
+)
 from embodied_ops.artifacts import PublishedOutputCleanupError
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
@@ -19,7 +24,7 @@ from galaxea_a1_runtime.collection import (
     find_joint_action_step_violation,
 )
 from galaxea_a1_runtime.configuration.image import ImageRoi
-from galaxea_a1_runtime.console import failure, info, success, warning
+from galaxea_a1_runtime.console import failure, warning
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
     DirectLeRobotEpisode,
@@ -31,6 +36,7 @@ from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 @dataclass(frozen=True)
 class EpisodeCompletion:
     decision: EpisodeDecision
+    frame_count: int = 0
     reset_required: bool = False
 
 
@@ -78,29 +84,38 @@ class TeleopEpisodeSession:
                     max_camera_pair_skew_s=self.config.system.cameras.max_pair_skew_s,
                     leading_stillness=self.config.collection.leading_stillness,
                 )
-                info(
-                    f"Episode {episode_index}: sampled {recording.sampled_frame_count}, "
-                    f"stored {recording.frame_count}, trimmed "
-                    f"{recording.trimmed_frame_count} leading frames."
+                report = EpisodeCaptureReport(
+                    episode_index=episode_index,
+                    sampled_frames=recording.sampled_frame_count,
+                    stored_frames=recording.frame_count,
+                    trimmed_frames=recording.trimmed_frame_count,
+                    elapsed_s=recording.elapsed_s,
+                    effective_fps=recording.effective_fps,
+                    decision=recording.decision,
                 )
+                announce_episode_capture(report)
 
                 if (
                     recording.decision != EpisodeDecision.SAVE
                     or recording.frame_count == 0
                 ):
-                    reason = (
-                        "0 frames"
+                    decision = (
+                        EpisodeDecision.DISCARD
                         if recording.frame_count == 0
-                        else f"user selected {recording.decision.value}"
+                        else recording.decision
                     )
-                    info(f"Episode {episode_index}: {reason}; staging output removed.")
+                    announce_episode_outcome(
+                        episode_index=episode_index,
+                        decision=decision,
+                        frame_count=recording.frame_count,
+                        dataset_root=None,
+                    )
                     print()
                     return EpisodeCompletion(
-                        recording.decision,
+                        decision,
+                        frame_count=recording.frame_count,
                         reset_required=(
-                            self.config.collection.reset_policy.required_after(
-                                recording.decision
-                            )
+                            self.config.collection.reset_policy.required_after(decision)
                         ),
                     )
 
@@ -117,9 +132,16 @@ class TeleopEpisodeSession:
                     failure(
                         f"Episode {episode_index} staging output removed; index will be reused."
                     )
+                    announce_episode_outcome(
+                        episode_index=episode_index,
+                        decision=EpisodeDecision.DISCARD,
+                        frame_count=recording.frame_count,
+                        dataset_root=None,
+                    )
                     print()
                     return EpisodeCompletion(
                         EpisodeDecision.DISCARD,
+                        frame_count=recording.frame_count,
                         reset_required=(
                             self.config.collection.reset_policy.required_after(
                                 EpisodeDecision.DISCARD
@@ -144,15 +166,16 @@ class TeleopEpisodeSession:
                 "the previous complete dataset remains authoritative"
             )
             raise
-        fps = self.config.collection.fps
-        nominal_s = recording.frame_count / fps
-        success(
-            f"Episode {episode_index} saved: {recording.frame_count} frames "
-            f"(~{nominal_s:.1f}s @ {fps:g}fps) -> {self.identity.target_root}"
+        announce_episode_outcome(
+            episode_index=episode_index,
+            decision=EpisodeDecision.SAVE,
+            frame_count=recording.frame_count,
+            dataset_root=str(self.identity.target_root),
         )
         print()
         return EpisodeCompletion(
             EpisodeDecision.SAVE,
+            frame_count=recording.frame_count,
             reset_required=self.config.collection.reset_policy.required_after(
                 EpisodeDecision.SAVE
             ),
