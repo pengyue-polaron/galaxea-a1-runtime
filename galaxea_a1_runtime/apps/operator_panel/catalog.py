@@ -10,7 +10,11 @@ from embodied_ops.operator_panel import (
     RepositoryDocumentStore,
     checkbox_field,
     combobox_field,
+    order_workflow_forms,
     select_field,
+    standard_camera_controls,
+    standard_core_workflows,
+    standard_panel_product,
     text_field,
 )
 
@@ -114,7 +118,7 @@ def build_a1_catalog(
         )
     return {
         "schema_version": PANEL_CATALOG_SCHEMA_VERSION,
-        "product": {"brand": "GALAXEA A1", "title": "Control"},
+        "product": standard_panel_product("GALAXEA A1"),
         "cameras": [
             {
                 "id": "agent",
@@ -129,20 +133,9 @@ def build_a1_catalog(
                 "path": "/wrist.mjpg",
             },
         ],
-        "camera_controls": [
-            {
-                "label": "Start cameras",
-                "workflow": "camera",
-                "values": {"action": "start"},
-            },
-            {
-                "label": "Stop cameras",
-                "workflow": "camera",
-                "values": {"action": "stop"},
-                "tone": "danger",
-                "confirm": "Stop the persistent read-only camera monitor?",
-            },
-        ],
+        "camera_controls": standard_camera_controls(
+            stop_confirm="Stop the persistent read-only camera monitor?"
+        ),
         "workflows": _workflow_forms(
             teleop_options=teleop_options,
             experiment_options=experiment_options,
@@ -216,66 +209,54 @@ def _workflow_forms(
     model_options: list[dict[str, str]],
     reset_options: list[dict[str, str]],
 ) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": "collect",
-            "label": "Collect",
-            "eyebrow": "DATA COLLECTION",
-            "title": "Collect episodes",
-            "description": "Record directly into the canonical LeRobot dataset.",
-            "submit_label": "Start collection",
-            "fields": [
-                select_field(
-                    "config",
-                    "Teleop config",
-                    teleop_options,
-                    default=TELEOP_CONFIG.as_posix(),
+    collection_config = select_field(
+        "config",
+        "Collection config",
+        teleop_options,
+        default=TELEOP_CONFIG.as_posix(),
+    )
+    dataset_fields = _dataset_fields(teleop_options, experiment_options)
+    core = standard_core_workflows(
+        hardware_fields=[collection_config],
+        collect_fields=[
+            collection_config,
+            combobox_field(
+                "experiment",
+                "Experiment",
+                experiment_options,
+                placeholder="fruit_placement_v1",
+                help_text=(
+                    "Select an existing experiment to append episodes, or type "
+                    "a new name to create one."
                 ),
-                combobox_field(
-                    "experiment",
-                    "Experiment",
-                    experiment_options,
-                    placeholder="fruit_placement_v1",
-                    help_text=(
-                        "Select an existing experiment to append episodes, or type "
-                        "a new name to create one."
-                    ),
-                    depends_on="config",
-                ),
-                combobox_field(
-                    "task",
-                    "Task prompt",
-                    collection_task_options,
-                    placeholder="pick up the object and place it at the target",
-                    help_text=(
-                        "Select a tracked training prompt or type an exact new prompt. "
-                        "One experiment may contain episodes from multiple prompts."
-                    ),
-                ),
-            ],
-        },
-        {
-            "id": "dataset-doctor",
-            "label": "Dataset doctor",
-            "eyebrow": "DATASET",
-            "title": "Inspect canonical data",
-            "description": (
-                "Validate episodes, frames, tasks, metadata, and referenced media."
+                depends_on="config",
             ),
-            "submit_label": "Run doctor",
-            "fields": _dataset_fields(teleop_options, experiment_options),
-        },
-        {
-            "id": "export-v21",
-            "label": "Export v2.1",
-            "eyebrow": "DATASET",
-            "title": "Export joint-action v2.1",
-            "description": (
-                "Build the tracked LeRobot v2.1 derivative from canonical v3 data."
+            combobox_field(
+                "task",
+                "Task prompt",
+                collection_task_options,
+                placeholder="pick up the object and place it at the target",
+                help_text=(
+                    "Select a tracked training prompt or type an exact new prompt. "
+                    "One experiment may contain episodes from multiple prompts."
+                ),
             ),
-            "submit_label": "Export dataset",
-            "fields": _dataset_fields(teleop_options, experiment_options),
-        },
+        ],
+        reset_fields=[
+            select_field(
+                "pose",
+                "Pose config",
+                reset_options,
+                default=A1_RESET_POSE.as_posix(),
+            )
+        ],
+        dataset_fields=dataset_fields,
+        reset_confirm=(
+            "This moves A1 to the selected tracked collection pose. "
+            "Confirm the workspace is clear?"
+        ),
+    )
+    extensions = [
         {
             "id": "evaluate",
             "label": "Evaluation",
@@ -322,25 +303,8 @@ def _workflow_forms(
                 checkbox_field("resume", "Resume completed plan"),
             ],
         },
-        {
-            "id": "reset",
-            "label": "Reset",
-            "eyebrow": "RESET",
-            "title": "Reset A1",
-            "description": "Move A1 to the selected tracked pose.",
-            "submit_label": "Run reset",
-            "tone": "danger",
-            "confirm": "Run the selected repository A1 reset now?",
-            "fields": [
-                select_field(
-                    "pose",
-                    "Pose config",
-                    reset_options,
-                    default=A1_RESET_POSE.as_posix(),
-                )
-            ],
-        },
     ]
+    return order_workflow_forms([*core, *extensions])
 
 
 def _dataset_fields(
@@ -350,7 +314,7 @@ def _dataset_fields(
     return [
         select_field(
             "config",
-            "Teleop config",
+            "Collection config",
             teleop_options,
             default=TELEOP_CONFIG.as_posix(),
         ),

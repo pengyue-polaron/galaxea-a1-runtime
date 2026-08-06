@@ -24,6 +24,24 @@ def build_a1_workflow_launch(
     repo_root: Path, workflow: str, values: dict[str, Any]
 ) -> WorkflowLaunch:
     root = repo_root.resolve()
+    if workflow == "hardware":
+        config_path = _repository_config(root, values.get("config"), "configs/teleop")
+        config = load_teleop_config(config_path, repo_root=root)
+        return WorkflowLaunch(
+            workflow="hardware",
+            name=f"hardware:{config.path.stem}",
+            command=(
+                sys.executable,
+                "-m",
+                "galaxea_a1_runtime.cli",
+                "hardware",
+                "--repo-root",
+                str(root),
+                "--config",
+                str(config.path),
+            ),
+        )
+
     if workflow == "collect":
         config_path = _repository_config(root, values.get("config"), "configs/teleop")
         config = load_teleop_config(config_path, repo_root=root)

@@ -27,11 +27,16 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
     assert adapter.panel_port == 8765
     assert catalog["cameras"][0]["port"] == 8088
     assert catalog["cameras"][0]["path"] == "/agent.mjpg"
-    assert {workflow["id"] for workflow in catalog["workflows"]} >= {
+    assert catalog["product"] == {"brand": "GALAXEA A1", "title": "Operator Panel"}
+    assert [workflow["id"] for workflow in catalog["workflows"]] == [
+        "hardware",
         "collect",
+        "reset",
         "dataset-doctor",
         "export-v21",
-    }
+        "evaluate",
+        "batch",
+    ]
     assert {
         (item["extension"], item["language"]) for item in catalog["configuration_types"]
     } == {(".toml", "TOML")}
@@ -85,6 +90,19 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
     )
     cameras = adapter.build_launch("camera", {"action": "start"})
     assert cameras.command[-1] == "start"
+    hardware = adapter.build_launch(
+        "hardware", {"config": "configs/teleop/a1_so100.toml"}
+    )
+    assert hardware.command == (
+        sys.executable,
+        "-m",
+        "galaxea_a1_runtime.cli",
+        "hardware",
+        "--repo-root",
+        str(ROOT),
+        "--config",
+        str(ROOT / "configs/teleop/a1_so100.toml"),
+    )
     dataset_doctor = adapter.build_launch(
         "dataset-doctor",
         {
