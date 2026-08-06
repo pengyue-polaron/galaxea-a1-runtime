@@ -40,13 +40,16 @@ from galaxea_a1_runtime.apps.teleop.dataset_contract import (
 from galaxea_a1_runtime.apps.teleop.collection_task import (
     normalize_collection_task,
 )
+from galaxea_a1_runtime.apps.teleop.metadata import collection_lifecycle_provenance
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
     validate_experiment_name,
 )
 from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
-from galaxea_a1_runtime.lerobot.direct_recording import inspect_direct_dataset
+from galaxea_a1_runtime.lerobot.direct_recording import (
+    validate_direct_dataset_provenance,
+)
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -71,8 +74,9 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     front_crop = required_front_roi(config.system.cameras)
     identity = direct_dataset_identity(config, experiment)
     config_reference = tracked_config_reference(config, repo_root=ROOT_DIR)
-    existing = inspect_direct_dataset(
+    existing = validate_direct_dataset_provenance(
         identity,
+        {"collection_lifecycle": collection_lifecycle_provenance(config)},
     )
     task = load_or_prompt_task(existing.tasks, provided_task=task)
 
@@ -88,6 +92,11 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         step("Starting cameras")
         camera_summary = cameras.start()
         success(f"Cameras ready: {camera_summary}")
+        if config.collection.reset_policy.before_collection:
+            step("Resetting A1 and leader before the first episode")
+            reset_for_next_episode(config.path)
+            ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
+            success("Pre-collection Reset complete; fresh ROS state ready.")
         _print_collection_summary(
             experiment=experiment,
             task=task,

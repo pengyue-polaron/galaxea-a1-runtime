@@ -27,6 +27,11 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
     assert adapter.panel_port == 8765
     assert catalog["cameras"][0]["port"] == 8088
     assert catalog["cameras"][0]["path"] == "/agent.mjpg"
+    assert {workflow["id"] for workflow in catalog["workflows"]} >= {
+        "collect",
+        "dataset-doctor",
+        "export-v21",
+    }
     assert {
         (item["extension"], item["language"]) for item in catalog["configuration_types"]
     } == {(".toml", "TOML")}
@@ -80,6 +85,35 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
     )
     cameras = adapter.build_launch("camera", {"action": "start"})
     assert cameras.command[-1] == "start"
+    dataset_doctor = adapter.build_launch(
+        "dataset-doctor",
+        {
+            "config": "configs/teleop/a1_so100.toml",
+            "experiment": "plug_insertion_v1",
+        },
+    )
+    assert dataset_doctor.command[:3] == (
+        sys.executable,
+        "-m",
+        "galaxea_a1_runtime.cli",
+    )
+    assert dataset_doctor.command[-3:] == (
+        "--config",
+        str(ROOT / "configs/teleop/a1_so100.toml"),
+        "plug_insertion_v1",
+    )
+    export = adapter.build_launch(
+        "export-v21",
+        {
+            "config": "configs/teleop/a1_so100.toml",
+            "experiment": "plug_insertion_v1",
+        },
+    )
+    assert export.command[-3:] == (
+        "--repo-root",
+        str(ROOT),
+        "plug_insertion_v1",
+    )
 
     with pytest.raises(ValueError, match="repository TOML"):
         adapter.build_launch(

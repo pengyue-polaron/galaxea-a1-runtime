@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
+from embodied_ops import CollectionResetPolicy, LeadingStillnessConfig
+
 from galaxea_a1_runtime.configuration.system import SystemConfig
 
 
@@ -72,8 +74,8 @@ class TeleopCollectionConfig:
     repo_id_prefix: str
     fps: float
     max_duration_s: float
-    auto_reset_after_save: bool
-    auto_reset_after_discard: bool
+    reset_policy: CollectionResetPolicy
+    leading_stillness: LeadingStillnessConfig
     ready_timeout_s: float
 
 

@@ -72,7 +72,7 @@ model-verify config:
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
 hardware *args:
-    {{vpy}} {{repo}}/scripts/apps/teleop/a1_hardware_check.py {{args}}
+    {{vpy}} -m galaxea_a1_runtime.cli hardware --repo-root "{{repo}}" {{args}}
 
 rosbag *args:
     {{repo}}/scripts/apps/recording/a1_rosbag.sh {{args}}
@@ -167,16 +167,16 @@ logs:
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
 dataset-doctor experiment:
-    {{vpy}} -m galaxea_a1_runtime.apps.teleop.dataset_doctor \
+    {{vpy}} -m galaxea_a1_runtime.cli dataset doctor \
         --repo-root "{{repo}}" \
-        --experiment "{{experiment}}"
+        "{{experiment}}"
 
 derive config target="all":
     {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
         --config "{{config}}" \
         --target "{{target}}"
 
-export-v21 experiment target="joint-v2.1":
-    {{vpy}} -m galaxea_a1_runtime.lerobot.derive \
-        --config "{{repo}}/configs/datasets/{{experiment}}_derivatives.toml" \
-        --target "{{target}}"
+export-v21 experiment:
+    {{vpy}} -m galaxea_a1_runtime.cli dataset export-v21 \
+        --repo-root "{{repo}}" \
+        "{{experiment}}"

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -41,6 +42,34 @@ def build_a1_workflow_launch(
                 experiment,
             ),
             input_actions=STANDARD_COLLECTION_INTERACTION.input_actions,
+        )
+
+    if workflow in {"dataset-doctor", "export-v21"}:
+        config_path = _repository_config(root, values.get("config"), "configs/teleop")
+        config = load_teleop_config(config_path, repo_root=root)
+        experiment = validate_experiment_name(_text(values, "experiment"))
+        command = [
+            sys.executable,
+            "-m",
+            "galaxea_a1_runtime.cli",
+            "dataset",
+            "doctor" if workflow == "dataset-doctor" else "export-v21",
+            "--repo-root",
+            str(root),
+        ]
+        if workflow == "dataset-doctor":
+            command.extend(("--config", str(config.path)))
+        else:
+            _repository_config(
+                root,
+                f"configs/datasets/{experiment}_derivatives.toml",
+                "configs/datasets",
+            )
+        command.append(experiment)
+        return WorkflowLaunch(
+            workflow=workflow,
+            name=f"{workflow}:{experiment}",
+            command=tuple(command),
         )
 
     if workflow == "evaluate":

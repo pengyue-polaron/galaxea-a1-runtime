@@ -177,6 +177,32 @@ def inspect_direct_dataset(
     return DirectDatasetState(total_episodes, total_frames, tasks)
 
 
+def validate_direct_dataset_provenance(
+    identity: DirectDatasetIdentity,
+    expected: dict[str, Any],
+    *,
+    expected_task: str | None = None,
+) -> DirectDatasetState:
+    """Validate selected collection contracts before opening runtime hardware."""
+
+    state = inspect_direct_dataset(identity, expected_task=expected_task)
+    if state.total_episodes == 0:
+        return state
+    existing = read_json(
+        identity.target_root / PROVENANCE_PATH,
+        label="Galaxea collection provenance",
+    )
+    differences = sorted(
+        key for key, value in expected.items() if existing.get(key) != value
+    )
+    if differences:
+        raise ValueError(
+            "direct dataset collection provenance changed; use a new "
+            f"experiment identity (fields={differences})"
+        )
+    return state
+
+
 def discover_direct_dataset(
     target_root: Path,
     *,
@@ -223,23 +249,8 @@ class DirectLeRobotEpisode:
         self._committed = False
 
     def __enter__(self) -> DirectLeRobotEpisode:
-        state = inspect_direct_dataset(self.identity)
+        state = validate_direct_dataset_provenance(self.identity, self.provenance)
         exists = state.total_episodes > 0
-        if exists:
-            existing_provenance = read_json(
-                self.identity.target_root / PROVENANCE_PATH,
-                label="Galaxea collection provenance",
-            )
-            differences = sorted(
-                key
-                for key, value in self.provenance.items()
-                if existing_provenance.get(key) != value
-            )
-            if differences:
-                raise ValueError(
-                    "direct dataset collection provenance changed; use a new "
-                    f"experiment identity (fields={differences})"
-                )
         transaction = OutputDirectoryTransaction(
             self.identity.target_root,
             overwrite=exists,

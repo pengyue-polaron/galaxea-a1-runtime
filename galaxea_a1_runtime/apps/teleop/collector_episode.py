@@ -17,7 +17,6 @@ from galaxea_a1_runtime.apps.teleop.recording import record_episode
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
     find_joint_action_step_violation,
-    reset_required_after_episode,
 )
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.console import failure, info, success, warning
@@ -76,7 +75,13 @@ class TeleopEpisodeSession:
                     front_crop=self.front_crop,
                     camera_ready_timeout_s=self.config.collection.ready_timeout_s,
                     max_camera_age_s=self.config.system.cameras.max_age_s,
-                    max_camera_pair_skew_s=(self.config.system.cameras.max_pair_skew_s),
+                    max_camera_pair_skew_s=self.config.system.cameras.max_pair_skew_s,
+                    leading_stillness=self.config.collection.leading_stillness,
+                )
+                info(
+                    f"Episode {episode_index}: sampled {recording.sampled_frame_count}, "
+                    f"stored {recording.frame_count}, trimmed "
+                    f"{recording.trimmed_frame_count} leading frames."
                 )
 
                 if (
@@ -92,12 +97,10 @@ class TeleopEpisodeSession:
                     print()
                     return EpisodeCompletion(
                         recording.decision,
-                        reset_required=reset_required_after_episode(
-                            recording.decision,
-                            after_save=self.config.collection.auto_reset_after_save,
-                            after_discard=(
-                                self.config.collection.auto_reset_after_discard
-                            ),
+                        reset_required=(
+                            self.config.collection.reset_policy.required_after(
+                                recording.decision
+                            )
                         ),
                     )
 
@@ -117,12 +120,10 @@ class TeleopEpisodeSession:
                     print()
                     return EpisodeCompletion(
                         EpisodeDecision.DISCARD,
-                        reset_required=reset_required_after_episode(
-                            EpisodeDecision.DISCARD,
-                            after_save=self.config.collection.auto_reset_after_save,
-                            after_discard=(
-                                self.config.collection.auto_reset_after_discard
-                            ),
+                        reset_required=(
+                            self.config.collection.reset_policy.required_after(
+                                EpisodeDecision.DISCARD
+                            )
                         ),
                     )
 
@@ -152,10 +153,8 @@ class TeleopEpisodeSession:
         print()
         return EpisodeCompletion(
             EpisodeDecision.SAVE,
-            reset_required=reset_required_after_episode(
-                EpisodeDecision.SAVE,
-                after_save=self.config.collection.auto_reset_after_save,
-                after_discard=self.config.collection.auto_reset_after_discard,
+            reset_required=self.config.collection.reset_policy.required_after(
+                EpisodeDecision.SAVE
             ),
         )
 

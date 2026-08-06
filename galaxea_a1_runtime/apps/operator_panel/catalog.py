@@ -255,6 +255,28 @@ def _workflow_forms(
             ],
         },
         {
+            "id": "dataset-doctor",
+            "label": "Dataset doctor",
+            "eyebrow": "DATASET",
+            "title": "Inspect canonical data",
+            "description": (
+                "Validate episodes, frames, tasks, metadata, and referenced media."
+            ),
+            "submit_label": "Run doctor",
+            "fields": _dataset_fields(teleop_options, experiment_options),
+        },
+        {
+            "id": "export-v21",
+            "label": "Export v2.1",
+            "eyebrow": "DATASET",
+            "title": "Export joint-action v2.1",
+            "description": (
+                "Build the tracked LeRobot v2.1 derivative from canonical v3 data."
+            ),
+            "submit_label": "Export dataset",
+            "fields": _dataset_fields(teleop_options, experiment_options),
+        },
+        {
             "id": "evaluate",
             "label": "Evaluation",
             "eyebrow": "LIVE EVALUATION",
@@ -318,6 +340,28 @@ def _workflow_forms(
                 )
             ],
         },
+    ]
+
+
+def _dataset_fields(
+    teleop_options: list[dict[str, str]],
+    experiment_options: list[dict[str, str]],
+) -> list[dict[str, Any]]:
+    return [
+        select_field(
+            "config",
+            "Teleop config",
+            teleop_options,
+            default=TELEOP_CONFIG.as_posix(),
+        ),
+        combobox_field(
+            "experiment",
+            "Experiment",
+            experiment_options,
+            placeholder="fruit_placement_v1",
+            help_text="Select an existing canonical dataset or enter its exact name.",
+            depends_on="config",
+        ),
     ]
 
 

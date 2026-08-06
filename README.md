@@ -28,8 +28,8 @@ are kept in independent packages.
   directly from the canonical dataset.
 - Deploy LingBot EEF and OpenPI pi0.5 EEF policies through isolated trackers
   and a fail-closed command relay.
-- Operate collection, evaluation, resets, cameras, and tracked batch plans from
-  a localhost control panel.
+- Operate collection, dataset inspection/export, evaluation, resets, cameras,
+  and tracked batch plans from a compact shadcn/ui control panel.
 
 ## Supported baseline
 

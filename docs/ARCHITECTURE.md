@@ -32,7 +32,8 @@ galaxea_a1_runtime.apps
 - `runtime/` and `hardware/` adapt pure decisions to ROS, RealSense, serial, and
   process APIs.
 - The pinned `external/embodied-ops` package owns the standard CLI presentation,
-  collection interaction, task selection, evaluation progress, strict Operator
+  collection interaction, reset-point contract, streaming leading-stillness
+  trimming, task selection, evaluation progress, strict Operator
   Panel catalog and Web presentation, contract digests, verified external
   artifact/code-environment workflows, sample timing, normalized camera health,
   transactional artifact primitives, and shared LeRobot v3 validation/v2.1
@@ -209,8 +210,9 @@ stable id as latest state, and excluded from durable logs. It has no Galaxea, RO
 camera, model, topic, or tracked-config imports. The A1 adapter under
 `galaxea_a1_runtime/apps/operator_panel/` discovers and fully loads repository
 Teleop, LingBot deployment, Batch, model, task-registry, and reset files,
-supplies the dynamic form catalog, handles strict prompt registration, and
-constructs argv-only commands for the existing entrypoints.
+supplies the dynamic form catalog, exposes hardware-free dataset inspection and
+v2.1 export, handles strict prompt registration, and constructs argv-only
+commands for the existing entrypoints.
 
 The A1-only reset entrypoint is self-contained: its thin app lifecycle wrapper
 validates the System and pose before starting the app-agnostic joint runtime,
@@ -378,6 +380,14 @@ the same hardware-free validation explicitly. Shared LeRobot graph traversal,
 path safety, Parquet accounting, v2.1 episode layout, and video slicing come
 from `embodied-ops[lerobot-dataset]`; this Runtime supplies the A1 feature,
 task, provenance, derivation, and publication constraints.
+
+After services, bridge, ROS state, and cameras are ready, the collector invokes
+the tracked A1 and leader reset lifecycle before the first episode gate. During
+each episode, fresh validated samples pass through the shared bounded streaming
+trimmer. A1-owned radian and normalized-gripper thresholds decide when sustained
+motion begins; only the configured preroll and subsequent frames enter the
+LeRobot transaction. This keeps canonical metadata, statistics, Parquet rows,
+and videos consistent without a post-export rewrite.
 
 This canonical dataset intentionally stores the richest model-agnostic A1
 observation and the command actually sent by Teleop. A training adapter can

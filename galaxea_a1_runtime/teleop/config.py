@@ -7,6 +7,8 @@ import sys
 from math import isfinite
 from pathlib import Path
 
+from embodied_ops import CollectionResetPolicy, LeadingStillnessConfig
+
 from galaxea_a1_runtime.configuration.base import (
     boolean,
     float_tuple as _float_tuple,
@@ -109,11 +111,25 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "repo_id_prefix",
             "fps",
             "max_duration_s",
+            "auto_reset_before_collection",
             "auto_reset_after_save",
             "auto_reset_after_discard",
+            "leading_stillness",
             "ready_timeout_s",
         },
         label="collection",
+    )
+    leading_stillness = _required_table(collection, "leading_stillness")
+    require_exact_keys(
+        leading_stillness,
+        required={
+            "enabled",
+            "action_thresholds",
+            "reference_frames",
+            "motion_frames",
+            "preroll_frames",
+        },
+        label="collection.leading_stillness",
     )
     dof = len(system.joint_safety.names)
     mapping = JointMappingConfig(
@@ -158,8 +174,22 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             repo_id_prefix=_string(collection, "repo_id_prefix"),
             fps=floating(collection, "fps"),
             max_duration_s=floating(collection, "max_duration_s"),
-            auto_reset_after_save=boolean(collection, "auto_reset_after_save"),
-            auto_reset_after_discard=boolean(collection, "auto_reset_after_discard"),
+            reset_policy=CollectionResetPolicy(
+                before_collection=boolean(collection, "auto_reset_before_collection"),
+                after_save=boolean(collection, "auto_reset_after_save"),
+                after_discard=boolean(collection, "auto_reset_after_discard"),
+            ),
+            leading_stillness=LeadingStillnessConfig(
+                enabled=boolean(leading_stillness, "enabled"),
+                action_thresholds=_float_tuple(
+                    leading_stillness,
+                    "action_thresholds",
+                    dof + 1,
+                ),
+                reference_frames=integer(leading_stillness, "reference_frames"),
+                motion_frames=integer(leading_stillness, "motion_frames"),
+                preroll_frames=integer(leading_stillness, "preroll_frames"),
+            ),
             ready_timeout_s=floating(collection, "ready_timeout_s"),
         ),
     )

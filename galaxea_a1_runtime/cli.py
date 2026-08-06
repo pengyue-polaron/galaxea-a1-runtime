@@ -71,8 +71,31 @@ def main(argv: list[str] | None = None) -> int:
     panel = subparsers.add_parser("panel", help="serve the tracked Web operator panel")
     panel.add_argument("--repo-root", type=Path, default=Path.cwd())
 
+    hardware = subparsers.add_parser(
+        "hardware", help="passively inspect configured serial and camera hardware"
+    )
+    hardware.add_argument("--config", type=Path, default=TELEOP_CONFIG)
+    hardware.add_argument("--repo-root", type=Path, default=Path.cwd())
+    hardware.add_argument("--json", action="store_true")
+
+    dataset = subparsers.add_parser(
+        "dataset", help="inspect or export canonical datasets"
+    )
+    dataset_commands = dataset.add_subparsers(dest="dataset_command", required=True)
+    dataset_doctor = dataset_commands.add_parser(
+        "doctor", help="validate one canonical LeRobot v3 dataset"
+    )
+    dataset_doctor.add_argument("experiment")
+    dataset_doctor.add_argument("--config", type=Path, default=TELEOP_CONFIG)
+    dataset_doctor.add_argument("--repo-root", type=Path, default=Path.cwd())
+    dataset_export = dataset_commands.add_parser(
+        "export-v21", help="export one canonical dataset to joint-action LeRobot v2.1"
+    )
+    dataset_export.add_argument("experiment")
+    dataset_export.add_argument("--repo-root", type=Path, default=Path.cwd())
+
     collect = subparsers.add_parser(
-        "collect", help="MOVES HARDWARE: run tracked Teleop collection"
+        "collect", help="MOVES HARDWARE: reset, then run tracked Teleop collection"
     )
     collect.add_argument("experiment")
     collect.add_argument("--task", required=True)
@@ -140,6 +163,27 @@ def main(argv: list[str] | None = None) -> int:
             bind=panel_adapter.panel_bind,
             port=panel_adapter.panel_port,
         )
+
+    if args.command == "hardware":
+        from galaxea_a1_runtime.apps.teleop.hardware_check import (
+            inspect_hardware,
+            print_hardware_report,
+        )
+        from galaxea_a1_runtime.teleop.config import load_teleop_config
+
+        try:
+            root = args.repo_root.resolve()
+            config = load_teleop_config(args.config, repo_root=root)
+            return print_hardware_report(
+                inspect_hardware(config),
+                json_output=args.json,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            failure(str(exc))
+            return 2
+
+    if args.command == "dataset":
+        return _run_dataset_command(args)
 
     from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
 
@@ -230,6 +274,40 @@ def _print_config_catalog(catalog: dict[str, object]) -> None:
         for item in items:
             assert isinstance(item, dict)
             print(f"  {item['label']}: {item['value']}")
+
+
+def _run_dataset_command(args) -> int:
+    from galaxea_a1_runtime.collection import validate_experiment_name
+
+    try:
+        root = args.repo_root.resolve()
+        experiment = validate_experiment_name(args.experiment)
+        if args.dataset_command == "doctor":
+            from galaxea_a1_runtime.apps.teleop.dataset_doctor import dataset_report
+            from galaxea_a1_runtime.teleop.config import load_teleop_config
+
+            config = load_teleop_config(args.config, repo_root=root)
+            result = dataset_report(config, experiment=experiment)
+        else:
+            from galaxea_a1_runtime.lerobot.derivation_config import (
+                load_derivation_config,
+            )
+            from galaxea_a1_runtime.lerobot.derive import (
+                JOINT_V21,
+                build_derivatives,
+            )
+
+            config_path = root / "configs/datasets" / f"{experiment}_derivatives.toml"
+            result = build_derivatives(
+                load_derivation_config(config_path),
+                targets=(JOINT_V21,),
+            )[JOINT_V21]
+            result = {"status": "PASS", "experiment": experiment, **result}
+    except (OSError, RuntimeError, ValueError) as exc:
+        failure(str(exc))
+        return 2
+    print(json.dumps(result, indent=2, sort_keys=True))
+    return 0
 
 
 if __name__ == "__main__":

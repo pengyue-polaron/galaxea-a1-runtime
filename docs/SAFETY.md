@@ -150,8 +150,8 @@ additional gripper bit latches `FAULT`.
   per-process token protects request integrity but is delivered to any browser
   that can open the page. Never expose or port-forward its port. It permits one
   owned workflow subprocess at a time and may invoke only validated tracked
-  Collect, LingBot, Batch, Camera, and Reset entrypoints. It never imports ROS
-  or publishes commands itself.
+  Collect, LingBot, Batch, Camera, Reset, and hardware-free Dataset entrypoints.
+  It never imports ROS or publishes commands itself.
 - Interactive Web input is fail-closed. A child must announce the exact accepted
   input actions at each prompt; one accepted action clears that permission until
   the child announces another prompt. Repeated clicks cannot queue decisions for
@@ -174,6 +174,10 @@ additional gripper bit latches `FAULT`.
 - The A1-only Web/CLI reset validates System and pose before process creation,
   owns ROS master, driver, joint tracker, and relay startup for its lifetime,
   and stops those resources on success, failure, or interruption.
+- Collection uses the same tracked reset path automatically after startup and
+  before its first episode gate. Leading-stillness trimming changes only which
+  already-validated frames enter the dataset; it never changes or publishes an
+  action.
 
 ## Direct debug
 

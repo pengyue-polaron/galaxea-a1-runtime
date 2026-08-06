@@ -13,6 +13,7 @@ from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectLeRobotEpisode,
     dataset_repo_id,
     inspect_direct_dataset,
+    validate_direct_dataset_provenance,
 )
 from galaxea_a1_runtime.schema import CameraSpec, canonical_dataset_contract
 
@@ -206,6 +207,19 @@ def test_append_rejects_collection_provenance_drift(tmp_path: Path):
     with pytest.raises(ValueError, match="provenance changed"):
         with changed:
             raise AssertionError("must reject before recording")
+
+
+def test_preflight_rejects_selected_provenance_drift(tmp_path: Path):
+    root = tmp_path / "direct-test"
+    with _episode(root) as episode:
+        episode.add_frame(_frame(0.1))
+        episode.commit()
+
+    with pytest.raises(ValueError, match="quality_checks"):
+        validate_direct_dataset_provenance(
+            _episode(root).identity,
+            {"quality_checks": {"max_camera_pair_skew_s": 0.2}},
+        )
 
 
 @pytest.mark.parametrize("kind", ["staging", "backup"])

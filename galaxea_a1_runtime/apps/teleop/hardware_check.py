@@ -20,24 +20,12 @@ from galaxea_a1_runtime.runtime.health_checks import (
     finish_checks,
 )
 from galaxea_a1_runtime.teleop.config import default_config_path, load_teleop_config
+from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 ROOT_DIR = Path(__file__).resolve().parents[3]
 
 
-def main() -> int:
-    parser = ArgumentParser(
-        description="Check enumerated A1 teleop hardware without moving it."
-    )
-    parser.add_argument(
-        "--config",
-        type=Path,
-        default=default_config_path(ROOT_DIR),
-        help="Tracked teleoperation TOML config.",
-    )
-    parser.add_argument("--json", action="store_true")
-    args = parser.parse_args()
-
-    config = load_teleop_config(args.config, repo_root=ROOT_DIR)
+def inspect_hardware(config: TeleopConfig) -> tuple[Check, ...]:
     pose_path = config.reset.config
     pose = load_home_pose(pose_path, teleop=config)
     checks: list[Check] = []
@@ -88,7 +76,28 @@ def main() -> int:
 
     detail = f"teleop={config.path}; pose={pose_path}"
     _add(checks, "tracked_configs", True, detail, required=True)
-    return finish_checks(checks, json_output=args.json)
+    return tuple(checks)
+
+
+def print_hardware_report(checks: tuple[Check, ...], *, json_output: bool) -> int:
+    return finish_checks(list(checks), json_output=json_output)
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = ArgumentParser(
+        description="Check enumerated A1 teleop hardware without moving it."
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=default_config_path(ROOT_DIR),
+        help="Tracked teleoperation TOML config.",
+    )
+    parser.add_argument("--json", action="store_true")
+    args = parser.parse_args(argv)
+
+    config = load_teleop_config(args.config, repo_root=ROOT_DIR)
+    return print_hardware_report(inspect_hardware(config), json_output=args.json)
 
 
 def _check_device(

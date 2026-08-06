@@ -81,14 +81,14 @@ Open `http://127.0.0.1:8765` on this host, or
 `http://<this-host-LAN-IP>:8765` from another device on the trusted LAN. The
 tracked listener is `0.0.0.0:8765`; `hostname -I` prints candidate host
 addresses. The panel lists every valid tracked Teleop, LingBot deployment,
-Batch, model, and A1 reset configuration. It embeds the
-read-only Camera Web streams and provides Collect, Evaluation, Batch, and Reset
-views plus a **Prompts** registry. Use **Start cameras** if the persistent Camera
+Batch, model, and A1 reset configuration. It embeds the read-only Camera Web
+streams and provides Collect, Dataset Doctor, Export v2.1, Evaluation, Batch,
+and Reset views plus a **Prompts** registry. Use **Start cameras** if the persistent Camera
 Bridge is not already running. Each preview reports its encoded preview FPS and
 latest frame age from Camera Web's read-only health endpoint. A dark image alone
 is not treated as a failure; the status changes only for missing, stale, or
 errored frames. Use **Collapse preview** when more vertical room is useful for
-workflow controls. The page follows the browser's light or dark preference.
+workflow controls. The dense monochrome layout is shared with the VLAI panel.
 
 To add an evaluation prompt, open **Prompts**, select its catalog, enter a unique
 task id and exact single-line prompt, and choose `OOD` or `Train` (`OOD` is the
@@ -132,7 +132,10 @@ The same configuration registry is available from the unified CLI:
 # Edit /tmp/new_batch.toml, including a unique batch.id, then:
 .venv/bin/galaxea-a1-runtime config validate batch new_batch /tmp/new_batch.toml
 .venv/bin/galaxea-a1-runtime config create batch new_batch /tmp/new_batch.toml
+.venv/bin/galaxea-a1-runtime hardware
 .venv/bin/galaxea-a1-runtime collect EXPERIMENT --task "TASK"
+.venv/bin/galaxea-a1-runtime dataset doctor EXPERIMENT
+.venv/bin/galaxea-a1-runtime dataset export-v21 EXPERIMENT
 .venv/bin/galaxea-a1-runtime evaluate TASK_ID --scene-note "SCENE"
 .venv/bin/galaxea-a1-runtime batch configs/runs/lingbot/mango_placement.toml \
   --scene-note "SCENE" --resume
@@ -215,9 +218,13 @@ with A1 radians. Use `just logs` for failures and `just stop` when finished.
 Collection **MOVES THE A1**:
 
 ```bash
-just reset
 just collect EXPERIMENT "put the fruit into the bowl"
 ```
+
+`collect` starts the tracked services and cameras, then automatically resets A1
+and the SO leader before exposing the first episode prompt. A separate
+`just reset` remains available for acceptance and recovery, but is not part of
+the normal collection sequence.
 
 Reuse the same `EXPERIMENT` for related prompts. For example, four socket
 positions belong to one `plug_insertion_v1` dataset:
@@ -239,6 +246,9 @@ At the episode prompt:
 - `Ctrl+C`: stop immediately.
 
 Every frame requires fresh joint, EEF, gripper, action, and paired-camera data.
+The collector buffers the stationary prefix and starts storing only after the
+tracked per-action thresholds report sustained motion, while retaining a short
+preroll. An episode with no detected motion remains empty and is discarded.
 Save validates continuity and finalizes a standard LeRobotDataset v3 episode in
 a hidden sibling snapshot, then atomically installs the complete dataset under
 `data/datasets/EXPERIMENT/`. A rejected save removes only its snapshot, reuses
@@ -323,7 +333,7 @@ Then build all derivatives, or one independently:
 just derive configs/datasets/EXPERIMENT_derivatives.toml
 just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v3
 just export-v21 EXPERIMENT
-just export-v21 EXPERIMENT eef-v2.1
+just derive configs/datasets/EXPERIMENT_derivatives.toml eef-v2.1
 ```
 
 The source repo ID and task are read from its committed provenance instead of

@@ -116,6 +116,7 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
         ],
         "cameras": cameras,
         "image_color_space": "RGB",
+        "collection_lifecycle": collection_lifecycle_provenance(config),
         "quality_checks": {
             "max_joint_action_step_rad": config.bridge.max_joint_action_step_rad,
             "max_camera_age_s": system.cameras.max_age_s,
@@ -128,5 +129,26 @@ def build_dataset_provenance(request: DatasetProvenanceRequest) -> dict:
             "leader_gripper_source_max": config.gripper.source_max,
             "gripper_continuous_stroke_min_mm": system.gripper.stroke_min_mm,
             "gripper_continuous_stroke_max_mm": system.gripper.stroke_max_mm,
+        },
+    }
+
+
+def collection_lifecycle_provenance(config: TeleopConfig) -> dict:
+    """Return the hardware-independent collection behavior contract."""
+
+    return {
+        "reset": {
+            "before_collection": config.collection.reset_policy.before_collection,
+            "after_save": config.collection.reset_policy.after_save,
+            "after_discard": config.collection.reset_policy.after_discard,
+        },
+        "leading_stillness": {
+            "enabled": config.collection.leading_stillness.enabled,
+            "action_thresholds": list(
+                config.collection.leading_stillness.action_thresholds
+            ),
+            "reference_frames": config.collection.leading_stillness.reference_frames,
+            "motion_frames": config.collection.leading_stillness.motion_frames,
+            "preroll_frames": config.collection.leading_stillness.preroll_frames,
         },
     }

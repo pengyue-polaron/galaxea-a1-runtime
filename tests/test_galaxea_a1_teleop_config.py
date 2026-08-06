@@ -1,9 +1,15 @@
 from dataclasses import replace
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from galaxea_a1_runtime.apps.teleop.dataset_contract import tracked_config_reference
+from galaxea_a1_runtime.apps.teleop.dataset_doctor import dataset_report
+from galaxea_a1_runtime.apps.teleop.metadata import (
+    DatasetProvenanceRequest,
+    build_dataset_provenance,
+)
 from galaxea_a1_runtime.teleop.config import (
     load_teleop_config,
     validate_collection_config,
@@ -64,8 +70,13 @@ def test_default_teleop_config_locks_continuous_gripper_contract():
     assert config.system.eef.max_feedback_age_s == 0.5
     assert config.system.eef.xyz_min == pytest.approx((0.04, -0.27, 0.06))
     assert config.system.eef.xyz_max == pytest.approx((0.47, 0.17, 0.50))
-    assert config.collection.auto_reset_after_save is True
-    assert config.collection.auto_reset_after_discard is True
+    assert config.collection.reset_policy.before_collection is True
+    assert config.collection.reset_policy.after_save is True
+    assert config.collection.reset_policy.after_discard is True
+    assert config.collection.leading_stillness.action_thresholds == (0.02,) * 7
+    assert config.collection.leading_stillness.reference_frames == 3
+    assert config.collection.leading_stillness.motion_frames == 3
+    assert config.collection.leading_stillness.preroll_frames == 6
     assert config.system.cameras.wrist.backend == "realsense"
     assert config.system.cameras.wrist.serial == "218622276998"
     assert config.system.cameras.wrist.crop is None
@@ -95,6 +106,60 @@ def test_teleop_shell_contract_renders_lifecycle_values():
     )
     assert "JOINT_TRACKER_NODE=/jointTracker_demo_node" in rendered
     assert "JOINT_TRACKER_NODE_NAME=jointTracker_demo_node" in rendered
+
+
+def test_dataset_provenance_records_reset_and_trimming_contracts():
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+
+    provenance = build_dataset_provenance(
+        DatasetProvenanceRequest(
+            experiment="plug_insertion_v1",
+            front_crop=config.system.cameras.front.crop,
+            wrist_label=config.system.cameras.wrist.serial,
+            config_path="configs/teleop/a1_so100.toml",
+            config=config,
+        )
+    )
+
+    assert provenance["collection_lifecycle"] == {
+        "reset": {
+            "before_collection": True,
+            "after_save": True,
+            "after_discard": True,
+        },
+        "leading_stillness": {
+            "enabled": True,
+            "action_thresholds": [0.02] * 7,
+            "reference_frames": 3,
+            "motion_frames": 3,
+            "preroll_frames": 6,
+        },
+    }
+
+
+def test_dataset_doctor_uses_the_shared_cli_report_shape(monkeypatch):
+    config = load_teleop_config(CONFIG, repo_root=REPO)
+    monkeypatch.setattr(
+        "galaxea_a1_runtime.apps.teleop.dataset_doctor."
+        "validate_direct_dataset_provenance",
+        lambda _identity, _expected, *, expected_task: SimpleNamespace(
+            tasks=("pick fruit",),
+            total_episodes=2,
+            total_frames=60,
+        ),
+    )
+
+    report = dataset_report(config, experiment="fruit_v1")
+
+    assert report == {
+        "status": "PASS",
+        "experiment": "fruit_v1",
+        "root": str(REPO / "data/datasets/fruit_v1"),
+        "repo_id": "pengyue-polaron/galaxea-a1-fruit_v1",
+        "episodes": 2,
+        "frames": 60,
+        "tasks": ["pick fruit"],
+    }
 
 
 def test_teleop_config_rejects_unknown_keys(tmp_path: Path):

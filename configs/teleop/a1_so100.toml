@@ -42,6 +42,15 @@ dataset_root = "data/datasets"
 repo_id_prefix = "pengyue-polaron/galaxea-a1"
 fps = 30.0
 max_duration_s = 0.0
+auto_reset_before_collection = true
 auto_reset_after_save = true
 auto_reset_after_discard = true
 ready_timeout_s = 10.0
+
+[collection.leading_stillness]
+enabled = true
+# Six absolute joint targets are radians; the gripper action is normalized 0..1.
+action_thresholds = [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
+reference_frames = 3
+motion_frames = 3
+preroll_frames = 6

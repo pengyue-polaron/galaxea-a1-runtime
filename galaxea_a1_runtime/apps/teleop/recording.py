@@ -6,25 +6,33 @@ import select
 import sys
 import time
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
-import rospy
-from embodied_ops.collection import require_fresh_sample, require_pair_skew
+from embodied_ops.collection import (
+    LeadingStillnessConfig,
+    LeadingStillnessTrimmer,
+    require_fresh_sample,
+    require_pair_skew,
+)
 
-from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
     normalize_episode_decision,
 )
 from galaxea_a1_runtime.collection.lerobot_frame import build_lerobot_frame
-from galaxea_a1_runtime.hardware.cameras import CameraReader, CameraSample
-from galaxea_a1_runtime.hardware.image_geometry import crop_image
 from galaxea_a1_runtime.configuration.image import ImageRoi
+from galaxea_a1_runtime.hardware.image_geometry import crop_image
+
+if TYPE_CHECKING:
+    from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
+    from galaxea_a1_runtime.hardware.cameras import CameraReader, CameraSample
 
 
 @dataclass(frozen=True)
 class RecordedEpisode:
     frame_count: int
+    sampled_frame_count: int
+    trimmed_frame_count: int
     decision: EpisodeDecision
     actions: tuple[tuple[float, ...], ...]
 
@@ -47,9 +55,7 @@ class _FrameRecorder:
     max_camera_age_s: float
     max_camera_pair_skew_s: float
 
-    def capture(
-        self, frame_index: int, last_camera_seq: dict[str, int]
-    ) -> CapturedFrame | None:
+    def capture(self, last_camera_seq: dict[str, int]) -> CapturedFrame | None:
         readers = (self.front_reader, self.wrist_reader)
         _raise_camera_reader_errors(readers)
         wait_for_new_camera_samples(
@@ -126,8 +132,12 @@ def record_episode(
     camera_ready_timeout_s: float,
     max_camera_age_s: float,
     max_camera_pair_skew_s: float,
+    leading_stillness: LeadingStillnessConfig,
 ) -> RecordedEpisode:
-    frame_index = 0
+    import rospy
+
+    stored_frames = 0
+    sampled_frames = 0
     wait_for_new_camera_samples(
         (front_reader, wrist_reader),
         min_seq={
@@ -152,6 +162,7 @@ def record_episode(
     user_input: str | None = None
     last_camera_seq = {front_reader.name: -1, wrist_reader.name: -1}
     actions: list[tuple[float, ...]] = []
+    trimmer = LeadingStillnessTrimmer[CapturedFrame](leading_stillness)
 
     while not rospy.is_shutdown():
         loop_t = time.perf_counter()
@@ -161,14 +172,16 @@ def record_episode(
         if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
             break
 
-        captured = recorder.capture(frame_index, last_camera_seq)
+        captured = recorder.capture(last_camera_seq)
         if captured is None:
             time.sleep(0.005)
             continue
-        dataset.add_frame(captured.values)
+        sampled_frames += 1
         last_camera_seq = captured.camera_seq
-        actions.append(captured.action)
-        frame_index += 1
+        for ready in trimmer.push(captured, captured.action):
+            dataset.add_frame(ready.values)
+            actions.append(ready.action)
+            stored_frames += 1
 
         next_frame_t += period
         sleep_s = next_frame_t - time.perf_counter()
@@ -176,7 +189,9 @@ def record_episode(
             time.sleep(sleep_s)
 
     return RecordedEpisode(
-        frame_count=frame_index,
+        frame_count=stored_frames,
+        sampled_frame_count=sampled_frames,
+        trimmed_frame_count=trimmer.result.trimmed_frames,
         decision=normalize_episode_decision(user_input),
         actions=tuple(actions),
     )

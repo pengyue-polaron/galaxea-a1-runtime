@@ -297,6 +297,7 @@ collect() {
     --repo-root "${ROOT}"
     --config "${CONFIG_PATH}"
     --experiment "${experiment}"
+    --allow-absent
   )
   if [[ -n "${COLLECTION_TASK}" ]]; then
     preflight_args+=(--task "${COLLECTION_TASK}")
