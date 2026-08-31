@@ -1,0 +1,35 @@
+name: publish-foxglove-layout
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "foxglove/layouts/a1_observability.json"
+      - "galaxea_a1_runtime/foxglove_layout_publish.py"
+      - ".github/workflows/publish-foxglove-layout.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-foxglove-layout
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Publish canonical organization layout
+        env:
+          FOXGLOVE_API_KEY: ${{ secrets.FOXGLOVE_API_KEY }}
+        run: >-
+          python -m galaxea_a1_runtime.foxglove_layout_publish
+          --layout foxglove/layouts/a1_observability.json
+          --name "Galaxea A1 Operations"
+          --folder "Galaxea A1"
+          --permission ORG_READ

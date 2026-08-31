@@ -89,6 +89,10 @@ just cameras start
 In Foxglove, add a **Foxglove WebSocket** connection to
 `ws://127.0.0.1:8766` (or the host's trusted-LAN address), then import
 [`foxglove/layouts/a1_observability.json`](../foxglove/layouts/a1_observability.json).
+The canonical organization layout is named **Galaxea A1 Operations**. Pushes to
+`main` that change the committed layout automatically create or update that
+organization layout through the Foxglove API, so organization members normally
+select it from the Layouts menu instead of importing the JSON manually.
 The first tab contains both camera streams, A1 URDF/TF, and diagnostics; the
 second contains measured/staged/forwarded joint and gripper plots plus ROS logs.
 Staged and forwarded joint curves start disabled so the measured traces remain
