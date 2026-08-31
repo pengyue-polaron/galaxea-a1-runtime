@@ -67,11 +67,17 @@ status_observability() {
   docker ps -a --format '{{.Names}}\t{{.Status}}' |
     grep -E "^${A1_OBSERVABILITY_PREFIX}-" ||
     a1_info "No ${A1_OBSERVABILITY_PREFIX}-* containers."
-  if timeout 1 bash -c "</dev/tcp/127.0.0.1/${FOXGLOVE_PORT}" 2>/dev/null; then
-    a1_success "Foxglove endpoint is listening on ws://127.0.0.1:${FOXGLOVE_PORT}."
+  if a1_observability_stack_is_ready \
+    "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}"; then
+    a1_success "Persistent Foxglove stack is healthy at ws://127.0.0.1:${FOXGLOVE_PORT}."
+    return 0
+  fi
+  if a1_foxglove_port_is_listening; then
+    a1_fail "Port ${FOXGLOVE_PORT} is listening without the complete marked Foxglove stack."
   else
     a1_info "Foxglove endpoint is not listening on port ${FOXGLOVE_PORT}."
   fi
+  return 1
 }
 
 logs_observability() {

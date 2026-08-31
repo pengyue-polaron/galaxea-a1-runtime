@@ -1,3 +1,4 @@
+import os
 import subprocess
 from pathlib import Path
 
@@ -224,3 +225,32 @@ def test_standalone_observability_entrypoint_exposes_no_execution_service() -> N
     assert "a1_start_observability" in source
     assert "a1_start_driver" not in source
     assert "a1_start_command_relay" not in source
+
+
+def test_standalone_observability_status_fails_when_stack_is_absent(
+    tmp_path: Path,
+) -> None:
+    fake_bin = tmp_path / "bin"
+    fake_bin.mkdir()
+    docker = fake_bin / "docker"
+    docker.write_text(
+        "#!/usr/bin/env bash\nif [[ \"$1\" == inspect ]]; then printf 'false\\n'; fi\n"
+    )
+    timeout = fake_bin / "timeout"
+    timeout.write_text("#!/usr/bin/env bash\nexit 1\n")
+    docker.chmod(0o755)
+    timeout.chmod(0o755)
+    env = os.environ.copy()
+    env["PATH"] = f"{fake_bin}:{env['PATH']}"
+
+    result = subprocess.run(
+        ["bash", str(OBSERVABILITY_RUNTIME), "status"],
+        cwd=REPO,
+        env=env,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "not listening" in result.stdout
