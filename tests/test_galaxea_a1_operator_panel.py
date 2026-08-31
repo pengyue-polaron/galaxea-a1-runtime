@@ -89,6 +89,7 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
         str(ROOT / "configs/poses/a1_collection_start.toml"),
     )
     cameras = adapter.build_launch("camera", {"action": "start"})
+    assert cameras.command[0].endswith("a1_camera_observability_runtime.sh")
     assert cameras.command[-1] == "start"
     hardware = adapter.build_launch(
         "hardware", {"config": "configs/teleop/a1_so100.toml"}

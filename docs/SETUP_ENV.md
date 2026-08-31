@@ -32,11 +32,18 @@ the execution image once:
 
 ```bash
 docker compose -f docker-compose.a1-noetic.yml build a1-noetic
+just ros-python-check
 ```
 
 The image is based on `ros:noetic-ros-base-focal`; it owns ROS Noetic and the
-A1 SDK execution environment. Runtime orchestration starts isolated containers
-for roscore, the A1 driver, the selected tracker, and the validating relay.
+A1 SDK execution environment. It builds the officially pinned ROS 1 Foxglove
+Bridge from source for the read-only observability sidecar. Runtime orchestration
+starts isolated containers for roscore, the A1 driver, the selected tracker,
+the validating relay, telemetry, and Foxglove as required by the selected
+composition.
+`just ros-python-check` uses no network or devices; it verifies the Python 3.12
+ROS messages, Foxglove package overlay, and telemetry encoding imports inside
+the built image.
 
 Python 3.12 applications, RealSense cameras, serial-device discovery, and
 optional GPU drivers remain host-side responsibilities. Ubuntu 22.04 is the

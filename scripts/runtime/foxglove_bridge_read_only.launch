@@ -1,0 +1,25 @@
+<launch>
+  <!-- Every endpoint and allowlist is rendered from the owning System config. -->
+  <arg name="address" />
+  <arg name="port" />
+  <arg name="topic_whitelist" />
+  <arg name="no_match_allowlist" />
+  <arg name="capabilities" />
+  <arg name="asset_uri_allowlist" />
+  <arg name="max_update_ms" />
+  <arg name="send_buffer_limit" />
+
+  <include file="$(find foxglove_bridge)/launch/foxglove_bridge.launch">
+    <arg name="address" value="$(arg address)" />
+    <arg name="port" value="$(arg port)" />
+    <arg name="tls" value="false" />
+    <arg name="topic_whitelist" value="$(arg topic_whitelist)" />
+    <arg name="service_whitelist" value="$(arg no_match_allowlist)" />
+    <arg name="param_whitelist" value="$(arg no_match_allowlist)" />
+    <arg name="client_topic_whitelist" value="$(arg no_match_allowlist)" />
+    <arg name="capabilities" value="$(arg capabilities)" />
+    <arg name="asset_uri_allowlist" value="$(arg asset_uri_allowlist)" />
+    <arg name="max_update_ms" value="$(arg max_update_ms)" />
+    <arg name="send_buffer_limit" value="$(arg send_buffer_limit)" />
+  </include>
+</launch>

@@ -36,7 +36,8 @@ just camera-check
 System config. Resolve missing devices, stale frames, wrong image shapes, or USB
 bandwidth failures before continuing.
 
-Start or verify the persistent read-only LAN monitor once:
+Start or verify the persistent read-only LAN monitor once. This command also
+ensures the shared roscore, telemetry adapter, and Foxglove Bridge:
 
 ```bash
 just cameras
@@ -58,16 +59,71 @@ temporarily stops the bridge so it can exercise camera construction and USB/FPS
 checks, then restarts it. Normal inference and collection do not perform this
 handoff.
 
-To explicitly close both cameras and the Web monitor:
+To explicitly close the cameras, Web monitor, telemetry adapter, and Foxglove
+Bridge:
 
 ```bash
 just cameras stop
 ```
 
-Use `just cameras status` or `just cameras logs` for monitor diagnostics.
+Use `just cameras status` or `just cameras logs` for the combined monitoring
+stack. Normal `just stop` stops motion/inference resources but deliberately
+leaves this stack running.
 
 The preview is unauthenticated, unencrypted, and LAN-only. Do not port-forward
 it.
+
+### Read-only Foxglove workspace
+
+The normal A1, joint, Teleop, LingBot, and pi0.5 runtime compositions ensure and
+reuse the same persistent read-only Foxglove WebSocket at
+`ws://<this-host>:8766`; they never start a competing bridge.
+
+To inspect cameras without starting the A1 driver, tracker, relay, or any
+command publisher, start the combined persistent observation stack:
+
+```bash
+just cameras start
+```
+
+In Foxglove, add a **Foxglove WebSocket** connection to
+`ws://127.0.0.1:8766` (or the host's trusted-LAN address), then import
+[`foxglove/layouts/a1_observability.json`](../foxglove/layouts/a1_observability.json).
+The first tab contains both camera streams, A1 URDF/TF, and diagnostics; the
+second contains measured/staged/forwarded joint and gripper plots plus ROS logs.
+Staged and forwarded joint curves start disabled so the measured traces remain
+readable. When `just panel` is also running, the second tab shows its sanitized
+versioned workflow state and progress on `/a1/ops/workflow_status`; child argv
+and terminal logs are deliberately excluded. The layout has no Publish panel,
+so guarded workflow inputs still use the panel or CLI rather than Foxglove.
+
+Standalone mode is intentionally partial: camera images are available when the
+persistent Camera Bridge is running, while joints, relay status, motor status,
+and TF remain unavailable until their owning execution runtime exists. This may
+show red relay/motor diagnostics with the arm off; it does not open or probe the
+arm. No `CameraInfo` or camera-to-robot calibration is currently tracked, so the
+layout keeps images in 2D panels instead of inventing a 3D camera transform.
+
+The shared stack remains alive across normal A1 runtime stop/start transitions
+and does not require the arm to be powered. It remains a background service
+until `just cameras stop`, host shutdown, or process failure; it is not installed
+as an operating-system boot service. Use these commands when managing Foxglove
+without changing Camera Bridge ownership:
+
+```bash
+just foxglove status
+just foxglove logs
+just foxglove restart
+just foxglove stop
+```
+
+The endpoint has no authentication or TLS. Restrict port `8766` to the trusted
+LAN and never proxy or port-forward it. Foxglove can inspect configured command
+topics, but the bridge denies client publication, service calls, parameter
+access, and client-advertised topics. Regenerate the committed layout after a
+System topic, joint-name, or URDF change with `just foxglove-layout`; the static
+test suite rejects a stale layout. Run `just foxglove restart` after changing
+the tracked observability configuration.
 
 ### Unified operator panel
 
@@ -179,8 +235,10 @@ just rosbag stop
 ```
 
 The recorder does not publish commands. It records the configured state,
-target, staged, host, relay, and gripper topics under `outputs/rosbags/`. Stop
-it with `just rosbag stop` so the active bag is finalized cleanly.
+target, staged, host, relay, gripper, telemetry-camera, mirror, diagnostics, and
+TF topics under `outputs/rosbags/`. Stop it with `just rosbag stop` so the active
+bag is finalized cleanly. These bags can be opened directly in Foxglove with the
+same committed layout.
 
 ## 3. Reset and Teleop acceptance
 
@@ -471,6 +529,8 @@ enabled:
 just lingbot
 # select another registered LingBot checkpoint without editing a deployment
 just lingbot --model mango_placement_eef
+# plug insertion uses its own model and task catalog
+just lingbot --config configs/deployments/lingbot/plug_insertion_eef.toml
 
 just pi05
 tmux attach -t pi05-a1
@@ -511,6 +571,8 @@ just lingbot-batch
 just lingbot-batch configs/runs/lingbot/fruit_placement.toml
 # run all six catalog tasks with the registered step-200 mango checkpoint
 just lingbot-batch --model mango_placement_eef configs/runs/lingbot/mango_placement.toml
+# three Enter-gated attempts of the trained first-socket plug prompt
+just lingbot-batch configs/runs/lingbot/plug_insertion.toml
 ```
 
 Edit `retries_per_prompt` and the ordered `task_ids` in the tracked run plan.
@@ -528,6 +590,15 @@ attempt with `status=safety_stopped`, and asks for an evaluation decision.
 slot to the Enter/reset gate, and `q` stops with that slot pending. The decision
 is stored in `metadata.json`. Reset, model, ROS, camera, serial, and other
 infrastructure failures still abort the batch and remain pending.
+
+The plug-insertion checkpoint was trained only on `charger_socket_1`. Its
+dedicated model-bound catalog exposes only that prompt; the separate collection
+catalog retains the other socket prompts without claiming that this checkpoint
+trained on them. The tracked 286-call budget covers the longest 1143-frame
+source episode at four executed actions per model call, so the policy replans
+twice as often while retaining the original 1144-action budget. Use the
+dedicated deployment; selecting `plug_insertion_eef` on the default fruit
+deployment would retain the wrong task catalog.
 
 Resume the same scene without repeating durable completed slots:
 

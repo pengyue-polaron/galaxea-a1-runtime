@@ -164,6 +164,35 @@ jpeg_quality = 75
 startup_timeout_s = 15.0
 shutdown_timeout_s = 5.0
 
+[observability]
+# Foxglove is a read-only trusted-LAN telemetry endpoint. Client publication,
+# services, and parameters remain disabled by the runtime launch contract.
+enabled = true
+bind = "0.0.0.0"
+port = 8766
+image_rate_hz = 8.0
+jpeg_quality = 75
+diagnostics_rate_hz = 5.0
+operator_panel_poll_rate_hz = 2.0
+operator_panel_timeout_s = 0.25
+camera_connect_timeout_s = 1.0
+camera_retry_s = 2.0
+startup_timeout_s = 15.0
+shutdown_timeout_s = 5.0
+graph_update_ms = 1000
+send_buffer_limit_bytes = 10000000
+
+[observability.topics]
+front_image = "/a1/telemetry/cameras/front/image/compressed"
+wrist_image = "/a1/telemetry/cameras/wrist/image/compressed"
+staged_joint_state = "/a1/telemetry/joints/staged"
+host_joint_state = "/a1/telemetry/joints/forwarded"
+gripper_feedback_state = "/a1/telemetry/gripper/measured_mm"
+gripper_target_state = "/a1/telemetry/gripper/target_mm"
+gripper_command_state = "/a1/telemetry/gripper/forwarded_mm"
+workflow_status = "/a1/ops/workflow_status"
+diagnostics = "/a1/diagnostics"
+
 [operator_panel]
 # The panel can start hardware workflows. Bind to the trusted LAN only; it has
 # request integrity tokens but no user authentication or transport encryption.

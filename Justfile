@@ -40,6 +40,10 @@ operator-configs:
 panel:
     {{vpy}} -m galaxea_a1_runtime.cli panel --repo-root "{{repo}}"
 
+# Render the tracked read-only Foxglove layout from System config.
+foxglove-layout:
+    {{vpy}} {{repo}}/scripts/runtime/render_foxglove_layout.py
+
 ros-python-check:
     #!/usr/bin/env bash
     set -euo pipefail
@@ -51,10 +55,11 @@ ros-python-check:
       --repo-root "{{repo}}" --shell
     docker image inspect "${IMAGE}" >/dev/null
     docker run --rm --network none \
-      --entrypoint /workspace/scripts/runtime/a1_ros_python_check.py \
+      -e A1_SDK_ROOT=/workspace/third_party/A1_SDK \
       -e "PYTHONPATH=${A1_CONTAINER_PYTHONPATH}" \
       -v "{{repo}}:/workspace:ro" \
       "${IMAGE}" \
+      /workspace/scripts/runtime/a1_ros_python_check.py \
       --config /workspace/configs/system/a1.toml
 
 test:
@@ -89,7 +94,11 @@ camera-check *args:
 
 # Start, stop, inspect, or read logs from the persistent cameras.
 cameras action="start":
-    scripts/apps/cameras/a1_camera_web_runtime.sh "{{action}}"
+    scripts/apps/cameras/a1_camera_observability_runtime.sh "{{action}}"
+
+# Start a read-only Foxglove endpoint without starting the A1 driver or relay.
+foxglove action="start":
+    scripts/runtime/a1_observability_runtime.sh "{{action}}"
 
 eef-test:
     scripts/runtime/a1_joint_runtime.sh services
@@ -169,7 +178,7 @@ stop:
 logs:
     scripts/apps/teleop/a1_teleop_runtime.sh logs || true
     scripts/runtime/a1_runtime.sh logs || true
-    scripts/apps/cameras/a1_camera_web_runtime.sh logs || true
+    scripts/apps/cameras/a1_camera_observability_runtime.sh logs || true
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 

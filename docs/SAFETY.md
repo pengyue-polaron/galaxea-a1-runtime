@@ -141,10 +141,28 @@ additional gripper bit latches `FAULT`.
 - After partial startup failure, run `just stop` before retrying.
 - The configuration-independent shutdown fallback may stop only marked
   repository-owned containers, host process groups, and tmux sessions. Normal
-  `just stop` may preserve the marked read-only camera monitor; explicit
-  `just cameras stop` closes it.
+  `just stop` preserves the marked read-only camera monitor and its shared
+  roscore/telemetry/Foxglove observation stack. Explicit `just cameras stop`
+  closes both display services; it does not stop an active execution runtime or
+  remove the shared ROS master while another marked runtime still uses it.
 - The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
   encryption and must not be port-forwarded or gain control endpoints.
+- Foxglove observability is also unauthenticated, unencrypted, and trusted-LAN
+  only. The bridge may subscribe to configured target, staged, forwarded, and
+  feedback topics for inspection, but client publication, services, parameters,
+  and client-advertised topics are denied by exact no-match allowlists. Its
+  layout contains no Publish panel. Topic visibility never grants command
+  authority, and stopping or losing Foxglove must not affect the relay.
+- The persistent observation stack is independent of arm power. Red or missing
+  motor, relay, joint, and TF diagnostics while the arm is off are expected
+  visibility states, never a reason to synthesize feedback or weaken checks.
+- The observability adapter owns only display publishers below
+  `/a1/telemetry/*`, `/a1/ops/workflow_status`, and `/a1/diagnostics`. It
+  validates every command mirror, reads cameras only through the sole-owner
+  Camera Bridge, and never publishes a staged target, host command,
+  motion-enable value, or gripper command. Operator workflow status is a
+  sanitized display-only mirror; its visible input-action ids cannot be invoked
+  through Foxglove.
 - The operator control panel is a separate trusted-LAN HTTP service configured
   by System. It has no user authentication or transport encryption: its random
   per-process token protects request integrity but is delivered to any browser
@@ -158,6 +176,10 @@ additional gripper bit latches `FAULT`.
   a later reset or inference step.
 - Child progress announcements are display-only latest-state events. They cannot
   grant input, launch a workflow, publish commands, or alter safety decisions.
+- Operator-panel child events are schema-versioned and invalid or undeclared
+  input actions are rejected visibly. Form submissions reject unknown or
+  unavailable values before the adapter is called. An ownership supervisor
+  terminates the owned workflow process group if the panel process disappears.
 - Web configuration creation is create-only, same-kind validated, and
   prohibited during a workflow. The candidate is hidden, validated with the
   owning strict loader, and atomically linked into its allowed config directory.

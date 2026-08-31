@@ -8,8 +8,14 @@ source "${ROOT}/scripts/runtime/a1_tmux.sh"
 source "${ROOT}/scripts/runtime/a1_processes.sh"
 
 process_exclusions=()
+container_exclusions=()
 if [[ "${1:-}" == "--keep-camera-monitor" ]]; then
   process_exclusions+=("a1-camera-web")
+  container_exclusions+=(
+    "${A1_OBSERVABILITY_ROSCORE_CONTAINER}"
+    "${A1_OBSERVABILITY_TELEMETRY_CONTAINER}"
+    "${A1_OBSERVABILITY_FOXGLOVE_CONTAINER}"
+  )
   shift
 fi
 if (( $# != 0 )); then
@@ -20,7 +26,7 @@ fi
 status=0
 a1_process_stop_all_managed 5 "${process_exclusions[@]}" || status=1
 a1_tmux_stop_all_managed || status=1
-a1_remove_all_managed_containers || status=1
+a1_remove_all_managed_containers "${container_exclusions[@]}" || status=1
 if (( status != 0 )); then
   a1_fail "Some marked Galaxea A1 runtime resources could not be stopped."
   exit "${status}"

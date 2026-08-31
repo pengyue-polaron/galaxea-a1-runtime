@@ -1,3 +1,10 @@
+import runpy
+import sys
+from pathlib import Path
+from types import ModuleType, SimpleNamespace
+
+import pytest
+
 from galaxea_a1_runtime.safety import (
     RelayInputs,
     actuator_error_block_reason,
@@ -7,6 +14,9 @@ from galaxea_a1_runtime.safety import (
     validate_arm_control_command,
     validate_initial_alignment,
 )
+
+
+REPO = Path(__file__).resolve().parents[1]
 
 
 def healthy_inputs(**overrides):
@@ -158,6 +168,73 @@ def test_relay_vector_validation_rejects_short_and_non_finite_inputs():
         actuator_error_block_reason((0, 0, 0, 0, 0, 0, 68), index=6, label="gripper")
         == "gripper motor error: 68"
     )
+
+
+def test_relay_callback_reorders_named_joint_feedback(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rospy = ModuleType("rospy")
+    rospy.Publisher = lambda *_args, **_kwargs: SimpleNamespace(
+        publish=lambda _msg: None
+    )
+    rospy.Subscriber = lambda *_args, **_kwargs: None
+    rospy.logerr = lambda *_args: None
+    message_modules = {
+        "sensor_msgs.msg": {"JointState": type("JointState", (), {})},
+        "signal_arm.msg": {
+            "arm_control": type("arm_control", (), {}),
+            "gripper_position_control": type("gripper_position_control", (), {}),
+            "status_stamped": type("status_stamped", (), {}),
+        },
+        "std_msgs.msg": {
+            "Bool": type("Bool", (), {}),
+            "String": type("String", (), {}),
+        },
+    }
+    monkeypatch.setitem(sys.modules, "rospy", rospy)
+    for name, attributes in message_modules.items():
+        package_name = name.partition(".")[0]
+        package = ModuleType(package_name)
+        module = ModuleType(name)
+        for attribute, value in attributes.items():
+            setattr(module, attribute, value)
+        setattr(package, "msg", module)
+        monkeypatch.setitem(sys.modules, package_name, package)
+        monkeypatch.setitem(sys.modules, name, module)
+    monkeypatch.setattr(
+        "galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python",
+        lambda _root: None,
+    )
+    namespace = runpy.run_path(str(REPO / "scripts/runtime/safe_arm_command_relay.py"))
+    config = namespace["RelayRuntimeConfig"](
+        input_topic="/staged",
+        output_topic="/host",
+        joint_topic="/joints",
+        motor_status_topic="/status",
+        enable_topic="/enable",
+        relay_status_topic="/relay",
+        gripper_input_topic="/gripper_target",
+        gripper_output_topic="/gripper_host",
+        gripper_min_stroke_mm=0.0,
+        gripper_max_stroke_mm=100.0,
+        joint_names=("j1", "j2"),
+        rate=100.0,
+        status_rate=5.0,
+        max_input_age=0.25,
+        max_status_age=1.0,
+        arming_timeout=1.0,
+        max_initial_error=0.05,
+        gripper_ignored_error_mask=0,
+        allowed_control_modes=(0,),
+    )
+    relay = namespace["SafeArmCommandRelay"](config)
+
+    relay._joint_cb(SimpleNamespace(name=["j2", "j1"], position=[2.0, 1.0]))
+    assert relay.joints == [1.0, 2.0]
+
+    relay._joint_cb(SimpleNamespace(name=["j1", "j1"], position=[1.0, 2.0]))
+    assert relay.joints == []
+    assert "duplicate" in relay.fault_reason
 
 
 def _validate_arm_command(**overrides):

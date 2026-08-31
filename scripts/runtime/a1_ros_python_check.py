@@ -25,14 +25,23 @@ def main() -> int:
     system = load_system_config(args.config, repo_root=ROOT)
 
     configure_ros1_python(ROOT)
+    import cv2
+    import msgpack
+    import numpy
+    import rospkg
     import rospy
+    from diagnostic_msgs.msg import DiagnosticArray
     from sensor_msgs.msg import JointState
     from signal_arm.msg import arm_control
+
+    foxglove_path = rospkg.RosPack().get_path("foxglove_bridge")
 
     success(
         f"ROS1 Python {sys.version_info.major}.{sys.version_info.minor} import ready; "
         f"config={system.path}; modules={rospy.__name__},"
-        f"{JointState.__name__},{arm_control.__name__}"
+        f"{JointState.__name__},{arm_control.__name__},{DiagnosticArray.__name__},"
+        f"{numpy.__name__},{cv2.__name__},{msgpack.__name__}; "
+        f"foxglove_bridge={foxglove_path}"
     )
     return 0
 

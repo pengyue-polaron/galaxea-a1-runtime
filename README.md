@@ -30,6 +30,8 @@ are kept in independent packages.
   and a fail-closed command relay.
 - Operate collection, dataset inspection/export, evaluation, resets, cameras,
   and tracked batch plans from a compact shadcn/ui control panel.
+- Inspect cameras, named joint/gripper signals, diagnostics, ROS logs, TF, and
+  the configured URDF through a generated read-only Foxglove workspace.
 
 ## Supported baseline
 

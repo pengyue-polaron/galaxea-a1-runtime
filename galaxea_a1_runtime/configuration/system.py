@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from collections.abc import Iterable
@@ -36,6 +37,11 @@ from galaxea_a1_runtime.configuration.camera_diagnostics import (
 )
 from galaxea_a1_runtime.configuration.cli import run_config_renderer
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
+from galaxea_a1_runtime.configuration.observability import (
+    ObservabilityConfig,
+    ObservabilityTopicsConfig,
+    parse_observability_config,
+)
 from galaxea_a1_runtime.configuration.web_preview import (
     WebPreviewConfig,
     parse_web_preview_config,
@@ -63,6 +69,8 @@ __all__ = [
     "SystemHostConfig",
     "SystemJointSafetyConfig",
     "SystemOperatorPanelConfig",
+    "ObservabilityConfig",
+    "ObservabilityTopicsConfig",
     "SystemRealSenseCameraConfig",
     "SystemRelayConfig",
     "SystemStartupConfig",
@@ -203,6 +211,7 @@ class SystemConfig:
     cameras: SystemCamerasConfig
     camera_diagnostics: CameraDiagnosticsConfig
     web_preview: WebPreviewConfig
+    observability: ObservabilityConfig
     operator_panel: SystemOperatorPanelConfig
 
 
@@ -225,6 +234,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             "cameras",
             "camera_diagnostics",
             "web_preview",
+            "observability",
             "operator_panel",
         },
         label="system config",
@@ -378,6 +388,9 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         web_preview=parse_web_preview_config(
             required_table(data, "web_preview"), repo_root=repo_root
         ),
+        observability=parse_observability_config(
+            required_table(data, "observability"), repo_root=repo_root
+        ),
         operator_panel=SystemOperatorPanelConfig(
             bind=string(operator_panel, "bind"),
             port=integer(operator_panel, "port"),
@@ -417,6 +430,26 @@ def validate_system_config(config: SystemConfig) -> None:
             raise ValueError(
                 f"topics.{name} must be a valid absolute ROS name: {value!r}"
             )
+    for name, value in config.observability.topics.__dict__.items():
+        if ROS_ABSOLUTE_NAME.fullmatch(value) is None:
+            raise ValueError(
+                "observability.topics."
+                f"{name} must be a valid absolute ROS name: {value!r}"
+            )
+    primary_topics = set(config.topics.__dict__.values())
+    observability_topics = tuple(config.observability.topics.__dict__.values())
+    if len(set(observability_topics)) != len(observability_topics):
+        raise ValueError("observability.topics must not contain duplicates")
+    overlap = sorted(primary_topics & set(observability_topics))
+    if overlap:
+        raise ValueError(
+            f"observability topics must differ from primary topics: {overlap}"
+        )
+    if config.observability.port in {
+        config.operator_panel.port,
+        config.web_preview.port,
+    }:
+        raise ValueError("observability.port conflicts with an existing Web endpoint")
     if config.topics.staged_command == config.topics.host_command:
         raise ValueError("topics.staged_command must differ from topics.host_command")
     if config.topics.gripper_target == config.topics.gripper_command:
@@ -540,6 +573,13 @@ def validate_system_config(config: SystemConfig) -> None:
 def shell_values(config: SystemConfig) -> dict[str, str]:
     """Return the canonical system-to-shell lifecycle mapping."""
 
+    from galaxea_a1_runtime.observability import (
+        NO_MATCH_ALLOWLIST,
+        READ_ONLY_FOXGLOVE_CAPABILITIES,
+        foxglove_asset_uri_allowlist,
+        foxglove_topic_whitelist,
+    )
+
     return {
         "SYSTEM_CONFIG_PATH": str(config.path),
         "IMAGE": config.host.image,
@@ -570,6 +610,46 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         "WEB_PREVIEW_PORT": str(config.web_preview.port),
         "WEB_PREVIEW_STARTUP_TIMEOUT_S": number(config.web_preview.startup_timeout_s),
         "WEB_PREVIEW_SHUTDOWN_TIMEOUT_S": number(config.web_preview.shutdown_timeout_s),
+        "OBSERVABILITY_ENABLED": "true" if config.observability.enabled else "false",
+        "FOXGLOVE_BIND": config.observability.bind,
+        "FOXGLOVE_PORT": str(config.observability.port),
+        "FOXGLOVE_STARTUP_TIMEOUT_S": number(config.observability.startup_timeout_s),
+        "FOXGLOVE_SHUTDOWN_TIMEOUT_S": number(config.observability.shutdown_timeout_s),
+        "FOXGLOVE_GRAPH_UPDATE_MS": str(config.observability.graph_update_ms),
+        "FOXGLOVE_SEND_BUFFER_LIMIT_BYTES": str(
+            config.observability.send_buffer_limit_bytes
+        ),
+        "FOXGLOVE_TOPIC_WHITELIST_YAML": json.dumps(
+            foxglove_topic_whitelist(config), separators=(",", ":")
+        ),
+        "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML": json.dumps(
+            NO_MATCH_ALLOWLIST, separators=(",", ":")
+        ),
+        "FOXGLOVE_CAPABILITIES_YAML": json.dumps(
+            READ_ONLY_FOXGLOVE_CAPABILITIES, separators=(",", ":")
+        ),
+        "FOXGLOVE_ASSET_URI_ALLOWLIST_YAML": json.dumps(
+            foxglove_asset_uri_allowlist(config), separators=(",", ":")
+        ),
+        "OBSERVABILITY_FRONT_IMAGE_TOPIC": config.observability.topics.front_image,
+        "OBSERVABILITY_WRIST_IMAGE_TOPIC": config.observability.topics.wrist_image,
+        "OBSERVABILITY_STAGED_JOINT_TOPIC": (
+            config.observability.topics.staged_joint_state
+        ),
+        "OBSERVABILITY_HOST_JOINT_TOPIC": config.observability.topics.host_joint_state,
+        "OBSERVABILITY_GRIPPER_FEEDBACK_TOPIC": (
+            config.observability.topics.gripper_feedback_state
+        ),
+        "OBSERVABILITY_GRIPPER_TARGET_TOPIC": (
+            config.observability.topics.gripper_target_state
+        ),
+        "OBSERVABILITY_GRIPPER_COMMAND_TOPIC": (
+            config.observability.topics.gripper_command_state
+        ),
+        "OBSERVABILITY_WORKFLOW_STATUS_TOPIC": (
+            config.observability.topics.workflow_status
+        ),
+        "OBSERVABILITY_DIAGNOSTICS_TOPIC": config.observability.topics.diagnostics,
         "GRIPPER_MIN_STROKE_MM": number(config.gripper.stroke_min_mm),
         "GRIPPER_MAX_STROKE_MM": number(config.gripper.stroke_max_mm),
         "ROS_MASTER_STARTUP_TIMEOUT_S": number(config.startup.ros_master_timeout_s),
@@ -626,6 +706,26 @@ def bash_config(config: SystemConfig) -> str:
             "WEB_PREVIEW_PORT",
             "WEB_PREVIEW_STARTUP_TIMEOUT_S",
             "WEB_PREVIEW_SHUTDOWN_TIMEOUT_S",
+            "OBSERVABILITY_ENABLED",
+            "FOXGLOVE_BIND",
+            "FOXGLOVE_PORT",
+            "FOXGLOVE_STARTUP_TIMEOUT_S",
+            "FOXGLOVE_SHUTDOWN_TIMEOUT_S",
+            "FOXGLOVE_GRAPH_UPDATE_MS",
+            "FOXGLOVE_SEND_BUFFER_LIMIT_BYTES",
+            "FOXGLOVE_TOPIC_WHITELIST_YAML",
+            "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML",
+            "FOXGLOVE_CAPABILITIES_YAML",
+            "FOXGLOVE_ASSET_URI_ALLOWLIST_YAML",
+            "OBSERVABILITY_FRONT_IMAGE_TOPIC",
+            "OBSERVABILITY_WRIST_IMAGE_TOPIC",
+            "OBSERVABILITY_STAGED_JOINT_TOPIC",
+            "OBSERVABILITY_HOST_JOINT_TOPIC",
+            "OBSERVABILITY_GRIPPER_FEEDBACK_TOPIC",
+            "OBSERVABILITY_GRIPPER_TARGET_TOPIC",
+            "OBSERVABILITY_GRIPPER_COMMAND_TOPIC",
+            "OBSERVABILITY_WORKFLOW_STATUS_TOPIC",
+            "OBSERVABILITY_DIAGNOSTICS_TOPIC",
             "ROS_MASTER_STARTUP_TIMEOUT_S",
             "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
             "TOPIC_STARTUP_TIMEOUT_S",

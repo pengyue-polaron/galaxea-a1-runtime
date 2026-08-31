@@ -179,7 +179,7 @@ def build_a1_workflow_launch(
         if action not in {"start", "stop"}:
             raise ValueError("camera action must be start or stop")
         command = [
-            str(root / "scripts/apps/cameras/a1_camera_web_runtime.sh"),
+            str(root / "scripts/apps/cameras/a1_camera_observability_runtime.sh"),
             "--config",
             str(system.path),
             action,

@@ -54,7 +54,6 @@ a1_load_shell_config env \
     "${config_args[@]}"
 export A1_SYSTEM_CONFIG_PATH="${SYSTEM_CONFIG_PATH}"
 
-ROSCORE_CONTAINER="${PREFIX}-roscore"
 DRIVER_CONTAINER="${PREFIX}-driver"
 TRACKER_CONTAINER="${PREFIX}-joint-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
@@ -65,6 +64,9 @@ ROBOT_SERVICE_PID_FILE="${RUN_DIR}/robot_service.pid"
 # under the former service module and PID filename.
 LEGACY_ROBOT_SERVICE_PID_FILE="${RUN_DIR}/embodied_ops_server.pid"
 source "${ROOT}/scripts/runtime/a1_services.sh"
+ROSCORE_CONTAINER="${A1_OBSERVABILITY_ROSCORE_CONTAINER}"
+OBSERVABILITY_CONTAINER="${A1_OBSERVABILITY_TELEMETRY_CONTAINER}"
+FOXGLOVE_CONTAINER="${A1_OBSERVABILITY_FOXGLOVE_CONTAINER}"
 
 bridge_group_has_live_process() {
   local pgid="$1"
@@ -150,8 +152,8 @@ stop_runtime() {
   a1_remove_runtime_containers \
     "${RELAY_CONTAINER}" \
     "${TRACKER_CONTAINER}" \
-    "${DRIVER_CONTAINER}" \
-    "${ROSCORE_CONTAINER}"
+    "${DRIVER_CONTAINER}"
+  a1_stop_observability_roscore_if_unused
   a1_success "A1 teleop runtime stopped."
 }
 
@@ -175,23 +177,26 @@ start_services() {
   stop_runtime >/dev/null 2>&1 || true
   mkdir -p "${LOG_DIR}"
 
-  a1_step "1/5 ROS master"
+  a1_step "1/6 Persistent shared ROS master"
   a1_ensure_roscore "${ROSCORE_CONTAINER}"
 
-  a1_step "2/5 A1 driver"
+  a1_step "2/6 A1 driver"
   a1_start_driver "${DRIVER_CONTAINER}"
   a1_wait_valid_joint_feedback "${DRIVER_CONTAINER}" "${JOINT_STATES_TOPIC}"
 
-  a1_step "3/5 Joint tracker"
+  a1_step "3/6 Joint tracker"
   a1_container_run tracker "${TRACKER_CONTAINER}" \
     "${A1_ROS_PREFIX} && exec roslaunch /workspace/scripts/runtime/joint_tracker_staged.launch staged_command_topic:=${STAGED_TOPIC} joint_states_topic:=${JOINT_STATES_TOPIC} target_topic:=${JOINT_TARGET_TOPIC} ee_pose_topic:=${EEF_POSE_TOPIC} tracker_node:=${JOINT_TRACKER_NODE_NAME}"
   a1_wait_topic "${TRACKER_CONTAINER}" "${EEF_POSE_TOPIC}"
 
-  a1_step "4/5 Command relay"
+  a1_step "4/6 Command relay"
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  a1_step "5/5 A1 Robot service"
+  a1_step "5/6 Read-only Foxglove observability"
+  a1_start_observability "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}"
+
+  a1_step "6/6 A1 Robot service"
   start_robot_service
 
   a1_success "Teleop services ready."
@@ -383,7 +388,8 @@ status() {
 }
 
 logs() {
-  for name in "${DRIVER_CONTAINER}" "${TRACKER_CONTAINER}" "${RELAY_CONTAINER}" "${ROSCORE_CONTAINER}"; do
+  for name in "${DRIVER_CONTAINER}" "${TRACKER_CONTAINER}" "${RELAY_CONTAINER}" \
+    "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}" "${ROSCORE_CONTAINER}"; do
     a1_info "Logs: ${name}"
     docker logs --tail "${A1_LOG_TAIL:-120}" "${name}" 2>&1 || true
   done

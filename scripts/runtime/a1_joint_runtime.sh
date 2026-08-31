@@ -18,19 +18,21 @@ if [[ "${1:-help}" != "stop" && "${1:-help}" != "logs" ]]; then
     PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" -m galaxea_a1_runtime.configuration.system \
       "${config_args[@]}"
 fi
-ROSCORE_CONTAINER="${PREFIX}-roscore"
 DRIVER_CONTAINER="${PREFIX}-driver"
 TRACKER_CONTAINER="${PREFIX}-joint-tracker-staged"
 RELAY_CONTAINER="${PREFIX}-command-relay"
 TRACKER_NODE="${A1_TRACKER_NODE:-${JOINT_TRACKER_NODE:-}}"
 source "${ROOT}/scripts/runtime/a1_services.sh"
+ROSCORE_CONTAINER="${A1_OBSERVABILITY_ROSCORE_CONTAINER}"
+OBSERVABILITY_CONTAINER="${A1_OBSERVABILITY_TELEMETRY_CONTAINER}"
+FOXGLOVE_CONTAINER="${A1_OBSERVABILITY_FOXGLOVE_CONTAINER}"
 
 stop_runtime() {
   a1_remove_runtime_containers \
     "${RELAY_CONTAINER}" \
     "${TRACKER_CONTAINER}" \
-    "${DRIVER_CONTAINER}" \
-    "${ROSCORE_CONTAINER}"
+    "${DRIVER_CONTAINER}"
+  a1_stop_observability_roscore_if_unused
   a1_cleanup_shared_ros_nodes
   a1_success "A1 joint execution runtime stopped."
 }
@@ -48,7 +50,7 @@ start_services() {
   a1_info "Config: ${SYSTEM_CONFIG_PATH}"
   a1_preflight_container_runtime
   stop_runtime >/dev/null
-  a1_step "0/4 Ensuring ROS master"
+  a1_step "0/4 Ensuring persistent shared ROS master"
   a1_ensure_roscore "${ROSCORE_CONTAINER}"
 
   a1_step "1/4 Starting A1 driver"
@@ -64,7 +66,10 @@ start_services() {
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  a1_success "4/4 Joint runtime services ready; relay remains LOCKED"
+  a1_step "4/4 Starting read-only Foxglove observability"
+  a1_start_observability "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}"
+
+  a1_success "Joint runtime services ready; relay remains LOCKED"
   startup_complete=1
   trap - ERR
 }
@@ -87,7 +92,8 @@ status() {
 }
 
 logs() {
-  for name in "${DRIVER_CONTAINER}" "${TRACKER_CONTAINER}" "${RELAY_CONTAINER}" "${ROSCORE_CONTAINER}"; do
+  for name in "${DRIVER_CONTAINER}" "${TRACKER_CONTAINER}" "${RELAY_CONTAINER}" \
+    "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}" "${ROSCORE_CONTAINER}"; do
     a1_info "Logs: ${name}"
     docker logs --tail "${A1_LOG_TAIL:-120}" "${name}" 2>&1 || true
   done

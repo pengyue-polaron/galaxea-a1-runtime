@@ -30,7 +30,6 @@ from galaxea_a1_runtime.safety import (  # noqa: E402
     actuator_error_block_reason,
     gripper_stroke_block_reason,
     relay_block_reason,
-    require_finite_vector,
     validate_arm_control_command,
     validate_initial_alignment,
 )
@@ -39,6 +38,9 @@ from galaxea_a1_runtime.constants import SAFE_RELAY_NODE_NAME  # noqa: E402
 from galaxea_a1_runtime.configuration.system import (  # noqa: E402
     SYSTEM_CONFIG,
     load_system_config,
+)
+from galaxea_a1_runtime.runtime.ros_feedback import (  # noqa: E402
+    ordered_joint_positions,
 )
 
 
@@ -54,7 +56,7 @@ class RelayRuntimeConfig:
     gripper_output_topic: str
     gripper_min_stroke_mm: float
     gripper_max_stroke_mm: float
-    arm_joints: int
+    joint_names: tuple[str, ...]
     rate: float
     status_rate: float
     max_input_age: float
@@ -63,6 +65,10 @@ class RelayRuntimeConfig:
     max_initial_error: float
     gripper_ignored_error_mask: int
     allowed_control_modes: tuple[int, ...]
+
+    @property
+    def arm_joints(self) -> int:
+        return len(self.joint_names)
 
 
 class SafeArmCommandRelay:
@@ -117,9 +123,9 @@ class SafeArmCommandRelay:
 
     def _joint_cb(self, msg):
         try:
-            values = require_finite_vector(
-                msg.position,
-                count=self.config.arm_joints,
+            values = ordered_joint_positions(
+                msg,
+                self.config.joint_names,
                 label="joint feedback",
             )
         except (AttributeError, OverflowError, TypeError, ValueError) as exc:
@@ -350,7 +356,7 @@ def parse_args() -> RelayRuntimeConfig:
         gripper_output_topic=topics.gripper_command,
         gripper_min_stroke_mm=config.gripper.stroke_min_mm,
         gripper_max_stroke_mm=config.gripper.stroke_max_mm,
-        arm_joints=len(config.joint_safety.names),
+        joint_names=config.joint_safety.names,
         rate=config.relay.rate_hz,
         status_rate=config.relay.status_rate_hz,
         max_input_age=config.relay.max_input_age_s,

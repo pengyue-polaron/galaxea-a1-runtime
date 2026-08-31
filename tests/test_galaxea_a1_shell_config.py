@@ -113,6 +113,39 @@ def test_robot_service_lifecycle_exports_come_from_system_config():
     }
 
 
+def test_foxglove_lifecycle_exports_are_read_only_and_config_driven() -> None:
+    config = load_system_config(SYSTEM, repo_root=REPO)
+    names = (
+        "OBSERVABILITY_ENABLED",
+        "FOXGLOVE_BIND",
+        "FOXGLOVE_PORT",
+        "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML",
+        "FOXGLOVE_CAPABILITIES_YAML",
+        "OBSERVABILITY_DIAGNOSTICS_TOPIC",
+    )
+
+    rendered = dict(
+        line.split("=", 1) for line in render_shell_values(config, names).splitlines()
+    )
+
+    assert rendered == {
+        "OBSERVABILITY_ENABLED": "true",
+        "FOXGLOVE_BIND": "0.0.0.0",
+        "FOXGLOVE_PORT": "8766",
+        "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML": "'[\"^$\"]'",
+        "FOXGLOVE_CAPABILITIES_YAML": '\'["connectionGraph","assets"]\'',
+        "OBSERVABILITY_DIAGNOSTICS_TOPIC": config.observability.topics.diagnostics,
+    }
+
+
+def test_system_config_rejects_a_foxglove_port_collision(tmp_path: Path) -> None:
+    path = tmp_path / "a1.toml"
+    path.write_text(SYSTEM.read_text().replace("port = 8766", "port = 8765"))
+
+    with pytest.raises(ValueError, match="conflicts"):
+        load_system_config(path, repo_root=REPO)
+
+
 def test_system_config_rejects_non_unix_robot_service_endpoint(tmp_path):
     path = tmp_path / "a1.toml"
     path.write_text(

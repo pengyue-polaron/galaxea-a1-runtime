@@ -1,0 +1,378 @@
+{
+  "configById": {
+    "Image!front": {
+      "imageMode": {
+        "imageTopic": "/a1/telemetry/cameras/front/image/compressed"
+      }
+    },
+    "Image!wrist": {
+      "imageMode": {
+        "imageTopic": "/a1/telemetry/cameras/wrist/image/compressed"
+      }
+    },
+    "3D!robot": {
+      "cameraState": {
+        "perspective": true,
+        "distance": 1.5,
+        "phi": 60,
+        "thetaOffset": 45,
+        "targetOffset": [
+          0,
+          0,
+          0.35
+        ],
+        "target": [
+          0,
+          0,
+          0
+        ],
+        "targetOrientation": [
+          0,
+          0,
+          0,
+          1
+        ],
+        "fovy": 45,
+        "near": 0.01,
+        "far": 100
+      },
+      "followMode": "follow-pose",
+      "followTf": "base_link",
+      "scene": {
+        "enableStats": false,
+        "transforms": {
+          "editable": false,
+          "showLabel": false
+        },
+        "meshUpAxis": "z_up"
+      },
+      "transforms": {},
+      "topics": {},
+      "layers": {
+        "grid": {
+          "visible": true,
+          "frameLocked": true,
+          "label": "Grid",
+          "instanceId": "a1-grid",
+          "layerId": "foxglove.Grid",
+          "size": 2,
+          "divisions": 20,
+          "lineWidth": 1,
+          "color": "#248eff",
+          "position": [
+            0,
+            0,
+            0
+          ],
+          "rotation": [
+            0,
+            0,
+            0
+          ],
+          "frameId": "base_link"
+        },
+        "a1-urdf": {
+          "displayMode": "auto",
+          "fallbackColor": "#ffffff",
+          "showAxis": false,
+          "showOutlines": true,
+          "opacity": 1,
+          "visible": true,
+          "frameLocked": true,
+          "instanceId": "a1-urdf",
+          "label": "A1 URDF",
+          "layerId": "foxglove.Urdf",
+          "sourceType": "url",
+          "url": "package://mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf",
+          "filePath": "",
+          "parameter": "",
+          "topic": "",
+          "framePrefix": ""
+        }
+      },
+      "imageMode": {}
+    },
+    "DiagnosticSummary!a1": {
+      "minLevel": 0,
+      "pinnedIds": [],
+      "hardwareIdFilter": "",
+      "topicToRender": "/a1/diagnostics",
+      "sortByLevel": true
+    },
+    "DiagnosticStatusPanel!a1": {
+      "selectedHardwareId": "galaxea-a1",
+      "selectedName": "A1/Relay",
+      "topicToRender": "/a1/diagnostics"
+    },
+    "Plot!joints": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/joint_states_host.position[0]",
+          "enabled": true,
+          "color": "#4e98e2",
+          "label": "arm_joint1 measured",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/joint_states_host.position[1]",
+          "enabled": true,
+          "color": "#f5774d",
+          "label": "arm_joint2 measured",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/joint_states_host.position[2]",
+          "enabled": true,
+          "color": "#f7df71",
+          "label": "arm_joint3 measured",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/joint_states_host.position[3]",
+          "enabled": true,
+          "color": "#7ac36a",
+          "label": "arm_joint4 measured",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/joint_states_host.position[4]",
+          "enabled": true,
+          "color": "#be6bff",
+          "label": "arm_joint5 measured",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/joint_states_host.position[5]",
+          "enabled": true,
+          "color": "#5ac8c8",
+          "label": "arm_joint6 measured",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/staged.position[0]",
+          "enabled": false,
+          "color": "#4e98e2",
+          "label": "arm_joint1 staged",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/staged.position[1]",
+          "enabled": false,
+          "color": "#f5774d",
+          "label": "arm_joint2 staged",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/staged.position[2]",
+          "enabled": false,
+          "color": "#f7df71",
+          "label": "arm_joint3 staged",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/staged.position[3]",
+          "enabled": false,
+          "color": "#7ac36a",
+          "label": "arm_joint4 staged",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/staged.position[4]",
+          "enabled": false,
+          "color": "#be6bff",
+          "label": "arm_joint5 staged",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/staged.position[5]",
+          "enabled": false,
+          "color": "#5ac8c8",
+          "label": "arm_joint6 staged",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/forwarded.position[0]",
+          "enabled": false,
+          "color": "#4e98e2",
+          "label": "arm_joint1 forwarded",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/forwarded.position[1]",
+          "enabled": false,
+          "color": "#f5774d",
+          "label": "arm_joint2 forwarded",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/forwarded.position[2]",
+          "enabled": false,
+          "color": "#f7df71",
+          "label": "arm_joint3 forwarded",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/forwarded.position[3]",
+          "enabled": false,
+          "color": "#7ac36a",
+          "label": "arm_joint4 forwarded",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/forwarded.position[4]",
+          "enabled": false,
+          "color": "#be6bff",
+          "label": "arm_joint5 forwarded",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/joints/forwarded.position[5]",
+          "enabled": false,
+          "color": "#5ac8c8",
+          "label": "arm_joint6 forwarded",
+          "showLine": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 280
+    },
+    "Plot!gripper": {
+      "paths": [
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/gripper/measured_mm.position[0]",
+          "enabled": true,
+          "color": "#4e98e2",
+          "label": "gripper measured (mm)",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/gripper/target_mm.position[0]",
+          "enabled": true,
+          "color": "#f7df71",
+          "label": "gripper target (mm)",
+          "showLine": true
+        },
+        {
+          "timestampMethod": "receiveTime",
+          "value": "/a1/telemetry/gripper/forwarded_mm.position[0]",
+          "enabled": true,
+          "color": "#f5774d",
+          "label": "gripper forwarded (mm)",
+          "showLine": true
+        }
+      ],
+      "showXAxisLabels": true,
+      "showYAxisLabels": true,
+      "showLegend": true,
+      "legendDisplay": "floating",
+      "showPlotValuesInLegend": false,
+      "isSynced": true,
+      "xAxisVal": "timestamp",
+      "sidebarDimension": 280
+    },
+    "RawMessages!diagnostics": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/a1/diagnostics"
+    },
+    "RawMessages!workflow": {
+      "diffEnabled": false,
+      "diffMethod": "custom",
+      "diffTopicPath": "",
+      "showFullMessageForDiff": false,
+      "topicPath": "/a1/ops/workflow_status"
+    },
+    "RosOut!logs": {
+      "searchTerms": [],
+      "minLogLevel": 1
+    },
+    "Tab!a1": {
+      "activeTabIdx": 0,
+      "tabs": [
+        {
+          "title": "A1 Overview",
+          "layout": {
+            "direction": "row",
+            "splitPercentage": 38,
+            "first": {
+              "direction": "column",
+              "splitPercentage": 50,
+              "first": "Image!front",
+              "second": "Image!wrist"
+            },
+            "second": {
+              "direction": "column",
+              "splitPercentage": 65,
+              "first": "3D!robot",
+              "second": {
+                "direction": "row",
+                "splitPercentage": 50,
+                "first": "DiagnosticSummary!a1",
+                "second": "DiagnosticStatusPanel!a1"
+              }
+            }
+          }
+        },
+        {
+          "title": "Signals & Logs",
+          "layout": {
+            "direction": "row",
+            "splitPercentage": 58,
+            "first": {
+              "direction": "column",
+              "splitPercentage": 70,
+              "first": "Plot!joints",
+              "second": "Plot!gripper"
+            },
+            "second": {
+              "direction": "column",
+              "splitPercentage": 34,
+              "first": "RawMessages!diagnostics",
+              "second": {
+                "direction": "column",
+                "splitPercentage": 50,
+                "first": "RawMessages!workflow",
+                "second": "RosOut!logs"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "globalVariables": {},
+  "userNodes": {},
+  "linkedGlobalVariables": [],
+  "playbackConfig": {
+    "speed": 1
+  },
+  "layout": "Tab!a1"
+}

@@ -87,21 +87,21 @@ configs/system/a1.toml
   ├── configs/deployments/lingbot/<deployment>.toml
   │     ├── configs/inference/backends/lingbot_va.toml
   │     ├── configs/models/lingbot/<default-model>.toml
-  │     └── configs/tasks/<catalog>/catalog.json
+  │     └── configs/tasks/**/<catalog>/catalog.json
   ├── configs/runs/lingbot/<plan>.toml
   │     ├── configs/deployments/lingbot/<deployment>.toml
   │     └── configs/poses/a1_collection_start.toml
   └── configs/deployments/pi05/<deployment>.toml
         ├── configs/inference/backends/openpi_pi05.toml
         ├── configs/models/pi05/<model>.toml
-        └── configs/tasks/<catalog>/catalog.json
+        └── configs/tasks/**/<catalog>/catalog.json
 ```
 
 Ownership is exclusive:
 
 | Config | Owns |
 | --- | --- |
-| System | devices, ROS topics, cameras, physical limits, relay/startup safety, the A1 Robot service contract, and the Operator Panel endpoint |
+| System | devices, ROS topics, cameras, physical limits, relay/startup safety, the A1 Robot service contract, and the Operator Panel/Foxglove observability endpoints |
 | Teleop | leader identity/mapping and collection behavior |
 | Pose | reset targets and reset motion behavior |
 | Dataset | source/output packaging and conversion policy |
@@ -129,7 +129,11 @@ A task registry has one `catalog.json` identity and one create-only
 `prompts/<task-id>.json` record per prompt. Prompt records own their exact text,
 stable id, train/OOD provenance, and deterministic display order. Registration
 creates a new record atomically; it never rewrites the catalog or an existing
-prompt file.
+record. Top-level task catalogs are collection-facing and provide the panel's
+training-prompt suggestions. A nested model-bound catalog may expose the strict
+prompt subset and provenance of one checkpoint without reclassifying the
+collection experiment's catalog; nested catalogs are not offered as collection
+prompt suggestions.
 
 ## Runtime composition
 
@@ -183,6 +187,46 @@ preview at its configured lower rate. Slow browsers or JPEG encoding may drop
 preview frames but cannot queue work in, rewrite, or block the raw observation
 contract. Web JPEGs are never fed back into policy, recording, or collection.
 
+Read-only observability is a side branch of that runtime, not another control
+plane:
+
+```text
+existing ROS state/status/command topics + Camera Bridge raw consumer
+  -> validating A1 telemetry adapter
+  -> named JointState mirrors + CompressedImage + DiagnosticArray
+  -> read-only foxglove_bridge WebSocket
+  -> Foxglove Desktop/Web
+```
+
+The adapter never opens a camera, creates a target or host-command publisher,
+enables the relay, or rewrites a command. Invalid command-shaped messages are
+reported and omitted from the display mirrors. The bridge receives exact
+subscription and asset regexes derived from System config; service calls,
+parameter access, client publication, and client-advertised topics use a
+no-match allowlist. Its only protocol capabilities are `connectionGraph` and
+`assets`. The current layout therefore has no Publish panel. The configured
+URDF and each referenced mesh are the only remotely retrievable assets.
+
+The committed Foxglove layout is generated from System topic names, joint names,
+and the configured URDF, and a test rejects drift. ROS master, telemetry, and
+Foxglove are one shared persistent observation stack rather than per-application
+sidecars. The public Camera lifecycle ensures that stack, and execution runtimes
+reuse it instead of opening a second port or ROS master. Normal execution
+shutdown preserves both Camera Bridge and observation stack so monitoring
+survives arm power and application transitions; their explicit public stop
+closes them. The standalone stack never starts the A1 driver, tracker, or relay.
+Joint feedback and TF appear only when an owning execution runtime supplies
+them. Camera panels intentionally use compressed images without invented
+calibration or frame transforms.
+
+When the Operator Panel server is present, the telemetry adapter polls its
+read-only status endpoint at the System-owned rate, validates the generic status
+schema, removes child command argv and terminal logs, and publishes a versioned
+summary on `/a1/ops/workflow_status`. Workflow identity, lifecycle, progress,
+current guarded input choices, and failure state are therefore visible in
+Foxglove without importing ROS into `embodied-ops`. The topic is observational;
+the bridge cannot send the displayed input actions back.
+
 External OpenRAL deployment uses two versioned, private local-service
 boundaries. Camera Bridge protocol `describe` exposes its exact digest and raw
 frame shapes before streaming. The LingBot OpenRAL policy gateway loads the
@@ -202,7 +246,11 @@ repository-independent `embodied_ops.operator_panel` package in the pinned
 `external/embodied-ops` repository owns the versioned catalog schema and form
 builders, HTTP, packaged static rendering, create-only document staging,
 subprocess supervision, and a small child presentation protocol for input
-readiness and typed progress. Its minimal adapter owns only catalog values and
+readiness and typed progress. Child events and workflow-status snapshots have
+independent versioned envelopes; each workflow run has a stable UUID, monotonic
+revision, explicit lifecycle state, and UTC start/finish timestamps. Malformed
+or undeclared events are logged rather than silently changing available input.
+Its minimal adapter owns only catalog values and
 workflow launch contracts; camera health, configuration, and registration are
 independent optional providers. Document suffix and editor language come from the
 A1 provider rather than the generic core. Progress is display-only, retained by
@@ -234,6 +282,14 @@ while Camera Web remains a read-only service with no control routes. Per-camera
 preview rate, frame age, freshness, and errors are read from Camera Web's existing
 health endpoint through the A1 adapter; the generic panel neither opens cameras nor
 redefines camera-health thresholds.
+
+Every submitted workflow or registration value is revalidated against its
+declared form immediately before reaching the adapter: unknown keys, missing
+required fields, wrong JSON types, and unavailable select options fail closed.
+The panel launches each workflow through an ownership supervisor. If the panel
+process disappears, the supervisor interrupts the workflow process group and
+escalates only that owned group after bounded grace periods, preventing an
+orphaned hardware workflow from outliving its control plane.
 
 LingBot shares the Camera Bridge's atomic raw AgentView/wrist pair with one
 asynchronous H.264 run recorder; neither component opens another camera handle.
@@ -477,8 +533,12 @@ after startup.
 LingBot training summaries normally bind the training code repository and full
 revision. For older published artifacts that omit both fields, setup and verify
 accept the artifact only when its embedded inference configuration is
-byte-identical to the configuration in the pinned backend checkout. This proves
-inference compatibility, not the missing training-code provenance, and is
+byte-identical to the configuration in the pinned backend checkout. A summary
+from an explicitly dirty training worktree must instead retain the matching
+repository, a full starting revision, the dirty-worktree marker, and the claim
+that its exact training files are included; its embedded inference configuration
+must still be byte-identical to the pinned backend. These fallback paths prove
+inference compatibility, not a clean reproducible training revision, and are
 reported explicitly during validation.
 
 At connection time both LingBot and pi0.5 bridges validate a canonical digest
