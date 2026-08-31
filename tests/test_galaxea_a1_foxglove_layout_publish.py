@@ -19,11 +19,11 @@ def test_foxglove_layout_publish_selects_one_exact_organization_layout() -> None
         {"layout": "Tabs!"},
         name="Galaxea A1 Operations",
         folder="Galaxea A1",
-        permission="ORG_READ",
+        permission="ORG_WRITE",
     ) == {
         "name": "Galaxea A1 Operations",
         "folderName": "Galaxea A1",
-        "permission": "ORG_READ",
+        "permission": "ORG_WRITE",
         "data": {"layout": "Tabs!"},
     }
 
@@ -36,4 +36,12 @@ def test_foxglove_layout_publish_rejects_duplicate_names() -> None:
                 {"id": "second", "name": "Galaxea A1 Operations"},
             ],
             name="Galaxea A1 Operations",
+        )
+
+    with pytest.raises(ValueError, match="ORG_WRITE"):
+        layout_payload(
+            {},
+            name="Galaxea A1 Operations",
+            folder="Galaxea A1",
+            permission="ORG_READ",
         )

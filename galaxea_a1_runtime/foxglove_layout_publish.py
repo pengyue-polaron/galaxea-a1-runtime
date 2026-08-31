@@ -66,8 +66,8 @@ def layout_payload(
 ) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ValueError("committed Foxglove layout must contain one JSON object")
-    if permission not in {"ORG_READ", "ORG_WRITE"}:
-        raise ValueError("organization layout permission must be ORG_READ or ORG_WRITE")
+    if permission != "ORG_WRITE":
+        raise ValueError("API-key-managed Foxglove layouts must use ORG_WRITE")
     if "/" in folder:
         raise ValueError("Foxglove layout folder cannot contain a forward slash")
     return {
@@ -172,8 +172,8 @@ def parse_args() -> Namespace:
     parser.add_argument("--folder", default="Galaxea A1")
     parser.add_argument(
         "--permission",
-        choices=("ORG_READ", "ORG_WRITE"),
-        default="ORG_READ",
+        choices=("ORG_WRITE",),
+        default="ORG_WRITE",
     )
     return parser.parse_args()
 

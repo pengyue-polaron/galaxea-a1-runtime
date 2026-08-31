@@ -23,7 +23,7 @@ jobs:
       - uses: actions/checkout@v7.0.0
         with:
           submodules: recursive
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6.2.0
         with:
           python-version: "3.12"
       - name: Publish canonical organization layout
@@ -35,4 +35,4 @@ jobs:
           --layout foxglove/layouts/a1_observability.json
           --name "Galaxea A1 Operations"
           --folder "Galaxea A1"
-          --permission ORG_READ
+          --permission ORG_WRITE
