@@ -1,0 +1,18 @@
+# Scripted evaluation of the trained first-socket plug-insertion prompt. Every
+# attempt still requires Enter before the tracked A1-only reset. The other
+# collection prompts are excluded because this checkpoint did not train on them.
+
+[deployment]
+config = "configs/deployments/lingbot/plug_insertion_eef.toml"
+
+[reset]
+pose = "configs/poses/a1_collection_start.toml"
+
+[batch]
+schema_version = 1
+id = "plug-insertion-scripted"
+# One initial attempt plus two repetitions = three runs of the trained prompt.
+retries_per_prompt = 2
+task_ids = [
+  "charger_socket_1",
+]

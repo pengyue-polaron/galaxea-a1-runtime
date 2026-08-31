@@ -14,6 +14,7 @@ from galaxea_a1_runtime.apps.lingbot.verify import validate_training_summary
 
 REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "configs/deployments/lingbot/fruit_placement_eef.toml"
+PLUG_CONFIG = REPO / "configs/deployments/lingbot/plug_insertion_eef.toml"
 MODEL = REPO / "configs/models/lingbot/fruit_placement_eef.toml"
 CONTRACT = REPO / "configs/models/lingbot/fruit_placement_eef.contract.toml"
 
@@ -99,7 +100,7 @@ def test_lingbot_deployment_composes_with_shared_system_config():
     assert "TMUX_" not in shell_values
 
 
-def test_lingbot_deployment_can_select_a_registered_model() -> None:
+def test_lingbot_deployment_can_select_registered_models() -> None:
     config = load_lingbot_config(
         CONFIG,
         repo_root=REPO,
@@ -116,6 +117,52 @@ def test_lingbot_deployment_can_select_a_registered_model() -> None:
     )
     assert config.task_catalog.path == (
         REPO / "configs/tasks/fruit_placement/catalog.json"
+    )
+
+    plug_config = load_lingbot_config(
+        CONFIG,
+        repo_root=REPO,
+        model_selector="plug_insertion_eef",
+    )
+
+    assert plug_config.policy_server.model.model_id == ("lingbot/a1_plug_insertion_eef")
+    assert plug_config.policy_server.model.source.revision_label == "step-500"
+    assert plug_config.policy_server.q01_source == (
+        -0.01338947026990354,
+        -0.007200729567557573,
+        -0.15075545907020568,
+        -0.08355509407818318,
+        -0.02336599735543132,
+        -0.06815485656261444,
+        0.7085588830709457,
+        0.05542876198887825,
+    )
+    assert plug_config.policy_server.q99_source == (
+        0.29965266019105913,
+        0.05605127021670345,
+        0.05837668433785441,
+        0.02515067355707304,
+        0.7034967446327209,
+        0.05660446226596836,
+        0.9999772310256958,
+        0.952681839466095,
+    )
+
+
+def test_plug_insertion_deployment_binds_model_tasks_and_rollout_budget() -> None:
+    config = load_lingbot_config(PLUG_CONFIG, repo_root=REPO)
+
+    assert config.policy_server.model.model_id == "lingbot/a1_plug_insertion_eef"
+    assert config.task_catalog.path == (
+        REPO / "configs/tasks/lingbot/plug_insertion_step500/catalog.json"
+    )
+    assert tuple(
+        (task.task_id, task.distribution) for task in config.task_catalog.tasks
+    ) == (("charger_socket_1", "train"),)
+    assert config.execution.max_model_calls == 286
+    assert config.execution.execute_frames * config.policy_server.action_per_frame == 4
+    assert config.recording.output_root == (
+        REPO / "outputs/inference/lingbot-plug-insertion-eef/recordings"
     )
 
 
@@ -310,6 +357,32 @@ def test_lingbot_training_metadata_can_verify_embedded_inference_config(tmp_path
 
     assert validate_training_summary(config, artifact) == ("embedded-inference-config")
 
+    summary.update(
+        {
+            "code_repository": policy.backend.source.repository.removesuffix(".git"),
+            "starting_code_revision": "9" * 40,
+            "training_worktree_had_uncommitted_changes": True,
+            "exact_training_files_included": True,
+        }
+    )
+    (artifact / "training_summary.json").write_text(json.dumps(summary))
+    assert validate_training_summary(config, artifact) == (
+        "uncommitted-training-source"
+    )
+
+    summary["exact_training_files_included"] = False
+    (artifact / "training_summary.json").write_text(json.dumps(summary))
+    with pytest.raises(ValueError, match="uncommitted training provenance mismatch"):
+        validate_training_summary(config, artifact)
+
+    for key in (
+        "code_repository",
+        "starting_code_revision",
+        "training_worktree_had_uncommitted_changes",
+        "exact_training_files_included",
+    ):
+        summary.pop(key)
+    (artifact / "training_summary.json").write_text(json.dumps(summary))
     embedded.write_text("incompatible = True\n")
     with pytest.raises(ValueError, match="does not match the pinned backend"):
         validate_training_summary(config, artifact)
@@ -328,5 +401,5 @@ def test_lingbot_training_metadata_rejects_partial_code_provenance(tmp_path):
     }
     (tmp_path / "training_summary.json").write_text(json.dumps(summary))
 
-    with pytest.raises(ValueError, match="declare both code_repository"):
+    with pytest.raises(ValueError, match="uncommitted training provenance mismatch"):
         validate_training_summary(config, tmp_path)

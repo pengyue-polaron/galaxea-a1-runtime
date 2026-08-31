@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "model_id": "lingbot/a1_plug_insertion_eef",
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "pengyue-polaron/lingbot-va-galaxea-a1-plug-insertion-eef",
+    "revision": "3c240e637bf09c5bd0aed8b98e9f4197cdc97c5b"
+  },
+  "files": {
+    ".gitattributes": {"size": 1634, "sha256": "2fc647d3f239fb41c6bfdde1a578df543f5c2a88a6baece234fc023550361c62"},
+    "LICENSE.txt": {"size": 11357, "sha256": "c71d239df91726fc519c6eb72d318ec65820627232b2f796219e87dcf35d0ab4"},
+    "README.md": {"size": 3277, "sha256": "524bb9cb417fdf87da8416bf293cb615d3ecfcb0198a4e024871d1bc07617e49"},
+    "configs/va_a1_cfg.py": {"size": 2166, "sha256": "736705bfff06338b209184d3f7710f2da7ae5faab3387d06c4eb373b2d8cc8b4"},
+    "configs/va_a1_plug_cfg.py": {"size": 1250, "sha256": "71164a43ded1f00da3a3324e35b9bec91a9853a05be9195c107af0d4ebce8aea"},
+    "configs/va_a1_plug_train_cfg.py": {"size": 2123, "sha256": "e59baa4754623e1a1342fcd91b8f04f95155d37e2e28179dcc4e1f2baac14872"},
+    "configs/va_a1_train_cfg.py": {"size": 1689, "sha256": "fb66876a1d648f9e504f29d0bed568c8bcdcf9d5e550f11c620fd072bca80d02"},
+    "text_encoder/config.json": {"size": 855, "sha256": "a2bcb24699f6c009a2427432bdd483ef8b2b42a712abc9503759cdc77d171f07"},
+    "text_encoder/model-00001-of-00003.safetensors": {"size": 4935812536, "sha256": "a8e861969c7433e707cc5a74065d795d36cca07ec96eb6763eb4083df7248f58"},
+    "text_encoder/model-00002-of-00003.safetensors": {"size": 4983103192, "sha256": "d57d948ece4837d850b7a859a4415121d57cacf8b9ee1d4db200c67f592902d7"},
+    "text_encoder/model-00003-of-00003.safetensors": {"size": 1442935480, "sha256": "0da9ee284e21d1406df708788db1d502d95d75f69faa25cd26151bf8829b7c5f"},
+    "text_encoder/model.safetensors.index.json": {"size": 22476, "sha256": "31c4c7bcce679eaa0dd4667462394ddb013dc2f748e0bffc893dc9146a320dab"},
+    "tokenizer/special_tokens_map.json": {"size": 7079, "sha256": "456b58fd240a06c743a7c2cf8008bec501240d68ebd1fc4018ea569505fea270"},
+    "tokenizer/spiece.model": {"size": 4548313, "sha256": "e3909a67b780650b35cf529ac782ad2b6b26e6d1f849d3fbb6a872905f452458"},
+    "tokenizer/tokenizer.json": {"size": 16837459, "sha256": "20a46ac256746594ed7e1e3ef733b83fbc5a6f0922aa7480eda961743de080ef"},
+    "tokenizer/tokenizer_config.json": {"size": 61758, "sha256": "1d8d2a216bf8e70ac15b7ddcea566c4dd0433c024b39a58ca5e4c66bd78defbd"},
+    "training/lerobot_latent_dataset.py": {"size": 16032, "sha256": "e727bb02965e0b20b64dd440dc84621f5d040d1c17de9cac282bbc2200c758d8"},
+    "training/run_a1_finetune.sbatch": {"size": 4590, "sha256": "1f56910eb1dd1107212742de7a3310df68f2d017bda7d225efaa4f3addabe428"},
+    "training/run_a1_plug_finetune.sbatch": {"size": 1461, "sha256": "e14e7a290fc9213bedaf20d5063b816e10ae5db76d0c4bd34060a2473b8c8f3a"},
+    "training/train.py": {"size": 30010, "sha256": "744b0534eee59cedc12c4b039554049bab17b1d2847c271922eb66d457118dda"},
+    "training_summary.json": {"size": 1640, "sha256": "190b0e0c52890ef2858926a7543cc45e9e278a69e0826a8e1ae15913f51b362e"},
+    "transformer/config.json": {"size": 449, "sha256": "b20b27f8728d01b1b475d1fd6b998787e05cdb3e037d8976ced0d4575ab0b27d"},
+    "transformer/diffusion_pytorch_model.safetensors": {"size": 10177831668, "sha256": "4e419ee2b7ab44ce7c29b5f74cc985a30b34cff272899c5d798cb1d087ca5720"},
+    "upload_manifest.json": {"size": 1242, "sha256": "6e387d36e45c09c6af2597a734e7360b1a99c123e0971df26baa5f9303e05fe2"},
+    "vae/config.json": {"size": 1701, "sha256": "d996c340fe9a7df5d7371f76a7d8d6956f6c98256080074d8434fa5eeac11360"},
+    "vae/diffusion_pytorch_model.safetensors": {"size": 2818777808, "sha256": "62cd18f19438e35b32ac63020e2852f566e9b02f46b6cdbd87972a356e3c6f4b"}
+  }
+}

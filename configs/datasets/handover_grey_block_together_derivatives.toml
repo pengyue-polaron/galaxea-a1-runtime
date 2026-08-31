@@ -1,0 +1,30 @@
+# Canonical derivatives for the grey-block collaborative handover experiment.
+
+[system]
+config = "configs/system/a1.toml"
+
+[derivation]
+overwrite = false
+
+[source]
+root = "data/datasets/handover_grey_block_together"
+
+[outputs.joint_v21]
+target_root = "data/processed/handover_grey_block_together_joint_v21"
+archive_path = "data/exports/handover_grey_block_together_joint_v21.tar.gz"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-grey-block-together-joint-v21"
+
+[outputs.eef_v3]
+target_root = "data/processed/handover_grey_block_together_eef_v3"
+archive_path = "data/exports/handover_grey_block_together_eef_v3.tar.gz"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-grey-block-together-eef-v3"
+
+[outputs.eef_v21]
+target_root = "data/processed/handover_grey_block_together_eef_v21"
+archive_path = "data/exports/handover_grey_block_together_eef_v21.tar.gz"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-grey-block-together-eef-v21"
+
+[kinematics]
+urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
+base_link = "base_link"
+tip_link = "arm_seg6"

@@ -20,7 +20,7 @@ action_values = [
   0.04395604395604396,
   177.3186813186813,
   5.626373626373627,
-  -78.1978021978022,
+  90.0, # joint5.pos: rounded wrist reset after mechanical reassembly.
   0.0,
 ]
 

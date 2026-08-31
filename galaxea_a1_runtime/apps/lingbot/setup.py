@@ -17,7 +17,10 @@ from galaxea_a1_runtime.models.backend import (
     ensure_backend_environment,
 )
 from galaxea_a1_runtime.models.store import fetch_artifact
-from galaxea_a1_runtime.apps.lingbot.verify import validate_training_summary
+from galaxea_a1_runtime.apps.lingbot.verify import (
+    training_provenance_warning,
+    validate_training_summary,
+)
 
 
 def ensure_environment_imports(config: LingBotConfig) -> None:
@@ -55,11 +58,8 @@ def setup(config: LingBotConfig) -> None:
     )
     result = fetch_artifact(model)
     provenance = validate_training_summary(config, result.root)
-    if provenance == "embedded-inference-config":
-        warning(
-            "Training summary has no code revision; compatibility was verified "
-            "by matching its embedded inference config to the pinned backend."
-        )
+    if message := training_provenance_warning(provenance):
+        warning(message)
     success(
         "LingBot inference ready: "
         f"model={model.model_id} files={result.files} bytes={result.bytes} "

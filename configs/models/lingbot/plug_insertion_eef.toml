@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "lingbot/a1_plug_insertion_eef"
+backend = "lingbot_va"
+artifact_format = "diffusers"
+checkpoint_step = 500
+manifest = "configs/models/lingbot/plug_insertion_eef.manifest.json"
+contract = "configs/models/lingbot/plug_insertion_eef.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "pengyue-polaron/lingbot-va-galaxea-a1-plug-insertion-eef"
+revision = "3c240e637bf09c5bd0aed8b98e9f4197cdc97c5b"
+revision_label = "step-500"

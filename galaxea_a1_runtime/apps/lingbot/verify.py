@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Literal
 
 from galaxea_a1_runtime.apps.lingbot.config import (
     default_config_path,
@@ -20,6 +21,13 @@ from galaxea_a1_runtime.models.backend import verify_backend_environment
 from galaxea_a1_runtime.models.store import validate_artifact
 
 
+TrainingProvenance = Literal[
+    "declared-code-revision",
+    "embedded-inference-config",
+    "uncommitted-training-source",
+]
+
+
 def verify_deployment(config: LingBotConfig) -> None:
     policy = config.policy_server
     if not policy.deployment_ready:
@@ -27,11 +35,8 @@ def verify_deployment(config: LingBotConfig) -> None:
     verify_backend_environment(policy.backend)
     artifact = validate_artifact(policy.model, verify_hashes=True)
     provenance = validate_training_summary(config, artifact.root)
-    if provenance == "embedded-inference-config":
-        warning(
-            "Training summary has no code revision; compatibility was verified "
-            "by matching its embedded inference config to the pinned backend."
-        )
+    if message := training_provenance_warning(provenance):
+        warning(message)
     success(
         "LingBot deployment verified: "
         f"source={policy.backend.source.revision} model={policy.model.model_id} "
@@ -40,7 +45,9 @@ def verify_deployment(config: LingBotConfig) -> None:
     )
 
 
-def validate_training_summary(config: LingBotConfig, artifact_root: Path) -> str:
+def validate_training_summary(
+    config: LingBotConfig, artifact_root: Path
+) -> TrainingProvenance:
     policy = config.policy_server
     summary = json.loads((artifact_root / "training_summary.json").read_text())
     if not isinstance(summary, dict):
@@ -64,13 +71,42 @@ def validate_training_summary(config: LingBotConfig, artifact_root: Path) -> str
     if code_repository is None and code_revision is None:
         _validate_embedded_inference_config(policy, artifact_root)
         return "embedded-inference-config"
+    expected_repository = policy.backend.source.repository.removesuffix(".git")
+    if code_repository is not None and code_revision is None:
+        starting_revision = summary.get("starting_code_revision")
+        valid_starting_revision = isinstance(starting_revision, str) and (
+            len(starting_revision) == 40
+            and all(character in "0123456789abcdef" for character in starting_revision)
+        )
+        expected_uncommitted = {
+            "code_repository": expected_repository,
+            "training_worktree_had_uncommitted_changes": True,
+            "exact_training_files_included": True,
+        }
+        mismatched_uncommitted = {
+            key: (summary.get(key), value)
+            for key, value in expected_uncommitted.items()
+            if summary.get(key) != value
+        }
+        if not valid_starting_revision:
+            mismatched_uncommitted["starting_code_revision"] = (
+                starting_revision,
+                "40-character lowercase Git revision",
+            )
+        if mismatched_uncommitted:
+            raise ValueError(
+                "LingBot uncommitted training provenance mismatch: "
+                f"{mismatched_uncommitted}"
+            )
+        _validate_embedded_inference_config(policy, artifact_root)
+        return "uncommitted-training-source"
     if code_repository is None or code_revision is None:
         raise ValueError(
             "LingBot training summary must declare both code_repository and "
             "code_revision, or neither"
         )
     expected_code = {
-        "code_repository": policy.backend.source.repository.removesuffix(".git"),
+        "code_repository": expected_repository,
         "code_revision": policy.backend.source.revision,
     }
     mismatched_code = {
@@ -83,6 +119,21 @@ def validate_training_summary(config: LingBotConfig, artifact_root: Path) -> str
             f"LingBot training summary contract mismatch: {mismatched_code}"
         )
     return "declared-code-revision"
+
+
+def training_provenance_warning(provenance: TrainingProvenance) -> str | None:
+    if provenance == "embedded-inference-config":
+        return (
+            "Training summary has no code revision; compatibility was verified "
+            "by matching its embedded inference config to the pinned backend."
+        )
+    if provenance == "uncommitted-training-source":
+        return (
+            "Training summary records an uncommitted training worktree; its "
+            "starting revision and exact training files are retained, and "
+            "inference compatibility was verified against the pinned backend."
+        )
+    return None
 
 
 def _validate_embedded_inference_config(

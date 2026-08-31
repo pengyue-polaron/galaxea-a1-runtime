@@ -100,6 +100,7 @@ Current managed models are:
 | LingBot VA fruit placement EEF | `step-1000` | 1000 | live, finite closed-loop rollout after task selection |
 | LingBot VA mango-to-plate EEF | `step-100` | 100 | selectable as `mango_plate_eef` |
 | LingBot VA mango placement EEF | `step-200` | 200 | selectable as `mango_placement_eef`; tracked full-catalog batch plan available |
+| LingBot VA plug insertion EEF | `step-500` | 500 | dedicated first-socket deployment and three-attempt batch plan available |
 | OpenPI pi0.5 fruit placement EEF | `step-14999` | 14999 | live, finite closed-loop rollout after task selection |
 
 Do not commit weights and do not add Git LFS. Do not delete artifacts or staging

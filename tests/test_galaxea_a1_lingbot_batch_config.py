@@ -11,6 +11,7 @@ from galaxea_a1_runtime.apps.lingbot.batch_config import (
 REPO = Path(__file__).resolve().parents[1]
 CONFIG = REPO / "configs/runs/lingbot/fruit_placement.toml"
 MANGO_CONFIG = REPO / "configs/runs/lingbot/mango_placement.toml"
+PLUG_CONFIG = REPO / "configs/runs/lingbot/plug_insertion.toml"
 
 
 def _copy(tmp_path: Path) -> Path:
@@ -48,6 +49,21 @@ def test_mango_model_batch_plan_runs_its_curated_task_suite():
     assert set(config.task_ids) <= catalog_task_ids
     assert config.attempts_per_prompt == 3
     assert config.total_attempts == len(config.task_ids) * 3
+
+
+def test_plug_insertion_batch_defaults_to_the_trained_prompt() -> None:
+    config = load_lingbot_batch_config(PLUG_CONFIG, repo_root=REPO)
+
+    assert config.batch_id == "plug-insertion-scripted"
+    assert config.deployment.policy_server.model.model_id == (
+        "lingbot/a1_plug_insertion_eef"
+    )
+    assert config.task_ids == ("charger_socket_1",)
+    assert config.deployment.task_catalog.task("charger_socket_1").distribution == (
+        "train"
+    )
+    assert config.attempts_per_prompt == 3
+    assert config.total_attempts == 3
 
 
 def test_lingbot_batch_plan_rejects_unknown_or_duplicate_tasks(tmp_path: Path):
