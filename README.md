@@ -31,7 +31,8 @@ are kept in independent packages.
 - Operate collection, dataset inspection/export, evaluation, resets, cameras,
   and tracked batch plans from a compact shadcn/ui control panel.
 - Inspect cameras, named joint/gripper signals, diagnostics, ROS logs, TF, and
-  the configured URDF through a generated read-only Foxglove workspace.
+  the configured URDF through a persistent read-only Foxglove workspace whose
+  canonical organization layout is published automatically from `main`.
 
 ## Supported baseline
 
@@ -60,11 +61,42 @@ just check
 follow the acceptance and workspace checks in the
 [Runbook](docs/RUNBOOK.md).
 
+## Persistent Foxglove observability
+
+```bash
+just cameras start
+```
+
+That command ensures the paired-camera service and the shared observation
+stack. Connect Foxglove to `ws://<runtime-host>:8766` and select the organization
+layout **Galaxea A1 Operations**. The layout presents both camera streams,
+diagnostics, measured and commanded joint/gripper plots, ROS logs, sanitized
+Embodied Ops workflow status, and a 3D panel backed by the configured URDF and
+TF tree.
+
+The 3D panel is analogous to RViz's RobotModel plus TF view: while an execution
+runtime owns the arm and publishes measured joint feedback, the rendered model
+follows the reported physical pose. With the arm powered off, camera monitoring
+continues and unavailable robot signals remain explicitly absent rather than
+being simulated.
+
+The observation stack survives ordinary `just stop` transitions so it remains
+available between applications and across arm power cycles. `just cameras stop`
+is the explicit shutdown for both cameras and the observation stack. The
+Foxglove bridge is intentionally read-only and intended for a trusted LAN; it
+does not expose client publication, service calls, or parameter access.
+
+[`foxglove/layouts/a1_observability.json`](foxglove/layouts/a1_observability.json) is
+the single layout source of truth. A GitHub Actions workflow validates and
+upserts it into the Foxglove organization whenever relevant files land on
+`main`, so operators do not need to import a fresh JSON file after layout
+changes.
+
 ## Package boundaries
 
 | Repository | Responsibility |
 | --- | --- |
-| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent workflow, artifact, and shared LeRobot format mechanics |
+| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent workflow, versioned operator status, artifact, and shared LeRobot format mechanics |
 | [lerobot-robot-galaxea-a1](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1) | Auto-discovered LeRobot `Robot` client for the A1 Runtime |
 | [lerobot-teleoperator-galaxea-a1-so-leader](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader) | Auto-discovered LeRobot `Teleoperator` for the modified SO-101 leader |
 

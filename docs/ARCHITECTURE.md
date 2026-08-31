@@ -219,6 +219,14 @@ Joint feedback and TF appear only when an owning execution runtime supplies
 them. Camera panels intentionally use compressed images without invented
 calibration or frame transforms.
 
+The committed JSON is also the only cloud-layout source of truth. System config
+feeds the generated layout; a path-scoped GitHub Actions workflow then validates
+it and uses the Foxglove API to upsert the exact-name organization layout
+`Galaxea A1 Operations` in folder `Galaxea A1`. The API key exists only as a
+repository secret, and publication does not connect to a robot or ROS master.
+Exact-name lookup must find zero or one matching layout; duplicates fail closed
+instead of updating an ambiguous target.
+
 When the Operator Panel server is present, the telemetry adapter polls its
 read-only status endpoint at the System-owned rate, validates the generic status
 schema, removes child command argv and terminal logs, and publishes a versioned
