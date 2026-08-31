@@ -1,7 +1,6 @@
 import pytest
 
 from galaxea_a1_runtime.foxglove_layout_publish import (
-    canonical_layout_id,
     layout_payload,
     select_layout_id,
 )
@@ -14,7 +13,6 @@ def test_foxglove_layout_publish_selects_one_exact_organization_layout() -> None
     ]
 
     assert select_layout_id(layouts, name="Galaxea A1 Operations") == "a1-layout"
-    assert len(canonical_layout_id(name="Galaxea A1 Operations")) == 36
     assert layout_payload(
         {"layout": "Tabs!"},
         name="Galaxea A1 Operations",

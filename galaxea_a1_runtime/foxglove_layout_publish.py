@@ -7,7 +7,6 @@ import os
 import urllib.error
 import urllib.parse
 import urllib.request
-import uuid
 from argparse import Namespace
 from dataclasses import dataclass
 from pathlib import Path
@@ -46,15 +45,6 @@ def select_layout_id(layouts: Any, *, name: str) -> str | None:
             "refusing an ambiguous update"
         )
     return matches[0] if matches else None
-
-
-def canonical_layout_id(*, name: str) -> str:
-    return str(
-        uuid.uuid5(
-            uuid.NAMESPACE_URL,
-            f"https://github.com/pengyue-polaron/galaxea-a1-runtime#foxglove/{name}",
-        )
-    )
 
 
 def layout_payload(
@@ -145,7 +135,6 @@ class FoxgloveLayoutsClient:
             permission=permission,
         )
         if existing_id is None:
-            payload["id"] = canonical_layout_id(name=name)
             result = self.request("POST", FOXGLOVE_LAYOUTS_API, payload=payload)
             action = "created"
         else:
