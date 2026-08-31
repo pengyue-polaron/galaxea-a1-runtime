@@ -21,12 +21,15 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.0
+        with:
+          submodules: recursive
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
       - name: Publish canonical organization layout
         env:
           FOXGLOVE_API_KEY: ${{ secrets.FOXGLOVE_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/external/embodied-ops/src
         run: >-
           python -m galaxea_a1_runtime.foxglove_layout_publish
           --layout foxglove/layouts/a1_observability.json
