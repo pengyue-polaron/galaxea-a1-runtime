@@ -52,25 +52,17 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
         "evaluate",
         "batch",
     ]
-    assert {
-        (item["extension"], item["language"]) for item in catalog["configuration_types"]
-    } == {(".toml", "TOML")}
+    assert catalog["registrations"] == []
+    assert catalog["configuration_types"] == []
+    assert adapter.capabilities.configuration is None
+    assert adapter.capabilities.registration is None
+    application = OperatorPanelApplication(adapter)
+    with pytest.raises(LookupError, match="configuration"):
+        application.create_config({})
+    with pytest.raises(LookupError, match="registration"):
+        application.register({})
     reset_form = next(item for item in catalog["workflows"] if item["id"] == "reset")
     assert reset_form["tone"] == "danger"
-    prompt_form = next(
-        item for item in catalog["registrations"] if item["id"] == "prompt"
-    )
-    distribution = next(
-        field for field in prompt_form["fields"] if field["name"] == "distribution"
-    )
-    assert distribution["default"] == "ood"
-    task_id = next(
-        field for field in prompt_form["fields"] if field["name"] == "task_id"
-    )
-    assert (task_id["derive_from"], task_id["transform"]) == (
-        "prompt",
-        "snake_case",
-    )
     evaluation = next(item for item in catalog["workflows"] if item["id"] == "evaluate")
     models = next(field for field in evaluation["fields"] if field["name"] == "model")
     assert any("step-1000" in option["label"] for option in models["options"])
@@ -175,45 +167,6 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
         )
 
 
-def test_a1_panel_registers_a_prompt_and_selects_it_for_evaluation(tmp_path):
-    shutil.copytree(ROOT / "configs", tmp_path / "configs")
-    (tmp_path / "third_party").symlink_to(
-        ROOT / "third_party", target_is_directory=True
-    )
-    (tmp_path / "external").symlink_to(ROOT / "external", target_is_directory=True)
-    adapter = A1OperatorPanelAdapter(tmp_path)
-    result = OperatorPanelApplication(adapter).register(
-        {
-            "registration": "prompt",
-            "values": {
-                "catalog": "configs/tasks/fruit_placement/catalog.json",
-                "task_id": "green_apple_bowl",
-                "prompt": "put the green apple into the bowl",
-                "distribution": "ood",
-            },
-        }
-    )
-
-    assert result["created"] == (
-        "configs/tasks/fruit_placement/prompts/green_apple_bowl.json"
-    )
-    assert result["activate"] == {
-        "panel": "evaluate",
-        "values": {
-            "config": "configs/deployments/lingbot/fruit_placement_eef.toml",
-            "task": "green_apple_bowl",
-        },
-    }
-    task_options = next(
-        field["options"]
-        for workflow in result["catalog"]["workflows"]
-        if workflow["id"] == "evaluate"
-        for field in workflow["fields"]
-        if field["name"] == "task"
-    )
-    assert any(option["value"] == "green_apple_bowl" for option in task_options)
-
-
 def test_a1_panel_suggests_existing_experiments_but_allows_a_new_name(tmp_path):
     shutil.copytree(ROOT / "configs", tmp_path / "configs")
     (tmp_path / "third_party").symlink_to(
@@ -256,36 +209,6 @@ def test_a1_panel_suggests_existing_experiments_but_allows_a_new_name(tmp_path):
         "pick up the charger and insert it into the third socket from the left on the power strip",
         "pick up the charger and insert it into the fourth socket from the left on the power strip",
     }
-
-
-def test_operator_panel_blocks_registration_while_a_workflow_is_active():
-    app = OperatorPanelApplication(A1OperatorPanelAdapter(ROOT))
-    app.workflow.start(
-        WorkflowLaunch(
-            workflow="test",
-            name="test",
-            command=(sys.executable, "-c", "import time; time.sleep(30)"),
-        )
-    )
-    try:
-        with pytest.raises(RuntimeError, match="while a workflow is active"):
-            app.register(
-                {
-                    "registration": "prompt",
-                    "values": {
-                        "catalog": "configs/tasks/fruit_placement/catalog.json",
-                        "task_id": "must_not_be_created",
-                        "prompt": "must not be created",
-                        "distribution": "ood",
-                    },
-                }
-            )
-    finally:
-        app.workflow.stop()
-
-    assert not (
-        ROOT / "configs/tasks/fruit_placement/prompts/must_not_be_created.json"
-    ).exists()
 
 
 def test_a1_panel_uses_shared_camera_health_provider(monkeypatch):

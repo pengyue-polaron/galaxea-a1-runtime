@@ -170,8 +170,6 @@ camera.
 | [Runbook](docs/RUNBOOK.md) | Setup, operation, expected results, and recovery |
 | [Safety](docs/SAFETY.md) | Control paths, relay invariants, and debug constraints |
 | [Architecture](docs/ARCHITECTURE.md) | Layers, ownership, data contracts, and artifact layout |
-| [Environment](docs/SETUP_ENV.md) | Python, LeRobot, ROS, and model environments |
-| [udev setup](docs/SETUP_UDEV.md) | Persistent A1 serial permissions and device alias |
 | [Model registry](models/README.md) | Model artifacts and inference backends |
 
 ## Research

@@ -19,8 +19,9 @@ hardware-free test suite. Individual app preflights stay with their app command
 instead of being repeated here. `just models` is an optional deployment
 preflight; missing checkpoints do not block Teleop collection.
 
-Install serial rules once per machine with `just udev`, then start a new login
-shell. See [Environment setup](SETUP_ENV.md) and [udev setup](SETUP_UDEV.md).
+Install the tracked serial and RealSense rules once per machine with `just
+udev`, then start a new login shell and verify that `/dev/a1` exists and the
+current user belongs to `dialout`.
 
 ## 2. Hardware and cameras
 
@@ -173,29 +174,13 @@ tracked listener is `0.0.0.0:8765`; `hostname -I` prints candidate host
 addresses. The panel lists every valid tracked Teleop, LingBot deployment,
 Batch, model, and A1 reset configuration. It embeds the read-only Camera Web
 streams and provides Collect, Dataset Doctor, Export v2.1, Evaluation, Batch,
-and Reset views plus a **Prompts** registry. Use **Start cameras** if the persistent Camera
+and Reset views. It does not create configurations or register Prompts;
+repository changes are CLI-owned. Use **Start cameras** if the persistent Camera
 Bridge is not already running. Each preview reports its encoded preview FPS and
 latest frame age from Camera Web's read-only health endpoint. A dark image alone
 is not treated as a failure; the status changes only for missing, stale, or
 errored frames. Use **Collapse preview** when more vertical room is useful for
-workflow controls. The dense monochrome layout is shared with the VLAI panel.
-
-To add an evaluation prompt, open **Prompts**, select its catalog, enter a unique
-task id and exact single-line prompt, and choose `OOD` or `Train` (`OOD` is the
-default). **Register prompt** atomically creates one JSON record under
-`configs/tasks/<catalog>/prompts/`; it never edits an existing prompt. The panel
-then returns to **Evaluation** with the new task selected. Registration is
-disabled while a workflow is running. Review and commit the new JSON before
-treating it as durable repository state.
-
-The **Configurations** view creates Teleop, LingBot deployment, Batch, or A1
-reset TOML from an existing same-kind template. Choose a template, load it,
-change the filename and content, then validate before creating it. Creation runs
-the owning strict loader and atomically exposes a new file; it never edits or
-overwrites an existing configuration and is disabled during a live workflow.
-For a new Batch, change `batch.id` as well as the filename because Batch IDs are
-unique. Review and commit a new configuration before treating it as durable
-repository state.
+workflow controls.
 
 Buttons that start Collect, Evaluation, Batch, or Reset **MOVE HARDWARE**. They
 launch the existing repository entrypoints and never publish ROS messages from
@@ -213,10 +198,14 @@ updates in place. The terminal keeps durable lifecycle output in its own scroll
 area, follows new lines while it is at the bottom, and preserves the current
 position when you scroll up to inspect history.
 
-The same configuration registry is available from the unified CLI:
+Repository configuration and Prompt maintenance use the unified CLI:
 
 ```bash
-.venv/bin/galaxea-a1-runtime configs
+just configs
+just prompts
+just prompt-register \
+  configs/tasks/fruit_placement/catalog.json green_apple_bowl \
+  "put the green apple into the bowl" ood
 .venv/bin/galaxea-a1-runtime config template batch \
   configs/runs/lingbot/fruit_placement.toml > /tmp/new_batch.toml
 # Edit /tmp/new_batch.toml, including a unique batch.id, then:
@@ -233,6 +222,13 @@ The same configuration registry is available from the unified CLI:
   --scene-note "SCENE" --resume
 .venv/bin/galaxea-a1-runtime reset configs/poses/a1_collection_start.toml
 ```
+
+Prompt registration is hardware-free and create-only: it rejects duplicate ids
+or exact text, validates the complete catalog, assigns the next stable display
+order, and writes one JSON record. Use `train` only for a prompt known to belong
+to the training set; otherwise use `ood`. Review and commit the generated file.
+New configurations follow the same agent-owned pattern: start from a same-kind
+template, validate the candidate, then create and commit it.
 
 The control panel uses a random per-process request-integrity token, but that
 token is delivered to every browser that opens the page and is not user

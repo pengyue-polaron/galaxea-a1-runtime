@@ -10,9 +10,11 @@ from pathlib import Path
 from embodied_ops import (
     checks_exit_code,
     checks_to_json,
+    load_task_catalog,
     print_dataset_report,
     print_export_report,
     print_checks,
+    register_task_prompt,
     standard_export_report,
 )
 
@@ -71,6 +73,25 @@ def main(argv: list[str] | None = None) -> int:
         config_write.add_argument("filename")
         config_write.add_argument("candidate", type=Path)
         config_write.add_argument("--repo-root", type=Path, default=Path.cwd())
+
+    prompt = subparsers.add_parser(
+        "prompt", help="list or register tracked task prompts"
+    )
+    prompt_commands = prompt.add_subparsers(dest="prompt_command", required=True)
+    prompt_list = prompt_commands.add_parser("list", help="list validated prompts")
+    prompt_list.add_argument("catalog", nargs="?", type=Path)
+    prompt_list.add_argument("--repo-root", type=Path, default=Path.cwd())
+    prompt_list.add_argument("--json", action="store_true")
+    prompt_register = prompt_commands.add_parser(
+        "register", help="atomically register one validated prompt"
+    )
+    prompt_register.add_argument("catalog", type=Path)
+    prompt_register.add_argument("task_id")
+    prompt_register.add_argument("prompt")
+    prompt_register.add_argument(
+        "--distribution", choices=("train", "ood"), required=True
+    )
+    prompt_register.add_argument("--repo-root", type=Path, default=Path.cwd())
 
     panel = subparsers.add_parser("panel", help="serve the tracked Web operator panel")
     panel.add_argument("--repo-root", type=Path, default=Path.cwd())
@@ -184,6 +205,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "dataset":
         return _run_dataset_command(args)
 
+    if args.command == "prompt":
+        return _run_prompt_command(args)
+
     if args.command == "collect":
         from galaxea_a1_runtime.apps.operator_panel import run_collection_session
 
@@ -198,33 +222,32 @@ def main(argv: list[str] | None = None) -> int:
             failure(str(exc))
             return 2
 
-    from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
-
-    adapter = A1OperatorPanelAdapter(args.repo_root)
-
     if args.command == "config":
+        from galaxea_a1_runtime.apps.repository_config import (
+            build_a1_document_store,
+        )
+
         try:
+            store = build_a1_document_store(args.repo_root)
             if args.config_command == "template":
-                result = adapter.config_template(
-                    {"kind": args.kind, "source": args.source}
-                )
+                result = store.template(args.kind, args.source)
                 print(result["content"], end="")
                 return 0
-            payload = {
-                "kind": args.kind,
-                "filename": args.filename,
-                "content": args.candidate.read_text(),
-            }
+            content = args.candidate.read_text()
             if args.config_command == "validate":
-                result = adapter.validate_config(payload)
+                result = store.validate(args.kind, args.filename, content)
                 success(f"Valid configuration: {result['path']}")
             else:
-                result = adapter.create_config(payload)
+                result = store.create(args.kind, args.filename, content)
                 success(f"Created configuration: {result['created']}")
             return 0
         except (OSError, ValueError) as exc:
             failure(str(exc))
             return 2
+
+    from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
+
+    adapter = A1OperatorPanelAdapter(args.repo_root)
 
     if args.command == "configs":
         catalog = adapter.catalog()
@@ -280,6 +303,59 @@ def _print_config_catalog(catalog: dict[str, object]) -> None:
         for item in items:
             assert isinstance(item, dict)
             print(f"  {item['label']}: {item['value']}")
+
+
+def _run_prompt_command(args) -> int:
+    root = args.repo_root.resolve()
+    try:
+        if args.prompt_command == "register":
+            target = register_task_prompt(
+                args.catalog,
+                task_id=args.task_id,
+                prompt=args.prompt,
+                distribution=args.distribution,
+                repo_root=root,
+            )
+            success(f"Registered prompt: {target.relative_to(root)}")
+            return 0
+
+        paths = (
+            [args.catalog]
+            if args.catalog is not None
+            else sorted((root / "configs/tasks").glob("**/catalog.json"))
+        )
+        if not paths:
+            raise FileNotFoundError("no task catalogs found under configs/tasks")
+        catalogs = [load_task_catalog(path, repo_root=root) for path in paths]
+    except (OSError, ValueError) as exc:
+        failure(str(exc))
+        return 2
+
+    payload = {
+        "catalogs": [
+            {
+                "id": catalog.catalog_id,
+                "path": catalog.path.relative_to(root).as_posix(),
+                "prompts": [
+                    {
+                        "id": task.task_id,
+                        "prompt": task.prompt,
+                        "distribution": task.distribution,
+                    }
+                    for task in catalog.tasks
+                ],
+            }
+            for catalog in catalogs
+        ]
+    }
+    if args.json:
+        print(json.dumps(payload, indent=2, ensure_ascii=False))
+        return 0
+    for catalog in payload["catalogs"]:
+        print(f"{catalog['id']}: {catalog['path']}")
+        for task in catalog["prompts"]:
+            print(f"  {task['distribution']} {task['id']}: {task['prompt']}")
+    return 0
 
 
 def _run_dataset_command(args) -> int:

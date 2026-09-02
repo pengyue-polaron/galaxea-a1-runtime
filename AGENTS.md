@@ -1,158 +1,86 @@
 # Galaxea A1 Runtime Agent Guide
 
-This file contains only constraints for code agents. Operator procedures belong
-in [docs/RUNBOOK.md](docs/RUNBOOK.md), live-control rules in
-[docs/SAFETY.md](docs/SAFETY.md), and design/configuration contracts in
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Read the relevant document before
-changing that area; tracked configuration and executable code remain the source
-of truth.
+Use this file as the short decision index. Operator commands live in
+[`docs/RUNBOOK.md`](docs/RUNBOOK.md), live-control invariants in
+[`docs/SAFETY.md`](docs/SAFETY.md), and ownership/data contracts in
+[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). Read only the document relevant
+to the change; tracked configuration and executable code are authoritative.
 
-## Safety
+## Working loop
 
-- This repository controls a real arm. Treat every ROS publisher and hardware
-  handle as live unless the user explicitly confirms otherwise.
-- Prefer static checks. When the arm is off, do not run execution doctors. Use
-  `--require-execution` only after the user confirms power and a clear workspace.
-- Parse and fully validate tracked configuration before ROS initialization,
-  camera/serial access, Docker/tmux creation, or publication.
-- Normal applications publish only the staged target topics documented in
-  `docs/SAFETY.md`; they never publish host motor commands directly.
-- Preserve the locked, fail-closed relay. Do not weaken freshness, finite-value,
-  motor-status, alignment, limit, or ownership checks to make startup pass.
-- Direct host-topic debugging requires an explicit user request and `just stop`
-  first. Never leave two drivers, trackers, camera readers, serial owners, or
-  command publishers competing for one device.
-- After partial startup failure, stop repository-owned resources before retrying.
-  Emergency cleanup may target marked repository resources only.
+1. Inspect `git status` and `git diff`; preserve unrelated and submodule work.
+2. Locate the current caller with `rg` and change the single owning layer.
+3. Validate configuration before starting ROS, cameras, serial devices, Docker,
+   tmux, or publishers.
+4. Run the smallest hardware-free test that proves the change, then
+   `git diff --check`. Run full `just check` for executable/runtime contract
+   changes or when explicitly requested; documentation and prompt-only changes
+   do not require the full suite.
+5. State which checks were static and whether any hardware was touched.
 
-## Boundaries
+## Operator and repository workflows
 
-Dependency direction is:
+- The A1 Web panel is a runtime surface only: it may select and run tracked
+  workflows, show cameras/status, and forward guarded input. Do not add config
+  editors, Prompt registration, or other repository writes to it.
+- Normal collection is `just collect EXPERIMENT "EXACT PROMPT"`; keep that
+  terminal open and use the Foxglove **Galaxea A1 Operations** layout for
+  Start/Save/Reset/Discard/Stop. `just cameras start` runs persistent cameras
+  and Foxglove without powering or probing the arm.
+- Repository content is agent-maintained through the CLI. Register a prompt
+  without hand-writing JSON:
+
+  ```bash
+  just prompts
+  just prompt-register \
+    configs/tasks/<catalog>/catalog.json <task-id> "<exact prompt>" \
+    train|ood
+  ```
+
+  Use a stable lowercase id, preserve the exact single-line prompt, and mark
+  `train` only when it belongs to the checkpoint/training set. The command is
+  create-only and validates the complete catalog; review and commit its one new
+  JSON file.
+- Create new tracked configurations with `config template`, `config validate`,
+  and `config create`. Existing configuration changes must update their owning
+  loader, consumers, tests, and documentation together.
+
+## Non-negotiable live boundaries
+
+- Treat ROS publishers and hardware handles as live. Do not run motion or
+  execution doctors unless the user confirms power and a clear workspace.
+- Applications publish only configured staged targets. Never bypass or weaken
+  the fail-closed relay, its freshness/finite/status/alignment/limit gates, or
+  its exclusive command ownership.
+- One process owns each driver, tracker, camera, serial bus, and command
+  publisher. After partial startup failure, run `just stop` before retrying.
+- Direct host-topic debugging requires an explicit request and `just stop`.
+  Never delete datasets, recordings, checkpoints, weights, or user files
+  without explicit authorization.
+
+## Ownership and contracts
 
 ```text
 scripts -> apps -> runtime / hardware / policies -> configuration / schema / safety
 ```
 
-- `scripts/runtime/` owns app-agnostic ROS, driver, tracker, relay, and shared
-  process lifecycle. It must not depend on Teleop, LingBot, or OpenPI.
-- `scripts/apps/` contains thin entrypoints. Stateful behavior lives under
-  `galaxea_a1_runtime/apps/`; reusable runtime, hardware, collection, and policy
-  logic lives in its focused package.
-- Keep Teleop collection, inference, and conversion independent of LingBot.
+- `scripts/runtime/` is app-agnostic lifecycle; `scripts/apps/` contains thin
+  entrypoints; stateful behavior lives under `galaxea_a1_runtime/apps/`.
 - Generic collection, evaluation, artifact, and Operator Panel behavior belongs
-  to the pinned `external/embodied-ops` repository. This repository owns only
-  the A1 panel adapter, catalog values, validators, and hardware commands.
-- Do not patch `third_party/lerobot` for A1 behavior. Hardware-independent
-  collection/evaluation workflows and the two LeRobot adapters live in the pinned
-  first-party repositories under `external/`. The lightweight A1 wire contract
-  is released from `packages/galaxea-a1-runtime-protocol`; the Robot plugin owns
-  only its LeRobot adapter/client use. Server sessions, leases, watchdogs, ROS,
-  hardware, pairing policy, and safety behavior stay here.
-- Reuse `galaxea_a1_runtime.runtime.ros1_env.configure_ros1_python` before ROS1
-  imports; do not duplicate path surgery.
-- Keep runtime modules parseable as Python 3.11 even though the main environment
-  is Python 3.12: the pinned OpenPI policy process imports the shared deployment
-  contract from its Python 3.11 backend environment.
-
-## Configuration and live contracts
-
-- Follow the single-owner configuration graph in `docs/ARCHITECTURE.md`. Never
-  duplicate a semantic value across configs, dataclasses, shell exports, or
-  fallback defaults.
-- Tracked schemas are strict: require every behavior-affecting key, reject
-  unknown keys, and ensure every tracked key is consumed.
-- App entrypoints may accept a tracked config path and lifecycle/experiment
-  identity. Do not add CLI flags or environment overrides for hardware, safety,
-  cameras, collection, or deployment behavior.
-- Load the owning typed config directly. Shell exports are narrow lifecycle APIs,
-  not alternate configuration objects.
-- Host command topic literals may occur only in System config, explicit debug
-  tools, and documentation.
-- First-party ROS launch files must require their topic arguments. Runtime
-  entrypoints render them from System config; fallback topics would create an
-  unsafe second source of truth.
-- Decode named joint vectors using `joint_safety.names`; reject duplicate,
-  missing, or non-finite values and reorder explicitly. Positional fallback is
-  allowed only for truly unnamed feedback; command messages must carry names.
-- Do not add hidden clamps, scaling, thresholds, or policy-output rewrites.
-  Required limits belong in tracked config or a named safety module.
-- Preserve verified Teleop observation, action, mapping, and reset semantics.
-  An intentional change must update the owning config, behavioral tests, and
-  affected documentation in the same change; compatibility must not drift
-  implicitly.
-
-## Data and models
-
-- Gripper state/actions are continuous normalized `0..1` above hardware and map
-  exactly once to the System-owned physical stroke. Use
-  `/gripper_stroke_host` as feedback; never reinterpret joint-state element 7.
-- Formal collection writes the canonical `galaxea_a1_lerobot_dataset_v3_v3`
-  contract directly. Raw v3 is not a supported input or collection
-  intermediate.
-- One collection experiment may contain multiple exact prompts; preserve their
-  standard LeRobot task table, per-frame task indices, and episode mapping.
-- Collection must record reproducibility metadata and fresh joint, EEF, action,
-  gripper, and paired-camera samples. Enforce configured camera skew and sample
-  freshness.
-- Append each direct LeRobot episode through a hidden sibling dataset snapshot;
-  expose it only by atomic rename after LeRobot finalization and validation.
-  Preserve the previous complete dataset on failure. Crash leftovers must block
-  reuse until inspected.
-- Dataset keys, state/action names, camera order, and protocol channels come from
-  one schema module, never repeated literals or positional slicing.
-- The canonical direct dataset stores absolute EEF pose, six measured joints in
-  radians, normalized gripper state, absolute joint targets in radians,
-  normalized gripper action, task text, and configured camera observations.
-- Name intentional Joint/EEF or version derivatives by their stored
-  representation and LeRobot version, never by a consuming model. A derivative
-  reads the canonical direct dataset; one final derivative must never be the
-  source of another final derivative.
-- Keep datasets under `data/`, durable run results under `outputs/`, external
-  checkouts under `external/`, and deployment weights under `models/` as defined
-  in `docs/ARCHITECTURE.md`. Never commit weights or add Git LFS.
-- Do not delete datasets, recordings, checkpoints, or user files without explicit
-  authorization.
-
-## Implementation quality
-
-- Keep configuration, validation, mapping, clamps, and safety decisions in pure,
-  ROS-free modules. Hardware code adapts those decisions to external APIs.
-- Give every safety-critical config-to-runtime mapping an exhaustive,
-  hardware-free unit test. Doctors and generated reports must derive displayed
-  values from loaded config rather than hardcoding a second expected value.
-- A hardware family has one config-driven constructor. Every physical resource
-  has one explicit owner and shutdown order.
-- Keep optional heavy dependencies lazy so config validation and pure tests do
-  not require ROS, cameras, Torch, serial devices, or model checkouts.
-- Give one concept one public name. Prefer typed result dataclasses over mixed
-  tuples, insertion-order dictionaries, or list-tail conventions.
-- Share an abstraction only after two real callers have the same semantic
-  contract. When a shared path becomes authoritative, delete its duplicates.
-- Before retaining compatibility code or an apparently unused module, find a
-  current caller with `rg`; delete dead branches and superseded wrappers.
-- Python CLIs use `galaxea_a1_runtime.console`; shell CLIs source
-  `scripts/runtime/a1_console.sh`. Preserve the shared INFO/STEP/PASS/WARN/FAIL
-  semantics and machine-readable output without ANSI.
-- Keep lifecycle CLIs verb-oriented. Shared supervision belongs in
-  `a1_tmux.sh` or `a1_services.sh`; help and static diagnostics must not open
-  hardware.
-
-## Change hygiene
-
-- Inspect `git status` and `git diff` first. Preserve unrelated dirty changes;
-  never reset or rewrite user work.
-- Use `rg` for search and `apply_patch` for manual edits.
-- Keep one authoritative test at the purest boundary for each public contract.
-  Higher layers get one wiring smoke test instead of repeating lower-layer edge
-  cases. Tests assert behavior or public contracts, not source layout.
-- Ordinary features default to one happy-path test and one meaningful failure;
-  bug fixes add one minimal regression, and behavior-preserving refactors add no
-  tests. Extend an existing table or test module before creating a new file.
-- Do not retain tests for removed options or legacy behavior unless that
-  compatibility is an explicit current requirement. CI must not require hardware.
-- A tracked contract change includes its loader, validation, consumers,
-  metadata, behavioral tests, and affected documentation in the same change.
-- Keep commits reviewable; separate behavior, configuration migration,
-  mechanical cleanup, and refactors.
-- Before handoff run `just check` and `git diff --check`. For hardware-adjacent
-  work, state which checks were static and which touched real hardware.
+  in pinned `external/embodied-ops`; this repository owns A1 adapters, values,
+  validation, ROS, hardware, and safety. Do not patch `third_party/lerobot` for
+  A1 behavior.
+- One semantic value has one tracked config owner. Schemas require all
+  behavior-affecting keys, reject unknown keys, and must not be shadowed by CLI
+  flags, environment overrides, launch defaults, or hidden clamps.
+- Use `configure_ros1_python` before ROS1 imports. Keep shared runtime modules
+  parseable on Python 3.11 and keep optional heavy dependencies lazy.
+- Named joint vectors must be finite, complete, duplicate-free, and explicitly
+  reordered. Gripper state/action is normalized `0..1` above hardware and maps
+  exactly once to System-owned physical stroke.
+- Formal collection writes the canonical LeRobot v3 contract directly and
+  commits episodes atomically. Keep datasets in `data/`, results in `outputs/`,
+  external code in `external/`, and weights in `models/`; never add Git LFS.
+- Keep safety/config/mapping decisions pure and ROS-free. Test each public
+  contract once at its purest boundary; add higher-level wiring tests only when
+  they prove distinct behavior.

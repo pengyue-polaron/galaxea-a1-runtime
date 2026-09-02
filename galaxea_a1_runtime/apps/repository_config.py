@@ -1,4 +1,4 @@
-"""A1 configuration kinds and their owning strict validators."""
+"""Agent-owned A1 configuration creation and validation."""
 
 from __future__ import annotations
 

@@ -189,14 +189,6 @@ additional gripper bit latches `FAULT`.
   input actions are rejected visibly. Form submissions reject unknown or
   unavailable values before the adapter is called. An ownership supervisor
   terminates the owned workflow process group if the panel process disappears.
-- Web configuration creation is create-only, same-kind validated, and
-  prohibited during a workflow. The candidate is hidden, validated with the
-  owning strict loader, and atomically linked into its allowed config directory.
-  Existing files are never edited, deleted, or overwritten.
-- Web prompt registration is also prohibited during a workflow. It accepts only
-  a validated catalog under `configs/tasks`, rejects duplicate ids and exact
-  prompt text, and atomically creates one new JSON record without rewriting the
-  catalog or any existing prompt.
 - Web workflow buttons have the same authority as running their displayed CLI
   command. Reset, Collect, Evaluation, and Batch move hardware through the
   existing staged tracker and relay path. Stop sends `SIGINT` to the owning

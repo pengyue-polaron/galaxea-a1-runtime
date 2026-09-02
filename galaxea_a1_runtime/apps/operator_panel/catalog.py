@@ -5,9 +5,9 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
+from embodied_ops import load_task_catalog
 from embodied_ops.operator_panel import (
     PANEL_CATALOG_SCHEMA_VERSION,
-    RepositoryDocumentStore,
     checkbox_field,
     combobox_field,
     order_workflow_forms,
@@ -30,16 +30,13 @@ from galaxea_a1_runtime.configuration.paths import (
     TELEOP_CONFIG,
 )
 from galaxea_a1_runtime.configuration.system import load_system_config
-from embodied_ops import load_task_catalog
 from galaxea_a1_runtime.models.registry import registered_models
 from galaxea_a1_runtime.teleop.config import load_teleop_config
 
-from .configuration import looks_like_a1_pose
+from ..repository_config import looks_like_a1_pose
 
 
-def build_a1_catalog(
-    repo_root: Path, document_store: RepositoryDocumentStore
-) -> dict[str, Any]:
+def build_a1_catalog(repo_root: Path) -> dict[str, Any]:
     root = repo_root.resolve()
     system = load_system_config(root / SYSTEM_CONFIG, repo_root=root)
     teleop_options = []
@@ -96,16 +93,9 @@ def build_a1_catalog(
         }
         for model in registered_models(root, backend="lingbot_va")
     )
-    prompt_catalog_options = []
     collection_task_options = []
     for path in sorted((root / "configs/tasks").glob("*/catalog.json")):
         task_catalog = load_task_catalog(path, repo_root=root)
-        prompt_catalog_options.append(
-            {
-                "value": _reference(task_catalog.path, root),
-                "label": task_catalog.catalog_id,
-            }
-        )
         collection_task_options.extend(
             {
                 "value": task.prompt,
@@ -146,8 +136,8 @@ def build_a1_catalog(
             model_options=model_options,
             reset_options=reset_options,
         ),
-        "registrations": _registration_forms(prompt_catalog_options),
-        "configuration_types": document_store.catalog(),
+        "registrations": [],
+        "configuration_types": [],
         "configuration_groups": [
             {"label": "Teleop", "items": teleop_options},
             {"label": "Evaluation", "items": deployment_options},
@@ -156,46 +146,6 @@ def build_a1_catalog(
             {"label": "Models", "items": model_options[1:]},
         ],
     }
-
-
-def _registration_forms(
-    prompt_catalog_options: list[dict[str, str]],
-) -> list[dict[str, Any]]:
-    return [
-        {
-            "id": "prompt",
-            "label": "Prompts",
-            "eyebrow": "PROMPT REGISTRY",
-            "title": "Register a prompt",
-            "description": (
-                "Create one validated prompt record without modifying existing entries."
-            ),
-            "submit_label": "Register prompt",
-            "confirm": "Register this prompt in the repository?",
-            "fields": [
-                select_field("catalog", "Catalog", prompt_catalog_options),
-                text_field(
-                    "prompt",
-                    "Prompt",
-                    placeholder="put the green apple into the bowl",
-                ),
-                {
-                    **text_field("task_id", "Task ID", placeholder="green_apple_bowl"),
-                    "derive_from": "prompt",
-                    "transform": "snake_case",
-                },
-                select_field(
-                    "distribution",
-                    "Distribution",
-                    [
-                        {"value": "ood", "label": "OOD"},
-                        {"value": "train", "label": "Train"},
-                    ],
-                    default="ood",
-                ),
-            ],
-        }
-    ]
 
 
 def _workflow_forms(

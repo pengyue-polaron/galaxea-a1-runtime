@@ -279,17 +279,14 @@ independent versioned envelopes; each workflow run has a stable UUID, monotonic
 status and input-gate revisions, semantic input phase/detail, explicit lifecycle
 state, and UTC start/finish timestamps. Malformed, stale, replayed, cross-run,
 or undeclared events are rejected rather than silently changing available input.
-Its minimal adapter owns only catalog values and
-workflow launch contracts; camera health, configuration, and registration are
-independent optional providers. Document suffix and editor language come from the
-A1 provider rather than the generic core. Progress is display-only, retained by
-stable id as latest state, and excluded from durable logs. It has no Galaxea, ROS,
-camera, model, topic, or tracked-config imports. The A1 adapter under
-`galaxea_a1_runtime/apps/operator_panel/` discovers and fully loads repository
-Teleop, LingBot deployment, Batch, model, task-registry, and reset files,
-supplies the dynamic form catalog, exposes hardware-free dataset inspection and
-v2.1 export, handles strict prompt registration, and constructs argv-only
-commands for the existing entrypoints.
+Its minimal adapter owns only catalog values and workflow launch contracts;
+camera health and repository-maintenance providers are independent optional
+capabilities. Progress is display-only, retained by stable id as latest state,
+and excluded from durable logs. The generic core has no Galaxea, ROS, camera,
+model, topic, or tracked-config imports. The A1 adapter under
+`galaxea_a1_runtime/apps/operator_panel/` deliberately enables only camera
+health and validated runtime workflows. Repository configuration and Prompt
+maintenance use the unified A1 CLI instead of Web mutation endpoints.
 
 The A1-only reset entrypoint is self-contained: its thin app lifecycle wrapper
 validates the System and pose before starting the app-agnostic joint runtime,
@@ -299,22 +296,15 @@ on every exit path. The Web panel and unified CLI use this same command.
 One exclusive subprocess owner runs a workflow. Interactive buttons remain
 locked until the child explicitly announces its next accepted input set; one
 decision consumes that announcement, preventing Web clicks from being queued
-through a later safety gate. Configuration creation offers an existing same-kind
-template, writes the edited candidate to hidden sibling staging, runs the owning
-strict loader, and publishes the new file atomically without overwrite. It is
-prohibited while a workflow is active. Structured registration uses the same
-adapter boundary: the generic panel renders adapter-provided fields, while the
-A1 adapter validates the selected registry and atomically creates one prompt
-JSON without modifying existing entries. Registration is also prohibited while
-a workflow is active. The page embeds Camera Web MJPEG streams,
+through a later safety gate. The page embeds Camera Web MJPEG streams,
 while Camera Web remains a read-only service with no control routes. Per-camera
 preview rate, frame age, freshness, and errors are read from Camera Web's existing
 health endpoint through the A1 adapter; the generic panel neither opens cameras nor
 redefines camera-health thresholds.
 
-Every submitted workflow or registration value is revalidated against its
-declared form immediately before reaching the adapter: unknown keys, missing
-required fields, wrong JSON types, and unavailable select options fail closed.
+Every submitted workflow value is revalidated against its declared form
+immediately before reaching the adapter: unknown keys, missing required fields,
+wrong JSON types, and unavailable select options fail closed.
 The panel launches each workflow through an ownership supervisor. If the panel
 process disappears, the supervisor interrupts the workflow process group and
 escalates only that owned group after bounded grace periods, preventing an
@@ -555,9 +545,9 @@ SHA-256 digests pass. The task catalog owns the approved runtime prompt set and
 explicitly records whether each prompt is from training or OOD evaluation; the
 deployment owns only its catalog reference, service lifecycle, and execution
 choices. Runtime input selects a tracked task id and cannot introduce an
-unregistered prompt. Web registration completes and validates the new JSON
-record before it becomes selectable; it cannot alter the prompt bound to a run
-after startup.
+unregistered prompt. CLI registration atomically creates and validates the new
+JSON record before it becomes selectable; it cannot alter the prompt bound to a
+run after startup.
 
 LingBot training summaries normally bind the training code repository and full
 revision. For older published artifacts that omit both fields, setup and verify

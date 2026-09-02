@@ -34,8 +34,18 @@ check:
     just test
 
 # List tracked operator configurations.
-operator-configs:
+configs:
     {{vpy}} -m galaxea_a1_runtime.cli configs --repo-root "{{repo}}"
+
+# List every validated task Prompt.
+prompts:
+    {{vpy}} -m galaxea_a1_runtime.cli prompt list --repo-root "{{repo}}"
+
+# Atomically register one Prompt in a tracked catalog.
+prompt-register catalog task_id prompt distribution:
+    {{vpy}} -m galaxea_a1_runtime.cli prompt register \
+        "{{catalog}}" "{{task_id}}" "{{prompt}}" \
+        --distribution "{{distribution}}" --repo-root "{{repo}}"
 
 # Open the Operator Panel.
 panel:
