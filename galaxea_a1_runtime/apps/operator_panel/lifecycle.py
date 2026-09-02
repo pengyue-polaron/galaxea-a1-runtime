@@ -107,7 +107,7 @@ def _follow_workflow(
 ) -> int:
     run_id = initial["run_id"]
     previous_logs: list[str] = []
-    info("Use Galaxea A1 Collection Console in Foxglove for guarded controls.")
+    info("Use Embodied Ops Collection Console in Foxglove for guarded controls.")
     try:
         while True:
             status = status_reader()

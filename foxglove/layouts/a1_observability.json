@@ -310,7 +310,18 @@
       "showFullMessageForDiff": false,
       "topicPath": "/a1/ops/workflow_status"
     },
-    "galaxea-a1-collection-console.Collection Console!controls": {},
+    "embodied-ops-collection-console.Collection Console!controls": {
+      "schemaVersion": 1,
+      "statusTopic": "/a1/ops/workflow_status",
+      "services": {
+        "start": "/a1/ops/collection/start",
+        "save": "/a1/ops/collection/save",
+        "discard": "/a1/ops/collection/discard",
+        "reset": "/a1/ops/collection/reset",
+        "stop": "/a1/ops/collection/stop"
+      },
+      "staleAfterMs": 3000
+    },
     "RosOut!logs": {
       "searchTerms": [],
       "minLogLevel": 1
@@ -350,7 +361,7 @@
             "second": {
               "direction": "column",
               "splitPercentage": 50,
-              "first": "galaxea-a1-collection-console.Collection Console!controls",
+              "first": "embodied-ops-collection-console.Collection Console!controls",
               "second": "Tab!overview-details"
             }
           }

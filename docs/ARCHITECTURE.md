@@ -227,11 +227,14 @@ Joint feedback and TF appear only when an owning execution runtime supplies
 them. Camera panels intentionally use compressed images without invented
 calibration or frame transforms.
 
-The committed JSON and generated extension config are the cloud-workspace
-sources derived from System config. A path-scoped GitHub Actions workflow
-validates them, builds and publishes the private organization extension
-`Galaxea A1 Collection Console`, then uses the Foxglove API to upsert the
-exact-name layout `Galaxea A1 Operations` in folder `Galaxea A1`. A unique
+The committed JSON is the A1 cloud-workspace source derived from System config;
+its panel state injects A1 topic and service names into the pinned, robot-neutral
+`Embodied Ops Collection Console`. That reusable extension and the fail-closed
+layout API client belong to `external/embodied-ops`; the A1 Runtime owns the
+concrete layout and native ROS adapter. A path-scoped GitHub Actions workflow
+validates the layout, builds and publishes the shared organization extension,
+then uses its API client to upsert the exact-name layout `Galaxea A1 Operations`
+in folder `Galaxea A1`. A unique
 workflow-run extension version makes retries and updates explicit. The API key
 exists only as a repository secret, and publication does not connect to a robot
 or ROS master. Exact-name lookup must find zero or one matching layout;
@@ -243,7 +246,7 @@ System-owned rate, validates the generic status schema, removes child command
 argv and terminal logs, and publishes a versioned heartbeat summary on
 `/a1/ops/workflow_status`. Workflow identity, lifecycle, progress, semantic
 phase, current guarded input choices, and failure state are therefore visible
-in Foxglove without importing ROS into `embodied-ops`.
+in Foxglove while the native ROS mapping remains owned by the A1 Runtime.
 
 The same adapter advertises exactly five `std_srvs/Trigger` services: start,
 save, discard, reset, and stop. Start/save/discard/reset are accepted only when

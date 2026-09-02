@@ -66,10 +66,10 @@ scripts -> apps -> runtime / hardware / policies -> configuration / schema / saf
 
 - `scripts/runtime/` is app-agnostic lifecycle; `scripts/apps/` contains thin
   entrypoints; stateful behavior lives under `galaxea_a1_runtime/apps/`.
-- Generic collection, evaluation, artifact, and Operator Panel behavior belongs
-  in pinned `external/embodied-ops`; this repository owns A1 adapters, values,
-  validation, ROS, hardware, and safety. Do not patch `third_party/lerobot` for
-  A1 behavior.
+- Generic collection, evaluation, artifact, Operator Panel, and Foxglove
+  presentation mechanics belong in pinned `external/embodied-ops`; this
+  repository owns the A1 layout, adapters, values, validation, ROS, hardware,
+  and safety. Do not patch `third_party/lerobot` for A1 behavior.
 - One semantic value has one tracked config owner. Schemas require all
   behavior-affecting keys, reject unknown keys, and must not be shadowed by CLI
   flags, environment overrides, launch defaults, or hidden clamps.

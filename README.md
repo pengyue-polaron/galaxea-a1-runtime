@@ -71,7 +71,7 @@ That command ensures the paired-camera service and the shared observation
 stack. Connect Foxglove to `ws://<runtime-host>:8766` and select the organization
 layout **Galaxea A1 Operations**. The layout presents both camera streams,
 diagnostics, measured and commanded joint/gripper plots, ROS logs, sanitized
-Embodied Ops workflow status, the **Galaxea A1 Collection Console**, and a 3D
+Embodied Ops workflow status, the **Embodied Ops Collection Console**, and a 3D
 panel backed by the configured URDF and TF tree. The English-only collection
 console is intentionally limited to one status and five controls; the 3D view
 shares a compact tab with diagnostics and is hidden by default.
@@ -111,17 +111,18 @@ Each action is checked against the active collection run, semantic phase, and
 one-shot input revision before it reaches the supervised child process.
 
 [`foxglove/layouts/a1_observability.json`](foxglove/layouts/a1_observability.json)
-and the generated extension config are derived from System config. A GitHub
-Actions workflow builds and publishes the private organization extension
-**Galaxea A1 Collection Console**, then upserts the **Galaxea A1 Operations**
-layout whenever relevant files land on `main`. Organization members therefore
-receive the panel automatically and do not need to import a fresh JSON file.
+is generated from System config and contains the A1 topic/service state for the
+pinned, robot-neutral **Embodied Ops Collection Console**. A GitHub Actions
+workflow builds that extension from `external/embodied-ops`, publishes it to the
+organization, then upserts the **Galaxea A1 Operations** layout whenever relevant
+files land on `main`. Organization members therefore receive the panel
+automatically and do not need to import a fresh JSON file.
 
 ## Package boundaries
 
 | Repository | Responsibility |
 | --- | --- |
-| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent workflow, versioned operator status, artifact, and shared LeRobot format mechanics |
+| [embodied-ops](https://github.com/pengyue-polaron/embodied-ops) | Hardware-independent workflow, versioned operator status, shared Foxglove Collection Console/layout publication, artifact, and LeRobot format mechanics |
 | [lerobot-robot-galaxea-a1](https://github.com/pengyue-polaron/lerobot-robot-galaxea-a1) | Auto-discovered LeRobot `Robot` client for the A1 Runtime |
 | [lerobot-teleoperator-galaxea-a1-so-leader](https://github.com/pengyue-polaron/lerobot-teleoperator-galaxea-a1-so-leader) | Auto-discovered LeRobot `Teleoperator` for the modified SO-101 leader |
 

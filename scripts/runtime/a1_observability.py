@@ -21,6 +21,11 @@ from galaxea_a1_runtime.configuration.system import (  # noqa: E402
     load_system_config,
 )
 from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
+from embodied_ops.foxglove import (  # noqa: E402
+    foxglove_workflow_status,
+    prepare_collection_action,
+    prepare_collection_stop,
+)
 from galaxea_a1_runtime.runtime.operator_session import (  # noqa: E402
     OperatorSessionClient,
     OperatorSessionUnavailable,
@@ -33,9 +38,6 @@ from galaxea_a1_runtime.observability import (  # noqa: E402
     collection_action_service_bindings,
     motor_diagnostic,
     operator_panel_diagnostic,
-    operator_panel_telemetry,
-    prepare_collection_action,
-    prepare_collection_stop,
     relay_diagnostic,
 )
 from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python  # noqa: E402
@@ -76,7 +78,7 @@ class A1ObservabilityNode:
             None,
         )
         self._last_camera_pair = (-1, -1)
-        self._operator_telemetry = operator_panel_telemetry(None)
+        self._operator_telemetry = foxglove_workflow_status(None)
         self._operator_session = OperatorSessionClient(
             timeout_s=system.observability.operator_session_timeout_s
         )
@@ -434,9 +436,9 @@ class A1ObservabilityNode:
 
     def _poll_operator_panel(self) -> None:
         try:
-            normalized = operator_panel_telemetry(self._operator_session.status())
+            normalized = foxglove_workflow_status(self._operator_session.status())
         except (OperatorSessionUnavailable, RuntimeError, ValueError) as exc:
-            normalized = operator_panel_telemetry(
+            normalized = foxglove_workflow_status(
                 None,
                 error=f"Operator Session unavailable: {exc}",
             )

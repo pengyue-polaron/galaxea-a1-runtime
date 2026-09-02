@@ -51,15 +51,15 @@ prompt-register catalog task_id prompt distribution:
 panel:
     {{vpy}} -m galaxea_a1_runtime.cli panel --repo-root "{{repo}}"
 
-# Render the tracked Foxglove layout and extension config from System config.
+# Render the tracked A1 Foxglove layout from System config.
 foxglove-layout:
     {{vpy}} {{repo}}/scripts/runtime/render_foxglove_layout.py
 
-# Compile and lint the organization-installed Foxglove collection console.
+# Compile and lint the pinned shared Foxglove collection console.
 foxglove-extension-check:
-    npm --prefix {{repo}}/foxglove/extensions/galaxea-a1-collection-console ci
-    npm --prefix {{repo}}/foxglove/extensions/galaxea-a1-collection-console run build
-    npm --prefix {{repo}}/foxglove/extensions/galaxea-a1-collection-console run lint
+    npm --prefix {{repo}}/external/embodied-ops/foxglove/collection-console ci
+    npm --prefix {{repo}}/external/embodied-ops/foxglove/collection-console run build
+    npm --prefix {{repo}}/external/embodied-ops/foxglove/collection-console run lint
 
 ros-python-check:
     #!/usr/bin/env bash

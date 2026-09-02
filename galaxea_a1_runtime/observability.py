@@ -10,7 +10,7 @@ from math import isfinite
 from pathlib import Path
 from typing import Any
 
-from embodied_ops.operator_panel import WORKFLOW_STATUS_SCHEMA_VERSION
+from embodied_ops.foxglove import FOXGLOVE_WORKFLOW_STATUS_SCHEMA_VERSION
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.constants import IDLE_TIMEOUT_CODE
@@ -21,7 +21,6 @@ DIAGNOSTIC_WARN = 1
 DIAGNOSTIC_ERROR = 2
 NO_MATCH_ALLOWLIST = ("^$",)
 BASE_FOXGLOVE_CAPABILITIES = ("connectionGraph", "assets")
-OPS_TELEMETRY_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -31,13 +30,6 @@ class DiagnosticFinding:
     message: str
     values: tuple[tuple[str, str], ...] = ()
     hardware_id: str = "galaxea-a1"
-
-
-@dataclass(frozen=True)
-class OperatorActionRequest:
-    action_id: str
-    run_id: str
-    input_revision: int
 
 
 @dataclass(frozen=True)
@@ -263,200 +255,12 @@ def camera_diagnostic(
     )
 
 
-def operator_panel_telemetry(
-    snapshot: object | None,
-    *,
-    error: str = "",
-) -> dict[str, object]:
-    """Normalize the generic panel status into the stable A1 telemetry envelope."""
-
-    if snapshot is None:
-        return {
-            "schema_version": OPS_TELEMETRY_SCHEMA_VERSION,
-            "available": False,
-            "error": error or "Operator Panel unavailable",
-        }
-    if not isinstance(snapshot, dict):
-        raise ValueError("Operator Panel status must be a JSON object")
-    if snapshot.get("schema_version") != WORKFLOW_STATUS_SCHEMA_VERSION:
-        raise ValueError("Operator Panel status schema version mismatch")
-    revision = snapshot.get("revision")
-    input_revision = snapshot.get("input_revision")
-    active = snapshot.get("active")
-    exit_code = snapshot.get("exit_code")
-    if isinstance(revision, bool) or not isinstance(revision, int) or revision < 0:
-        raise ValueError("Operator Panel status revision must be non-negative")
-    if (
-        isinstance(input_revision, bool)
-        or not isinstance(input_revision, int)
-        or input_revision < 0
-    ):
-        raise ValueError("Operator Panel input revision must be non-negative")
-    if not isinstance(active, bool):
-        raise ValueError("Operator Panel status active must be boolean")
-    if exit_code is not None and (
-        isinstance(exit_code, bool) or not isinstance(exit_code, int)
-    ):
-        raise ValueError("Operator Panel status exit_code must be integer or null")
-    text_fields = (
-        "run_id",
-        "state",
-        "workflow",
-        "name",
-        "started_at",
-        "finished_at",
-        "input_phase",
-        "input_detail",
-    )
-    if any(not isinstance(snapshot.get(field), str) for field in text_fields):
-        raise ValueError("Operator Panel status identity fields must be strings")
-    state = snapshot["state"]
-    if state not in {
-        "idle",
-        "running",
-        "waiting_for_input",
-        "stopping",
-        "stopped",
-        "succeeded",
-        "failed",
-    }:
-        raise ValueError(f"Operator Panel status state is unsupported: {state!r}")
-    status_line = snapshot.get("status_line")
-    progress = snapshot.get("progress")
-    input_actions = snapshot.get("input_actions")
-    if not isinstance(status_line, str):
-        raise ValueError("Operator Panel status_line must be a string")
-    if not isinstance(progress, list) or not all(
-        isinstance(item, dict) for item in progress
-    ):
-        raise ValueError("Operator Panel progress must be a list of objects")
-    progress_ids: list[str] = []
-    for item in progress:
-        if set(item) != {"id", "label", "current", "total", "phase", "detail"}:
-            raise ValueError("Operator Panel progress entry is invalid")
-        progress_id = item["id"]
-        if (
-            not isinstance(progress_id, str)
-            or not progress_id
-            or any(
-                not isinstance(item[field], str)
-                for field in ("label", "phase", "detail")
-            )
-        ):
-            raise ValueError("Operator Panel progress identity is invalid")
-        current = item["current"]
-        total = item["total"]
-        if (
-            isinstance(current, bool)
-            or not isinstance(current, (int, float))
-            or not isfinite(current)
-            or current < 0
-            or total is not None
-            and (
-                isinstance(total, bool)
-                or not isinstance(total, (int, float))
-                or not isfinite(total)
-                or total <= 0
-                or current > total
-            )
-        ):
-            raise ValueError("Operator Panel progress values are invalid")
-        progress_ids.append(progress_id)
-    if len(set(progress_ids)) != len(progress_ids):
-        raise ValueError("Operator Panel progress ids must not contain duplicates")
-    if not isinstance(input_actions, list) or not all(
-        isinstance(item, dict) for item in input_actions
-    ):
-        raise ValueError("Operator Panel input_actions must be a list of objects")
-    for action in input_actions:
-        if set(action) != {"id", "label", "tone"} or not all(
-            isinstance(action[key], str) for key in ("id", "label", "tone")
-        ):
-            raise ValueError("Operator Panel input action is invalid")
-        if (
-            not action["id"]
-            or not action["label"]
-            or action["tone"] not in {"default", "primary", "danger", "quiet"}
-        ):
-            raise ValueError("Operator Panel input action values are invalid")
-    action_ids = [action["id"] for action in input_actions]
-    if len(set(action_ids)) != len(action_ids):
-        raise ValueError("Operator Panel input action ids must not contain duplicates")
-    return {
-        "schema_version": OPS_TELEMETRY_SCHEMA_VERSION,
-        "source_schema_version": WORKFLOW_STATUS_SCHEMA_VERSION,
-        "available": True,
-        "revision": revision,
-        "input_revision": input_revision,
-        "input_phase": snapshot["input_phase"],
-        "input_detail": snapshot["input_detail"],
-        "run_id": snapshot["run_id"],
-        "state": state,
-        "active": active,
-        "workflow": snapshot["workflow"],
-        "name": snapshot["name"],
-        "started_at": snapshot["started_at"],
-        "finished_at": snapshot["finished_at"],
-        "exit_code": exit_code,
-        "progress": progress,
-        "status_line": status_line,
-        "input_actions": input_actions,
-    }
-
-
-def prepare_collection_action(
-    snapshot: object,
-    *,
-    action_id: str,
-    expected_phase: str,
-) -> OperatorActionRequest:
-    """Validate a Foxglove action against one exact active collection input gate."""
-
-    telemetry = operator_panel_telemetry(snapshot)
-    if not telemetry["active"] or telemetry["workflow"] != "collect":
-        raise ValueError("no active collection session")
-    if telemetry["state"] != "waiting_for_input":
-        raise ValueError(f"collection is not accepting input ({telemetry['state']})")
-    if telemetry["input_phase"] != expected_phase:
-        raise ValueError(
-            f"collection phase is {telemetry['input_phase']!r}, expected {expected_phase!r}"
-        )
-    action_ids = {action["id"] for action in telemetry["input_actions"]}
-    if action_id not in action_ids:
-        raise ValueError(f"action {action_id!r} is not currently available")
-    run_id = telemetry["run_id"]
-    input_revision = telemetry["input_revision"]
-    if not isinstance(run_id, str) or not run_id:
-        raise ValueError("collection run id is unavailable")
-    if not isinstance(input_revision, int):
-        raise ValueError("collection input revision is unavailable")
-    return OperatorActionRequest(
-        action_id=action_id,
-        run_id=run_id,
-        input_revision=input_revision,
-    )
-
-
-def prepare_collection_stop(snapshot: object) -> str:
-    """Validate the explicitly scoped stop service against the active collect run."""
-
-    telemetry = operator_panel_telemetry(snapshot)
-    if not telemetry["active"] or telemetry["workflow"] != "collect":
-        raise ValueError("no active collection session")
-    if telemetry["state"] == "stopping":
-        raise ValueError("collection session is already stopping")
-    run_id = telemetry["run_id"]
-    if not isinstance(run_id, str) or not run_id:
-        raise ValueError("collection run id is unavailable")
-    return run_id
-
-
 def operator_panel_diagnostic(
     telemetry: dict[str, object],
 ) -> DiagnosticFinding:
     """Summarize the versioned Operator Panel telemetry."""
 
-    if telemetry.get("schema_version") != OPS_TELEMETRY_SCHEMA_VERSION:
+    if telemetry.get("schema_version") != FOXGLOVE_WORKFLOW_STATUS_SCHEMA_VERSION:
         raise ValueError("operator telemetry schema version mismatch")
     if telemetry.get("available") is False:
         error = telemetry.get("error")

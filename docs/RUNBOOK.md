@@ -91,10 +91,12 @@ In Foxglove, add a **Foxglove WebSocket** connection to
 `ws://127.0.0.1:8766` (or the host's trusted-LAN address), then import
 [`foxglove/layouts/a1_observability.json`](../foxglove/layouts/a1_observability.json).
 The canonical organization layout is named **Galaxea A1 Operations**. Pushes to
-`main` build and publish the private **Galaxea A1 Collection Console** extension
-before creating or updating that organization layout through the Foxglove API,
-so organization members normally select it from the Layouts menu instead of
-installing the extension or importing JSON manually.
+`main` build the pinned, robot-neutral **Embodied Ops Collection Console** from
+`external/embodied-ops`, publish it privately to the organization, and then
+create or update the A1 layout through the Foxglove API. The layout supplies its
+exact A1 topic and service names, so organization members normally select it
+from the Layouts menu instead of installing the extension or importing JSON
+manually.
 The first tab contains both camera streams, A1 URDF/TF, and diagnostics; the
 second contains measured/staged/forwarded joint and gripper plots plus ROS logs.
 Staged and forwarded joint curves start disabled so the measured traces remain
@@ -155,10 +157,10 @@ LAN and never proxy or port-forward it. Foxglove can inspect configured command
 topics and call only the five exact collection `std_srvs/Trigger` services; the
 bridge denies client publication, parameter access, client-advertised topics,
 and every other service. The service proxy accepts only the active `collect`
-run's exact phase/action/input revision. Regenerate the committed layout and
-extension config after a System topic, service, joint-name, or URDF change with
-`just foxglove-layout`; the static test suite rejects stale generated files. Run
-`just foxglove restart` after changing tracked observability configuration.
+run's exact phase/action/input revision. Regenerate the committed layout after a
+System topic, service, joint-name, or URDF change with `just foxglove-layout`;
+the static test suite rejects stale generated files. Run `just foxglove restart`
+after changing tracked observability configuration.
 
 ### Unified operator panel
 

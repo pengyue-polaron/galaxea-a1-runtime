@@ -25,7 +25,7 @@ jobs:
         with:
           node-version: "24"
           cache: npm
-          cache-dependency-path: foxglove/extensions/galaxea-a1-collection-console/package-lock.json
+          cache-dependency-path: external/embodied-ops/foxglove/collection-console/package-lock.json
       - name: Install FFmpeg
         run: |
           sudo apt-get update -qq
