@@ -1,8 +1,9 @@
 <launch>
-  <!-- Every endpoint and allowlist is rendered from the owning System config. -->
+  <!-- Every endpoint, capability, and allowlist is rendered from System config. -->
   <arg name="address" />
   <arg name="port" />
   <arg name="topic_whitelist" />
+  <arg name="service_whitelist" />
   <arg name="no_match_allowlist" />
   <arg name="capabilities" />
   <arg name="asset_uri_allowlist" />
@@ -14,7 +15,7 @@
     <arg name="port" value="$(arg port)" />
     <arg name="tls" value="false" />
     <arg name="topic_whitelist" value="$(arg topic_whitelist)" />
-    <arg name="service_whitelist" value="$(arg no_match_allowlist)" />
+    <arg name="service_whitelist" value="$(arg service_whitelist)" />
     <arg name="param_whitelist" value="$(arg no_match_allowlist)" />
     <arg name="client_topic_whitelist" value="$(arg no_match_allowlist)" />
     <arg name="capabilities" value="$(arg capabilities)" />

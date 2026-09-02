@@ -36,7 +36,7 @@ just camera-check
 System config. Resolve missing devices, stale frames, wrong image shapes, or USB
 bandwidth failures before continuing.
 
-Start or verify the persistent read-only LAN monitor once. This command also
+Start or verify the persistent scoped LAN monitor once. This command also
 ensures the shared roscore, telemetry adapter, and Foxglove Bridge:
 
 ```bash
@@ -73,10 +73,10 @@ leaves this stack running.
 The preview is unauthenticated, unencrypted, and LAN-only. Do not port-forward
 it.
 
-### Read-only Foxglove workspace
+### Persistent Foxglove workspace and collection console
 
 The normal A1, joint, Teleop, LingBot, and pi0.5 runtime compositions ensure and
-reuse the same persistent read-only Foxglove WebSocket at
+reuse the same persistent Foxglove WebSocket at
 `ws://<this-host>:8766`; they never start a competing bridge.
 
 To inspect cameras without starting the A1 driver, tracker, relay, or any
@@ -90,16 +90,42 @@ In Foxglove, add a **Foxglove WebSocket** connection to
 `ws://127.0.0.1:8766` (or the host's trusted-LAN address), then import
 [`foxglove/layouts/a1_observability.json`](../foxglove/layouts/a1_observability.json).
 The canonical organization layout is named **Galaxea A1 Operations**. Pushes to
-`main` that change the committed layout automatically create or update that
-organization layout through the Foxglove API, so organization members normally
-select it from the Layouts menu instead of importing the JSON manually.
+`main` build and publish the private **Galaxea A1 Collection Console** extension
+before creating or updating that organization layout through the Foxglove API,
+so organization members normally select it from the Layouts menu instead of
+installing the extension or importing JSON manually.
 The first tab contains both camera streams, A1 URDF/TF, and diagnostics; the
 second contains measured/staged/forwarded joint and gripper plots plus ROS logs.
 Staged and forwarded joint curves start disabled so the measured traces remain
-readable. When `just panel` is also running, the second tab shows its sanitized
-versioned workflow state and progress on `/a1/ops/workflow_status`; child argv
-and terminal logs are deliberately excluded. The layout has no Publish panel,
-so guarded workflow inputs still use the panel or CLI rather than Foxglove.
+readable. The first tab's collection console and the second tab's raw status
+subscribe to the sanitized versioned workflow state on
+`/a1/ops/workflow_status`; child argv and terminal logs are deliberately
+excluded. The layout has no Publish panel.
+
+To open the session and select its prompt:
+
+```bash
+just collect <experiment> "<exact prompt>"
+```
+
+Keep that terminal command running. It owns or attaches to the single Operator
+Session and follows the child log. In Foxglove:
+
+- `Ready`: **Start recording**, **Reset position**, and **End session** are
+  available.
+- `Recording`: **Stop & save**, **Discard episode**, and **End session** are
+  available.
+- `Saving`, `Discarding`, `Resetting`, and other busy phases disable episode
+  buttons until the child announces the next one-shot input gate.
+- An unavailable session, stale telemetry, rejected command, or failed workflow
+  is shown explicitly. Reset, discard, and end-session actions ask for
+  confirmation.
+
+If `just panel` is already running, `just collect` submits the collection to its
+existing workflow owner. Otherwise, the command starts only a private
+current-user Operator Session for that collection; it does not open another LAN
+HTTP server. `Ctrl+C` stops the exact active run through the same supervised
+boundary.
 
 Standalone mode is intentionally partial: camera images are available when the
 persistent Camera Bridge is running, while joints, relay status, motor status,
@@ -123,11 +149,13 @@ just foxglove stop
 
 The endpoint has no authentication or TLS. Restrict port `8766` to the trusted
 LAN and never proxy or port-forward it. Foxglove can inspect configured command
-topics, but the bridge denies client publication, service calls, parameter
-access, and client-advertised topics. Regenerate the committed layout after a
-System topic, joint-name, or URDF change with `just foxglove-layout`; the static
-test suite rejects a stale layout. Run `just foxglove restart` after changing
-the tracked observability configuration.
+topics and call only the five exact collection `std_srvs/Trigger` services; the
+bridge denies client publication, parameter access, client-advertised topics,
+and every other service. The service proxy accepts only the active `collect`
+run's exact phase/action/input revision. Regenerate the committed layout and
+extension config after a System topic, service, joint-name, or URDF change with
+`just foxglove-layout`; the static test suite rejects stale generated files. Run
+`just foxglove restart` after changing tracked observability configuration.
 
 ### Unified operator panel
 

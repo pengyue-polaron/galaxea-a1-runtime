@@ -1,6 +1,6 @@
 #!/usr/bin/env python3.12
 # ruff: noqa: E402
-"""Publish read-only A1 telemetry for Foxglove without owning physical devices."""
+"""Publish A1 telemetry and proxy narrowly scoped Operator Session controls."""
 
 from __future__ import annotations
 
@@ -9,8 +9,6 @@ import json
 import sys
 import threading
 import time
-import urllib.error
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -23,14 +21,21 @@ from galaxea_a1_runtime.configuration.system import (  # noqa: E402
     load_system_config,
 )
 from galaxea_a1_runtime.console import ArgumentParser  # noqa: E402
+from galaxea_a1_runtime.runtime.operator_session import (  # noqa: E402
+    OperatorSessionClient,
+    OperatorSessionUnavailable,
+)
 from galaxea_a1_runtime.observability import (  # noqa: E402
     DIAGNOSTIC_ERROR,
     DIAGNOSTIC_OK,
     DiagnosticFinding,
     camera_diagnostic,
+    collection_action_service_bindings,
     motor_diagnostic,
     operator_panel_diagnostic,
     operator_panel_telemetry,
+    prepare_collection_action,
+    prepare_collection_stop,
     relay_diagnostic,
 )
 from galaxea_a1_runtime.runtime.ros1_env import configure_ros1_python  # noqa: E402
@@ -47,6 +52,7 @@ from diagnostic_msgs.msg import DiagnosticArray, DiagnosticStatus, KeyValue
 from sensor_msgs.msg import CompressedImage, JointState
 from signal_arm.msg import arm_control, gripper_position_control, status_stamped
 from std_msgs.msg import String
+from std_srvs.srv import Trigger, TriggerResponse
 
 from galaxea_a1_runtime.hardware.camera_bridge import CameraBridgeReaders  # noqa: E402
 from galaxea_a1_runtime.hardware.cameras import RealSenseFrameSet  # noqa: E402
@@ -71,7 +77,10 @@ class A1ObservabilityNode:
         )
         self._last_camera_pair = (-1, -1)
         self._operator_telemetry = operator_panel_telemetry(None)
-        self._operator_telemetry_json = ""
+        self._operator_session = OperatorSessionClient(
+            timeout_s=system.observability.operator_session_timeout_s
+        )
+        self._operator_services = []
         topics = system.observability.topics
         self._front_image_pub = rospy.Publisher(
             topics.front_image, CompressedImage, queue_size=1
@@ -113,6 +122,8 @@ class A1ObservabilityNode:
             self._staged_command_cb,
             queue_size=1,
         )
+        if system.operator_panel.control_enabled:
+            self._advertise_operator_services()
         rospy.Subscriber(
             primary.host_command,
             arm_control,
@@ -422,36 +433,12 @@ class A1ObservabilityNode:
         self._diagnostics_pub.publish(message)
 
     def _poll_operator_panel(self) -> None:
-        bind = self.system.operator_panel.bind
-        host = "127.0.0.1" if bind == "0.0.0.0" else bind
-        url = f"http://{host}:{self.system.operator_panel.port}/api/status"
         try:
-            request = urllib.request.Request(
-                url,
-                headers={"Accept": "application/json"},
-                method="GET",
-            )
-            with urllib.request.urlopen(
-                request,
-                timeout=self.system.observability.operator_panel_timeout_s,
-            ) as response:
-                if response.status != 200:
-                    raise ValueError(f"Operator Panel returned HTTP {response.status}")
-                body = response.read(1024 * 1024 + 1)
-            if len(body) > 1024 * 1024:
-                raise ValueError("Operator Panel status exceeded 1 MiB")
-            snapshot = json.loads(body)
-            normalized = operator_panel_telemetry(snapshot)
-        except (
-            json.JSONDecodeError,
-            OSError,
-            TimeoutError,
-            urllib.error.URLError,
-            ValueError,
-        ) as exc:
+            normalized = operator_panel_telemetry(self._operator_session.status())
+        except (OperatorSessionUnavailable, RuntimeError, ValueError) as exc:
             normalized = operator_panel_telemetry(
                 None,
-                error=f"Operator Panel unavailable: {exc}",
+                error=f"Operator Session unavailable: {exc}",
             )
         payload = json.dumps(
             normalized,
@@ -460,10 +447,55 @@ class A1ObservabilityNode:
             ensure_ascii=False,
         )
         self._operator_telemetry = normalized
-        if payload == self._operator_telemetry_json:
-            return
-        self._operator_telemetry_json = payload
         self._workflow_status_pub.publish(String(data=payload))
+
+    def _advertise_operator_services(self) -> None:
+        services = self.system.operator_panel.services
+        for binding in collection_action_service_bindings(self.system):
+            self._operator_services.append(
+                rospy.Service(
+                    binding.service_name,
+                    Trigger,
+                    self._operator_action_handler(
+                        binding.action_id, binding.expected_phase
+                    ),
+                )
+            )
+        self._operator_services.append(
+            rospy.Service(services.stop, Trigger, self._operator_stop_handler)
+        )
+
+    def _operator_action_handler(self, action_id: str, expected_phase: str):
+        def handle(_request) -> TriggerResponse:
+            try:
+                action = prepare_collection_action(
+                    self._operator_session.status(),
+                    action_id=action_id,
+                    expected_phase=expected_phase,
+                )
+                self._operator_session.input(
+                    action.action_id,
+                    run_id=action.run_id,
+                    input_revision=action.input_revision,
+                )
+            except (OperatorSessionUnavailable, RuntimeError, ValueError) as exc:
+                return TriggerResponse(success=False, message=str(exc))
+            return TriggerResponse(
+                success=True,
+                message=f"accepted {action_id} for run {action.run_id}",
+            )
+
+        return handle
+
+    def _operator_stop_handler(self, _request) -> TriggerResponse:
+        try:
+            run_id = prepare_collection_stop(self._operator_session.status())
+            self._operator_session.stop(run_id=run_id)
+        except (OperatorSessionUnavailable, RuntimeError, ValueError) as exc:
+            return TriggerResponse(success=False, message=str(exc))
+        return TriggerResponse(
+            success=True, message=f"stopping collection run {run_id}"
+        )
 
     def _set_mirror_error(self, label: str, error: str) -> None:
         with self._lock:

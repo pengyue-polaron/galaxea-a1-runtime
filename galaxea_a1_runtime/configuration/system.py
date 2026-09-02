@@ -11,6 +11,7 @@ from ipaddress import AddressValueError, IPv4Address
 from pathlib import Path
 
 from galaxea_a1_runtime.configuration.base import (
+    boolean,
     float_tuple,
     floating,
     integer,
@@ -69,6 +70,7 @@ __all__ = [
     "SystemHostConfig",
     "SystemJointSafetyConfig",
     "SystemOperatorPanelConfig",
+    "SystemOperatorServicesConfig",
     "ObservabilityConfig",
     "ObservabilityTopicsConfig",
     "SystemRealSenseCameraConfig",
@@ -145,9 +147,20 @@ class SystemRobotServiceConfig:
 
 
 @dataclass(frozen=True)
+class SystemOperatorServicesConfig:
+    start: str
+    save: str
+    discard: str
+    reset: str
+    stop: str
+
+
+@dataclass(frozen=True)
 class SystemOperatorPanelConfig:
     bind: str
     port: int
+    control_enabled: bool
+    services: SystemOperatorServicesConfig
 
 
 @dataclass(frozen=True)
@@ -252,6 +265,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     gripper = required_table(data, "gripper")
     cameras = required_table(data, "cameras")
     operator_panel = required_table(data, "operator_panel")
+    operator_services = required_table(operator_panel, "services")
     require_exact_keys(host, required={"image", "a1_serial"}, label="host")
     require_exact_keys(
         topics, required=set(SystemTopicsConfig.__annotations__), label="topics"
@@ -289,6 +303,11 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         operator_panel,
         required=set(SystemOperatorPanelConfig.__annotations__),
         label="operator_panel",
+    )
+    require_exact_keys(
+        operator_services,
+        required=set(SystemOperatorServicesConfig.__annotations__),
+        label="operator_panel.services",
     )
     config = SystemConfig(
         path=path,
@@ -394,6 +413,14 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         operator_panel=SystemOperatorPanelConfig(
             bind=string(operator_panel, "bind"),
             port=integer(operator_panel, "port"),
+            control_enabled=boolean(operator_panel, "control_enabled"),
+            services=SystemOperatorServicesConfig(
+                start=string(operator_services, "start"),
+                save=string(operator_services, "save"),
+                discard=string(operator_services, "discard"),
+                reset=string(operator_services, "reset"),
+                stop=string(operator_services, "stop"),
+            ),
         ),
     )
     validate_system_config(config)
@@ -436,6 +463,12 @@ def validate_system_config(config: SystemConfig) -> None:
                 "observability.topics."
                 f"{name} must be a valid absolute ROS name: {value!r}"
             )
+    for name, value in config.operator_panel.services.__dict__.items():
+        if ROS_ABSOLUTE_NAME.fullmatch(value) is None:
+            raise ValueError(
+                "operator_panel.services."
+                f"{name} must be a valid absolute ROS name: {value!r}"
+            )
     primary_topics = set(config.topics.__dict__.values())
     observability_topics = tuple(config.observability.topics.__dict__.values())
     if len(set(observability_topics)) != len(observability_topics):
@@ -444,6 +477,17 @@ def validate_system_config(config: SystemConfig) -> None:
     if overlap:
         raise ValueError(
             f"observability topics must differ from primary topics: {overlap}"
+        )
+    service_names = tuple(config.operator_panel.services.__dict__.values())
+    if len(set(service_names)) != len(service_names):
+        raise ValueError("operator_panel.services must not contain duplicates")
+    service_overlap = sorted(
+        set(service_names) & (primary_topics | set(observability_topics))
+    )
+    if service_overlap:
+        raise ValueError(
+            "operator_panel services must differ from configured topics: "
+            f"{service_overlap}"
         )
     if config.observability.port in {
         config.operator_panel.port,
@@ -575,8 +619,9 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
 
     from galaxea_a1_runtime.observability import (
         NO_MATCH_ALLOWLIST,
-        READ_ONLY_FOXGLOVE_CAPABILITIES,
         foxglove_asset_uri_allowlist,
+        foxglove_capabilities,
+        foxglove_service_whitelist,
         foxglove_topic_whitelist,
     )
 
@@ -622,11 +667,14 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         "FOXGLOVE_TOPIC_WHITELIST_YAML": json.dumps(
             foxglove_topic_whitelist(config), separators=(",", ":")
         ),
+        "FOXGLOVE_SERVICE_WHITELIST_YAML": json.dumps(
+            foxglove_service_whitelist(config), separators=(",", ":")
+        ),
         "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML": json.dumps(
             NO_MATCH_ALLOWLIST, separators=(",", ":")
         ),
         "FOXGLOVE_CAPABILITIES_YAML": json.dumps(
-            READ_ONLY_FOXGLOVE_CAPABILITIES, separators=(",", ":")
+            foxglove_capabilities(config), separators=(",", ":")
         ),
         "FOXGLOVE_ASSET_URI_ALLOWLIST_YAML": json.dumps(
             foxglove_asset_uri_allowlist(config), separators=(",", ":")
@@ -714,6 +762,7 @@ def bash_config(config: SystemConfig) -> str:
             "FOXGLOVE_GRAPH_UPDATE_MS",
             "FOXGLOVE_SEND_BUFFER_LIMIT_BYTES",
             "FOXGLOVE_TOPIC_WHITELIST_YAML",
+            "FOXGLOVE_SERVICE_WHITELIST_YAML",
             "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML",
             "FOXGLOVE_CAPABILITIES_YAML",
             "FOXGLOVE_ASSET_URI_ALLOWLIST_YAML",

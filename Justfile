@@ -30,6 +30,7 @@ check:
     find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
     {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
     {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
+    just foxglove-extension-check
     just test
 
 # List tracked operator configurations.
@@ -40,9 +41,15 @@ operator-configs:
 panel:
     {{vpy}} -m galaxea_a1_runtime.cli panel --repo-root "{{repo}}"
 
-# Render the tracked read-only Foxglove layout from System config.
+# Render the tracked Foxglove layout and extension config from System config.
 foxglove-layout:
     {{vpy}} {{repo}}/scripts/runtime/render_foxglove_layout.py
+
+# Compile and lint the organization-installed Foxglove collection console.
+foxglove-extension-check:
+    npm --prefix {{repo}}/foxglove/extensions/galaxea-a1-collection-console ci
+    npm --prefix {{repo}}/foxglove/extensions/galaxea-a1-collection-console run build
+    npm --prefix {{repo}}/foxglove/extensions/galaxea-a1-collection-console run lint
 
 ros-python-check:
     #!/usr/bin/env bash
@@ -96,7 +103,7 @@ camera-check *args:
 cameras action="start":
     scripts/apps/cameras/a1_camera_observability_runtime.sh "{{action}}"
 
-# Start a read-only Foxglove endpoint without starting the A1 driver or relay.
+# Start Foxglove telemetry and scoped operator services without the A1 driver/relay.
 foxglove action="start":
     scripts/runtime/a1_observability_runtime.sh "{{action}}"
 
@@ -106,9 +113,8 @@ eef-test:
 
 # Reset and collect episodes into one experiment.
 collect experiment task:
-    scripts/apps/teleop/a1_teleop_runtime.sh \
-        --task "{{task}}" \
-        collect "{{experiment}}"
+    {{vpy}} -m galaxea_a1_runtime.cli collect \
+        --repo-root "{{repo}}" --task "{{task}}" "{{experiment}}"
 
 teleop-test:
     #!/usr/bin/env bash

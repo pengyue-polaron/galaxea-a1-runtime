@@ -100,6 +100,7 @@ def test_collection_recording_trims_stationary_prefix_and_keeps_preroll(monkeypa
     dataset = Dataset()
 
     recorded = record_episode(
+        episode_index=0,
         dataset=dataset,
         task="place fruit",
         front_reader=Reader("front"),

@@ -1,12 +1,27 @@
 import shutil
 import sys
+import time
 from pathlib import Path
 
 import pytest
 
-from embodied_ops.operator_panel import OperatorPanelApplication, WorkflowLaunch
+from embodied_ops.operator_panel import (
+    OperatorPanelApplication,
+    WorkflowLaunch,
+)
 
-from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
+from galaxea_a1_runtime.apps.operator_panel import (
+    A1OperatorPanelAdapter,
+    OperatorSessionClient,
+    OperatorSessionServer,
+    OperatorSessionUnavailable,
+)
+from galaxea_a1_runtime.apps.teleop.interaction import (
+    A1_COLLECTION_INTERACTION,
+    CollectionReadyAction,
+    normalize_collection_ready_action,
+)
+from galaxea_a1_runtime.cli import main as cli_main
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -75,6 +90,21 @@ def test_a1_panel_adapter_discovers_and_builds_validated_workflows():
         "primary",
         "danger",
         "quiet",
+    ]
+    collect = adapter.build_launch(
+        "collect",
+        {
+            "config": "configs/teleop/a1_so100.toml",
+            "experiment": "run_01",
+            "task": "pick fruit",
+        },
+    )
+    assert [action.action_id for action in collect.input_actions] == [
+        "start",
+        "save",
+        "discard",
+        "reset",
+        "quit",
     ]
 
     reset = adapter.build_launch(
@@ -278,3 +308,122 @@ def test_a1_panel_uses_shared_camera_health_provider(monkeypatch):
         lambda port: health if port == 8088 else None,
     )
     assert A1OperatorPanelAdapter(ROOT).camera_health() == health
+
+
+def test_a1_collection_ready_actions_are_explicit_and_fail_closed() -> None:
+    assert normalize_collection_ready_action("") is CollectionReadyAction.START
+    assert normalize_collection_ready_action("reset") is CollectionReadyAction.RESET
+    assert normalize_collection_ready_action("q") is CollectionReadyAction.QUIT
+    assert A1_COLLECTION_INTERACTION.start_action_ids == ("start", "reset", "quit")
+    assert A1_COLLECTION_INTERACTION.recording_action_ids == (
+        "save",
+        "discard",
+        "quit",
+    )
+    with pytest.raises(ValueError, match="unknown collection ready action"):
+        normalize_collection_ready_action("discard")
+
+
+def test_private_operator_session_proxies_one_revisioned_input_gate(
+    tmp_path: Path,
+) -> None:
+    class Adapter(A1OperatorPanelAdapter):
+        def build_launch(self, workflow, values):
+            assert workflow == "collect"
+            assert values == {
+                "config": "configs/teleop/a1_so100.toml",
+                "experiment": "test_session",
+                "task": "test prompt",
+            }
+            return WorkflowLaunch(
+                workflow="collect",
+                name="Collect test prompt",
+                command=(
+                    sys.executable,
+                    "-u",
+                    "-c",
+                    (
+                        "from embodied_ops.operator_panel import announce_input; "
+                        "announce_input(['start'], phase='ready', detail='Episode 0'); "
+                        "input()"
+                    ),
+                ),
+                input_actions=A1_COLLECTION_INTERACTION.input_actions,
+            )
+
+    application = OperatorPanelApplication(Adapter(ROOT))
+    socket_path = tmp_path / "operator.sock"
+    server = OperatorSessionServer(application, socket_path=socket_path)
+    client = OperatorSessionClient(socket_path=socket_path, timeout_s=1.0)
+    server.start()
+    try:
+        started = client.start(
+            "collect",
+            {
+                "config": "configs/teleop/a1_so100.toml",
+                "experiment": "test_session",
+                "task": "test prompt",
+            },
+        )
+        deadline = time.monotonic() + 3.0
+        while time.monotonic() < deadline:
+            status = client.status()
+            if status["input_phase"] == "ready":
+                break
+            time.sleep(0.01)
+        else:
+            pytest.fail("collection child did not announce its input gate")
+
+        assert socket_path.stat().st_mode & 0o777 == 0o600
+        accepted = client.input(
+            "start",
+            run_id=started["run_id"],
+            input_revision=status["input_revision"],
+        )
+        assert accepted["input_actions"] == []
+    finally:
+        status = application.workflow.snapshot()
+        if status["active"]:
+            application.workflow.stop(run_id=status["run_id"])
+        server.close()
+
+    with pytest.raises(OperatorSessionUnavailable):
+        client.status()
+
+
+def test_collect_cli_submits_prompt_to_operator_session(monkeypatch) -> None:
+    submitted = {}
+
+    def run(repo_root, *, config, experiment, task):
+        submitted.update(
+            repo_root=repo_root,
+            config=config,
+            experiment=experiment,
+            task=task,
+        )
+        return 17
+
+    monkeypatch.setattr(
+        "galaxea_a1_runtime.apps.operator_panel.run_collection_session", run
+    )
+
+    result = cli_main(
+        [
+            "collect",
+            "run_01",
+            "--repo-root",
+            str(ROOT),
+            "--config",
+            "configs/teleop/a1_so100.toml",
+            "--task",
+            "pick fruit",
+        ]
+    )
+
+    assert result == 17
+    assert submitted == {
+        "repo_root": ROOT,
+        "config": Path("configs/teleop/a1_so100.toml"),
+        "experiment": "run_01",
+        "task": "pick fruit",
+    }

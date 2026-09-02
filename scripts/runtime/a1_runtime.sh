@@ -67,7 +67,7 @@ start_services() {
   a1_start_command_relay "${RELAY_CONTAINER}"
   a1_wait_topic "${RELAY_CONTAINER}" "${RELAY_STATUS_TOPIC}"
 
-  a1_step "4/5 Starting read-only Foxglove observability"
+  a1_step "4/5 Starting scoped Foxglove observability"
   a1_start_observability "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}"
 
   a1_step "5/5 Running execution doctor"

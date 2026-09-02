@@ -14,6 +14,7 @@ from embodied_ops.collection import (
     require_fresh_sample,
     require_pair_skew,
 )
+from embodied_ops.operator_panel import announce_progress
 
 from galaxea_a1_runtime.collection import (
     EpisodeDecision,
@@ -122,6 +123,7 @@ class _FrameRecorder:
 
 def record_episode(
     *,
+    episode_index: int,
     dataset: Any,
     task: str,
     front_reader: CameraReader,
@@ -184,6 +186,20 @@ def record_episode(
             dataset.add_frame(ready.values)
             actions.append(ready.action)
             stored_frames += 1
+
+        elapsed_s = time.perf_counter() - t0
+        measured_fps = sampled_frames / elapsed_s if elapsed_s > 0 else 0.0
+        announce_progress(
+            "capture",
+            "Episode capture",
+            min(elapsed_s, max_duration_s) if max_duration_s > 0 else elapsed_s,
+            max_duration_s if max_duration_s > 0 else None,
+            phase="recording",
+            detail=(
+                f"episode={episode_index} · sampled={sampled_frames} · "
+                f"stored={stored_frames} · fps={measured_fps:.1f}"
+            ),
+        )
 
         next_frame_t += period
         sleep_s = next_frame_t - time.perf_counter()

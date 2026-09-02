@@ -31,7 +31,7 @@ are kept in independent packages.
 - Operate collection, dataset inspection/export, evaluation, resets, cameras,
   and tracked batch plans from a compact shadcn/ui control panel.
 - Inspect cameras, named joint/gripper signals, diagnostics, ROS logs, TF, and
-  the configured URDF through a persistent read-only Foxglove workspace whose
+  the configured URDF through a persistent scoped Foxglove workspace whose
   canonical organization layout is published automatically from `main`.
 
 ## Supported baseline
@@ -71,8 +71,8 @@ That command ensures the paired-camera service and the shared observation
 stack. Connect Foxglove to `ws://<runtime-host>:8766` and select the organization
 layout **Galaxea A1 Operations**. The layout presents both camera streams,
 diagnostics, measured and commanded joint/gripper plots, ROS logs, sanitized
-Embodied Ops workflow status, and a 3D panel backed by the configured URDF and
-TF tree.
+Embodied Ops workflow status, the **Galaxea A1 Collection Console**, and a 3D
+panel backed by the configured URDF and TF tree.
 
 The 3D panel is analogous to RViz's RobotModel plus TF view: while an execution
 runtime owns the arm and publishes measured joint feedback, the rendered model
@@ -82,15 +82,38 @@ being simulated.
 
 The observation stack survives ordinary `just stop` transitions so it remains
 available between applications and across arm power cycles. `just cameras stop`
-is the explicit shutdown for both cameras and the observation stack. The
-Foxglove bridge is intentionally read-only and intended for a trusted LAN; it
-does not expose client publication, service calls, or parameter access.
+is the explicit shutdown for both cameras and the observation stack. With the
+arm off, the camera panels remain usable and robot signals are reported as
+missing; collection buttons remain disabled until a terminal opens a validated
+collection session.
 
-[`foxglove/layouts/a1_observability.json`](foxglove/layouts/a1_observability.json) is
-the single layout source of truth. A GitHub Actions workflow validates and
-upserts it into the Foxglove organization whenever relevant files land on
-`main`, so operators do not need to import a fresh JSON file after layout
-changes.
+Start a session by selecting only its experiment and exact prompt in the
+terminal, then leave that command running:
+
+```bash
+just collect <experiment> "<exact prompt>"
+```
+
+The Foxglove console shows `Ready`, `Recording`, `Saving`, `Discarding`,
+`Resetting`, `Completed`, or an explicit unavailable/error state. In `Ready`, it
+offers **Start recording**, **Reset position**, and **End session**. In
+`Recording`, it offers **Stop & save**, **Discard episode**, and **End session**.
+Reset, discard, and session stop require confirmation in Foxglove. The terminal
+continues to show the child log but no longer needs to accept the episode
+decisions.
+
+The trusted-LAN bridge exposes only the five exact collection `Trigger`
+services generated from System config. It still denies client topic
+publication, parameters, client-advertised topics, and every other ROS service.
+Each action is checked against the active collection run, semantic phase, and
+one-shot input revision before it reaches the supervised child process.
+
+[`foxglove/layouts/a1_observability.json`](foxglove/layouts/a1_observability.json)
+and the generated extension config are derived from System config. A GitHub
+Actions workflow builds and publishes the private organization extension
+**Galaxea A1 Collection Console**, then upserts the **Galaxea A1 Operations**
+layout whenever relevant files land on `main`. Organization members therefore
+receive the panel automatically and do not need to import a fresh JSON file.
 
 ## Package boundaries
 

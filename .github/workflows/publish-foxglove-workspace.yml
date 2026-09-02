@@ -1,0 +1,76 @@
+name: publish-foxglove-workspace
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "foxglove/layouts/a1_observability.json"
+      - "foxglove/extensions/galaxea-a1-collection-console/**"
+      - "configs/system/a1.toml"
+      - "galaxea_a1_runtime/foxglove_layout.py"
+      - "galaxea_a1_runtime/foxglove_layout_publish.py"
+      - "scripts/runtime/render_foxglove_layout.py"
+      - ".github/workflows/publish-foxglove-workspace.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-foxglove-workspace
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7.0.0
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v6.2.0
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: foxglove/extensions/galaxea-a1-collection-console/package-lock.json
+      - name: Verify generated Foxglove workspace
+        run: python scripts/runtime/render_foxglove_layout.py --check
+      - name: Package Galaxea A1 Collection Console
+        id: extension
+        working-directory: foxglove/extensions/galaxea-a1-collection-console
+        env:
+          EXTENSION_VERSION: 0.1.${{ github.run_number }}-${{ github.run_attempt }}
+        run: |
+          npm ci
+          npm run lint
+          npm version "${EXTENSION_VERSION}" --no-git-tag-version
+          npm run package
+          FOXE_PATH=$(find . -maxdepth 1 -type f -name '*.foxe' -print -quit)
+          test -n "${FOXE_PATH}"
+          echo "path=${FOXE_PATH}" >> "${GITHUB_OUTPUT}"
+      - name: Install Foxglove CLI
+        env:
+          FOXGLOVE_CLI_VERSION: v1.0.33
+        run: |
+          curl --fail --location --silent --show-error \
+            "https://github.com/foxglove/foxglove-cli/releases/download/${FOXGLOVE_CLI_VERSION}/foxglove-linux-amd64" \
+            --output /tmp/foxglove
+          chmod +x /tmp/foxglove
+      - name: Publish organization extension
+        env:
+          BEARER_TOKEN: ${{ secrets.FOXGLOVE_API_KEY }}
+        run: >-
+          /tmp/foxglove extensions publish
+          foxglove/extensions/galaxea-a1-collection-console/${{ steps.extension.outputs.path }}
+      - name: Publish canonical organization layout
+        env:
+          FOXGLOVE_API_KEY: ${{ secrets.FOXGLOVE_API_KEY }}
+          PYTHONPATH: ${{ github.workspace }}/external/embodied-ops/src
+        run: >-
+          python -m galaxea_a1_runtime.foxglove_layout_publish
+          --layout foxglove/layouts/a1_observability.json
+          --name "Galaxea A1 Operations"
+          --folder "Galaxea A1"
+          --permission ORG_WRITE

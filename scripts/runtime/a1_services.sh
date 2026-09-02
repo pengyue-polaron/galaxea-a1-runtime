@@ -339,7 +339,8 @@ a1_start_observability() {
   for name in \
     SYSTEM_CONFIG_PATH ROOT FOXGLOVE_BIND FOXGLOVE_PORT FOXGLOVE_STARTUP_TIMEOUT_S \
     FOXGLOVE_GRAPH_UPDATE_MS FOXGLOVE_SEND_BUFFER_LIMIT_BYTES \
-    FOXGLOVE_TOPIC_WHITELIST_YAML FOXGLOVE_NO_MATCH_ALLOWLIST_YAML \
+    FOXGLOVE_TOPIC_WHITELIST_YAML FOXGLOVE_SERVICE_WHITELIST_YAML \
+    FOXGLOVE_NO_MATCH_ALLOWLIST_YAML \
     FOXGLOVE_CAPABILITIES_YAML FOXGLOVE_ASSET_URI_ALLOWLIST_YAML \
     OBSERVABILITY_DIAGNOSTICS_TOPIC; do
     a1_require_runtime_value "${name}" || return
@@ -365,10 +366,11 @@ a1_start_observability() {
       --config '/workspace/${relative_config}'"
   a1_wait_topic "${telemetry_container}" "${OBSERVABILITY_DIAGNOSTICS_TOPIC}"
 
-  local bind_q port_q topics_q no_match_q capabilities_q assets_q update_q buffer_q
+  local bind_q port_q topics_q services_q no_match_q capabilities_q assets_q update_q buffer_q
   printf -v bind_q '%q' "${FOXGLOVE_BIND}"
   printf -v port_q '%q' "${FOXGLOVE_PORT}"
   printf -v topics_q '%q' "${FOXGLOVE_TOPIC_WHITELIST_YAML}"
+  printf -v services_q '%q' "${FOXGLOVE_SERVICE_WHITELIST_YAML}"
   printf -v no_match_q '%q' "${FOXGLOVE_NO_MATCH_ALLOWLIST_YAML}"
   printf -v capabilities_q '%q' "${FOXGLOVE_CAPABILITIES_YAML}"
   printf -v assets_q '%q' "${FOXGLOVE_ASSET_URI_ALLOWLIST_YAML}"
@@ -376,8 +378,9 @@ a1_start_observability() {
   printf -v buffer_q '%q' "${FOXGLOVE_SEND_BUFFER_LIMIT_BYTES}"
   a1_container_run core "${foxglove_container}" \
     "${A1_ROS_PREFIX} && exec roslaunch --screen \
-      /workspace/scripts/runtime/foxglove_bridge_read_only.launch \
+      /workspace/scripts/runtime/foxglove_bridge_scoped.launch \
       address:=${bind_q} port:=${port_q} topic_whitelist:=${topics_q} \
+      service_whitelist:=${services_q} \
       no_match_allowlist:=${no_match_q} capabilities:=${capabilities_q} \
       asset_uri_allowlist:=${assets_q} max_update_ms:=${update_q} \
       send_buffer_limit:=${buffer_q}"

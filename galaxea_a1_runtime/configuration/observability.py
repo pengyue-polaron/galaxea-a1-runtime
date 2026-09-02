@@ -1,4 +1,4 @@
-"""Strict configuration for read-only ROS telemetry and Foxglove access."""
+"""Strict configuration for ROS telemetry and scoped Foxglove access."""
 
 from __future__ import annotations
 
@@ -39,7 +39,7 @@ class ObservabilityConfig:
     jpeg_quality: int
     diagnostics_rate_hz: float
     operator_panel_poll_rate_hz: float
-    operator_panel_timeout_s: float
+    operator_session_timeout_s: float
     camera_connect_timeout_s: float
     camera_retry_s: float
     startup_timeout_s: float
@@ -60,7 +60,7 @@ class ObservabilityConfig:
                 self.image_rate_hz,
                 self.diagnostics_rate_hz,
                 self.operator_panel_poll_rate_hz,
-                self.operator_panel_timeout_s,
+                self.operator_session_timeout_s,
                 self.camera_connect_timeout_s,
                 self.camera_retry_s,
                 self.startup_timeout_s,
@@ -93,7 +93,7 @@ def parse_observability_config(
             "jpeg_quality",
             "diagnostics_rate_hz",
             "operator_panel_poll_rate_hz",
-            "operator_panel_timeout_s",
+            "operator_session_timeout_s",
             "camera_connect_timeout_s",
             "camera_retry_s",
             "startup_timeout_s",
@@ -118,7 +118,7 @@ def parse_observability_config(
         jpeg_quality=integer(data, "jpeg_quality"),
         diagnostics_rate_hz=floating(data, "diagnostics_rate_hz"),
         operator_panel_poll_rate_hz=floating(data, "operator_panel_poll_rate_hz"),
-        operator_panel_timeout_s=floating(data, "operator_panel_timeout_s"),
+        operator_session_timeout_s=floating(data, "operator_session_timeout_s"),
         camera_connect_timeout_s=floating(data, "camera_connect_timeout_s"),
         camera_retry_s=floating(data, "camera_retry_s"),
         startup_timeout_s=floating(data, "startup_timeout_s"),

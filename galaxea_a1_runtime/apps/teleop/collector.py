@@ -26,12 +26,10 @@ import rospy
 
 from embodied_ops import (
     EpisodeDecision,
-    STANDARD_COLLECTION_INTERACTION,
     announce_collection_session,
     announce_collection_summary,
-    normalize_collection_start,
 )
-from embodied_ops.operator_panel import announce_input
+from embodied_ops.operator_panel import announce_input, announce_progress
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.collector_episode import TeleopEpisodeSession
@@ -41,6 +39,11 @@ from galaxea_a1_runtime.apps.teleop.dataset_contract import (
 )
 from galaxea_a1_runtime.apps.teleop.collection_task import (
     normalize_collection_task,
+)
+from galaxea_a1_runtime.apps.teleop.interaction import (
+    A1_COLLECTION_INTERACTION,
+    CollectionReadyAction,
+    normalize_collection_ready_action,
 )
 from galaxea_a1_runtime.apps.teleop.metadata import collection_lifecycle_provenance
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
@@ -123,20 +126,60 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             config_reference=config_reference,
         )
         while not rospy.is_shutdown():
-            announce_input(STANDARD_COLLECTION_INTERACTION.start_action_ids)
+            announce_progress(
+                "collection",
+                "Collection episode",
+                episode_index,
+                None,
+                phase="ready",
+                detail=f"Ready · {task}",
+                force=True,
+            )
+            announce_input(
+                A1_COLLECTION_INTERACTION.start_action_ids,
+                phase="ready",
+                detail=f"Episode {episode_index} · {task}",
+            )
             command = (
                 input(
                     style(
-                        STANDARD_COLLECTION_INTERACTION.start_prompt(episode_index),
+                        A1_COLLECTION_INTERACTION.start_prompt(episode_index),
                         Tone.STEP,
                     )
                 )
                 .strip()
                 .lower()
             )
-            if normalize_collection_start(command) == EpisodeDecision.QUIT:
+            ready_action = normalize_collection_ready_action(command)
+            if ready_action is CollectionReadyAction.QUIT:
                 break
-            announce_input(STANDARD_COLLECTION_INTERACTION.recording_action_ids)
+            if ready_action is CollectionReadyAction.RESET:
+                announce_progress(
+                    "collection",
+                    "Collection episode",
+                    episode_index,
+                    None,
+                    phase="resetting",
+                    detail="Resetting A1 and leader",
+                    force=True,
+                )
+                reset_for_next_episode(config.path)
+                ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
+                continue
+            announce_progress(
+                "collection",
+                "Collection episode",
+                episode_index,
+                None,
+                phase="recording",
+                detail=f"Recording · {task}",
+                force=True,
+            )
+            announce_input(
+                A1_COLLECTION_INTERACTION.recording_action_ids,
+                phase="recording",
+                detail=f"Episode {episode_index} · {task}",
+            )
             completion = episodes.record(episode_index)
             if completion.decision == EpisodeDecision.QUIT:
                 break
@@ -147,6 +190,15 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             elif completion.decision == EpisodeDecision.DISCARD:
                 discarded += 1
             if completion.reset_required:
+                announce_progress(
+                    "collection",
+                    "Collection episode",
+                    episode_index,
+                    None,
+                    phase="resetting",
+                    detail="Resetting A1 and leader",
+                    force=True,
+                )
                 reset_for_next_episode(config.path)
     except (KeyboardInterrupt, EOFError):
         print()
@@ -156,6 +208,15 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         saved=saved,
         discarded=discarded,
         saved_frames=saved_frames,
+    )
+    announce_progress(
+        "collection",
+        "Collection episode",
+        episode_index,
+        None,
+        phase="completed",
+        detail=f"saved={saved} · discarded={discarded} · frames={saved_frames}",
+        force=True,
     )
     return 0
 

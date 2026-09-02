@@ -33,6 +33,7 @@ def main() -> int:
     from diagnostic_msgs.msg import DiagnosticArray
     from sensor_msgs.msg import JointState
     from signal_arm.msg import arm_control
+    from std_srvs.srv import Trigger
 
     foxglove_path = rospkg.RosPack().get_path("foxglove_bridge")
 
@@ -40,6 +41,7 @@ def main() -> int:
         f"ROS1 Python {sys.version_info.major}.{sys.version_info.minor} import ready; "
         f"config={system.path}; modules={rospy.__name__},"
         f"{JointState.__name__},{arm_control.__name__},{DiagnosticArray.__name__},"
+        f"{Trigger.__name__},"
         f"{numpy.__name__},{cv2.__name__},{msgpack.__name__}; "
         f"foxglove_bridge={foxglove_path}"
     )

@@ -159,16 +159,9 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "panel":
-        from embodied_ops.operator_panel import serve_operator_panel
+        from galaxea_a1_runtime.apps.operator_panel import serve_a1_operator_panel
 
-        from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
-
-        panel_adapter = A1OperatorPanelAdapter(args.repo_root)
-        return serve_operator_panel(
-            panel_adapter,
-            bind=panel_adapter.panel_bind,
-            port=panel_adapter.panel_port,
-        )
+        return serve_a1_operator_panel(args.repo_root)
 
     if args.command == "hardware":
         from galaxea_a1_runtime.apps.teleop.hardware_check import (
@@ -190,6 +183,20 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "dataset":
         return _run_dataset_command(args)
+
+    if args.command == "collect":
+        from galaxea_a1_runtime.apps.operator_panel import run_collection_session
+
+        try:
+            return run_collection_session(
+                args.repo_root,
+                config=args.config,
+                experiment=args.experiment,
+                task=args.task,
+            )
+        except (OSError, RuntimeError, ValueError) as exc:
+            failure(str(exc))
+            return 2
 
     from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
 
@@ -228,14 +235,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     values: dict[str, object]
-    if args.command == "collect":
-        values = {
-            "config": str(args.config),
-            "experiment": args.experiment,
-            "task": args.task,
-        }
-        workflow = "collect"
-    elif args.command == "evaluate":
+    if args.command == "evaluate":
         values = {
             "config": str(args.config),
             "model": args.model,

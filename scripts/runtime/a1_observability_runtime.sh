@@ -27,7 +27,7 @@ stop_observability() {
     "${FOXGLOVE_CONTAINER}" \
     "${OBSERVABILITY_CONTAINER}"
   a1_stop_observability_roscore_if_unused
-  a1_success "Standalone read-only observability stopped."
+  a1_success "Standalone scoped observability stopped."
 }
 
 start_observability() {
@@ -43,7 +43,7 @@ start_observability() {
   a1_info "Config: ${SYSTEM_CONFIG_PATH}"
   a1_preflight_container_host
   if [[ "${OBSERVABILITY_ENABLED}" != "true" ]]; then
-    a1_fail "Read-only observability is disabled by System config."
+    a1_fail "Foxglove observability is disabled by System config."
     return 2
   fi
   if a1_observability_stack_is_ready \
@@ -55,7 +55,7 @@ start_observability() {
   fi
   a1_step "1/2 Ensuring ROS master without an A1 driver"
   a1_ensure_roscore "${ROSCORE_CONTAINER}"
-  a1_step "2/2 Starting read-only telemetry and Foxglove Bridge"
+  a1_step "2/2 Starting telemetry and scoped Foxglove Bridge"
   a1_start_observability "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}"
   startup_complete=1
   trap - ERR
@@ -107,7 +107,7 @@ case "${1:-help}" in
   help|-h|--help)
     a1_usage "$0 <start|restart|stop|status|logs>"
     cat <<EOF
-  start   Start ROS master, telemetry adapter, and read-only Foxglove Bridge
+  start   Start ROS master, telemetry adapter, and scoped Foxglove Bridge
   restart Reload the tracked observability configuration
   stop    Stop only the standalone observability containers
   status  Show standalone containers and endpoint state

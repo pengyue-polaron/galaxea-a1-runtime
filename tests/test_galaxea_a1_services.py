@@ -147,7 +147,7 @@ def test_managed_cleanup_preserves_exact_persistent_observation_names(
     assert removed_file.read_text().splitlines() == ["driver"]
 
 
-def test_observability_starts_only_read_only_telemetry_and_bridge_profiles() -> None:
+def test_observability_starts_telemetry_and_scoped_operator_bridge_profiles() -> None:
     result = run_services_bash(
         f"""
         ROOT={REPO}
@@ -159,8 +159,9 @@ def test_observability_starts_only_read_only_telemetry_and_bridge_profiles() -> 
         FOXGLOVE_GRAPH_UPDATE_MS=1000
         FOXGLOVE_SEND_BUFFER_LIMIT_BYTES=10000000
         FOXGLOVE_TOPIC_WHITELIST_YAML='["^/joint_states_host$"]'
+        FOXGLOVE_SERVICE_WHITELIST_YAML='["^/a1/ops/collection/start$"]'
         FOXGLOVE_NO_MATCH_ALLOWLIST_YAML='["^$"]'
-        FOXGLOVE_CAPABILITIES_YAML='["connectionGraph","assets"]'
+        FOXGLOVE_CAPABILITIES_YAML='["connectionGraph","assets","services"]'
         FOXGLOVE_ASSET_URI_ALLOWLIST_YAML='["^package://mobiman/robot.urdf$"]'
         OBSERVABILITY_DIAGNOSTICS_TOPIC=/a1/diagnostics
         A1_ROS_PREFIX=ros
@@ -177,9 +178,10 @@ def test_observability_starts_only_read_only_telemetry_and_bridge_profiles() -> 
     assert "telemetry|telemetry-container|" in result.stdout
     assert "a1_observability.py" in result.stdout
     assert "core|foxglove-container|" in result.stdout
-    assert "foxglove_bridge_read_only.launch" in result.stdout
+    assert "foxglove_bridge_scoped.launch" in result.stdout
+    assert "service_whitelist:" in result.stdout
     assert "clientPublish" not in result.stdout
-    assert "services" not in result.stdout
+    assert "services" in result.stdout
 
 
 def test_observability_reuses_the_healthy_persistent_stack() -> None:
@@ -194,8 +196,9 @@ def test_observability_reuses_the_healthy_persistent_stack() -> None:
         FOXGLOVE_GRAPH_UPDATE_MS=1000
         FOXGLOVE_SEND_BUFFER_LIMIT_BYTES=10000000
         FOXGLOVE_TOPIC_WHITELIST_YAML='["^/joint_states_host$"]'
+        FOXGLOVE_SERVICE_WHITELIST_YAML='["^/a1/ops/collection/start$"]'
         FOXGLOVE_NO_MATCH_ALLOWLIST_YAML='["^$"]'
-        FOXGLOVE_CAPABILITIES_YAML='["connectionGraph","assets"]'
+        FOXGLOVE_CAPABILITIES_YAML='["connectionGraph","assets","services"]'
         FOXGLOVE_ASSET_URI_ALLOWLIST_YAML='["^package://mobiman/robot.urdf$"]'
         OBSERVABILITY_DIAGNOSTICS_TOPIC=/a1/diagnostics
         a1_observability_stack_is_ready() {{ return 0; }}

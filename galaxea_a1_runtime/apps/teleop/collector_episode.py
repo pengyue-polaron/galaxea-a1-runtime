@@ -6,14 +6,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from embodied_ops import (
-    STANDARD_COLLECTION_INTERACTION,
     EpisodeCaptureReport,
     announce_episode_capture,
     announce_episode_outcome,
 )
 from embodied_ops.artifacts import PublishedOutputCleanupError
+from embodied_ops.operator_panel import announce_progress
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
+from galaxea_a1_runtime.apps.teleop.interaction import A1_COLLECTION_INTERACTION
 from galaxea_a1_runtime.apps.teleop.metadata import (
     DatasetProvenanceRequest,
     build_dataset_provenance,
@@ -61,7 +62,7 @@ class TeleopEpisodeSession:
         self.config_reference = config_reference
 
     def record(self, episode_index: int) -> EpisodeCompletion:
-        warning(STANDARD_COLLECTION_INTERACTION.recording_notice(episode_index))
+        warning(A1_COLLECTION_INTERACTION.recording_notice(episode_index))
         front_reader, wrist_reader = self.cameras.readers
         try:
             with DirectLeRobotEpisode(
@@ -70,6 +71,7 @@ class TeleopEpisodeSession:
                 provenance=self._provenance(),
             ) as output:
                 recording = record_episode(
+                    episode_index=episode_index,
                     dataset=output,
                     task=self.task,
                     front_reader=front_reader,
@@ -103,6 +105,19 @@ class TeleopEpisodeSession:
                         EpisodeDecision.DISCARD
                         if recording.frame_count == 0
                         else recording.decision
+                    )
+                    announce_progress(
+                        "collection",
+                        "Collection episode",
+                        episode_index,
+                        None,
+                        phase=(
+                            "discarding"
+                            if decision is EpisodeDecision.DISCARD
+                            else "stopping"
+                        ),
+                        detail=f"frames={recording.frame_count}",
+                        force=True,
                     )
                     announce_episode_outcome(
                         episode_index=episode_index,
@@ -149,6 +164,15 @@ class TeleopEpisodeSession:
                         ),
                     )
 
+                announce_progress(
+                    "collection",
+                    "Collection episode",
+                    episode_index,
+                    None,
+                    phase="saving",
+                    detail=f"frames={recording.frame_count}",
+                    force=True,
+                )
                 output.commit()
         except PublishedOutputCleanupError as error:
             warning(

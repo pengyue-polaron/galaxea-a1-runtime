@@ -134,7 +134,7 @@ def build_a1_catalog(
             },
         ],
         "camera_controls": standard_camera_controls(
-            stop_confirm=("Stop the persistent cameras and read-only Foxglove monitor?")
+            stop_confirm=("Stop the persistent cameras and Foxglove workspace?")
         ),
         "workflows": _workflow_forms(
             teleop_options=teleop_options,

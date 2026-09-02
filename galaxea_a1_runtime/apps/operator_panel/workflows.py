@@ -6,7 +6,6 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from embodied_ops import STANDARD_COLLECTION_INTERACTION
 from embodied_ops.operator_panel import InputAction, WorkflowLaunch
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
@@ -14,6 +13,7 @@ from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.lingbot.operator_input import validate_scene_note
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
 from galaxea_a1_runtime.apps.teleop.collection_task import normalize_collection_task
+from galaxea_a1_runtime.apps.teleop.interaction import A1_COLLECTION_INTERACTION
 from galaxea_a1_runtime.collection import validate_experiment_name
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
@@ -59,7 +59,7 @@ def build_a1_workflow_launch(
                 "collect",
                 experiment,
             ),
-            input_actions=STANDARD_COLLECTION_INTERACTION.input_actions,
+            input_actions=A1_COLLECTION_INTERACTION.input_actions,
         )
 
     if workflow in {"dataset-doctor", "export-v21"}:

@@ -141,7 +141,7 @@ additional gripper bit latches `FAULT`.
 - After partial startup failure, run `just stop` before retrying.
 - The configuration-independent shutdown fallback may stop only marked
   repository-owned containers, host process groups, and tmux sessions. Normal
-  `just stop` preserves the marked read-only camera monitor and its shared
+  `just stop` preserves the marked camera monitor and its shared
   roscore/telemetry/Foxglove observation stack. Explicit `just cameras stop`
   closes both display services; it does not stop an active execution runtime or
   remove the shared ROS master while another marked runtime still uses it.
@@ -149,20 +149,26 @@ additional gripper bit latches `FAULT`.
   encryption and must not be port-forwarded or gain control endpoints.
 - Foxglove observability is also unauthenticated, unencrypted, and trusted-LAN
   only. The bridge may subscribe to configured target, staged, forwarded, and
-  feedback topics for inspection, but client publication, services, parameters,
-  and client-advertised topics are denied by exact no-match allowlists. Its
-  layout contains no Publish panel. Topic visibility never grants command
-  authority, and stopping or losing Foxglove must not affect the relay.
+  feedback topics for inspection. It may call only the five exact collection
+  `std_srvs/Trigger` services from System config; client publication, parameters,
+  client-advertised topics, and every other service are denied by exact
+  allowlists. Its layout contains no Publish panel. Topic visibility never
+  grants command authority, and stopping or losing Foxglove must not affect the
+  relay or collection child.
 - The persistent observation stack is independent of arm power. Red or missing
   motor, relay, joint, and TF diagnostics while the arm is off are expected
   visibility states, never a reason to synthesize feedback or weaken checks.
-- The observability adapter owns only display publishers below
-  `/a1/telemetry/*`, `/a1/ops/workflow_status`, and `/a1/diagnostics`. It
-  validates every command mirror, reads cameras only through the sole-owner
-  Camera Bridge, and never publishes a staged target, host command,
-  motion-enable value, or gripper command. Operator workflow status is a
-  sanitized display-only mirror; its visible input-action ids cannot be invoked
-  through Foxglove.
+- The observability adapter owns display publishers below `/a1/telemetry/*`,
+  `/a1/ops/workflow_status`, and `/a1/diagnostics`, plus the exact collection
+  Trigger services. It validates every command mirror, reads cameras only
+  through the sole-owner Camera Bridge, and never publishes a staged target,
+  host command, motion-enable value, or gripper command. The Trigger callbacks
+  can only proxy a currently declared one-shot input to the private current-user
+  Operator Session. Start/save/discard/reset require the active `collect` run,
+  expected semantic phase, declared action id, exact run id, and exact input
+  revision; stop requires the exact active collection run. Reset enters the
+  collector's existing tracked staged-reset path and does not bypass any relay
+  gate.
 - The operator control panel is a separate trusted-LAN HTTP service configured
   by System. It has no user authentication or transport encryption: its random
   per-process token protects request integrity but is delivered to any browser
@@ -174,6 +180,9 @@ additional gripper bit latches `FAULT`.
   input actions at each prompt; one accepted action clears that permission until
   the child announces another prompt. Repeated clicks cannot queue decisions for
   a later reset or inference step.
+- Every Web, local-session, or Foxglove input carries the current workflow run
+  id and input-gate revision. Stale snapshots, cross-run commands, double clicks,
+  undeclared actions, and actions sent in the wrong collection phase fail closed.
 - Child progress announcements are display-only latest-state events. They cannot
   grant input, launch a workflow, publish commands, or alter safety decisions.
 - Operator-panel child events are schema-versioned and invalid or undeclared

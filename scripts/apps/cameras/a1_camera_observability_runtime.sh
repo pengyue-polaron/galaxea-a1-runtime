@@ -41,7 +41,7 @@ start_monitoring() {
   camera_command start
   observability_command start
   trap - ERR
-  echo "[PASS] Persistent cameras and read-only Foxglove monitoring are ready."
+  echo "[PASS] Persistent cameras and scoped Foxglove monitoring are ready."
 }
 
 stop_monitoring() {
@@ -70,7 +70,7 @@ case "${1:-start}" in
   logs) logs_monitoring ;;
   help|-h|--help)
     echo "Usage: $0 [--config <path>] [start|stop|status|logs]"
-    echo "Starts persistent cameras and the shared read-only Foxglove stack together."
+    echo "Starts persistent cameras and the shared scoped Foxglove stack together."
     ;;
   *)
     echo "[FAIL] Unknown camera monitoring command: ${1:-}" >&2

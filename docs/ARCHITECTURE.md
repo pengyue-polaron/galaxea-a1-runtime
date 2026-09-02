@@ -187,25 +187,33 @@ preview at its configured lower rate. Slow browsers or JPEG encoding may drop
 preview frames but cannot queue work in, rewrite, or block the raw observation
 contract. Web JPEGs are never fed back into policy, recording, or collection.
 
-Read-only observability is a side branch of that runtime, not another control
-plane:
+Foxglove observability is a side branch of that runtime. Its only control path
+terminates at the existing Operator Session rather than at ROS command topics:
 
 ```text
 existing ROS state/status/command topics + Camera Bridge raw consumer
   -> validating A1 telemetry adapter
   -> named JointState mirrors + CompressedImage + DiagnosticArray
-  -> read-only foxglove_bridge WebSocket
+  -> scoped foxglove_bridge WebSocket
   -> Foxglove Desktop/Web
+
+Foxglove exact Trigger service
+  -> telemetry adapter phase/run/input-revision validation
+  -> current-user Unix Operator Session
+  -> embodied-ops one-shot input gate
+  -> already-supervised collection child stdin
 ```
 
 The adapter never opens a camera, creates a target or host-command publisher,
 enables the relay, or rewrites a command. Invalid command-shaped messages are
 reported and omitted from the display mirrors. The bridge receives exact
-subscription and asset regexes derived from System config; service calls,
-parameter access, client publication, and client-advertised topics use a
-no-match allowlist. Its only protocol capabilities are `connectionGraph` and
-`assets`. The current layout therefore has no Publish panel. The configured
-URDF and each referenced mesh are the only remotely retrievable assets.
+subscription, asset, and five collection-service regexes derived from System
+config. Parameter access, client publication, client-advertised topics, and all
+other services use a no-match allowlist. Its capabilities are
+`connectionGraph`, `assets`, and `services`; it deliberately omits
+`clientPublish`. The current layout therefore has no Publish panel. The
+configured URDF and each referenced mesh are the only remotely retrievable
+assets.
 
 The committed Foxglove layout is generated from System topic names, joint names,
 and the configured URDF, and a test rejects drift. ROS master, telemetry, and
@@ -219,21 +227,33 @@ Joint feedback and TF appear only when an owning execution runtime supplies
 them. Camera panels intentionally use compressed images without invented
 calibration or frame transforms.
 
-The committed JSON is also the only cloud-layout source of truth. System config
-feeds the generated layout; a path-scoped GitHub Actions workflow then validates
-it and uses the Foxglove API to upsert the exact-name organization layout
-`Galaxea A1 Operations` in folder `Galaxea A1`. The API key exists only as a
-repository secret, and publication does not connect to a robot or ROS master.
-Exact-name lookup must find zero or one matching layout; duplicates fail closed
-instead of updating an ambiguous target.
+The committed JSON and generated extension config are the cloud-workspace
+sources derived from System config. A path-scoped GitHub Actions workflow
+validates them, builds and publishes the private organization extension
+`Galaxea A1 Collection Console`, then uses the Foxglove API to upsert the
+exact-name layout `Galaxea A1 Operations` in folder `Galaxea A1`. A unique
+workflow-run extension version makes retries and updates explicit. The API key
+exists only as a repository secret, and publication does not connect to a robot
+or ROS master. Exact-name lookup must find zero or one matching layout;
+duplicates fail closed instead of updating an ambiguous target.
 
-When the Operator Panel server is present, the telemetry adapter polls its
-read-only status endpoint at the System-owned rate, validates the generic status
-schema, removes child command argv and terminal logs, and publishes a versioned
-summary on `/a1/ops/workflow_status`. Workflow identity, lifecycle, progress,
-current guarded input choices, and failure state are therefore visible in
-Foxglove without importing ROS into `embodied-ops`. The topic is observational;
-the bridge cannot send the displayed input actions back.
+The A1 Runtime gives the generic Operator Panel application one private,
+current-user Unix socket. The telemetry adapter polls that socket at the
+System-owned rate, validates the generic status schema, removes child command
+argv and terminal logs, and publishes a versioned heartbeat summary on
+`/a1/ops/workflow_status`. Workflow identity, lifecycle, progress, semantic
+phase, current guarded input choices, and failure state are therefore visible
+in Foxglove without importing ROS into `embodied-ops`.
+
+The same adapter advertises exactly five `std_srvs/Trigger` services: start,
+save, discard, reset, and stop. Start/save/discard/reset are accepted only when
+their action id is present in the active `collect` gate and its semantic phase
+matches; the follow-up Unix request carries the exact `run_id` and
+`input_revision`, so a race or double click is rejected again by the generic
+supervisor. Stop is scoped to the exact active collection run. None of these
+services publish a target or motor command. Reset merely selects the collector's
+existing tracked reset branch, which continues to use the staged tracker and
+locked relay contract.
 
 External OpenRAL deployment uses two versioned, private local-service
 boundaries. Camera Bridge protocol `describe` exposes its exact digest and raw
@@ -256,8 +276,9 @@ builders, HTTP, packaged static rendering, create-only document staging,
 subprocess supervision, and a small child presentation protocol for input
 readiness and typed progress. Child events and workflow-status snapshots have
 independent versioned envelopes; each workflow run has a stable UUID, monotonic
-revision, explicit lifecycle state, and UTC start/finish timestamps. Malformed
-or undeclared events are logged rather than silently changing available input.
+status and input-gate revisions, semantic input phase/detail, explicit lifecycle
+state, and UTC start/finish timestamps. Malformed, stale, replayed, cross-run,
+or undeclared events are rejected rather than silently changing available input.
 Its minimal adapter owns only catalog values and
 workflow launch contracts; camera health, configuration, and registration are
 independent optional providers. Document suffix and editor language come from the

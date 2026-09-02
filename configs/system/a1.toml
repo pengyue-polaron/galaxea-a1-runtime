@@ -165,8 +165,8 @@ startup_timeout_s = 15.0
 shutdown_timeout_s = 5.0
 
 [observability]
-# Foxglove is a read-only trusted-LAN telemetry endpoint. Client publication,
-# services, and parameters remain disabled by the runtime launch contract.
+# Foxglove is a trusted-LAN telemetry endpoint with only the exact collection
+# services below. Client publication and parameter access remain disabled.
 enabled = true
 bind = "0.0.0.0"
 port = 8766
@@ -174,7 +174,7 @@ image_rate_hz = 8.0
 jpeg_quality = 75
 diagnostics_rate_hz = 5.0
 operator_panel_poll_rate_hz = 2.0
-operator_panel_timeout_s = 0.25
+operator_session_timeout_s = 0.25
 camera_connect_timeout_s = 1.0
 camera_retry_s = 2.0
 startup_timeout_s = 15.0
@@ -198,3 +198,13 @@ diagnostics = "/a1/diagnostics"
 # request integrity tokens but no user authentication or transport encryption.
 bind = "0.0.0.0"
 port = 8765
+control_enabled = true
+
+[operator_panel.services]
+# Foxglove can call only these exact Trigger services. The telemetry adapter
+# validates the current collect run, phase, and input revision before forwarding.
+start = "/a1/ops/collection/start"
+save = "/a1/ops/collection/save"
+discard = "/a1/ops/collection/discard"
+reset = "/a1/ops/collection/reset"
+stop = "/a1/ops/collection/stop"

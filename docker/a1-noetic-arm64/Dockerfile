@@ -55,6 +55,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ros-noetic-ros-controllers \
     ros-noetic-rqt-tf-tree \
     ros-noetic-rviz \
+    ros-noetic-std-srvs \
     ros-noetic-tf \
     ros-noetic-tf-conversions \
     ros-noetic-tf2-ros \

@@ -37,7 +37,7 @@ just ros-python-check
 
 The image is based on `ros:noetic-ros-base-focal`; it owns ROS Noetic and the
 A1 SDK execution environment. It builds the officially pinned ROS 1 Foxglove
-Bridge from source for the read-only observability sidecar. Runtime orchestration
+Bridge from source for the scoped observability sidecar. Runtime orchestration
 starts isolated containers for roscore, the A1 driver, the selected tracker,
 the validating relay, telemetry, and Foxglove as required by the selected
 composition.

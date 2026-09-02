@@ -310,6 +310,7 @@
       "showFullMessageForDiff": false,
       "topicPath": "/a1/ops/workflow_status"
     },
+    "galaxea-a1-collection-console.Collection Console!controls": {},
     "RosOut!logs": {
       "searchTerms": [],
       "minLogLevel": 1
@@ -330,13 +331,18 @@
             },
             "second": {
               "direction": "column",
-              "splitPercentage": 65,
-              "first": "3D!robot",
+              "splitPercentage": 28,
+              "first": "galaxea-a1-collection-console.Collection Console!controls",
               "second": {
-                "direction": "row",
-                "splitPercentage": 50,
-                "first": "DiagnosticSummary!a1",
-                "second": "DiagnosticStatusPanel!a1"
+                "direction": "column",
+                "splitPercentage": 68,
+                "first": "3D!robot",
+                "second": {
+                  "direction": "row",
+                  "splitPercentage": 50,
+                  "first": "DiagnosticSummary!a1",
+                  "second": "DiagnosticStatusPanel!a1"
+                }
               }
             }
           }
