@@ -36,6 +36,8 @@ jobs:
           cache: npm
           cache-dependency-path: foxglove/extensions/galaxea-a1-collection-console/package-lock.json
       - name: Verify generated Foxglove workspace
+        env:
+          PYTHONPATH: ${{ github.workspace }}/external/embodied-ops/src
         run: python scripts/runtime/render_foxglove_layout.py --check
       - name: Package Galaxea A1 Collection Console
         id: extension
