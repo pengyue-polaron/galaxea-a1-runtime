@@ -72,7 +72,9 @@ stack. Connect Foxglove to `ws://<runtime-host>:8766` and select the organizatio
 layout **Galaxea A1 Operations**. The layout presents both camera streams,
 diagnostics, measured and commanded joint/gripper plots, ROS logs, sanitized
 Embodied Ops workflow status, the **Galaxea A1 Collection Console**, and a 3D
-panel backed by the configured URDF and TF tree.
+panel backed by the configured URDF and TF tree. The English-only collection
+console is intentionally limited to one status and five controls; the 3D view
+shares a compact tab with diagnostics and is hidden by default.
 
 The 3D panel is analogous to RViz's RobotModel plus TF view: while an execution
 runtime owns the arm and publishes measured joint feedback, the rendered model

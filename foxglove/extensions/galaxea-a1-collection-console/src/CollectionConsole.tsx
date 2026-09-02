@@ -5,7 +5,6 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
-  useMemo,
   useState,
 } from "react";
 import { createRoot } from "react-dom/client";
@@ -39,9 +38,7 @@ type ServiceName = keyof typeof COLLECTION_SERVICES;
 
 type Control = {
   service: ServiceName;
-  title: string;
-  subtitle: string;
-  tone: "primary" | "warning" | "danger" | "quiet";
+  label: string;
   phase?: "ready" | "recording";
   confirm?: string;
 };
@@ -49,39 +46,29 @@ type Control = {
 const CONTROLS: Control[] = [
   {
     service: "start",
-    title: "开始录制",
-    subtitle: "Start recording",
-    tone: "primary",
+    label: "Start recording",
     phase: "ready",
   },
   {
     service: "save",
-    title: "停止并保存",
-    subtitle: "Stop & save",
-    tone: "primary",
+    label: "Stop and save",
     phase: "recording",
   },
   {
     service: "reset",
-    title: "回到采集起点",
-    subtitle: "Reset position",
-    tone: "warning",
+    label: "Reset position",
     phase: "ready",
     confirm: "Reset the powered robot to the tracked collection start pose?",
   },
   {
     service: "discard",
-    title: "放弃本条数据",
-    subtitle: "Discard episode",
-    tone: "danger",
+    label: "Discard episode",
     phase: "recording",
     confirm: "Discard the current episode without saving it?",
   },
   {
     service: "stop",
-    title: "结束整个会话",
-    subtitle: "End collection session",
-    tone: "quiet",
+    label: "End session",
     confirm: "Stop the active collection session?",
   },
 ];
@@ -105,8 +92,7 @@ function CollectionConsole({ context }: { context: PanelExtensionContext }): Rea
   const [receivedAt, setReceivedAt] = useState(0);
   const [now, setNow] = useState(Date.now());
   const [busy, setBusy] = useState<ServiceName>();
-  const [feedback, setFeedback] = useState("");
-  const [feedbackError, setFeedbackError] = useState(false);
+  const [controlError, setControlError] = useState("");
   const [colorScheme, setColorScheme] = useState<"dark" | "light">("dark");
   const [renderDone, setRenderDone] = useState<(() => void) | undefined>();
 
@@ -153,13 +139,6 @@ function CollectionConsole({ context }: { context: PanelExtensionContext }): Rea
   }, []);
 
   const stale = receivedAt === 0 || now - receivedAt > 3000;
-  const indicator = useMemo(() => statusIndicator(status, { stale }), [status, stale]);
-  const collectionProgress = status.progress.find((item) => item.id === "collection");
-  const captureProgress = status.progress.find((item) => item.id === "capture");
-  const visibleProgress =
-    status.inputPhase === "recording"
-      ? (captureProgress ?? collectionProgress)
-      : collectionProgress;
   const controlsAvailable = context.callService != undefined;
 
   const invoke = useCallback(
@@ -168,23 +147,19 @@ function CollectionConsole({ context }: { context: PanelExtensionContext }): Rea
         return;
       }
       if (context.callService == undefined) {
-        setFeedbackError(true);
-        setFeedback("This Foxglove connection does not support service calls.");
+        setControlError("Service calls unavailable");
         return;
       }
       setBusy(control.service);
-      setFeedback("");
-      setFeedbackError(false);
+      setControlError("");
       try {
         const response = await context.callService(COLLECTION_SERVICES[control.service], {});
         const result = serviceResponse(response);
         if (!result.success) {
-          throw new Error(result.message || `${control.subtitle} was rejected`);
+          throw new Error(result.message || `${control.label} rejected`);
         }
-        setFeedback(result.message || `${control.subtitle} accepted`);
       } catch (error) {
-        setFeedbackError(true);
-        setFeedback(error instanceof Error ? error.message : `${control.subtitle} failed`);
+        setControlError(error instanceof Error ? error.message : `${control.label} failed`);
       } finally {
         setBusy(undefined);
       }
@@ -196,76 +171,33 @@ function CollectionConsole({ context }: { context: PanelExtensionContext }): Rea
   const rootStyle: CSSProperties = {
     minHeight: "100%",
     boxSizing: "border-box",
-    padding: 16,
+    padding: 12,
     color: palette.text,
-    background: palette.background,
+    background: "transparent",
     fontFamily: "Inter, system-ui, sans-serif",
   };
 
   return (
     <main style={rootStyle}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-        <span
-          aria-label={indicator.label}
-          style={{
-            width: 12,
-            height: 12,
-            borderRadius: "50%",
-            background: indicator.color,
-            boxShadow: `0 0 10px ${indicator.color}`,
-          }}
-        />
-        <div>
-          <div style={{ fontSize: 18, fontWeight: 700 }}>{indicator.label}</div>
-          <div style={{ color: palette.muted, fontSize: 12 }}>{indicator.detail}</div>
-        </div>
+      <div
+        role="status"
+        style={{
+          padding: "10px 12px",
+          border: `1px solid ${palette.border}`,
+          borderRadius: 4,
+          fontSize: 16,
+          fontWeight: 600,
+        }}
+      >
+        {statusLabel(status, { stale })}
       </div>
-
-      {status.inputDetail && !stale ? (
-        <div style={{ marginTop: 12, fontSize: 13, color: palette.text }}>
-          {status.inputDetail}
-        </div>
-      ) : undefined}
-
-      {visibleProgress != undefined && !stale ? (
-        <section style={{ marginTop: 12 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12 }}>
-            <span>{visibleProgress.label}</span>
-            <span style={{ color: palette.muted }}>{progressValue(visibleProgress)}</span>
-          </div>
-          {visibleProgress.total != undefined ? (
-            <div
-              style={{
-                height: 5,
-                borderRadius: 3,
-                marginTop: 5,
-                overflow: "hidden",
-                background: palette.border,
-              }}
-            >
-              <div
-                style={{
-                  height: "100%",
-                  width: `${Math.min(100, (visibleProgress.current / visibleProgress.total) * 100)}%`,
-                  background: indicator.color,
-                }}
-              />
-            </div>
-          ) : undefined}
-          {visibleProgress.detail ? (
-            <div style={{ color: palette.muted, fontSize: 11, marginTop: 4 }}>
-              {visibleProgress.detail}
-            </div>
-          ) : undefined}
-        </section>
-      ) : undefined}
 
       <section
         style={{
           display: "grid",
           gridTemplateColumns: "repeat(2, minmax(0, 1fr))",
           gap: 8,
-          marginTop: 14,
+          marginTop: 10,
         }}
       >
         {CONTROLS.map((control) => {
@@ -280,39 +212,19 @@ function CollectionConsole({ context }: { context: PanelExtensionContext }): Rea
               type="button"
               disabled={!enabled}
               onClick={() => void invoke(control)}
-              style={buttonStyle(control.tone, { enabled, palette })}
+              style={buttonStyle({ enabled, palette })}
             >
-              <span style={{ display: "block", fontWeight: 700 }}>
-                {busy === control.service ? "处理中…" : control.title}
-              </span>
-              <span style={{ display: "block", fontSize: 10, marginTop: 2, opacity: 0.78 }}>
-                {control.subtitle}
-              </span>
+              {busy === control.service ? "Working…" : control.label}
             </button>
           );
         })}
       </section>
 
-      {feedback ? (
-        <div
-          role="status"
-          style={{
-            marginTop: 10,
-            padding: "7px 9px",
-            borderRadius: 5,
-            fontSize: 11,
-            color: feedbackError ? palette.danger : palette.success,
-            background: palette.surface,
-          }}
-        >
-          {feedback}
+      {controlError ? (
+        <div style={{ marginTop: 8, fontSize: 11, color: palette.muted }}>
+          {controlError}
         </div>
       ) : undefined}
-
-      <footer style={{ marginTop: 10, color: palette.muted, fontSize: 10 }}>
-        {status.runId ? `run ${status.runId.slice(0, 8)} · ` : ""}
-        {WORKFLOW_STATUS_TOPIC}
-      </footer>
     </main>
   );
 }
@@ -410,40 +322,45 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value != null && !Array.isArray(value);
 }
 
-function statusIndicator(
+function statusLabel(
   status: WorkflowStatus,
   { stale }: { stale: boolean },
-): { label: string; detail: string; color: string } {
+): string {
   if (stale) {
-    return { label: "遥测已断开 / Offline", detail: status.error, color: "#ef4444" };
+    return "Offline";
   }
   if (!status.available) {
-    return { label: "等待采集会话 / No session", detail: status.error, color: "#f59e0b" };
+    return "No session";
   }
   if (!status.active) {
-    const label = status.state === "succeeded" ? "采集会话已完成 / Completed" : "空闲 / Idle";
-    return { label, detail: status.name || "Open a collection from the terminal", color: "#64748b" };
+    if (status.state === "succeeded") {
+      return "Completed";
+    }
+    if (status.state === "failed") {
+      return "Failed";
+    }
+    if (status.state === "stopped") {
+      return "Stopped";
+    }
+    return "Idle";
   }
   if (status.inputPhase === "ready") {
-    return { label: "等待开始录制 / Ready", detail: status.name, color: "#22c55e" };
+    return "Ready";
   }
   if (status.inputPhase === "recording") {
-    return { label: "正在录制 / Recording", detail: status.name, color: "#ef4444" };
+    return "Recording";
   }
   const progressPhase =
     status.progress.find((item) => item.id === "collection")?.phase ??
     status.progress[status.progress.length - 1]?.phase;
   const labels: Record<string, string> = {
-    saving: "正在保存 / Saving",
-    discarding: "正在放弃 / Discarding",
-    resetting: "机械臂复位中 / Resetting",
-    completed: "采集已完成 / Completed",
+    saving: "Saving",
+    discarding: "Discarding",
+    resetting: "Resetting",
+    stopping: "Stopping",
+    completed: "Completed",
   };
-  return {
-    label: labels[progressPhase ?? ""] ?? "处理中 / Busy",
-    detail: status.name,
-    color: status.state === "failed" ? "#ef4444" : "#3b82f6",
-  };
+  return labels[progressPhase ?? ""] ?? "Running";
 }
 
 function controlEnabled(
@@ -473,55 +390,37 @@ function controlEnabled(
   );
 }
 
-function progressValue(progress: Progress): string {
-  if (progress.total == undefined) {
-    return String(progress.current);
-  }
-  return `${progress.current.toFixed(1)} / ${progress.total.toFixed(1)}`;
-}
-
 type Palette = typeof DARK_PALETTE;
 
 const DARK_PALETTE = {
-  background: "#111827",
-  surface: "#1f2937",
-  border: "#374151",
-  text: "#f8fafc",
-  muted: "#94a3b8",
-  success: "#86efac",
-  danger: "#fca5a5",
+  surface: "#202124",
+  border: "#4b4d52",
+  text: "#f1f1f1",
+  muted: "#a5a7ac",
 };
 
 const LIGHT_PALETTE: Palette = {
-  background: "#f8fafc",
   surface: "#ffffff",
-  border: "#cbd5e1",
-  text: "#0f172a",
-  muted: "#64748b",
-  success: "#15803d",
-  danger: "#b91c1c",
+  border: "#c7c9cc",
+  text: "#202124",
+  muted: "#666a70",
 };
 
 function buttonStyle(
-  tone: Control["tone"],
   { enabled, palette }: { enabled: boolean; palette: Palette },
 ): CSSProperties {
-  const colors = {
-    primary: { background: "#2563eb", color: "#ffffff", border: "#3b82f6" },
-    warning: { background: "#b45309", color: "#ffffff", border: "#d97706" },
-    danger: { background: "#b91c1c", color: "#ffffff", border: "#ef4444" },
-    quiet: { background: palette.surface, color: palette.text, border: palette.border },
-  }[tone];
   return {
-    minHeight: 54,
-    padding: "7px 9px",
-    borderRadius: 6,
-    border: `1px solid ${colors.border}`,
-    background: colors.background,
-    color: colors.color,
+    minHeight: 44,
+    padding: "8px 10px",
+    borderRadius: 4,
+    border: `1px solid ${palette.border}`,
+    background: palette.surface,
+    color: palette.text,
     cursor: enabled ? "pointer" : "not-allowed",
-    opacity: enabled ? 1 : 0.38,
-    textAlign: "left",
+    opacity: enabled ? 1 : 0.4,
+    textAlign: "center",
+    fontSize: 12,
+    fontWeight: 600,
   };
 }
 

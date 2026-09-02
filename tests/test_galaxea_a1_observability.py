@@ -112,6 +112,14 @@ def test_tracked_foxglove_workspace_is_current_and_contains_scoped_console() -> 
         panel_id.startswith(f"{COLLECTION_CONSOLE_PANEL_TYPE}!")
         for panel_id in layout["configById"]
     )
+    details = layout["configById"]["Tab!overview-details"]
+    assert details["activeTabIdx"] == 0
+    assert [tab["title"] for tab in details["tabs"]] == ["Diagnostics", "3D"]
+    overview = layout["configById"]["Tab!a1"]["tabs"][0]["layout"]
+    controls_column = overview["second"]
+    assert controls_column["splitPercentage"] == 50
+    assert controls_column["first"] == f"{COLLECTION_CONSOLE_PANEL_TYPE}!controls"
+    assert controls_column["second"] == "Tab!overview-details"
     assert '"publish"' not in LAYOUT.read_text(encoding="utf-8")
     assert system.observability.topics.front_image in LAYOUT.read_text(encoding="utf-8")
     assert system.observability.topics.diagnostics in LAYOUT.read_text(encoding="utf-8")

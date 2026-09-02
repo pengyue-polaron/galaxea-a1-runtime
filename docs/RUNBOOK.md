@@ -97,7 +97,9 @@ installing the extension or importing JSON manually.
 The first tab contains both camera streams, A1 URDF/TF, and diagnostics; the
 second contains measured/staged/forwarded joint and gripper plots plus ROS logs.
 Staged and forwarded joint curves start disabled so the measured traces remain
-readable. The first tab's collection console and the second tab's raw status
+readable. The first tab keeps the English-only collection console fully visible;
+its lower **Diagnostics / 3D** tabs keep the robot model collapsed by default.
+The collection console and the second tab's raw status
 subscribe to the sanitized versioned workflow state on
 `/a1/ops/workflow_status`; child argv and terminal logs are deliberately
 excluded. The layout has no Publish panel.

@@ -156,6 +156,21 @@ def build_foxglove_layout(system: SystemConfig) -> dict[str, Any]:
             },
             f"{COLLECTION_CONSOLE_PANEL_TYPE}!controls": {},
             "RosOut!logs": {"searchTerms": [], "minLogLevel": 1},
+            "Tab!overview-details": {
+                "activeTabIdx": 0,
+                "tabs": [
+                    {
+                        "title": "Diagnostics",
+                        "layout": {
+                            "direction": "row",
+                            "splitPercentage": 50,
+                            "first": "DiagnosticSummary!a1",
+                            "second": "DiagnosticStatusPanel!a1",
+                        },
+                    },
+                    {"title": "3D", "layout": "3D!robot"},
+                ],
+            },
             "Tab!a1": {
                 "activeTabIdx": 0,
                 "tabs": [
@@ -172,19 +187,9 @@ def build_foxglove_layout(system: SystemConfig) -> dict[str, Any]:
                             },
                             "second": {
                                 "direction": "column",
-                                "splitPercentage": 28,
+                                "splitPercentage": 50,
                                 "first": f"{COLLECTION_CONSOLE_PANEL_TYPE}!controls",
-                                "second": {
-                                    "direction": "column",
-                                    "splitPercentage": 68,
-                                    "first": "3D!robot",
-                                    "second": {
-                                        "direction": "row",
-                                        "splitPercentage": 50,
-                                        "first": "DiagnosticSummary!a1",
-                                        "second": "DiagnosticStatusPanel!a1",
-                                    },
-                                },
+                                "second": "Tab!overview-details",
                             },
                         },
                     },
