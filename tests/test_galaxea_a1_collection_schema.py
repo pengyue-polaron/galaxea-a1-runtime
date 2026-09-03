@@ -40,6 +40,7 @@ def test_joint_action_quality_check_accepts_continuous_actions():
 
 
 def test_collection_recording_trims_stationary_prefix_and_keeps_preroll(monkeypatch):
+    readiness_events = []
     actions = iter(
         (
             (0.0,) * 7,
@@ -53,6 +54,7 @@ def test_collection_recording_trims_stationary_prefix_and_keeps_preroll(monkeypa
     commands = iter((None, None, None, None, None, ""))
 
     def capture(_recorder, _last_camera_seq):
+        assert readiness_events == ["fresh-cameras", "recording-ready"]
         action = next(actions)
         return CapturedFrame(
             values={"action": action},
@@ -79,7 +81,7 @@ def test_collection_recording_trims_stationary_prefix_and_keeps_preroll(monkeypa
     )
     monkeypatch.setattr(
         "galaxea_a1_runtime.apps.teleop.recording.wait_for_new_camera_samples",
-        lambda *_args, **_kwargs: None,
+        lambda *_args, **_kwargs: readiness_events.append("fresh-cameras"),
     )
     monkeypatch.setattr(
         "galaxea_a1_runtime.apps.teleop.recording._FrameRecorder.capture",
@@ -120,8 +122,10 @@ def test_collection_recording_trims_stationary_prefix_and_keeps_preroll(monkeypa
             motion_frames=2,
             preroll_frames=1,
         ),
+        on_ready=lambda: readiness_events.append("recording-ready"),
     )
 
+    assert readiness_events == ["fresh-cameras", "recording-ready"]
     assert recorded.sampled_frame_count == 5
     assert recorded.frame_count == 3
     assert recorded.trimmed_frame_count == 2

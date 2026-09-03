@@ -126,19 +126,25 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             config_reference=config_reference,
         )
         while not rospy.is_shutdown():
+            status_detail = _collection_status_detail(
+                episode_index=episode_index,
+                task=task,
+                saved=saved,
+                saved_frames=saved_frames,
+            )
             announce_progress(
                 "collection",
                 "Collection episode",
                 episode_index,
                 None,
                 phase="ready",
-                detail=f"Ready · {task}",
+                detail=status_detail,
                 force=True,
             )
             announce_input(
                 A1_COLLECTION_INTERACTION.start_action_ids,
                 phase="ready",
-                detail=f"Episode {episode_index} · {task}",
+                detail=status_detail,
             )
             command = (
                 input(
@@ -160,7 +166,7 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                     episode_index,
                     None,
                     phase="resetting",
-                    detail="Resetting A1 and leader",
+                    detail=status_detail,
                     force=True,
                 )
                 reset_for_next_episode(config.path)
@@ -171,16 +177,31 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                 "Collection episode",
                 episode_index,
                 None,
-                phase="recording",
-                detail=f"Recording · {task}",
+                phase="preparing",
+                detail=status_detail,
                 force=True,
             )
-            announce_input(
-                A1_COLLECTION_INTERACTION.recording_action_ids,
-                phase="recording",
-                detail=f"Episode {episode_index} · {task}",
+
+            def announce_recording_ready() -> None:
+                announce_progress(
+                    "collection",
+                    "Collection episode",
+                    episode_index,
+                    None,
+                    phase="recording",
+                    detail=status_detail,
+                    force=True,
+                )
+                announce_input(
+                    A1_COLLECTION_INTERACTION.recording_action_ids,
+                    phase="recording",
+                    detail=status_detail,
+                )
+
+            completion = episodes.record(
+                episode_index,
+                on_recording_ready=announce_recording_ready,
             )
-            completion = episodes.record(episode_index)
             if completion.decision == EpisodeDecision.QUIT:
                 break
             if completion.decision == EpisodeDecision.SAVE:
@@ -196,7 +217,12 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                     episode_index,
                     None,
                     phase="resetting",
-                    detail="Resetting A1 and leader",
+                    detail=_collection_status_detail(
+                        episode_index=episode_index,
+                        task=task,
+                        saved=saved,
+                        saved_frames=saved_frames,
+                    ),
                     force=True,
                 )
                 reset_for_next_episode(config.path)
@@ -219,6 +245,12 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         force=True,
     )
     return 0
+
+
+def _collection_status_detail(
+    *, episode_index: int, task: str, saved: int, saved_frames: int
+) -> str:
+    return f"Episode {episode_index} · {saved} saved · {saved_frames} frames · {task}"
 
 
 def reset_for_next_episode(teleop_config: Path) -> None:

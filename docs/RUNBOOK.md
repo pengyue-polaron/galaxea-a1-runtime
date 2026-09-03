@@ -118,8 +118,10 @@ Session and follows the child log. In Foxglove:
 
 - `Ready`: **Start recording**, **Reset position**, and **End session** are
   available.
+- `Preparing`: the dataset transaction is open and both cameras must produce a
+  new frame; episode controls remain disabled.
 - `Recording`: **Stop & save**, **Discard episode**, and **End session** are
-  available.
+  available. The status shows sampled/stored frame counts and effective FPS.
 - `Saving`, `Discarding`, `Resetting`, and other busy phases disable episode
   buttons until the child announces the next one-shot input gate.
 - An unavailable session, stale telemetry, rejected command, or failed workflow

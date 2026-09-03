@@ -5,6 +5,7 @@ from __future__ import annotations
 import select
 import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -137,6 +138,7 @@ def record_episode(
     max_camera_age_s: float,
     max_camera_pair_skew_s: float,
     leading_stillness: LeadingStillnessConfig,
+    on_ready: Callable[[], None] = lambda: None,
 ) -> RecordedEpisode:
     import rospy
 
@@ -150,6 +152,7 @@ def record_episode(
         },
         timeout_s=camera_ready_timeout_s,
     )
+    on_ready()
     t0 = time.perf_counter()
     next_frame_t = t0
     period = 1.0 / fps
@@ -196,8 +199,8 @@ def record_episode(
             max_duration_s if max_duration_s > 0 else None,
             phase="recording",
             detail=(
-                f"episode={episode_index} · sampled={sampled_frames} · "
-                f"stored={stored_frames} · fps={measured_fps:.1f}"
+                f"Sampled {sampled_frames} · stored {stored_frames} · "
+                f"{measured_fps:.1f} FPS"
             ),
         )
 

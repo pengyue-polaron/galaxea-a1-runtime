@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
@@ -61,8 +62,12 @@ class TeleopEpisodeSession:
         self.cameras = cameras
         self.config_reference = config_reference
 
-    def record(self, episode_index: int) -> EpisodeCompletion:
-        warning(A1_COLLECTION_INTERACTION.recording_notice(episode_index))
+    def record(
+        self,
+        episode_index: int,
+        *,
+        on_recording_ready: Callable[[], None],
+    ) -> EpisodeCompletion:
         front_reader, wrist_reader = self.cameras.readers
         try:
             with DirectLeRobotEpisode(
@@ -85,6 +90,10 @@ class TeleopEpisodeSession:
                     max_camera_age_s=self.config.system.cameras.max_age_s,
                     max_camera_pair_skew_s=self.config.system.cameras.max_pair_skew_s,
                     leading_stillness=self.config.collection.leading_stillness,
+                    on_ready=lambda: self._announce_recording_ready(
+                        episode_index,
+                        on_recording_ready,
+                    ),
                 )
                 report = EpisodeCaptureReport(
                     episode_index=episode_index,
@@ -116,7 +125,11 @@ class TeleopEpisodeSession:
                             if decision is EpisodeDecision.DISCARD
                             else "stopping"
                         ),
-                        detail=f"frames={recording.frame_count}",
+                        detail=(
+                            f"Episode {episode_index} · no motion detected"
+                            if recording.frame_count == 0
+                            else f"Episode {episode_index} · {recording.frame_count} frames"
+                        ),
                         force=True,
                     )
                     announce_episode_outcome(
@@ -140,6 +153,15 @@ class TeleopEpisodeSession:
                     max_step_rad=self.config.bridge.max_joint_action_step_rad,
                 )
                 if violation is not None:
+                    announce_progress(
+                        "collection",
+                        "Collection episode",
+                        episode_index,
+                        None,
+                        phase="discarding",
+                        detail=f"Episode {episode_index} · action discontinuity",
+                        force=True,
+                    )
                     failure(
                         f"Episode {episode_index} rejected: joint action discontinuity: "
                         f"{violation.describe()}"
@@ -170,7 +192,7 @@ class TeleopEpisodeSession:
                     episode_index,
                     None,
                     phase="saving",
-                    detail=f"frames={recording.frame_count}",
+                    detail=f"Episode {episode_index} · {recording.frame_count} frames",
                     force=True,
                 )
                 output.commit()
@@ -204,6 +226,14 @@ class TeleopEpisodeSession:
                 EpisodeDecision.SAVE
             ),
         )
+
+    @staticmethod
+    def _announce_recording_ready(
+        episode_index: int,
+        callback: Callable[[], None],
+    ) -> None:
+        warning(A1_COLLECTION_INTERACTION.recording_notice(episode_index))
+        callback()
 
     def _provenance(self) -> dict:
         return build_dataset_provenance(

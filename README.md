@@ -96,13 +96,16 @@ terminal, then leave that command running:
 just collect <experiment> "<exact prompt>"
 ```
 
-The Foxglove console shows `Ready`, `Recording`, `Saving`, `Discarding`,
-`Resetting`, `Completed`, or an explicit unavailable/error state. In `Ready`, it
-offers **Start recording**, **Reset position**, and **End session**. In
-`Recording`, it offers **Stop & save**, **Discard episode**, and **End session**.
-Reset, discard, and session stop require confirmation in Foxglove. The terminal
-continues to show the child log but no longer needs to accept the episode
-decisions.
+The Foxglove console shows `Ready`, `Preparing`, `Recording`, `Saving`,
+`Discarding`, `Resetting`, `Completed`, or an explicit unavailable/error state.
+Its compact status includes the episode, exact prompt, saved count, and frame
+count; while recording it also shows sampled/stored frames and effective FPS.
+`Preparing` covers dataset staging and the fresh-camera barrier, so recording
+controls do not open early. In `Ready`, the console offers **Start recording**,
+**Reset position**, and **End session**. In `Recording`, it offers **Stop &
+save**, **Discard episode**, and **End session**. Reset, discard, and session
+stop require confirmation in Foxglove. The terminal continues to show the child
+log but no longer needs to accept the episode decisions.
 
 The trusted-LAN bridge exposes only the five exact collection `Trigger`
 services generated from System config. It still denies client topic
