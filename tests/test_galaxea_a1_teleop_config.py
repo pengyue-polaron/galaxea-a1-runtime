@@ -106,6 +106,10 @@ def test_teleop_shell_contract_renders_lifecycle_values():
     )
     assert "JOINT_TRACKER_NODE=/jointTracker_demo_node" in rendered
     assert "JOINT_TRACKER_NODE_NAME=jointTracker_demo_node" in rendered
+    assert "OBSERVABILITY_ENABLED=true" in rendered
+    assert "FOXGLOVE_BIND=0.0.0.0" in rendered
+    assert "FOXGLOVE_PORT=8766" in rendered
+    assert "OBSERVABILITY_DIAGNOSTICS_TOPIC=/a1/diagnostics" in rendered
 
 
 def test_dataset_provenance_records_reset_and_trimming_contracts():

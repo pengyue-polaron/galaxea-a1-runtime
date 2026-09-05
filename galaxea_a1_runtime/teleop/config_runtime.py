@@ -3,35 +3,12 @@
 from __future__ import annotations
 
 from galaxea_a1_runtime.configuration.base import number, shell_assign
-from galaxea_a1_runtime.configuration.system import render_shell_values
+from galaxea_a1_runtime.configuration.system import bash_config as system_bash_config
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
 def bash_config(config: TeleopConfig) -> str:
-    system = config.system
-    system_exports = render_shell_values(
-        system,
-        (
-            "SYSTEM_CONFIG_PATH",
-            "IMAGE",
-            "SERIAL",
-            "JOINT_STATES_TOPIC",
-            "JOINT_TARGET_TOPIC",
-            "STAGED_TOPIC",
-            "RELAY_STATUS_TOPIC",
-            "EEF_POSE_TOPIC",
-            "JOINT_TRACKER_NODE",
-            "JOINT_TRACKER_NODE_NAME",
-            "GRIPPER_MIN_STROKE_MM",
-            "GRIPPER_MAX_STROKE_MM",
-            "ROS_MASTER_STARTUP_TIMEOUT_S",
-            "JOINT_FEEDBACK_STARTUP_TIMEOUT_S",
-            "TOPIC_STARTUP_TIMEOUT_S",
-            "A1_ROBOT_SERVICE_ENDPOINT",
-            "A1_ROBOT_SERVICE_SERVER_STARTUP_TIMEOUT_S",
-            "A1_ROBOT_SERVICE_SERVER_SHUTDOWN_TIMEOUT_S",
-        ),
-    )
+    system_exports = system_bash_config(config.system)
     app_values = (
         ("CONFIG_PATH", str(config.path)),
         ("RESET_CONFIG_PATH", str(config.reset.config)),

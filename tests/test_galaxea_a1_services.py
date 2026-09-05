@@ -2,10 +2,14 @@ import os
 import subprocess
 from pathlib import Path
 
+from galaxea_a1_runtime.teleop.config import load_teleop_config
+from galaxea_a1_runtime.teleop.config_runtime import bash_config
+
 
 REPO = Path(__file__).resolve().parents[1]
 SERVICES = REPO / "scripts/runtime/a1_services.sh"
 OBSERVABILITY_RUNTIME = REPO / "scripts/runtime/a1_observability_runtime.sh"
+TELEOP_CONFIG = REPO / "configs/teleop/a1_so100.toml"
 
 
 def run_services_bash(body: str) -> subprocess.CompletedProcess[str]:
@@ -209,6 +213,24 @@ def test_observability_reuses_the_healthy_persistent_stack() -> None:
 
     assert result.returncode == 0
     assert "already ready" in result.stdout
+    assert "unexpected start" not in result.stderr
+
+
+def test_teleop_shell_contract_satisfies_observability_startup() -> None:
+    rendered = bash_config(load_teleop_config(TELEOP_CONFIG, repo_root=REPO))
+    result = run_services_bash(
+        f"""
+        {rendered}
+        ROOT={REPO}
+        a1_observability_stack_is_ready() {{ return 0; }}
+        a1_container_run() {{ printf 'unexpected start\n' >&2; return 2; }}
+        a1_start_observability telemetry-container foxglove-container
+        """
+    )
+
+    assert result.returncode == 0
+    assert "already ready" in result.stdout
+    assert "Required runtime value" not in result.stderr
     assert "unexpected start" not in result.stderr
 
 
