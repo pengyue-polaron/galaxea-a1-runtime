@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from galaxea_a1_runtime.apps.lingbot.config_runtime import bash_config
+from galaxea_a1_runtime.apps.lingbot.ik_subgoal import IkSubgoalConfig
 from galaxea_a1_runtime.apps.lingbot.config_schema import (
     AttentionMode,
     LingBotActionModeConfig,
@@ -185,6 +186,7 @@ def load_lingbot_config(
             "step_actions",
             "max_model_calls",
             "ik_replan_max_attempts",
+            "ik_subgoal",
             "execute_frames",
             "kv_observations_per_frame",
             "exec_rate",
@@ -192,6 +194,19 @@ def load_lingbot_config(
             "review_deadband_m",
         },
         label="execution",
+    )
+    subgoal = required_table(execution, "ik_subgoal")
+    require_exact_keys(
+        subgoal,
+        required={
+            "enabled",
+            "max_attempts",
+            "max_translation_m",
+            "max_rotation_rad",
+            "max_joint_delta_rad",
+            "feedback_timeout_s",
+        },
+        label="execution.ik_subgoal",
     )
     require_exact_keys(
         recording,
@@ -268,6 +283,14 @@ def load_lingbot_config(
             step_actions=boolean(execution, "step_actions"),
             max_model_calls=integer(execution, "max_model_calls"),
             ik_replan_max_attempts=integer(execution, "ik_replan_max_attempts"),
+            ik_subgoal=IkSubgoalConfig(
+                enabled=boolean(subgoal, "enabled"),
+                max_attempts=integer(subgoal, "max_attempts"),
+                max_translation_m=floating(subgoal, "max_translation_m"),
+                max_rotation_rad=floating(subgoal, "max_rotation_rad"),
+                max_joint_delta_rad=floating(subgoal, "max_joint_delta_rad"),
+                feedback_timeout_s=floating(subgoal, "feedback_timeout_s"),
+            ),
             execute_frames=integer(execution, "execute_frames"),
             kv_observations_per_frame=integer(execution, "kv_observations_per_frame"),
             exec_rate=floating(execution, "exec_rate"),
@@ -491,6 +514,22 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("execution.max_model_calls must be >= 0")
     if config.execution.ik_replan_max_attempts < 0:
         raise ValueError("execution.ik_replan_max_attempts must be >= 0")
+    subgoal = config.execution.ik_subgoal
+    if (
+        subgoal.max_attempts <= 0
+        or min(
+            subgoal.max_translation_m,
+            subgoal.max_rotation_rad,
+            subgoal.max_joint_delta_rad,
+            subgoal.feedback_timeout_s,
+        )
+        <= 0
+    ):
+        raise ValueError("execution.ik_subgoal search bounds must be positive")
+    if subgoal.max_joint_delta_rad > config.system.eef_ik.max_solution_delta_rad:
+        raise ValueError("IK subgoal joint delta cannot exceed the System IK bound")
+    if subgoal.enabled and config.execution.max_model_calls <= 0:
+        raise ValueError("IK subgoals require a finite max_model_calls budget")
     if (
         min(
             config.execution.execute_frames,

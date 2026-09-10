@@ -209,7 +209,9 @@ def build_safety_settings(
                 "is the sole owner of alignment validation and activation. "
                 "Foreground LingBot/Diffusion2One deployments may set "
                 "execution.ik_replan_max_attempts to re-infer after a typed IK "
-                "rejection; faults and exhausted budgets still stop execution."
+                "rejection. execution.ik_subgoal may first execute a converged, "
+                "restricted intermediate pose, confirm measured progress, and reset "
+                "the temporal cache; faults and exhausted budgets still stop execution."
             ),
         ),
         SafetySetting(

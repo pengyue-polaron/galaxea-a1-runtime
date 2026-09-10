@@ -35,6 +35,11 @@ from galaxea_a1_runtime.apps.eef_policy_executor import (
     close_policy_resources,
 )
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
+from galaxea_a1_runtime.apps.lingbot.ik_subgoal import (
+    IkSubgoalExecuted,
+    intermediate_targets,
+    pose_distance,
+)
 from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
 from galaxea_a1_runtime.apps.lingbot.rollout import LingBotActionChunk
@@ -54,7 +59,11 @@ from galaxea_a1_runtime.console import (
     success,
     warning,
 )
-from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
+from galaxea_a1_runtime.hardware.eef_ik import (
+    A1EefIkTargetRejected,
+    IkSolution,
+    build_eef_ik_solver,
+)
 from galaxea_a1_runtime.runtime.ros_feedback import (
     A1JointStateCache,
     StagedCommandMonitor,
@@ -304,6 +313,7 @@ class A1LingBotEEBridge:
             f"frames_per_call={self.execution.execute_frames} "
             f"rate={self.execution.exec_rate:.1f}Hz "
             f"ik_replan_max_attempts={self.execution.ik_replan_max_attempts} "
+            f"ik_subgoal_enabled={self.execution.ik_subgoal.enabled} "
             "cache_action_source=requested-action"
         )
         self._update_live_status(0, phase="READY", force=True)
@@ -392,7 +402,15 @@ class A1LingBotEEBridge:
             if self.execution.execute:
                 if not self.executor.motion_enabled:
                     self.live_status.break_line()
-                executed = self._publish_ee_action(validated_action)
+                try:
+                    executed = self._publish_ee_action(validated_action)
+                except A1EefIkTargetRejected:
+                    if (
+                        self.execution.ik_subgoal.enabled
+                        and call_index + 1 < self.execution.max_model_calls
+                    ):
+                        self._try_ik_subgoal(validated_action)
+                    raise
                 chunk.cache_state[:, cache_frame_index, step_index] = (
                     self.state.absolute_to_model(executed)
                 )
@@ -411,6 +429,114 @@ class A1LingBotEEBridge:
                     )
                 key_frames.extend(observation["obs"])
         return False, key_frames, cache_eligible
+
+    def _try_ik_subgoal(self, requested: np.ndarray) -> None:
+        config = self.execution.ik_subgoal
+        self.live_status.break_line()
+        self.executor.hold_for_replan()
+        self._wait_for_fresh_feedback()
+        joints = self.joints.positions(
+            max_age_s=self.system.joint_safety.max_feedback_age_s
+        )
+        if joints is None:
+            raise RuntimeError("IK subgoal requires fresh named joint feedback")
+        xyz, quat = self.ik_solver.forward(joints)
+        start = np.concatenate([xyz, quat])
+
+        def validate_solution(solution: IkSolution) -> None:
+            solved_xyz, _ = self.ik_solver.forward(solution.joint_positions)
+            if np.any(solved_xyz < self.eef.xyz_min) or np.any(
+                solved_xyz > self.eef.xyz_max
+            ):
+                raise A1EefIkTargetRejected("IK subgoal solution leaves the workspace")
+
+        for attempt, (fraction, candidate) in enumerate(
+            intermediate_targets(xyz, quat, requested, config), start=1
+        ):
+            distance, rotation = pose_distance(xyz, quat, candidate)
+            if (
+                distance <= self.ik_solver.position_tolerance_m
+                and rotation <= self.ik_solver.orientation_tolerance_rad
+            ):
+                break  # A numerically successful hold is not progress.
+            if np.any(candidate[:3] < self.eef.xyz_min) or np.any(
+                candidate[:3] > self.eef.xyz_max
+            ):
+                continue
+            try:
+                solution = self.executor.publish_subgoal(
+                    candidate,
+                    max_joint_delta_rad=config.max_joint_delta_rad,
+                    validate_solution=validate_solution,
+                )
+            except A1EefIkTargetRejected as exc:
+                warning(f"IK subgoal {attempt}/{config.max_attempts} rejected: {exc}")
+                continue
+            published_at = time.monotonic()
+            info(
+                f"IK subgoal published: fraction={fraction:.5f} "
+                f"translation_m={distance:.5f} rotation_rad={rotation:.5f} "
+                f"max_joint_delta_rad={solution.max_joint_delta_rad:.5f}; "
+                "gripper unchanged, awaiting measured progress"
+            )
+            self.actions_executed += 1
+            self._wait_for_subgoal_feedback(candidate, start, requested, published_at)
+            raise IkSubgoalExecuted(
+                "intermediate pose reached; discarding the remaining chunk and cache"
+            )
+        warning("No converged intermediate target with measurable progress; holding")
+
+    def _wait_for_subgoal_feedback(
+        self,
+        candidate: np.ndarray,
+        start: np.ndarray,
+        requested: np.ndarray,
+        published_at: float,
+    ) -> None:
+        deadline = published_at + self.execution.ik_subgoal.feedback_timeout_s
+        ik = self.ik_solver
+        initial_error = pose_distance(start[:3], start[3:7], requested)
+
+        def score(errors: tuple[float, float]) -> float:
+            return (errors[0] / ik.position_tolerance_m) ** 2 + (
+                errors[1] / ik.orientation_tolerance_rad
+            ) ** 2
+
+        while not rospy.is_shutdown() and time.monotonic() < deadline:
+            self.executor.enable_motion()
+            _, updated_at = self.joints.cache.snapshot()
+            joints = self.joints.positions(
+                max_age_s=self.system.joint_safety.max_feedback_age_s
+            )
+            if joints is None:
+                raise RuntimeError("Joint feedback became stale during IK subgoal")
+            if np.any(joints < ik.lower_limits) or np.any(joints > ik.upper_limits):
+                raise RuntimeError("Joint feedback exceeded limits during IK subgoal")
+            if updated_at is not None and updated_at > published_at:
+                xyz, quat = ik.forward(joints)
+                error = pose_distance(xyz, quat, candidate)
+                moved = pose_distance(xyz, quat, start)
+                remaining = pose_distance(xyz, quat, requested)
+                if (
+                    error[0] <= ik.position_tolerance_m
+                    and error[1] <= ik.orientation_tolerance_rad
+                    and (
+                        moved[0] > ik.position_tolerance_m
+                        or moved[1] > ik.orientation_tolerance_rad
+                    )
+                    and score(remaining) < score(initial_error)
+                ):
+                    info(
+                        "IK subgoal feedback confirmed: "
+                        f"xyz={xyz.tolist()} quat={quat.tolist()} "
+                        f"remaining_position_m={remaining[0]:.5f} "
+                        f"remaining_orientation_rad={remaining[1]:.5f}"
+                    )
+                    return
+            time.sleep(1.0 / self.execution.exec_rate)
+        raise RuntimeError(
+            "IK subgoal did not produce confirmed progress before timeout"
+        )
 
     def _sync_kv_cache(
         self,

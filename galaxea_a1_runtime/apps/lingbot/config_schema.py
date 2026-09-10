@@ -7,6 +7,7 @@ from pathlib import Path
 from typing import Literal
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
+from galaxea_a1_runtime.apps.lingbot.ik_subgoal import IkSubgoalConfig
 from embodied_ops import TaskCatalog
 from galaxea_a1_runtime.models.backend import CodeBackendConfig
 from galaxea_a1_runtime.models.config import ModelArtifactConfig
@@ -78,6 +79,7 @@ class LingBotExecutionConfig:
     step_actions: bool
     max_model_calls: int
     ik_replan_max_attempts: int
+    ik_subgoal: IkSubgoalConfig
     execute_frames: int
     kv_observations_per_frame: int
     exec_rate: float

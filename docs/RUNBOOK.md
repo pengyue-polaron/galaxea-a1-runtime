@@ -65,6 +65,28 @@ the allowance. Each inference still counts toward `max_model_calls`. Exhausted
 allowances or hold/reset/feedback failures stop the run. The existing LingBot
 deployments explicitly use `0`, preserving immediate IK safety stops.
 
+Diffusion2One also enables `[execution.ik_subgoal]` in its deployment. After an
+IK rejection it establishes a fresh hold and tries a short intermediate pose
+toward the requested position and shortest-arc orientation. The initial target
+step is at most 0.01 m / 0.05 rad; up to five attempts halve that step. Each solve
+tightens the joint displacement bound to 0.05 rad and retains the System IK
+convergence tolerances and absolute joint limits. Both the intermediate target
+and its solved FK endpoint must lie in the configured workspace. The gripper
+command is unchanged during this recovery move.
+
+After publishing one intermediate target, the bridge waits up to 2 s for new
+joint feedback confirming arrival within the original IK tolerances and
+measurable progress toward the original pose. It then holds, discards all
+remaining chunk actions and partial KV state, and re-infers from new camera
+observations with a fresh episode origin. Confirmed progress replenishes the
+rejection retry allowance, but every inference consumes `max_model_calls`; no
+subgoal is attempted on the last call. If no intermediate target solves, the
+ordinary bounded hold/replan path applies. Stale feedback, relay faults, or a
+feedback timeout stop the run. This is bounded intermediate-target execution,
+not permission to publish a non-converged IK candidate. Existing LingBot
+deployments explicitly disable this feature. These endpoint and joint checks
+do not implement swept-path collision checking.
+
 This document is the operator procedure for setup, hardware acceptance, Teleop
 collection, dataset conversion, recovery, and policy deployment. Commands that
 can move the arm are labeled **MOVES HARDWARE**.

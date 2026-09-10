@@ -49,6 +49,14 @@ exec_rate = 30.0
 print_actions = false
 review_deadband_m = 0.001
 
+[execution.ik_subgoal]
+enabled = false
+max_attempts = 5
+max_translation_m = 0.01
+max_rotation_rad = 0.05
+max_joint_delta_rad = 0.05
+feedback_timeout_s = 2.0
+
 [recording]
 camera_videos_enabled = true
 output_root = "outputs/inference/lingbot-plug-insertion-eef/recordings"

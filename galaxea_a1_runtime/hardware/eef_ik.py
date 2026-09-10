@@ -87,7 +87,16 @@ class A1EefIkSolver:
         current_joint_positions: Sequence[float],
         target_xyz: Sequence[float],
         target_quat_xyzw: Sequence[float],
+        *,
+        max_joint_delta_rad: float | None = None,
     ) -> IkSolution:
+        delta_limit = self.max_solution_delta_rad
+        if max_joint_delta_rad is not None:
+            if not math.isfinite(max_joint_delta_rad) or max_joint_delta_rad <= 0:
+                raise ValueError(
+                    "IK joint delta restriction must be finite and positive"
+                )
+            delta_limit = min(delta_limit, max_joint_delta_rad)
         start = _finite_vector(
             current_joint_positions, len(self.joints), "current joint positions"
         )
@@ -98,12 +107,8 @@ class A1EefIkSolver:
         # Search only within both absolute limits and the permitted displacement
         # from fresh feedback. Clipping a completed IK solution would invalidate
         # its Cartesian pose; all projected candidates still need convergence.
-        search_lower = np.maximum(
-            self.lower_limits, start - self.max_solution_delta_rad
-        )
-        search_upper = np.minimum(
-            self.upper_limits, start + self.max_solution_delta_rad
-        )
+        search_lower = np.maximum(self.lower_limits, start - delta_limit)
+        search_upper = np.minimum(self.upper_limits, start + delta_limit)
         joints = start.copy()
         position_error = float("inf")
         orientation_error = float("inf")
@@ -158,10 +163,10 @@ class A1EefIkSolver:
                 f"orientation_error_rad={orientation_error:.6f}"
             )
         max_delta = float(np.max(np.abs(joints - start)))
-        if max_delta > self.max_solution_delta_rad:
+        if max_delta > delta_limit:
             raise A1EefIkTargetRejected(
                 "A1 EEF IK solution exceeds the configured joint delta: "
-                f"{max_delta:.6f} > {self.max_solution_delta_rad:.6f} rad"
+                f"{max_delta:.6f} > {delta_limit:.6f} rad"
             )
         return IkSolution(
             joint_positions=tuple(float(value) for value in joints),

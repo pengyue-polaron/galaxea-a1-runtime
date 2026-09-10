@@ -13,6 +13,7 @@ from typing import Any
 
 import numpy as np
 
+from galaxea_a1_runtime.hardware.eef_ik import IkSolution
 from galaxea_a1_runtime.runtime.staged_motion import StagedMotionGate
 from galaxea_a1_runtime.runtime.ros_feedback import wait_for_staged_joint_alignment
 
@@ -84,6 +85,25 @@ class EefPolicyExecutor(StagedMotionGate):
             monotonic=self.monotonic,
         )
         self.enable_motion()
+
+    def publish_subgoal(
+        self,
+        policy_action: np.ndarray,
+        *,
+        max_joint_delta_rad: float,
+        validate_solution: Callable[[IkSolution], None],
+    ) -> IkSolution:
+        """Solve a smaller arm-only target; preserve the existing gripper command."""
+        if not self.motion_enabled:
+            raise RuntimeError("Cannot execute an IK subgoal without an ACTIVE hold")
+        self.enable_motion()
+        solution = self.commander.set_active_action(
+            policy_action,
+            max_joint_delta_rad=max_joint_delta_rad,
+            validate_solution=validate_solution,
+        )
+        self.commander.publish_active_target()
+        return solution
 
 
 def close_policy_resources(

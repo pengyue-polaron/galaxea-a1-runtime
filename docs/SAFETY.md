@@ -136,6 +136,22 @@ The relay's stricter input-freshness checks remain independent of both RPC deadl
   exceptions remain failures. Workspace validation remains mandatory. After a
   batch safety stop, the operator explicitly counts the evaluation or discards
   it for a reset/retry; resume honors that durable decision.
+- The foreground LingBot bridge supports the deployment-owned
+  `execution.ik_subgoal` recovery (enabled for Diffusion2One). Following a typed
+  IK rejection, it first holds fresh current joints, then tries progressively
+  shorter interpolated position/orientation targets. Each subgoal retains
+  System IK precision and absolute limits, additionally restricts the joint
+  displacement, and checks both target and solved FK endpoint against the
+  workspace. The complete original orientation determines interpolation;
+  current orientation is not substituted for it. No gripper change accompanies
+  a subgoal. New joint feedback must confirm arrival and movement exceeding at
+  least one IK pose tolerance, with reduced normalized error to the original
+  goal. Only then may the bridge reset the model and reanchor to fresh feedback;
+  it never commits the rejected chunk's requested-action cache. Feedback timeout
+  or infrastructure faults stop execution. No-progress search failure uses the
+  existing bounded rejection retries. Successful subgoals consume the finite
+  model-call budget and replenish the rejection allowance. This adds no
+  collision or velocity guarantee, and never clears relay faults.
 - A scripted LingBot plan remains operator-gated: every attempt requires Enter,
   then moves A1 through the same tracked staged reset before inference. Reset or
   infrastructure failure aborts the plan; an IK safety stop returns to the next

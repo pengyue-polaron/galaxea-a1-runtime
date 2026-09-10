@@ -74,14 +74,24 @@ class EefIkCommandPublisher:
             raise RuntimeError("Cannot stage an IK hold without fresh joint feedback")
         return self._set_active_joint_target(current)
 
-    def set_active_action(self, action8: Sequence[float]) -> IkSolution:
+    def set_active_action(
+        self,
+        action8: Sequence[float],
+        *,
+        max_joint_delta_rad: float | None = None,
+        validate_solution: Callable[[IkSolution], None] | None = None,
+    ) -> IkSolution:
         action = np.asarray(action8, dtype=np.float64).reshape(8)
         if not np.all(np.isfinite(action)):
             raise ValueError("EEF IK action must contain only finite values")
         current = self.current_joint_positions()
         if current is None:
             raise RuntimeError("Cannot solve EEF IK without fresh joint feedback")
-        solution = self.solver.solve(current, action[:3], action[3:7])
+        solution = self.solver.solve(
+            current, action[:3], action[3:7], max_joint_delta_rad=max_joint_delta_rad
+        )
+        if validate_solution is not None:
+            validate_solution(solution)
         self._set_active_joint_target(solution.joint_positions)
         if self.log_solutions:
             info(

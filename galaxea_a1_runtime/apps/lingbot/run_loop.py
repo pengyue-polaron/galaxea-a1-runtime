@@ -7,6 +7,7 @@ from typing import Any
 
 from galaxea_a1_runtime.console import success, warning
 from galaxea_a1_runtime.hardware.eef_ik import A1EefIkTargetRejected
+from galaxea_a1_runtime.apps.lingbot.ik_subgoal import IkSubgoalExecuted
 
 
 def run_lingbot_rollout(bridge: Any, *, is_shutdown: Callable[[], bool]) -> None:
@@ -32,6 +33,15 @@ def run_lingbot_rollout(bridge: Any, *, is_shutdown: Callable[[], bool]) -> None
             return
         try:
             stop, key_frames, cache_eligible = bridge._execute_chunk(call_index, chunk)
+        except IkSubgoalExecuted as exc:
+            bridge.live_status.break_line()
+            warning(f"IK subgoal: {exc}")
+            bridge._recover_ik_rejection()
+            consecutive_replans = 0
+            first = True
+            call_index += 1
+            bridge._update_live_status(call_index, phase="REPLAN", force=True)
+            continue
         except A1EefIkTargetRejected as exc:
             if (
                 not execution.execute
