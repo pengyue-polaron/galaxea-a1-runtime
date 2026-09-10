@@ -1,5 +1,3 @@
-# Canonical derivatives for the robot-human whiteboard-eraser handover experiment.
-
 [system]
 config = "configs/system/a1.toml"
 

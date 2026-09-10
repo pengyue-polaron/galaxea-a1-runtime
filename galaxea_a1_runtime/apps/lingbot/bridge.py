@@ -38,6 +38,10 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
 from galaxea_a1_runtime.apps.lingbot.rollout import LingBotActionChunk
+from galaxea_a1_runtime.apps.lingbot.run_loop import (
+    reset_after_ik_rejection,
+    run_lingbot_rollout,
+)
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
 from embodied_ops import TaskPrompt
@@ -266,42 +270,22 @@ class A1LingBotEEBridge:
     def run(self) -> None:
         if self.client is None or self.cameras is None:
             raise RuntimeError("LingBot bridge is closed")
-        self._prepare_execution()
-        first = True
-        call_index = 0
-        while not rospy.is_shutdown():
-            if (
-                self.execution.max_model_calls > 0
-                and call_index >= self.execution.max_model_calls
-            ):
-                self.live_status.break_line()
-                success(
-                    "LingBot rollout complete: reached configured "
-                    f"max_model_calls={self.execution.max_model_calls}; "
-                    "the bridge will lock and stop the runtime."
-                )
-                return
-            if not self._wait_for_inference_request(call_index):
-                return
-            chunk = self._infer_chunk(call_index, first=first)
-            if chunk is None:
-                return
-            stop, key_frames, cache_eligible = self._execute_chunk(call_index, chunk)
-            if stop:
-                return
-            cache_updated = self._sync_kv_cache(
-                call_index,
-                chunk,
-                key_frames=key_frames,
-                cache_eligible=cache_eligible,
-            )
-            if self.execution.execute:
-                first = not cache_updated
-            call_index += 1
-            if not self.execution.max_model_calls or (
-                call_index < self.execution.max_model_calls
-            ):
-                self._update_live_status(call_index, phase="OBSERVE")
+        run_lingbot_rollout(self, is_shutdown=rospy.is_shutdown)
+
+    def _recover_ik_rejection(self) -> None:
+        if self.client is None:
+            raise RuntimeError("LingBot client is closed")
+        reset_after_ik_rejection(
+            executor=self.executor,
+            state=self.state,
+            client=self.client,
+            prompt=self.task.prompt,
+            wait_for_feedback=self._wait_for_fresh_feedback,
+        )
+        info(
+            "IK replan: current-joint hold established; temporal cache reset; "
+            f"new episode origin={self.state.episode_origin.tolist()}"
+        )
 
     def _prepare_execution(self) -> None:
         if not self.execution.execute:
@@ -319,6 +303,7 @@ class A1LingBotEEBridge:
             f"calls={self.execution.max_model_calls or 'unbounded'} "
             f"frames_per_call={self.execution.execute_frames} "
             f"rate={self.execution.exec_rate:.1f}Hz "
+            f"ik_replan_max_attempts={self.execution.ik_replan_max_attempts} "
             "cache_action_source=requested-action"
         )
         self._update_live_status(0, phase="READY", force=True)

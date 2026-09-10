@@ -193,9 +193,9 @@ prepare_model_root() {
   verify_inference
   for required in \
     "${MODEL_PYTHON}" \
-    "${MODEL_ROOT}/vae/diffusion_pytorch_model.safetensors" \
-    "${MODEL_ROOT}/text_encoder/model.safetensors.index.json" \
-    "${MODEL_ROOT}/tokenizer/tokenizer.json" \
+    "${MODEL_FOUNDATION_ROOT}/vae/diffusion_pytorch_model.safetensors" \
+    "${MODEL_FOUNDATION_ROOT}/text_encoder/model.safetensors.index.json" \
+    "${MODEL_FOUNDATION_ROOT}/tokenizer/tokenizer.json" \
     "${MODEL_ROOT}/transformer/config.json" \
     "${MODEL_ROOT}/transformer/diffusion_pytorch_model.safetensors"; do
     if [[ ! -e "${required}" ]]; then
@@ -289,7 +289,7 @@ start_model_server() {
 setup_inference() {
   PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
     "${SETUP_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}" \
-    --model "${MODEL_ID}"
+    --model "${MODEL_ID}" "$@"
 }
 
 verify_inference() {
@@ -721,6 +721,9 @@ status() {
 }
 
 case "${1:-help}" in
+  environment)
+    setup_inference --environment-only
+    ;;
   setup)
     setup_inference
     ;;
@@ -794,9 +797,10 @@ case "${1:-help}" in
     tail_model_log 160
     ;;
   *)
-    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] [--task TASK_ID] [--scene-note TEXT] <setup|verify|run|batch|server|smoke|attention|server-stop|server-logs|services|stop|doctor|status|logs>"
+    a1_usage "$0 [--config PATH] [--model REGISTERED_MODEL] [--task TASK_ID] [--scene-note TEXT] <environment|setup|verify|run|batch|server|smoke|attention|server-stop|server-logs|services|stop|doctor|status|logs>"
     cat <<EOF
   setup     Clone, pin, install, download, and verify LingBot
+  environment  Install and verify only the backend environment; no model download
   verify    Hash-check registered LingBot inputs without opening hardware
   run       Run the complete deployment in the current terminal
   batch     Run a tracked plan; add --resume to skip finished matching slots

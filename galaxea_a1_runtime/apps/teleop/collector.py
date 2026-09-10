@@ -43,6 +43,7 @@ from galaxea_a1_runtime.apps.teleop.collection_task import (
 from galaxea_a1_runtime.apps.teleop.interaction import (
     A1_COLLECTION_INTERACTION,
     CollectionReadyAction,
+    collection_ready_action_ids,
     normalize_collection_ready_action,
 )
 from galaxea_a1_runtime.apps.teleop.metadata import collection_lifecycle_provenance
@@ -125,6 +126,7 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             cameras=cameras,
             config_reference=config_reference,
         )
+        reset_after_save = config.collection.reset_policy.after_save
         while not rospy.is_shutdown():
             status_detail = _collection_status_detail(
                 episode_index=episode_index,
@@ -141,10 +143,16 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                 detail=status_detail,
                 force=True,
             )
+            ready_action_ids = collection_ready_action_ids(
+                reset_after_save=reset_after_save
+            )
             announce_input(
-                A1_COLLECTION_INTERACTION.start_action_ids,
+                ready_action_ids,
                 phase="ready",
-                detail=status_detail,
+                detail=(
+                    f"{status_detail} · Reset after save="
+                    f"{'on' if reset_after_save else 'off'}"
+                ),
             )
             command = (
                 input(
@@ -159,6 +167,12 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             ready_action = normalize_collection_ready_action(command)
             if ready_action is CollectionReadyAction.QUIT:
                 break
+            if ready_action is CollectionReadyAction.ENABLE_RESET_AFTER_SAVE:
+                reset_after_save = True
+                continue
+            if ready_action is CollectionReadyAction.DISABLE_RESET_AFTER_SAVE:
+                reset_after_save = False
+                continue
             if ready_action is CollectionReadyAction.RESET:
                 announce_progress(
                     "collection",
@@ -201,6 +215,7 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             completion = episodes.record(
                 episode_index,
                 on_recording_ready=announce_recording_ready,
+                reset_after_save=reset_after_save,
             )
             if completion.decision == EpisodeDecision.QUIT:
                 break

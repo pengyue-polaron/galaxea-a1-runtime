@@ -77,6 +77,8 @@ class _ModelContract:
     q01_source: tuple[float, ...]
     q99_source: tuple[float, ...]
     gripper_latent_reject_limit: float
+    base_model: ModelArtifactConfig | None = None
+    model_subdirectory: str = ""
 
 
 def default_config_path(repo_root: Path) -> Path:
@@ -123,7 +125,10 @@ def load_lingbot_config(
             backend=backend.backend_id,
         )
     )
-    if backend.adapter != "lingbot_va" or model.backend != backend.backend_id:
+    if (
+        backend.adapter not in {"lingbot_va", "diffusion2one"}
+        or model.backend != backend.backend_id
+    ):
         raise ValueError(
             "LingBot deployment backend/model mismatch: "
             f"adapter={backend.adapter!r}, backend={backend.backend_id!r}, "
@@ -132,6 +137,12 @@ def load_lingbot_config(
     if model.artifact_format != "diffusers":
         raise ValueError("LingBot model artifact_format must be 'diffusers'")
     contract = _load_model_contract(model)
+    if backend.adapter == "diffusion2one":
+        from galaxea_a1_runtime.apps.diffusion2one.contract import (
+            validate_student_config,
+        )
+
+        validate_student_config(backend, engine, contract)
     task_catalog = load_task_catalog(
         referenced_config(data, repo_root, key="tasks"), repo_root=repo_root
     )
@@ -173,6 +184,7 @@ def load_lingbot_config(
             "step_mode",
             "step_actions",
             "max_model_calls",
+            "ik_replan_max_attempts",
             "execute_frames",
             "kv_observations_per_frame",
             "exec_rate",
@@ -189,9 +201,13 @@ def load_lingbot_config(
 
     deployment_id = identifier(string(deployment, "id"), label="deployment.id")
     transformer_weight = _manifest_file(
-        model, "transformer/diffusion_pytorch_model.safetensors"
+        model,
+        f"{contract.model_subdirectory + '/' if contract.model_subdirectory else ''}transformer/diffusion_pytorch_model.safetensors",
     )
-    transformer_config = _manifest_file(model, "transformer/config.json")
+    transformer_config = _manifest_file(
+        model,
+        f"{contract.model_subdirectory + '/' if contract.model_subdirectory else ''}transformer/config.json",
+    )
     recording_output_root = repo_path(repo_root, string(recording, "output_root"))
     if not recording_output_root.is_relative_to((repo_root / "outputs").resolve()):
         raise ValueError("recording.output_root must remain under outputs/")
@@ -243,12 +259,15 @@ def load_lingbot_config(
             q99_source=contract.q99_source,
             gripper_latent_reject_limit=contract.gripper_latent_reject_limit,
             deployment_ready=deployment_ready,
+            base_model=contract.base_model,
+            model_subdirectory=contract.model_subdirectory,
         ),
         execution=LingBotExecutionConfig(
             execute=boolean(execution, "execute"),
             step_mode=boolean(execution, "step_mode"),
             step_actions=boolean(execution, "step_actions"),
             max_model_calls=integer(execution, "max_model_calls"),
+            ik_replan_max_attempts=integer(execution, "ik_replan_max_attempts"),
             execute_frames=integer(execution, "execute_frames"),
             kv_observations_per_frame=integer(execution, "kv_observations_per_frame"),
             exec_rate=floating(execution, "exec_rate"),
@@ -332,9 +351,30 @@ def _parse_engine(engine_data: dict[str, Any]) -> _EngineConfig:
 
 def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
     _, _, data = load_toml(model.contract, repo_root=model.repo_root)
+    expected_tables = {"lingbot", "normalization"}
+    if model.backend == "diffusion2one":
+        expected_tables.add("components")
     require_exact_keys(
-        data, required={"lingbot", "normalization"}, label="LingBot model contract"
+        data, required=expected_tables, label="LingBot-family model contract"
     )
+    base_model = None
+    model_subdirectory = ""
+    if model.backend == "diffusion2one":
+        components = required_table(data, "components")
+        require_exact_keys(
+            components,
+            required={"base_model", "model_subdirectory"},
+            label="Diffusion2One components",
+        )
+        base_model = load_model_config(
+            repo_path(model.repo_root, string(components, "base_model")),
+            repo_root=model.repo_root,
+        )
+        model_subdirectory = string(components, "model_subdirectory")
+        if model_subdirectory != "galaxea-a1":
+            raise ValueError(
+                "Diffusion2One requires the galaxea-a1 checkpoint subdirectory"
+            )
     lingbot = required_table(data, "lingbot")
     normalization = required_table(data, "normalization")
     require_exact_keys(
@@ -373,6 +413,8 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
         gripper_latent_reject_limit=floating(
             normalization, "gripper_latent_reject_limit"
         ),
+        base_model=base_model,
+        model_subdirectory=model_subdirectory,
     )
 
 
@@ -447,6 +489,8 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         )
     if config.execution.max_model_calls < 0:
         raise ValueError("execution.max_model_calls must be >= 0")
+    if config.execution.ik_replan_max_attempts < 0:
+        raise ValueError("execution.ik_replan_max_attempts must be >= 0")
     if (
         min(
             config.execution.execute_frames,

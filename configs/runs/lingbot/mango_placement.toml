@@ -1,7 +1,3 @@
-# Scripted evaluation of the original six-prompt suite for the registered
-# mango-placement model. Every attempt still requires Enter before the tracked
-# A1-only reset. Prompts added later stay opt-in for batch evaluation.
-
 [deployment]
 config = "configs/deployments/lingbot/fruit_placement_eef.toml"
 
@@ -11,7 +7,6 @@ pose = "configs/poses/a1_collection_start.toml"
 [batch]
 schema_version = 1
 id = "mango-placement-scripted"
-# One initial attempt plus two repetitions = three runs per prompt.
 retries_per_prompt = 2
 task_ids = [
   "banana_blue_plate",

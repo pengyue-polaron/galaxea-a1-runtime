@@ -22,6 +22,7 @@ from galaxea_a1_runtime.models.store import validate_artifact
 
 
 TrainingProvenance = Literal[
+    "declared-release-contract",
     "declared-code-revision",
     "embedded-inference-config",
     "uncommitted-training-source",
@@ -34,6 +35,8 @@ def verify_deployment(config: LingBotConfig) -> None:
         raise RuntimeError("LingBot deployment refuses deployment.ready=false")
     verify_backend_environment(policy.backend)
     artifact = validate_artifact(policy.model, verify_hashes=True)
+    if policy.base_model is not None:
+        validate_artifact(policy.base_model, verify_hashes=True)
     provenance = validate_training_summary(config, artifact.root)
     if message := training_provenance_warning(provenance):
         warning(message)
@@ -49,6 +52,13 @@ def validate_training_summary(
     config: LingBotConfig, artifact_root: Path
 ) -> TrainingProvenance:
     policy = config.policy_server
+    if policy.backend.adapter == "diffusion2one":
+        from galaxea_a1_runtime.apps.diffusion2one.contract import (
+            validate_checkpoint_metadata,
+        )
+
+        validate_checkpoint_metadata(config, artifact_root)
+        return "declared-release-contract"
     summary = json.loads((artifact_root / "training_summary.json").read_text())
     if not isinstance(summary, dict):
         raise ValueError("LingBot training summary must be a JSON object")

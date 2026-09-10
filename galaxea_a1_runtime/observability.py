@@ -39,6 +39,19 @@ class CollectionServiceBinding:
     expected_phase: str
 
 
+def freshness_age_s(observed_at_s: float, *, now_s: float) -> float:
+    """Return a non-negative age for timestamps sampled by concurrent callbacks."""
+
+    if (
+        not isfinite(observed_at_s)
+        or observed_at_s < 0
+        or not isfinite(now_s)
+        or now_s < 0
+    ):
+        raise ValueError("freshness timestamps must be finite and non-negative")
+    return max(0.0, now_s - observed_at_s)
+
+
 def foxglove_topic_whitelist(system: SystemConfig) -> tuple[str, ...]:
     """Return exact subscription-only topic regexes derived from tracked config."""
 
@@ -80,6 +93,21 @@ def collection_action_service_bindings(
     return (
         CollectionServiceBinding(services.start, "start", "ready"),
         CollectionServiceBinding(services.save, "save", "recording"),
+        CollectionServiceBinding(
+            services.save_without_reset,
+            "save_without_reset",
+            "recording",
+        ),
+        CollectionServiceBinding(
+            services.enable_reset_after_save,
+            "enable_reset_after_save",
+            "ready",
+        ),
+        CollectionServiceBinding(
+            services.disable_reset_after_save,
+            "disable_reset_after_save",
+            "ready",
+        ),
         CollectionServiceBinding(services.discard, "discard", "recording"),
         CollectionServiceBinding(services.reset, "reset", "ready"),
     )

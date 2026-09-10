@@ -15,6 +15,7 @@ from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_stroke
 class EefActionTransformConfig:
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
+    workspace_policy: str
     min_quat_norm: float
     gripper_stroke_min: float
     gripper_stroke_max: float
@@ -57,6 +58,7 @@ def build_action_transform_config(
     return EefActionTransformConfig(
         xyz_min=system.eef.xyz_min,
         xyz_max=system.eef.xyz_max,
+        workspace_policy=system.eef.workspace_policy,
         min_quat_norm=system.eef.min_quat_norm,
         gripper_stroke_min=system.gripper.stroke_min_mm,
         gripper_stroke_max=system.gripper.stroke_max_mm,
@@ -85,9 +87,13 @@ def validate_policy_action(
     raw8: Sequence[float],
     config: EefActionTransformConfig,
 ) -> np.ndarray:
-    """Normalize a model action and reject values outside explicit bounds."""
+    """Apply the tracked workspace policy to a finite absolute model action."""
 
     action = _as_action8(raw8, label="EEF policy action")
+    if config.workspace_policy == "clip":
+        action[:3] = np.clip(action[:3], config.xyz_min, config.xyz_max)
+    elif config.workspace_policy != "reject":
+        raise ValueError(f"Unknown EEF workspace policy: {config.workspace_policy}")
     _validate_xyz(action[:3], config)
     action[3:7] = normalize_quat(
         action[3:7], min_norm=config.min_quat_norm, label="EEF policy action"

@@ -17,10 +17,10 @@ from embodied_ops.collection import (
 )
 from embodied_ops.operator_panel import announce_progress
 
-from galaxea_a1_runtime.collection import (
-    EpisodeDecision,
-    normalize_episode_decision,
+from galaxea_a1_runtime.apps.teleop.interaction import (
+    normalize_collection_recording_decision,
 )
+from galaxea_a1_runtime.collection import EpisodeDecision
 from galaxea_a1_runtime.collection.lerobot_frame import build_lerobot_frame
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.hardware.image_geometry import crop_image
@@ -39,6 +39,7 @@ class RecordedEpisode:
     effective_fps: float
     decision: EpisodeDecision
     actions: tuple[tuple[float, ...], ...]
+    reset_required_override: bool | None = None
 
 
 @dataclass(frozen=True)
@@ -210,14 +211,16 @@ def record_episode(
             time.sleep(sleep_s)
 
     elapsed_s = time.perf_counter() - t0
+    disposition = normalize_collection_recording_decision(user_input)
     return RecordedEpisode(
         frame_count=stored_frames,
         sampled_frame_count=sampled_frames,
         trimmed_frame_count=trimmer.result.trimmed_frames,
         elapsed_s=elapsed_s,
         effective_fps=sampled_frames / elapsed_s if elapsed_s > 0 else 0.0,
-        decision=normalize_episode_decision(user_input),
+        decision=disposition.decision,
         actions=tuple(actions),
+        reset_required_override=disposition.reset_required_override,
     )
 
 

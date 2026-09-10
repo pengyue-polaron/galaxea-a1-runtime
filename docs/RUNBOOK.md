@@ -1,8 +1,140 @@
 # Runbook
 
+## Diffusion2One / Distill-WAM
+
+The registered A1 student is `SeanZheng/Distill-WAM` at immutable revision
+`66d5902432d9715af8d6d4104943b5bb30f42d89`, using the `galaxea-a1/` files only.
+Its source is the repository's `galaxea-a1` branch pinned at
+`91abcc0db4cd5e282bf155a2ffb71de99b85d37f`. Deployment settings live in
+`configs/deployments/diffusion2one/fruit_blocks_eef.toml`. The deployment has
+`execution.execute = true`: the runtime command moves hardware. An explicit
+user request authorizes the standard launch without another workspace
+confirmation; use `execution.execute = false` for
+camera-input testing without action execution.
+
+```bash
+just diffusion2one-env-setup # install/verify Python and CUDA imports; no model download
+just diffusion2one-setup   # isolated environment and verified model components
+just diffusion2one-verify # environment, artifact hashes, and release semantics
+just diffusion2one-smoke  # synthetic images, GPU inference; no robot/cameras/ROS
+```
+
+The backend locks the official PyPI PyTorch 2.9.0 distribution and its CUDA
+12.8 dependencies in a separate Python 3.12 environment. Environment-only setup
+does not require the student checkpoint and does not start ROS or cameras.
+
+Setup reuses content-verified local foundation files where available. Downloads
+are staged under `models/artifacts/` and published only after hash validation.
+An interrupted staging directory blocks the normal create-only fetch workflow;
+inspect the active download and its logs before retrying. Do not delete model
+files or start a competing downloader against the same destination.
+
+After hardware-free smoke passes, review the deployment before running:
+
+```bash
+just diffusion2one --task red_block_to_red_plate
+# Or: --task banana_to_red_plate
+just stop
+```
+
+The runtime command attaches the cameras and robot runtime even when action
+execution is disabled; follow the usual power/workspace checks. It uses the
+same guarded EEF execution, CLI interaction, and run recording as LingBot.
+Only the two registered training prompts are accepted. Keep the student at one
+video step, one action step, and guidance 1; teacher sampling settings are
+rejected. The standard launcher manages the local service at port 1116 and
+shares LingBot's exclusive server owner. Remote-host lifecycle and MoT attention
+diagnostics are not part of this adapter.
+
+Finite absolute policy XYZ targets use System `[eef] workspace_policy = "clip"`:
+each coordinate is capped to its configured minimum/maximum before IK. This
+applies to all EEF policy bridges using that System
+config. `EEF workspace cap` logs show the original and capped targets; LingBot's
+temporal cache receives the capped action. Set the required policy to `"reject"`
+to stop on an out-of-workspace target instead. Non-finite values, invalid joint
+feedback, and relay faults still stop the run.
+
+Diffusion2One sets `[execution] ik_replan_max_attempts = 3`. A typed IK
+non-convergence or solution-delta rejection discards the remaining chunk,
+stages fresh current joints as a hold on the already healthy ACTIVE relay,
+resets model KV state, and captures a fresh episode origin. The next request
+reads new camera observations and follows first-chunk indexing. The rejected
+chunk's partial cache is not committed. Three consecutive replans are allowed;
+only a fully executed chunk with successful cache synchronization replenishes
+the allowance. Each inference still counts toward `max_model_calls`. Exhausted
+allowances or hold/reset/feedback failures stop the run. The existing LingBot
+deployments explicitly use `0`, preserving immediate IK safety stops.
+
 This document is the operator procedure for setup, hardware acceptance, Teleop
 collection, dataset conversion, recovery, and policy deployment. Commands that
 can move the arm are labeled **MOVES HARDWARE**.
+
+## Workspace measurement and review
+
+This procedure measures an application workspace; it does not reset encoder
+zeros or change mechanical joint limits. The current box bounds the origin of
+`arm_seg6` in `base_link`, in meters. It does not directly bound the fingertips,
+table clearance, other arm links, or the swept path. The historical Z limits
+0.06 and 0.50 m were inherited defaults; no measurement record establishing
+their clearance was found in the audited configuration history. X minimum
+0.04 and Y maximum 0.17 came from outward-rounded demonstrated data in commit
+`95e04898`. X maximum 1.0 and Y minimum -1.0 were changed after the operator
+reported remeasurement on 2026-09-09; that report is not independent verification.
+Those earlier bounds were replaced on 2026-09-10 using the per-axis extrema
+of all 3092 saved frames in `workspace_boundary_20260910`, episode 0, then
+manually adjusted by the operator. The operator confirmed checking combinations
+of the extrema. `outputs/calibration/workspace_boundary_20260910/xyz_extrema.json`
+retains the original measurements and source frames. Edit `[eef] xyz_min` and
+`xyz_max` in `configs/system/a1.toml` for subsequent manual adjustments; the
+runtime reads that file rather than the measurement report.
+
+1. End autonomous inference before measuring. An explicit measurement/Teleop
+   request authorizes the existing guarded path. Do not push a powered
+   arm by hand or deliberately seek mechanical stops. Preserve existing joint
+   limits while measuring; an actual encoder-zero error needs a separate,
+   hardware-version-specific calibration procedure.
+2. Identify the physical `base_link` origin and axes from the installed URDF
+   and mounting geometry. Independently measure several accessible reference
+   points and compare them with fresh joint-feedback forward kinematics. Record
+   the joint vector, `arm_seg6` position/quaternion, tool geometry, mounting, URDF
+   revision, and measurement error. Resolve systematic offsets before choosing
+   new bounds; recording FK alone does not verify its calibration.
+3. Measure at least three non-collinear table points in the same base frame,
+   plus table edges and relevant obstacles. Use additional points to check the
+   fitted plane and measurement uncertainty. Measure the offset and occupied
+   volume of the open/closed gripper and carried object relative to `arm_seg6`.
+   A tilted table needs a plane constraint or a conservative box for the whole
+   task region; a constant Z threshold is not a general table-plane check.
+4. Using guarded Teleop, record the intended pick, place, approach, and retract
+   poses, including their orientations. Select a conservative task region
+   inside the measured free region, with inward margins accounting for tool
+   extent, measurement error, tracking error, and stopping distance. Do not use
+   the independent extrema of reachable samples as proof that every point in
+   their bounding box is reachable or collision-free. For a horizontal table,
+   the required link-origin Z floor depends on table height and the lowest
+   rotated tool/object point; a fixed floor must cover every permitted pose.
+5. Save the measurements and assumptions under `outputs/calibration/<session>/`.
+   Review the six resulting bounds in `configs/system/a1.toml`; keep the source
+   record with the review. Run the static configuration doctor and
+   `safety-report` below before starting any live validation. Static validation
+   verifies configuration consistency, not physical clearance.
+6. Check representative boundary poses and transitions offline for IK and
+   joint limits. This runtime has no collision planner, so inspect link/tool
+   clearances separately. Only after review, validate small motions from well
+   inside the region through the guarded path and compare actual feedback with
+   targets. Do not start a full autonomous rollout as the calibration test.
+
+```bash
+.venv/bin/python -m galaxea_a1_runtime.cli doctor
+.venv/bin/python -m galaxea_a1_runtime.cli safety-report
+```
+
+IK candidate joints are capped at every iteration to both absolute joint
+limits and the System-owned displacement bound around fresh feedback. A capped
+candidate must still meet Cartesian position/orientation tolerances. Failure
+uses the bounded replan behavior above; no approximate clamped joint pose is
+published as though it reached the requested EEF pose. This displacement bound
+does not implement a time-based velocity or acceleration limiter.
 
 ## 1. Static preflight
 
@@ -14,8 +146,8 @@ just setup
 just check
 ```
 
-`just check` runs one static doctor, shell syntax and style checks, then the
-hardware-free test suite. Individual app preflights stay with their app command
+`just check` runs the static doctor, shell syntax/style checks, and the Foxglove
+extension build/lint checks. Individual app preflights stay with their app command
 instead of being repeated here. `just models` is an optional deployment
 preflight; missing checkpoints do not block Teleop collection.
 
@@ -76,7 +208,7 @@ it.
 
 ### Persistent Foxglove workspace and collection console
 
-The normal A1, joint, Teleop, LingBot, and pi0.5 runtime compositions ensure and
+The normal A1, joint, Teleop, LingBot, pi0.5, and TFP runtime compositions ensure and
 reuse the same persistent Foxglove WebSocket at
 `ws://<this-host>:8766`; they never start a competing bridge.
 
@@ -120,8 +252,11 @@ Session and follows the child log. In Foxglove:
   available.
 - `Preparing`: the dataset transaction is open and both cameras must produce a
   new frame; episode controls remain disabled.
-- `Recording`: **Stop & save**, **Discard episode**, and **End session** are
-  available. The status shows sampled/stored frame counts and effective FPS.
+- `Recording`: **Stop & save**, **Reset after save**, **Discard episode**, and
+  **End session** are available. The status shows sampled/stored frame counts
+  and effective FPS. Turn **Reset after save** off to keep the current pose and
+  proceed directly to the next `Ready` gate; a discard still runs its configured
+  automatic Reset.
 - `Saving`, `Discarding`, `Resetting`, and other busy phases disable episode
   buttons until the child announces the next one-shot input gate.
 - An unavailable session, stale telemetry, rejected command, or failed workflow
@@ -156,13 +291,13 @@ just foxglove stop
 
 The endpoint has no authentication or TLS. Restrict port `8766` to the trusted
 LAN and never proxy or port-forward it. Foxglove can inspect configured command
-topics and call only the five exact collection `std_srvs/Trigger` services; the
+topics and call only the eight exact collection `std_srvs/Trigger` services; the
 bridge denies client publication, parameter access, client-advertised topics,
 and every other service. The service proxy accepts only the active `collect`
 run's exact phase/action/input revision. Regenerate the committed layout after a
 System topic, service, joint-name, or URDF change with `just foxglove-layout`;
-the static test suite rejects stale generated files. Run `just foxglove restart`
-after changing tracked observability configuration.
+review the generated diff and run `just foxglove restart` after changing tracked
+observability configuration.
 
 ### Unified operator panel
 
@@ -207,6 +342,9 @@ Repository configuration and Prompt maintenance use the unified CLI:
 ```bash
 just configs
 just prompts
+just prompt-catalog-create \
+  configs/tasks/button_press/catalog.json button-press-v1 press_button_5s \
+  "press and hold the button for 5 seconds, then release it" train
 just prompt-register \
   configs/tasks/fruit_placement/catalog.json green_apple_bowl \
   "put the green apple into the bowl" ood
@@ -481,6 +619,9 @@ scripts/apps/lingbot/a1_lingbot_runtime.sh server-stop
 just pi05-setup
 just pi05-smoke
 scripts/apps/pi05/a1_pi05_runtime.sh server-stop
+
+just tfp-setup
+just tfp-smoke
 ```
 
 LingBot smoke validates reset, inference, temporal-cache synchronization, and
@@ -501,7 +642,9 @@ averages only the configured executed-action queries, and omits text
 cross-attention, MLP/gating, cached-action, and other unselected cache paths. It
 is not causal attribution.
 Pi0.5 smoke runs one synthetic two-camera/state inference and validates the
-returned horizon. Both leave the managed GPU server available for log
+returned horizon. TFP smoke loads the transferred step-1500 checkpoint with
+the pinned TFP-Ultra checkout, runs synthetic RGB inference on CUDA, and sends
+no robot command. The LingBot and Pi0.5 smokes leave their managed GPU server available for log
 inspection; the matching `server-stop` command releases it. Follow the
 [Model registry](../models/README.md) to review the exact input/action contract.
 A new weight revision gets a new model descriptor and manifest; do not repoint
@@ -568,6 +711,9 @@ just lingbot --config configs/deployments/lingbot/plug_insertion_eef.toml
 
 just pi05
 tmux attach -t pi05-a1
+
+# Absolute-joint TFP-Ultra checkpoint; runs in the invoking terminal.
+just tfp
 ```
 
 `just lingbot` first requires a non-empty scene note, then starts a fresh marked
@@ -576,6 +722,27 @@ invoking terminal. Its single `[RUN]` line
 updates in place with inference, execution, EEF, and paired-camera recording
 progress. `Ctrl+C` stops the foreground bridge, locks the relay, and tears down
 the policy server and A1 services. LingBot has no tmux attach/detach lifecycle.
+
+`just tfp` verifies the pinned source, isolated package versions, metadata, and
+full checkpoint SHA256 before opening hardware, then performs the tracked
+smooth A1-only reset to the checkpoint's training start pose. Diffusion sampling
+uses the pinned seed after model construction, matching the upstream deployment
+smoke. It then reads the same raw
+Camera Bridge pair and sends the checkpoint's seven absolute joint/gripper
+values through the local A1 Robot service. The service reuses the shared current
+hold, exclusive lease, finite/absolute-limit checks, staged tracker, and
+fail-closed relay. TFP targets are not clipped or projected at action-chunk
+boundaries; the operator has accepted the reviewed checkpoint's discontinuity
+at its first replanning boundary. The tracked `max_actions=0` means unlimited
+execution at 30 Hz; `Ctrl+C`, camera staleness, an invalid action, or a service timeout
+all close the command lease and lock the relay.
+At each eight-action policy query, the tracked diagnostics print the LTC belief
+norm/update, cosine retention, effective-time-constant and write-gain percentiles,
+and aggregate per-layer memory-FiLM contribution. The complete 256-dimensional
+before/after belief and all 12 layer ratios are written under
+`outputs/inference/tfp-press-button/diagnostics/<run-id>/belief.jsonl`. These are
+continuous hidden-state diagnostics, not labeled event probabilities. Collection
+reuses the existing forward pass and never submits an additional diagnostic action.
 
 The persistent AgentView/wrist dashboard remains at
 `http://0.0.0.0:8088` (replace `0.0.0.0` with this host's LAN address from
@@ -617,7 +784,8 @@ starts the tracked A1-only reset and then inference, while `q` stops before the
 next reset. The SO leader is not opened. Every attempt gets its own paired
 videos, camera timeline, metadata, and logs. An IK target that does not converge
 or exceeds the tracked
-solution-delta bound, or a finite target outside the tracked EEF workspace,
+solution-delta bound, or a finite target outside the tracked EEF workspace
+when `workspace_policy = "reject"`,
 safely locks the arm without publishing the rejected target, finalizes the
 attempt with `status=safety_stopped`, and asks for an evaluation decision.
 `Enter` counts it and advances, `d` records it as discarded and returns the same

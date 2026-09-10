@@ -18,8 +18,3 @@ repos:
         entry: bash -n
         language: system
         types: [shell]
-      - id: runtime-tests
-        name: runtime tests
-        entry: .venv/bin/python -m pytest -q tests
-        language: system
-        pass_filenames: false

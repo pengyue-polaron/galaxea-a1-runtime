@@ -15,23 +15,22 @@ from embodied_ops.artifacts import PublishedOutputCleanupError
 from embodied_ops.operator_panel import announce_progress
 
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
-from galaxea_a1_runtime.apps.teleop.interaction import A1_COLLECTION_INTERACTION
+from galaxea_a1_runtime.apps.teleop.interaction import (
+    collection_recording_notice,
+    reset_required_after_recording,
+)
 from galaxea_a1_runtime.apps.teleop.metadata import (
     DatasetProvenanceRequest,
     build_dataset_provenance,
 )
-from galaxea_a1_runtime.apps.teleop.recording import record_episode
-from galaxea_a1_runtime.collection import (
-    EpisodeDecision,
-    find_joint_action_step_violation,
-)
+from galaxea_a1_runtime.apps.teleop.recording import RecordedEpisode, record_episode
+from galaxea_a1_runtime.collection import EpisodeDecision
 from galaxea_a1_runtime.configuration.image import ImageRoi
 from galaxea_a1_runtime.console import failure, warning
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
     DirectLeRobotEpisode,
 )
-from galaxea_a1_runtime.schema import JOINT_ACTION_NAMES_RAD
 from galaxea_a1_runtime.teleop.config_schema import TeleopConfig
 
 
@@ -67,6 +66,7 @@ class TeleopEpisodeSession:
         episode_index: int,
         *,
         on_recording_ready: Callable[[], None],
+        reset_after_save: bool,
     ) -> EpisodeCompletion:
         front_reader, wrist_reader = self.cameras.readers
         try:
@@ -142,47 +142,10 @@ class TeleopEpisodeSession:
                     return EpisodeCompletion(
                         decision,
                         frame_count=recording.frame_count,
-                        reset_required=(
-                            self.config.collection.reset_policy.required_after(decision)
-                        ),
-                    )
-
-                violation = find_joint_action_step_violation(
-                    recording.actions,
-                    action_names=JOINT_ACTION_NAMES_RAD,
-                    max_step_rad=self.config.bridge.max_joint_action_step_rad,
-                )
-                if violation is not None:
-                    announce_progress(
-                        "collection",
-                        "Collection episode",
-                        episode_index,
-                        None,
-                        phase="discarding",
-                        detail=f"Episode {episode_index} · action discontinuity",
-                        force=True,
-                    )
-                    failure(
-                        f"Episode {episode_index} rejected: joint action discontinuity: "
-                        f"{violation.describe()}"
-                    )
-                    failure(
-                        f"Episode {episode_index} staging output removed; index will be reused."
-                    )
-                    announce_episode_outcome(
-                        episode_index=episode_index,
-                        decision=EpisodeDecision.DISCARD,
-                        frame_count=recording.frame_count,
-                        dataset_root=None,
-                    )
-                    print()
-                    return EpisodeCompletion(
-                        EpisodeDecision.DISCARD,
-                        frame_count=recording.frame_count,
-                        reset_required=(
-                            self.config.collection.reset_policy.required_after(
-                                EpisodeDecision.DISCARD
-                            )
+                        reset_required=self._reset_required(
+                            recording,
+                            decision,
+                            reset_after_save=reset_after_save,
                         ),
                     )
 
@@ -222,8 +185,10 @@ class TeleopEpisodeSession:
         return EpisodeCompletion(
             EpisodeDecision.SAVE,
             frame_count=recording.frame_count,
-            reset_required=self.config.collection.reset_policy.required_after(
-                EpisodeDecision.SAVE
+            reset_required=self._reset_required(
+                recording,
+                EpisodeDecision.SAVE,
+                reset_after_save=reset_after_save,
             ),
         )
 
@@ -232,8 +197,22 @@ class TeleopEpisodeSession:
         episode_index: int,
         callback: Callable[[], None],
     ) -> None:
-        warning(A1_COLLECTION_INTERACTION.recording_notice(episode_index))
+        warning(collection_recording_notice(episode_index))
         callback()
+
+    def _reset_required(
+        self,
+        recording: RecordedEpisode,
+        decision: EpisodeDecision,
+        *,
+        reset_after_save: bool,
+    ) -> bool:
+        return reset_required_after_recording(
+            decision,
+            policy=self.config.collection.reset_policy,
+            override=recording.reset_required_override,
+            reset_after_save=reset_after_save,
+        )
 
     def _provenance(self) -> dict:
         return build_dataset_provenance(

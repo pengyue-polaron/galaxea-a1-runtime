@@ -4,6 +4,11 @@ This document is authoritative for live control paths, relay gates, A1 status
 handling, and direct hardware debug. The arm may be powered and reachable while
 the repository is open; treat every ROS publisher as live hardware.
 
+A user's explicit request to run or restart authorizes the standard startup
+and documented reset sequence. Run preflight and proceed without a second
+power/workspace confirmation. Runtime checks and workflow input gates still
+apply; report and diagnose actual startup or hardware failures.
+
 ## Managed control paths
 
 Normal EEF-policy applications solve their reviewed Cartesian target into a
@@ -23,6 +28,12 @@ the relay alone validates the resulting fresh staged command against feedback.
 IK rejects
 non-convergence, joint-limit violations, non-finite results, and solutions whose
 maximum joint delta exceeds the System-owned limit.
+Each IK iteration caps candidate joints to the intersection of absolute joint
+limits and `current_joint +/- eef_ik.max_solution_delta_rad`, anchored to fresh
+feedback for that solve. Position and orientation convergence are checked after
+projection; an unreached pose remains a typed rejection eligible for the
+deployment's bounded replanning. Feedback is never clipped, and these numerical
+search bounds are not a trajectory velocity limit or collision check.
 
 Teleop publishes joint targets only:
 
@@ -79,8 +90,18 @@ The relay's stricter input-freshness checks remain independent of both RPC deadl
 - The relay validates the staged current-joint hold against fresh joint feedback
   within the configured startup tolerance before becoming `ACTIVE`.
 - Absolute joint, workspace, and physical gripper limits come from System
-  config. EEF policy targets outside workspace or normalized gripper bounds are
-  rejected without publication. The sole endpoint projection is the tracked
+  config. The operator manually adjusted the workspace on 2026-09-10 after
+  reviewing `workspace_boundary_20260910`, episode 0 (3092 frames).
+  `configs/system/a1.toml` holds the current bounds; the original measurement
+  report is `outputs/calibration/workspace_boundary_20260910/xyz_extrema.json`.
+  These values apply to every EEF consumer of that System config.
+  `eef.workspace_policy = "clip"` caps each finite absolute policy XYZ
+  coordinate to `xyz_min..xyz_max` before IK.
+  `"reject"` instead rejects an out-of-workspace target without publication.
+  Policy bridges log requested and capped XYZ, and LingBot conditions its next
+  inference on the capped action. Observed poses and startup holds are not
+  projected. Non-finite targets and invalid quaternions remain errors, and
+  normalized gripper bounds are enforced. The gripper endpoint projection is the tracked
   `2e-6` normalized gripper tolerance that absorbs LingBot's explicit `1e-6`
   quantile de-normalization offset; larger overshoots are rejected. No hidden
   tracking-error, speed, or action-step clamp is applied.
@@ -100,7 +121,17 @@ The relay's stricter input-freshness checks remain independent of both RPC deadl
 - Normal completion, errors, and `Ctrl+C` must disable motion and stop the
   owning runtime.
 - LingBot treats only typed IK non-convergence, solution-delta rejection, and
-  finite target workspace rejection as a clean `safety_stopped` attempt. It
+  finite target workspace rejection as a clean `safety_stopped` attempt when
+  they propagate out of the rollout. The foreground bridge's explicit
+  `execution.ik_replan_max_attempts` permits bounded replanning for typed IK
+  rejections only (Diffusion2One: 3, existing LingBot deployments: 0). Recovery
+  replaces the previous target with fresh current joints, requires a healthy
+  ACTIVE relay and staged alignment, discards the remaining chunk and its
+  partial KV state, then resets the model and reanchors the episode to fresh
+  feedback. It never clears or reactivates a relay fault. Full chunk execution
+  and cache synchronization reset the consecutive replan counter; retries count
+  against the total model-call cap. Exhaustion or any recovery failure stops
+  the run. It
   never publishes the rejected target; unexpected runtime and hardware
   exceptions remain failures. Workspace validation remains mandatory. After a
   batch safety stop, the operator explicitly counts the evaluation or discards
@@ -149,7 +180,7 @@ additional gripper bit latches `FAULT`.
   encryption and must not be port-forwarded or gain control endpoints.
 - Foxglove observability is also unauthenticated, unencrypted, and trusted-LAN
   only. The bridge may subscribe to configured target, staged, forwarded, and
-  feedback topics for inspection. It may call only the five exact collection
+  feedback topics for inspection. It may call only the eight exact collection
   `std_srvs/Trigger` services from System config; client publication, parameters,
   client-advertised topics, and every other service are denied by exact
   allowlists. Its layout contains no Publish panel. Topic visibility never
@@ -180,6 +211,10 @@ additional gripper bit latches `FAULT`.
   input actions at each prompt; one accepted action clears that permission until
   the child announces another prompt. Repeated clicks cannot queue decisions for
   a later reset or inference step.
+- The collection console's **Reset after save** switch is collector-owned state.
+  Its enable/disable actions are separately declared and revision-gated at the
+  ready phase. Turning it off makes subsequent ordinary Save actions skip Reset;
+  discard and explicit Reset keep their tracked behavior and guarded motion path.
 - Every Web, local-session, or Foxglove input carries the current workflow run
   id and input-gate revision. Stale snapshots, cross-run commands, double clicks,
   undeclared actions, and actions sent in the wrong collection phase fail closed.

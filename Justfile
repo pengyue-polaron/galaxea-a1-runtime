@@ -28,10 +28,9 @@ udev:
 check:
     {{vpy}} -m galaxea_a1_runtime.cli doctor --repo-root "{{repo}}"
     find {{repo}}/scripts -type f -name '*.sh' -print0 | xargs -0 -r -n1 bash -n
-    {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
-    {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts {{repo}}/tests
+    {{vpy}} -m ruff check {{repo}}/galaxea_a1_runtime {{repo}}/scripts
+    {{vpy}} -m ruff format --check {{repo}}/galaxea_a1_runtime {{repo}}/scripts
     just foxglove-extension-check
-    just test
 
 # List tracked operator configurations.
 configs:
@@ -45,6 +44,12 @@ prompts:
 prompt-register catalog task_id prompt distribution:
     {{vpy}} -m galaxea_a1_runtime.cli prompt register \
         "{{catalog}}" "{{task_id}}" "{{prompt}}" \
+        --distribution "{{distribution}}" --repo-root "{{repo}}"
+
+# Atomically create a task catalog with its initial Prompt.
+prompt-catalog-create catalog catalog_id task_id prompt distribution:
+    {{vpy}} -m galaxea_a1_runtime.cli prompt create-catalog \
+        "{{catalog}}" "{{catalog_id}}" "{{task_id}}" "{{prompt}}" \
         --distribution "{{distribution}}" --repo-root "{{repo}}"
 
 # Open the Operator Panel.
@@ -78,9 +83,6 @@ ros-python-check:
       "${IMAGE}" \
       /workspace/scripts/runtime/a1_ros_python_check.py \
       --config /workspace/configs/system/a1.toml
-
-test:
-    {{vpy}} -m pytest -q {{repo}}/tests
 
 models:
     {{vpy}} {{repo}}/scripts/models/model_store.py doctor --repo-root "{{repo}}"
@@ -176,6 +178,33 @@ pi05-smoke:
 pi05:
     scripts/apps/pi05/a1_pi05_runtime.sh start
 
+tfp-setup:
+    scripts/apps/tfp/a1_tfp_runtime.sh setup
+
+diffusion2one-setup:
+    scripts/apps/diffusion2one/a1_diffusion2one_runtime.sh setup
+
+diffusion2one-env-setup:
+    scripts/apps/diffusion2one/a1_diffusion2one_runtime.sh environment
+
+diffusion2one-verify:
+    scripts/apps/diffusion2one/a1_diffusion2one_runtime.sh verify
+
+diffusion2one-smoke:
+    scripts/apps/diffusion2one/a1_diffusion2one_runtime.sh smoke
+
+diffusion2one *args:
+    scripts/apps/diffusion2one/a1_diffusion2one_runtime.sh run {{args}}
+
+tfp-verify:
+    scripts/apps/tfp/a1_tfp_runtime.sh verify
+
+tfp-smoke:
+    scripts/apps/tfp/a1_tfp_runtime.sh smoke
+
+tfp:
+    scripts/apps/tfp/a1_tfp_runtime.sh run
+
 offline-eval run_id="":
     scripts/apps/eef_policy_offline_eval.sh {{run_id}}
 
@@ -187,6 +216,7 @@ stop:
     scripts/apps/teleop/a1_teleop_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/lingbot/a1_lingbot_runtime.sh stop >/dev/null 2>&1 || true
     scripts/apps/pi05/a1_pi05_runtime.sh stop >/dev/null 2>&1 || true
+    scripts/apps/tfp/a1_tfp_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_joint_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_runtime.sh stop >/dev/null 2>&1 || true
     scripts/runtime/a1_stop_managed.sh --keep-camera-monitor

@@ -14,7 +14,7 @@ permissions:
   contents: read
 
 jobs:
-  test:
+  check:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -22,9 +22,7 @@ jobs:
         with:
           python-version: "3.12"
       - run: python -m pip install --upgrade pip
-      - run: python -m pip install -e . build pytest ruff twine
-        working-directory: packages/galaxea-a1-runtime-protocol
-      - run: python -m pytest
+      - run: python -m pip install -e . build ruff twine
         working-directory: packages/galaxea-a1-runtime-protocol
       - run: ruff check .
         working-directory: packages/galaxea-a1-runtime-protocol

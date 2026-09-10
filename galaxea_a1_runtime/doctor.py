@@ -14,9 +14,11 @@ from pathlib import Path
 from embodied_ops import CheckResult as Check
 
 from galaxea_a1_runtime.configuration.paths import (
+    DIFFUSION2ONE_CONFIG,
     LINGBOT_CONFIG,
     PI05_CONFIG,
     TELEOP_CONFIG,
+    TFP_CONFIG,
 )
 from galaxea_a1_runtime.constants import SAFE_RELAY_SCRIPT
 
@@ -55,6 +57,7 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     try:
         from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
         from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
+        from galaxea_a1_runtime.apps.tfp.config import load_tfp_config
         from galaxea_a1_runtime.teleop.config import load_teleop_config
 
         teleop_config = load_teleop_config(
@@ -68,15 +71,24 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / PI05_CONFIG,
             repo_root=repo_root,
         )
+        tfp_config = load_tfp_config(
+            repo_root / TFP_CONFIG,
+            repo_root=repo_root,
+        )
+        diffusion2one_config = load_lingbot_config(
+            repo_root / DIFFUSION2ONE_CONFIG, repo_root=repo_root
+        )
         system_paths = {
             teleop_config.system.path,
             lingbot_config.system.path,
             pi05_config.system.path,
+            tfp_config.system.path,
+            diffusion2one_config.system.path,
         }
         add(
             "tracked_config_graph",
             len(system_paths) == 1,
-            "Teleop, LingBot, and pi0.5 configs parsed; System config(s): "
+            "Teleop, LingBot, pi0.5, TFP, and Diffusion2One configs parsed; System config(s): "
             + ", ".join(str(path) for path in sorted(system_paths)),
         )
     except Exception as exc:

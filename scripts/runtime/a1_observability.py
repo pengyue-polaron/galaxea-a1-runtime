@@ -36,6 +36,7 @@ from galaxea_a1_runtime.observability import (  # noqa: E402
     DiagnosticFinding,
     camera_diagnostic,
     collection_action_service_bindings,
+    freshness_age_s,
     motor_diagnostic,
     operator_panel_diagnostic,
     relay_diagnostic,
@@ -190,7 +191,7 @@ class A1ObservabilityNode:
                 self._publish_camera_pair(now)
                 next_image = now + image_period
             if now >= next_diagnostics:
-                self._publish_diagnostics(now)
+                self._publish_diagnostics()
                 next_diagnostics = now + diagnostics_period
             if now >= next_operator_panel:
                 self._poll_operator_panel()
@@ -373,17 +374,18 @@ class A1ObservabilityNode:
         self._camera_retry_at = now + self.system.observability.camera_retry_s
         self._camera_ages = (None, None, None)
 
-    def _publish_diagnostics(self, now: float) -> None:
+    def _publish_diagnostics(self) -> None:
         with self._lock:
             relay_payload = self._relay_payload
             relay_time = self._relay_time
             motor_errors = self._motor_errors
             motor_time = self._motor_time
             mirror_errors = dict(self._mirror_errors)
+        now = time.monotonic()
         if relay_time:
             relay = relay_diagnostic(
                 relay_payload,
-                age_s=now - relay_time,
+                age_s=freshness_age_s(relay_time, now_s=now),
                 max_age_s=self.system.relay.max_status_age_s,
             )
         else:
@@ -392,7 +394,11 @@ class A1ObservabilityNode:
                 level=DIAGNOSTIC_ERROR,
                 message="relay status unavailable",
             )
-        if not motor_time or now - motor_time > self.system.relay.max_status_age_s:
+        if (
+            not motor_time
+            or freshness_age_s(motor_time, now_s=now)
+            > self.system.relay.max_status_age_s
+        ):
             motors = DiagnosticFinding(
                 name="A1/Motors",
                 level=DIAGNOSTIC_ERROR,

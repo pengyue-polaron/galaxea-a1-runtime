@@ -316,6 +316,9 @@
       "services": {
         "start": "/a1/ops/collection/start",
         "save": "/a1/ops/collection/save",
+        "save_without_reset": "/a1/ops/collection/save_without_reset",
+        "enable_reset_after_save": "/a1/ops/collection/reset_after_save/enable",
+        "disable_reset_after_save": "/a1/ops/collection/reset_after_save/disable",
         "discard": "/a1/ops/collection/discard",
         "reset": "/a1/ops/collection/reset",
         "stop": "/a1/ops/collection/stop"

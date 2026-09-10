@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "diffusion2one/a1_fruit_blocks_eef"
+backend = "diffusion2one"
+artifact_format = "diffusers"
+checkpoint_step = 1000
+manifest = "configs/models/diffusion2one/fruit_blocks_eef.manifest.json"
+contract = "configs/models/diffusion2one/fruit_blocks_eef.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "SeanZheng/Distill-WAM"
+revision = "66d5902432d9715af8d6d4104943b5bb30f42d89"
+revision_label = "galaxea-a1-ema-step-1000"

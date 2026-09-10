@@ -59,6 +59,16 @@ class LingBotPolicyServerConfig:
     q99_source: tuple[float, ...]
     gripper_latent_reject_limit: float
     deployment_ready: bool
+    base_model: ModelArtifactConfig | None = None
+    model_subdirectory: str = ""
+
+    @property
+    def transformer_root(self) -> Path:
+        return self.model.artifact_root / self.model_subdirectory
+
+    @property
+    def foundation_root(self) -> Path:
+        return (self.base_model or self.model).artifact_root
 
 
 @dataclass(frozen=True)
@@ -67,6 +77,7 @@ class LingBotExecutionConfig:
     step_mode: bool
     step_actions: bool
     max_model_calls: int
+    ik_replan_max_attempts: int
     execute_frames: int
     kv_observations_per_frame: int
     exec_rate: float

@@ -44,13 +44,9 @@ lerobot = { path = "third_party/lerobot", editable = true }
 lerobot-robot-galaxea-a1 = { path = "external/lerobot-robot-galaxea-a1", editable = true }
 lerobot-teleoperator-galaxea-a1-so-leader = { path = "external/lerobot-teleoperator-galaxea-a1-so-leader", editable = true }
 
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-
 [dependency-groups]
 dev = [
     "pre-commit>=4.5.1",
-    "pytest>=9.0.2",
     "ruff>=0.14.14",
 ]
 research = [

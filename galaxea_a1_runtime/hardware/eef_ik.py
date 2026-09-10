@@ -95,6 +95,15 @@ class A1EefIkSolver:
             raise ValueError("current joint positions violate tracked limits")
         target_position = _finite_vector(target_xyz, 3, "target xyz")
         target_rotation = _quat_to_matrix(target_quat_xyzw)
+        # Search only within both absolute limits and the permitted displacement
+        # from fresh feedback. Clipping a completed IK solution would invalidate
+        # its Cartesian pose; all projected candidates still need convergence.
+        search_lower = np.maximum(
+            self.lower_limits, start - self.max_solution_delta_rad
+        )
+        search_upper = np.minimum(
+            self.upper_limits, start + self.max_solution_delta_rad
+        )
         joints = start.copy()
         position_error = float("inf")
         orientation_error = float("inf")
@@ -128,8 +137,8 @@ class A1EefIkSolver:
                 delta *= self.max_iteration_step_rad / largest
             joints = np.clip(
                 joints + delta,
-                self.lower_limits,
-                self.upper_limits,
+                search_lower,
+                search_upper,
             )
         else:
             iteration = self.max_iterations
@@ -144,7 +153,7 @@ class A1EefIkSolver:
             or orientation_error > self.orientation_tolerance_rad
         ):
             raise A1EefIkTargetRejected(
-                "A1 EEF IK did not converge: "
+                "A1 EEF IK did not converge within joint and solution-delta bounds: "
                 f"iterations={iteration} position_error_m={position_error:.6f} "
                 f"orientation_error_rad={orientation_error:.6f}"
             )

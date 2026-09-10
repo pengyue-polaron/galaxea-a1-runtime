@@ -207,7 +207,7 @@ Foxglove exact Trigger service
 The adapter never opens a camera, creates a target or host-command publisher,
 enables the relay, or rewrites a command. Invalid command-shaped messages are
 reported and omitted from the display mirrors. The bridge receives exact
-subscription, asset, and five collection-service regexes derived from System
+subscription, asset, and eight collection-service regexes derived from System
 config. Parameter access, client publication, client-advertised topics, and all
 other services use a no-match allowlist. Its capabilities are
 `connectionGraph`, `assets`, and `services`; it deliberately omits
@@ -248,15 +248,19 @@ argv and terminal logs, and publishes a versioned heartbeat summary on
 phase, current guarded input choices, and failure state are therefore visible
 in Foxglove while the native ROS mapping remains owned by the A1 Runtime.
 
-The same adapter advertises exactly five `std_srvs/Trigger` services: start,
-save, discard, reset, and stop. Start/save/discard/reset are accepted only when
+The same adapter advertises exactly eight `std_srvs/Trigger` services: start,
+save, save-without-reset, enable-reset-after-save, disable-reset-after-save,
+discard, reset, and stop. Start, both Save variants, both switch actions,
+discard, and reset are accepted only when
 their action id is present in the active `collect` gate and its semantic phase
 matches; the follow-up Unix request carries the exact `run_id` and
 `input_revision`, so a race or double click is rejected again by the generic
 supervisor. Stop is scoped to the exact active collection run. None of these
 services publish a target or motor command. Reset merely selects the collector's
 existing tracked reset branch, which continues to use the staged tracker and
-locked relay contract.
+locked relay contract. Save-without-reset commits the episode identically to
+Save but returns directly to the next ready gate; it never suppresses a discard
+Reset.
 
 External OpenRAL deployment uses two versioned, private local-service
 boundaries. Camera Bridge protocol `describe` exposes its exact digest and raw
@@ -323,10 +327,26 @@ finalizer then adds the scene note, prompt/configuration/Git metadata and that
 run's foreground and policy-server logs. Video filenames are portable
 compositions of scene note, exact input prompt, start date, and camera name. A
 startup or encoder failure still publishes its metadata and logs without
-exposing a partial camera pair as complete. A typed IK or workspace target
-rejection records `safety_stopped`; batch resume validates both videos, the
+exposing a partial camera pair as complete. An unhandled typed IK or workspace
+target rejection records `safety_stopped`; batch resume validates both videos, the
 timeline/sidecar, exact scene/plan slot, and durable operator count/discard
 decision before treating it as finished.
+
+System `[eef] workspace_policy` owns how finite absolute policy XYZ targets
+outside the box are handled: `clip` caps each coordinate to `xyz_min..xyz_max`,
+while `reject` raises a typed workspace rejection. Projection follows
+episode-relative composition and precedes IK. The shared action transform
+leaves observed feedback unchanged; LingBot writes the capped command back to
+its episode-relative KV state. Non-finite values, invalid orientation/gripper,
+IK failures, and relay faults still reject execution. Offline raw-action
+metrics continue to report the original prediction's workspace violations.
+
+The ROS-free LingBot run loop owns the deployment's bounded IK replan counter.
+A typed rejection can call the executor's current-joint hold, reset the model,
+and reanchor the episode before a new first chunk. Partial rejected chunks
+never enter KV synchronization. The bridge retains its current run identity,
+prompt and video recording throughout recovery. Other exceptions propagate
+to normal fail-closed teardown. Model-call limits include replans.
 
 The local LingBot server adapter can reconstruct a bounded cache-aware,
 multi-layer WAM diagnostic on an explicit audit request. It captures all 30
@@ -465,7 +485,10 @@ each episode, fresh validated samples pass through the shared bounded streaming
 trimmer. A1-owned radian and normalized-gripper thresholds decide when sustained
 motion begins; only the configured preroll and subsequent frames enter the
 LeRobot transaction. This keeps canonical metadata, statistics, Parquet rows,
-and videos consistent without a post-export rewrite.
+and videos consistent without a post-export rewrite. Recorded action continuity
+is retained for offline curation instead of automatically discarding an
+operator-saved episode; the live bridge still rejects unsafe command jumps before
+publication.
 
 This canonical dataset intentionally stores the richest model-agnostic A1
 observation and the command actually sent by Teleop. A training adapter can
@@ -496,8 +519,35 @@ manifests.
 
 ## Deployment
 
+Diffusion2One's released Galaxea A1 Distill-WAM student uses the shared LingBot
+EEF bridge, episode-relative transforms, observed-history KV replay, and guarded
+IK execution. Its own backend pins the `galaxea-a1` source revision and isolated
+Python environment. The reviewed student uses one Euler video step and one
+Euler action step, both without classifier-free guidance. It does not use the
+upstream repository's unrelated non-diffusion action head or consistency sampler.
+
+The student transformer and its release metadata are one immutable artifact
+under the Hub's `galaxea-a1/` prefix. A separate immutable foundation descriptor
+owns only the shared VAE, text encoder, and tokenizer from LingBot VA base.
+Loaders open those components directly from their respective validated roots;
+the service handshake covers both manifests and revisions. The release's
+normalization, EEF semantics, URDF identity, camera geometry, and gripper mapping
+must match the A1 contract before inference. The MoT attention layout is distinct;
+the adapter explicitly rejects attention-capture requests until that diagnostic
+has its own verified implementation. The initial deployment disables execution.
+
+Diffusion2One shares LingBot's exclusive managed policy-server lifecycle. This
+is still a host-managed service: the standard supervisor checks and launches the
+local backend, and does not yet manage a remote inference host.
+
 LingBot and OpenPI pi0.5 predict EEF targets through a shared first-party IK
 adapter and the staged joint runtime.
+The IK solver projects each candidate into the intersection of System absolute
+joint limits and the configured solution-delta interval around fresh feedback.
+It rechecks Cartesian convergence after projection and retains final rejection
+checks. The bounds constrain numerical search, not measured feedback, trajectory
+speed, or collision clearance; a rejected candidate follows the deployment's
+existing bounded replan policy.
 Both reuse the System camera, gripper, topic, and safety contracts and refuse
 startup until their deployment is explicitly marked ready. Execution remains
 independently owned in each deployment config. The reviewed fruit-placement

@@ -8,11 +8,13 @@ from typing import Any
 
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
 from galaxea_a1_runtime.apps.pi05.config import load_pi05_config
+from galaxea_a1_runtime.apps.tfp.config import load_tfp_config
 from galaxea_a1_runtime.configuration.paths import (
     LINGBOT_CONFIG,
     PI05_CONFIG,
     SYSTEM_CONFIG,
     TELEOP_CONFIG,
+    TFP_CONFIG,
 )
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.constants import IDLE_TIMEOUT_CODE, SAFE_RELAY_SCRIPT
@@ -38,6 +40,7 @@ def build_safety_settings(
     teleop_path: Path | None = None,
     lingbot_path: Path | None = None,
     pi05_path: Path | None = None,
+    tfp_path: Path | None = None,
 ) -> tuple[SafetySetting, ...]:
     """Return the runtime safety controls that can change execution behavior."""
 
@@ -58,10 +61,15 @@ def build_safety_settings(
         pi05_path or root / PI05_CONFIG,
         repo_root=root,
     )
+    tfp = load_tfp_config(
+        tfp_path or root / TFP_CONFIG,
+        repo_root=root,
+    )
     for owner, referenced_system in (
         ("teleop", teleop.system),
         ("lingbot", lingbot.system),
         ("pi05", pi05.system),
+        ("tfp", tfp.system),
     ):
         if referenced_system.path != system.path:
             raise ValueError(
@@ -165,15 +173,20 @@ def build_safety_settings(
         ),
         SafetySetting(
             name="eef_policy_workspace_bounds",
-            path=f"{SYSTEM_CONFIG} [eef.xyz_min / eef.xyz_max]",
+            path=f"{SYSTEM_CONFIG} [eef.xyz_min / eef.xyz_max / eef.workspace_policy]",
             default=(
                 f"x=[{system.eef.xyz_min[0]:g},{system.eef.xyz_max[0]:g}], "
                 f"y=[{system.eef.xyz_min[1]:g},{system.eef.xyz_max[1]:g}], "
-                f"z=[{system.eef.xyz_min[2]:g},{system.eef.xyz_max[2]:g}]"
+                f"z=[{system.eef.xyz_min[2]:g},{system.eef.xyz_max[2]:g}], "
+                f"policy={system.eef.workspace_policy}"
             ),
-            behavior="Absolute LingBot and pi0.5 targets outside the configured workspace are rejected without publication.",
-            visibility="The bridge error names the offending axes, target, and configured bounds.",
-            operator_note="Model outputs are never projected onto the workspace boundary.",
+            behavior=(
+                "Finite absolute EEF policy XYZ targets are clipped to the configured workspace before IK."
+                if system.eef.workspace_policy == "clip"
+                else "Absolute EEF policy targets outside the configured workspace are rejected without publication."
+            ),
+            visibility="Policy bridges log requested and capped XYZ when clipping occurs; rejection errors name the offending axes and bounds.",
+            operator_note="Clipped targets still pass quaternion, gripper, IK, joint-limit, and relay checks; LingBot cache uses the capped action.",
         ),
         SafetySetting(
             name="eef_policy_ik",
@@ -193,7 +206,10 @@ def build_safety_settings(
             ),
             operator_note=(
                 "The bridge stages fresh named joint feedback as a hold; the relay "
-                "is the sole owner of alignment validation and activation."
+                "is the sole owner of alignment validation and activation. "
+                "Foreground LingBot/Diffusion2One deployments may set "
+                "execution.ik_replan_max_attempts to re-infer after a typed IK "
+                "rejection; faults and exhausted budgets still stop execution."
             ),
         ),
         SafetySetting(
@@ -245,10 +261,28 @@ def build_safety_settings(
             ),
         ),
         SafetySetting(
+            name="tfp_execution_gate",
+            path=f"{TFP_CONFIG} [execution]",
+            default=(
+                f"execute={str(tfp.execution.execute).lower()}, "
+                "max_actions=unlimited, "
+                f"exec_rate={tfp.execution.exec_rate:g}Hz"
+            ),
+            behavior=(
+                "TFP sends finite absolute joint/gripper targets only through the "
+                "local guarded A1 Runtime service."
+            ),
+            visibility="TFP logs the selected task and announces the first accepted live command.",
+            operator_note=(
+                "The tracked zero budget means unlimited execution; Ctrl+C or any "
+                "failure closes the command lease."
+            ),
+        ),
+        SafetySetting(
             name="eef_policy_relay_status_guard",
             path=f"{SYSTEM_CONFIG} [relay.max_status_age_s]",
             default=f"{system.relay.max_status_age_s:g}s",
-            behavior="LingBot and pi0.5 bridges refuse to keep publishing if relay status is stale or no longer ACTIVE.",
+            behavior="LingBot and pi0.5 bridges refuse to keep publishing if relay status is stale or no longer ACTIVE; TFP receives the same failure through the Runtime service.",
             visibility="RuntimeError includes last relay state.",
             operator_note="Prevents the confusing case where the app prints publishes while the relay has stopped forwarding.",
         ),
@@ -315,10 +349,11 @@ def build_safety_settings(
 
 def build_architecture_findings() -> tuple[str, ...]:
     return (
-        "Managed Teleop, LingBot, and pi0.5 apps own every supported live ROS path; no generic package adapter publishes implicitly.",
+        "Managed Teleop, LingBot, pi0.5, and TFP apps own every supported live ROS path; no generic package adapter publishes implicitly.",
         "Teleop joint-space control is implemented as an app runtime that stages jointTracker output through the relay.",
         "The relay no longer applies joint tracking-error or velocity clamps; staged tracker output is forwarded unchanged once validation passes.",
         "LingBot and pi0.5 episode-relative targets are composed onto the startup pose, solved by bounded first-party IK, and sent through the staged joint route.",
+        "TFP absolute joint targets use the local Runtime service and the same System-owned limits, staged tracker, and fail-closed relay.",
         "The direct-debug profile deliberately bypasses the relay and should remain isolated from normal app commands.",
     )
 

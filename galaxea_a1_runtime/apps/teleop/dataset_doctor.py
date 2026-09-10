@@ -37,7 +37,10 @@ def dataset_report(
     state = validate_direct_dataset_provenance(
         identity,
         {"collection_lifecycle": collection_lifecycle_provenance(config)},
-        expected_task=expected_task,
+        # Collection preflight must permit the first episode of a new prompt in
+        # an existing multi-task dataset. Explicit doctor checks remain able to
+        # require a task that is already present.
+        expected_task=None if allow_absent else expected_task,
     )
     if state.total_episodes == 0 and not allow_absent:
         raise ValueError(f"canonical dataset does not exist: {identity.target_root}")

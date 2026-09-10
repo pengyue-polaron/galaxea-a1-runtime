@@ -10,6 +10,7 @@ from pathlib import Path
 from embodied_ops import (
     checks_exit_code,
     checks_to_json,
+    create_task_catalog,
     load_task_catalog,
     print_dataset_report,
     print_export_report,
@@ -78,6 +79,17 @@ def main(argv: list[str] | None = None) -> int:
         "prompt", help="list or register tracked task prompts"
     )
     prompt_commands = prompt.add_subparsers(dest="prompt_command", required=True)
+    prompt_create_catalog = prompt_commands.add_parser(
+        "create-catalog", help="atomically create a catalog and its initial prompt"
+    )
+    prompt_create_catalog.add_argument("catalog", type=Path)
+    prompt_create_catalog.add_argument("catalog_id")
+    prompt_create_catalog.add_argument("task_id")
+    prompt_create_catalog.add_argument("prompt")
+    prompt_create_catalog.add_argument(
+        "--distribution", choices=("train", "ood"), required=True
+    )
+    prompt_create_catalog.add_argument("--repo-root", type=Path, default=Path.cwd())
     prompt_list = prompt_commands.add_parser("list", help="list validated prompts")
     prompt_list.add_argument("catalog", nargs="?", type=Path)
     prompt_list.add_argument("--repo-root", type=Path, default=Path.cwd())
@@ -308,6 +320,17 @@ def _print_config_catalog(catalog: dict[str, object]) -> None:
 def _run_prompt_command(args) -> int:
     root = args.repo_root.resolve()
     try:
+        if args.prompt_command == "create-catalog":
+            target = create_task_catalog(
+                args.catalog,
+                catalog_id=args.catalog_id,
+                task_id=args.task_id,
+                prompt=args.prompt,
+                distribution=args.distribution,
+                repo_root=root,
+            )
+            success(f"Created task catalog: {target.relative_to(root)}")
+            return 0
         if args.prompt_command == "register":
             target = register_task_prompt(
                 args.catalog,

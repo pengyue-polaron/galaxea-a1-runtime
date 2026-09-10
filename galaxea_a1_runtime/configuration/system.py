@@ -150,6 +150,9 @@ class SystemRobotServiceConfig:
 class SystemOperatorServicesConfig:
     start: str
     save: str
+    save_without_reset: str
+    enable_reset_after_save: str
+    disable_reset_after_save: str
     discard: str
     reset: str
     stop: str
@@ -177,6 +180,7 @@ class SystemJointSafetyConfig:
 class SystemEefConfig:
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
+    workspace_policy: str
     min_quat_norm: float
     max_feedback_age_s: float
     feedback_wait_timeout_s: float
@@ -375,6 +379,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         eef=SystemEefConfig(
             xyz_min=float_tuple(eef, "xyz_min", 3),
             xyz_max=float_tuple(eef, "xyz_max", 3),
+            workspace_policy=string(eef, "workspace_policy"),
             min_quat_norm=floating(eef, "min_quat_norm"),
             max_feedback_age_s=floating(eef, "max_feedback_age_s"),
             feedback_wait_timeout_s=floating(eef, "feedback_wait_timeout_s"),
@@ -417,6 +422,18 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             services=SystemOperatorServicesConfig(
                 start=string(operator_services, "start"),
                 save=string(operator_services, "save"),
+                save_without_reset=string(
+                    operator_services,
+                    "save_without_reset",
+                ),
+                enable_reset_after_save=string(
+                    operator_services,
+                    "enable_reset_after_save",
+                ),
+                disable_reset_after_save=string(
+                    operator_services,
+                    "disable_reset_after_save",
+                ),
                 discard=string(operator_services, "discard"),
                 reset=string(operator_services, "reset"),
                 stop=string(operator_services, "stop"),
@@ -525,6 +542,8 @@ def validate_system_config(config: SystemConfig) -> None:
         lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)
     ):
         raise ValueError("eef.xyz_min must be below xyz_max")
+    if config.eef.workspace_policy not in {"reject", "clip"}:
+        raise ValueError("eef.workspace_policy must be 'reject' or 'clip'")
     if (
         min(
             config.eef.min_quat_norm,

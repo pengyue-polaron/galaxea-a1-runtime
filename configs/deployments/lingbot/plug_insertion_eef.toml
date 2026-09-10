@@ -30,7 +30,7 @@ front_key = "observation.images.front"
 wrist_key = "observation.images.wrist"
 
 [attention]
-# Rollout requires every transformer layer in forward order.
+# Every transformer layer, in forward order.
 capture_layers = [
   0, 1, 2, 3, 4, 5, 6, 7, 8, 9,
   10, 11, 12, 13, 14, 15, 16, 17, 18, 19,
@@ -41,9 +41,8 @@ capture_layers = [
 execute = true
 step_mode = false
 step_actions = false
-# One predicted frame produces four actions per call. 286 calls cover the
-# longest 1143-frame source episode with one final action of headroom.
 max_model_calls = 286
+ik_replan_max_attempts = 0
 execute_frames = 1
 kv_observations_per_frame = 4
 exec_rate = 30.0

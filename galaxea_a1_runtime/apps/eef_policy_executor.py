@@ -14,6 +14,7 @@ from typing import Any
 import numpy as np
 
 from galaxea_a1_runtime.runtime.staged_motion import StagedMotionGate
+from galaxea_a1_runtime.runtime.ros_feedback import wait_for_staged_joint_alignment
 
 
 class EefPolicyExecutor(StagedMotionGate):
@@ -63,6 +64,26 @@ class EefPolicyExecutor(StagedMotionGate):
         self.commander.publish_action(target, publish_gripper=False)
         self.commander.publish_gripper(float(target[7]))
         return target
+
+    def hold_for_replan(self) -> None:
+        """Replace the prior target with fresh current joints on a healthy relay."""
+        if not self.motion_enabled:
+            raise RuntimeError("Cannot replan without an ACTIVE policy hold")
+        self.enable_motion()
+        hold = self.commander.hold_current_target()
+        self.commander.publish_active_target()
+        wait_for_staged_joint_alignment(
+            self.staged_monitor,
+            hold,
+            dof=len(hold),
+            timeout_s=self.staged_wait_timeout_s,
+            max_age_s=self.staged_max_age_s,
+            tolerance_rad=self.staged_alignment_tolerance_rad,
+            is_shutdown=self.is_shutdown,
+            sleep=self.sleep,
+            monotonic=self.monotonic,
+        )
+        self.enable_motion()
 
 
 def close_policy_resources(

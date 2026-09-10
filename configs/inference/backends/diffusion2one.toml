@@ -1,0 +1,32 @@
+[backend]
+schema_version = 1
+id = "diffusion2one"
+adapter = "diffusion2one"
+
+[source]
+repository = "https://github.com/SeanAlpaca818/Diffusion2One.git"
+revision = "91abcc0db4cd5e282bf155a2ffb71de99b85d37f"
+checkout = "external/diffusion2one"
+
+[environment]
+manager = "requirements-lock"
+python_version = "3.12"
+python = "external/diffusion2one/.venv/bin/python"
+lock = "configs/inference/backends/diffusion2one.requirements.txt"
+lock_sha256 = "81dd0217082bcbae454e8a81dd7e8efe44ecd69a0d37731a4ba398b68a56bc51"
+
+[engine]
+text_encoder_device = "cpu"
+enable_offload = false
+attention_mode = "torch"
+seed = 42
+height = 256
+width = 256
+attention_window = 30
+guidance_scale = 1.0
+action_guidance_scale = 1.0
+video_inference_steps = 1
+action_inference_steps = 1
+snr_shift = 5.0
+action_snr_shift = 1.0
+world_size = 1

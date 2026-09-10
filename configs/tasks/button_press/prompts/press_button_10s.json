@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 20,
+  "id": "press_button_10s",
+  "prompt": "press and hold the button for 10 seconds, then release it",
+  "distribution": "train"
+}

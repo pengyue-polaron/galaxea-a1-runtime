@@ -33,7 +33,6 @@ wrist_key = "observation/wrist_image"
 execute = true
 step_mode = false
 step_actions = false
-# 53 ten-action chunks cover the longest 526-step training episode.
 max_model_calls = 53
 execute_actions_per_inference = 10
 exec_rate = 30.0

@@ -1,0 +1,24 @@
+[backend]
+schema_version = 1
+id = "tfp_ultra"
+adapter = "tfp_ultra"
+
+[source]
+repository = "https://github.com/Mirage415/TFP-Ultra.git"
+revision = "c8022c5b1e368eaa85b7a5084d4721a5ec5eeb20"
+checkout = "external/tfp-ultra"
+
+[environment]
+manager = "requirements-lock"
+python_version = "3.12"
+python = "external/tfp-ultra/.venv/bin/python"
+lock = "configs/inference/backends/tfp_ultra.requirements.txt"
+lock_sha256 = "7904c374ad2dc0b79ddeddaad477f1f0e63bc4d9d44c5633a7a6869a029d0e4e"
+
+[engine]
+device = "cuda"
+seed = 7
+torch_version = "2.12.1"
+torchvision_version = "0.27.1"
+diffusers_version = "0.35.2"
+ncps_version = "1.0.1"

@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "model_id": "diffusion2one/a1_fruit_blocks_eef",
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "SeanZheng/Distill-WAM",
+    "revision": "66d5902432d9715af8d6d4104943b5bb30f42d89"
+  },
+  "files": {
+    "galaxea-a1/README.md": {
+      "size": 1313,
+      "sha256": "9981c8fcc601492ab882fb01ecdfe6b0f4ccab8e84876f8f672f7fae60c3a81c"
+    },
+    "galaxea-a1/eef.json": {
+      "size": 2668,
+      "sha256": "6ddcc7fc1bb2f617a73cf163e550daf9e451695a7f6f12a848e4880fe277796d"
+    },
+    "galaxea-a1/lingbot_norm_stat.json": {
+      "size": 457,
+      "sha256": "2544ead77b49701eb710993c1d4518fde15dc94b19d9e5c49519d8003135c199"
+    },
+    "galaxea-a1/transformer/config.json": {
+      "size": 450,
+      "sha256": "b96b15f6804628e7c7afc51882f061a8cd01263feacafbb133574e7ca97cf3f3"
+    },
+    "galaxea-a1/transformer/diffusion_pytorch_model.safetensors": {
+      "size": 19997351340,
+      "sha256": "4600ce0279570a91bee6178a6691f3d4578d80cf6efd995316a8eaf249875e80"
+    }
+  }
+}

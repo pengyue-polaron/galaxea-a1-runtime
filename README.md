@@ -103,11 +103,14 @@ count; while recording it also shows sampled/stored frames and effective FPS.
 `Preparing` covers dataset staging and the fresh-camera barrier, so recording
 controls do not open early. In `Ready`, the console offers **Start recording**,
 **Reset position**, and **End session**. In `Recording`, it offers **Stop &
-save**, **Discard episode**, and **End session**. Reset, discard, and session
-stop require confirmation in Foxglove. The terminal continues to show the child
-log but no longer needs to accept the episode decisions.
+save**, a **Reset after save** switch, **Discard episode**, and **End session**.
+Turn the switch off to save the current episode and enter the next `Ready` gate
+without moving A1; discarding still follows the tracked automatic Reset policy.
+Reset, discard, and session stop require confirmation in Foxglove. The terminal
+continues to show the child log but no longer needs to accept the episode
+decisions.
 
-The trusted-LAN bridge exposes only the five exact collection `Trigger`
+The trusted-LAN bridge exposes only the eight exact collection `Trigger`
 services generated from System config. It still denies client topic
 publication, parameters, client-advertised topics, and every other ROS service.
 Each action is checked against the active collection run, semantic phase, and

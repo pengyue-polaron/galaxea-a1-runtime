@@ -9,7 +9,8 @@ from pathlib import Path
 from embodied_ops.operator_panel import DocumentKind, RepositoryDocumentStore
 
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
-from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config
+from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config, _load_backend
+from galaxea_a1_runtime.models.config import load_model_config
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
@@ -21,6 +22,32 @@ def build_a1_document_store(repo_root: Path) -> RepositoryDocumentStore:
     return RepositoryDocumentStore(
         root,
         (
+            DocumentKind(
+                kind_id="inference-backend",
+                label="LingBot-family inference backend",
+                directory=Path("configs/inference/backends"),
+                suffix=".toml",
+                language="TOML",
+                validate=lambda path: _load_backend(path, root),
+                include=_is_lingbot_backend,
+            ),
+            DocumentKind(
+                kind_id="diffusion2one-model",
+                label="Diffusion2One model component",
+                directory=Path("configs/models/diffusion2one"),
+                suffix=".toml",
+                language="TOML",
+                validate=lambda path: load_model_config(path, repo_root=root),
+                include=lambda path: not path.name.endswith(".contract.toml"),
+            ),
+            DocumentKind(
+                kind_id="diffusion2one-deployment",
+                label="Diffusion2One deployment",
+                directory=Path("configs/deployments/diffusion2one"),
+                suffix=".toml",
+                language="TOML",
+                validate=partial(_validate_deployment, root),
+            ),
             DocumentKind(
                 kind_id="teleop",
                 label="Teleop",
@@ -61,6 +88,11 @@ def build_a1_document_store(repo_root: Path) -> RepositoryDocumentStore:
 def looks_like_a1_pose(path: Path) -> bool:
     data = tomllib.loads(path.read_text())
     return set(data) == {"joints", "gripper", "motion"}
+
+
+def _is_lingbot_backend(path: Path) -> bool:
+    data = tomllib.loads(path.read_text())
+    return data.get("backend", {}).get("adapter") in {"lingbot_va", "diffusion2one"}
 
 
 def _validate_teleop(root: Path, path: Path) -> None:

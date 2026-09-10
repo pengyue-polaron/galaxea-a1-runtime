@@ -110,6 +110,17 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
             "action_snr_shift": policy.action_snr_shift,
         },
     }
+    if policy.backend.adapter == "diffusion2one":
+        assert policy.base_model is not None
+        contract["protocol"] = "galaxea_a1_diffusion2one_eef_v1"
+        contract["model_subdirectory"] = policy.model_subdirectory
+        contract["foundation"] = {
+            "repo_id": policy.base_model.source.repo_id,
+            "revision": policy.base_model.source.revision,
+            "manifest_sha256": policy.base_model.manifest.sha256,
+        }
+        contract["architecture"] = "mot-euler-video-action-student"
+        contract["attention_capture"] = {"supported": False}
     return add_contract_digest(contract)
 
 

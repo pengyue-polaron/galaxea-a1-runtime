@@ -1,6 +1,3 @@
-# Physical Galaxea A1 system contract shared by Teleop and every deployment.
-# Model checkpoints, prompts, quantiles, and rollout cadence do not belong here.
-
 [host]
 image = "galaxea-a1-runtime/a1-noetic-arm64:local"
 a1_serial = "/dev/a1"
@@ -26,11 +23,9 @@ enable_timeout_s = 2.0
 max_status_age_s = 1.0
 max_input_age_s = 0.25
 arming_timeout_s = 1.0
-# Operator-approved Teleop compatibility policy: ignore only gripper bit 3
-# (decimal 8, Position Jump). Every other non-idle gripper bit remains fatal.
+# Gripper bit 3: Position Jump compatibility exception.
 gripper_ignored_error_mask = 8
-# The vendored A1 driver documents mode 0 as MIT control. The relay rejects
-# every other mode unless this tracked system safety contract is changed.
+# Mode 0 = MIT control.
 allowed_control_modes = [0]
 
 [doctor]
@@ -43,16 +38,9 @@ topic_timeout_s = 15.0
 tmux_process_grace_s = 4
 
 [robot_service]
-# The runtime service is the sole ROS/hardware owner. Framework adapters connect
-# through this local versioned RPC endpoint and never import the runtime backend.
 endpoint = "unix:///tmp/galaxea-a1-runtime/robot-service.sock"
-# Covers cold ROS feedback and the Runtime's staged-target alignment wait.
 device_connect_timeout_s = 30.0
-# Steady-state control RPCs fail before the session lease. The Robot plugin uses
-# its startup timeout only for the first hold-and-activate command; the relay
-# independently enforces its shorter command-input freshness window.
 rpc_timeout_s = 0.5
-# Heartbeats keep observation sessions alive but cannot keep an idle command owner.
 command_timeout_s = 0.75
 lease_timeout_s = 1.0
 server_startup_timeout_s = 5.0
@@ -67,13 +55,10 @@ state_timeout_s = 10.0
 max_feedback_age_s = 0.5
 
 [eef]
-# Both reviewed EEF checkpoints were trained on full episode-relative pose.
-# Preserve their quaternion channel through absolute composition and IK.
-# fruit_placement_eef_v21 recorded absolute EEF x from 0.043889 to
-# 0.459098 m and y up to 0.166501 m. Round outward to cover that
-# demonstrated range without removing the explicit workspace boundary.
-xyz_min = [0.04, -0.27, 0.06]
-xyz_max = [0.47, 0.17, 0.50]
+# Operator-adjusted 2026-09-10; arm_seg6 in base_link, meters (X, Y, Z).
+xyz_min = [-0.3, -0.8, -0.2]
+xyz_max = [0.8, 0.8, 1]
+workspace_policy = "clip"
 min_quat_norm = 0.25
 max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
@@ -84,17 +69,8 @@ max_iterations = 400
 damping = 0.01
 orientation_weight = 0.2
 max_iteration_step_rad = 0.08
-# A live LingBot rollout reached a numerically valid solution with 1.417 mm
-# A completed-looking scripted target was rejected at a 2.025 mm Cartesian
-# residual. Accept up to 3 mm while retaining an explicit convergence check.
 position_tolerance_m = 0.003
-# A red_mango_bowl rollout reached 1.141 mm position residual with a
-# 0.012650 rad orientation residual. Allow practical headroom to 0.02 rad
-# (about 1.15 degrees) while preserving an explicit pose convergence check.
 orientation_tolerance_rad = 0.02
-# A scripted LingBot target produced an otherwise converged 1.622263 rad
-# solution. Allow modest headroom above that observation while still rejecting
-# larger branch jumps; absolute named-joint limits remain independently enforced.
 max_solution_delta_rad = 1.70
 
 [eef_test]
@@ -102,21 +78,14 @@ step_m = 0.03
 settle_s = 1.0
 
 [gripper]
-# Shared continuous contract: every new dataset and policy uses normalized 0..1,
-# mapped exactly once onto this physical A1 stroke range. Full-open feedback was
-# observed at about 103.8 mm on this arm on 2026-07-15.
 stroke_min_mm = 0.0
 stroke_max_mm = 104.0
-# LingBot quantile de-normalization adds 1e-6 to its range, so an exact learned
-# endpoint may arrive as the adjacent float above 1. Allow only that numerical
-# endpoint error; materially out-of-range policy targets remain rejected.
+# Absorbs the model quantile de-normalization endpoint roundoff.
 normalized_endpoint_tolerance = 0.000002
 
 [cameras]
 warmup_frames = 20
 max_age_s = 0.5
-# Reject a policy/collection observation when AgentView and wrist frames are
-# farther apart than this, even if each frame is individually fresh.
 max_pair_skew_s = 0.1
 
 [cameras.front]
@@ -126,9 +95,9 @@ width = 640
 height = 480
 fps = 30
 require_usb3 = false
-# When enabling depth, add depth_width, depth_height, and align_depth_to_color.
+# Depth requires depth_width, depth_height, and align_depth_to_color.
 depth = false
-# Manual exposure/gain and white_balance keys are valid only when auto is false.
+# Manual exposure/gain and white_balance require auto=false.
 auto_exposure = true
 auto_white_balance = true
 crop_enabled = true
@@ -146,7 +115,6 @@ fps = 30
 require_usb3 = false
 auto_exposure = true
 auto_white_balance = true
-# Disabled crop means full-frame wrist output; omit crop coordinates.
 crop_enabled = false
 
 [camera_diagnostics]
@@ -165,8 +133,6 @@ startup_timeout_s = 15.0
 shutdown_timeout_s = 5.0
 
 [observability]
-# Foxglove is a trusted-LAN telemetry endpoint with only the exact collection
-# services below. Client publication and parameter access remain disabled.
 enabled = true
 bind = "0.0.0.0"
 port = 8766
@@ -194,17 +160,17 @@ workflow_status = "/a1/ops/workflow_status"
 diagnostics = "/a1/diagnostics"
 
 [operator_panel]
-# The panel can start hardware workflows. Bind to the trusted LAN only; it has
-# request integrity tokens but no user authentication or transport encryption.
+# Trusted LAN only; no user authentication or TLS.
 bind = "0.0.0.0"
 port = 8765
 control_enabled = true
 
 [operator_panel.services]
-# Foxglove can call only these exact Trigger services. The telemetry adapter
-# validates the current collect run, phase, and input revision before forwarding.
 start = "/a1/ops/collection/start"
 save = "/a1/ops/collection/save"
+save_without_reset = "/a1/ops/collection/save_without_reset"
+enable_reset_after_save = "/a1/ops/collection/reset_after_save/enable"
+disable_reset_after_save = "/a1/ops/collection/reset_after_save/disable"
 discard = "/a1/ops/collection/discard"
 reset = "/a1/ops/collection/reset"
 stop = "/a1/ops/collection/stop"

@@ -40,7 +40,7 @@ def main() -> int:
     )
     policy = config.policy_server
     checkout = policy.backend.source.checkout
-    model_root = policy.model.artifact_root
+    model_root = policy.transformer_root
     if not policy.deployment_ready:
         raise RuntimeError("LingBot policy server refuses deployment_ready=false")
     if str(checkout) not in sys.path:
@@ -49,6 +49,13 @@ def main() -> int:
 
     import numpy as np
     import torch
+
+    if policy.backend.adapter == "diffusion2one":
+        from galaxea_a1_runtime.apps.diffusion2one.server import (
+            prepare_optional_imports,
+        )
+
+        prepare_optional_imports()
     import wan_va.wan_va_server as server_module
 
     if policy.vendor_config not in server_module.VA_CONFIGS:
@@ -58,6 +65,15 @@ def main() -> int:
         )
 
     job = copy.deepcopy(server_module.VA_CONFIGS[policy.vendor_config])
+    is_student = policy.backend.adapter == "diffusion2one"
+    if is_student:
+        from galaxea_a1_runtime.apps.diffusion2one.server import (
+            bind_foundation_loaders,
+            student_job,
+        )
+
+        job = student_job(dtype=torch.bfloat16)
+        bind_foundation_loaders(server_module, policy)
     job.__name__ = "Config: Galaxea A1 deployment policy server"
     job.wan22_pretrained_model_name_or_path = str(model_root)
     job.infer_mode = "server"
@@ -104,7 +120,7 @@ def main() -> int:
     server_module.load_text_encoder = load_text_encoder_on_tracked_device
 
     def load_transformer_with_tracked_attention(
-        path, torch_dtype, torch_device, attn_mode
+        path, torch_dtype, torch_device, attn_mode, **kwargs
     ):
         del attn_mode
         transformer = original_load_transformer(
@@ -112,7 +128,10 @@ def main() -> int:
             torch_dtype=torch_dtype,
             torch_device=torch_device,
             attn_mode=policy.attention_mode,
+            **kwargs,
         )
+        if is_student:
+            return transformer
         patch_height, patch_width = job.patch_size[1:]
         capture = LingBotAttentionCapture(
             layers=policy.attention_capture_layers,
@@ -209,9 +228,13 @@ def main() -> int:
             raise ValueError(
                 "capture_attention applies only to action inference requests"
             )
-        capture = self.transformer._galaxea_attention_capture
         if not requested:
             return original_infer(self, observation)
+        if is_student:
+            raise ValueError(
+                "Attention capture is not supported by the Diffusion2One MoT adapter"
+            )
+        capture = self.transformer._galaxea_attention_capture
         capture.begin()
         try:
             action, latents = self._infer(

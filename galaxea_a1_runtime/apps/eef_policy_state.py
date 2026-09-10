@@ -7,6 +7,7 @@ from typing import Any
 
 import numpy as np
 
+from galaxea_a1_runtime.console import warning
 from galaxea_a1_runtime.hardware.eef_bridge import pose_msg_to_xyz_quat
 from galaxea_a1_runtime.policies.eef_actions import (
     EefActionTransformConfig,
@@ -114,10 +115,15 @@ class EefPolicyState:
         )
 
     def validate(self, model8: Sequence[float]) -> np.ndarray:
-        return validate_policy_action(
-            self.model_to_absolute(model8),
-            self.action_config,
-        )
+        absolute = self.model_to_absolute(model8)
+        validated = validate_policy_action(absolute, self.action_config)
+        if not np.array_equal(absolute[:3], validated[:3]):
+            warning(
+                "EEF workspace cap: "
+                f"requested_xyz={absolute[:3].tolist()} "
+                f"target_xyz={validated[:3].tolist()}"
+            )
+        return validated
 
     def _normalize(self, action8: Sequence[float]) -> np.ndarray:
         return normalize_condition_action(action8, self.action_config)

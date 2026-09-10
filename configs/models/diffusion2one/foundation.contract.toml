@@ -1,0 +1,2 @@
+[foundation]
+components = ["vae", "text_encoder", "tokenizer"]
