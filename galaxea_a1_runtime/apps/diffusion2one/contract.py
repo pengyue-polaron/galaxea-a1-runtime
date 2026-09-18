@@ -1,4 +1,4 @@
-"""Pure checks for the released A1 Distill-WAM student and its components."""
+"""Pure checks for the released A1 Distill-WAM models and their components."""
 
 from __future__ import annotations
 
@@ -10,13 +10,10 @@ from typing import Any
 from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 
 
-def validate_student_config(backend: Any, engine: Any, contract: Any) -> None:
-    if backend.backend_id != "diffusion2one":
-        raise ValueError("Diffusion2One adapter requires its own backend identity")
+def validate_model_config(backend: Any, engine: Any, contract: Any) -> None:
+    if backend.backend_id not in {"diffusion2one", "diffusion2one_teacher"}:
+        raise ValueError("Diffusion2One adapter requires a registered backend identity")
     expected = {
-        "video_inference_steps": 1,
-        "action_inference_steps": 1,
-        "guidance_scale": 1.0,
         "action_guidance_scale": 1.0,
         "snr_shift": 5.0,
         "action_snr_shift": 1.0,
@@ -24,9 +21,23 @@ def validate_student_config(backend: Any, engine: Any, contract: Any) -> None:
         "width": 256,
         "attention_mode": "torch",
     }
+    if backend.backend_id == "diffusion2one":
+        expected.update(
+            video_inference_steps=1,
+            action_inference_steps=1,
+            guidance_scale=1.0,
+        )
+    elif (
+        engine.video_inference_steps <= 1
+        or engine.action_inference_steps <= 1
+        or engine.guidance_scale <= 1.0
+    ):
+        raise ValueError(
+            "Diffusion2One teacher requires multi-step diffusion and video CFG"
+        )
     for key, value in expected.items():
         if getattr(engine, key) != value:
-            raise ValueError(f"Diffusion2One A1 student requires {key}={value!r}")
+            raise ValueError(f"{backend.backend_id} requires {key}={value!r}")
     if (
         contract.vendor_config != "galaxea_deploy"
         or contract.pose_mode != "episode-relative"
@@ -35,9 +46,7 @@ def validate_student_config(backend: Any, engine: Any, contract: Any) -> None:
         or contract.model_action_dim != 30
         or contract.base_model is None
     ):
-        raise ValueError(
-            "Diffusion2One A1 student tensor/pose/component contract mismatch"
-        )
+        raise ValueError("Diffusion2One A1 tensor/pose/component contract mismatch")
     base = contract.base_model
     if base.backend != "lingbot_foundation" or base.artifact_format != "diffusers":
         raise ValueError(

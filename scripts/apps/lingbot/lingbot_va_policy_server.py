@@ -65,14 +65,14 @@ def main() -> int:
         )
 
     job = copy.deepcopy(server_module.VA_CONFIGS[policy.vendor_config])
-    is_student = policy.backend.adapter == "diffusion2one"
-    if is_student:
+    is_mot = policy.backend.adapter == "diffusion2one"
+    if is_mot:
         from galaxea_a1_runtime.apps.diffusion2one.server import (
             bind_foundation_loaders,
-            student_job,
+            diffusion_job,
         )
 
-        job = student_job(dtype=torch.bfloat16)
+        job = diffusion_job(dtype=torch.bfloat16)
         bind_foundation_loaders(server_module, policy)
     job.__name__ = "Config: Galaxea A1 deployment policy server"
     job.wan22_pretrained_model_name_or_path = str(model_root)
@@ -130,7 +130,7 @@ def main() -> int:
             attn_mode=policy.attention_mode,
             **kwargs,
         )
-        if is_student:
+        if is_mot:
             return transformer
         patch_height, patch_width = job.patch_size[1:]
         capture = LingBotAttentionCapture(
@@ -230,7 +230,7 @@ def main() -> int:
             )
         if not requested:
             return original_infer(self, observation)
-        if is_student:
+        if is_mot:
             raise ValueError(
                 "Attention capture is not supported by the Diffusion2One MoT adapter"
             )

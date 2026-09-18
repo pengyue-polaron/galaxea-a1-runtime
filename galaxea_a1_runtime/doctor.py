@@ -75,16 +75,26 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             repo_root / TFP_CONFIG,
             repo_root=repo_root,
         )
-        diffusion2one_config = load_lingbot_config(
-            repo_root / DIFFUSION2ONE_CONFIG, repo_root=repo_root
-        )
+        diffusion2one_paths = {
+            repo_root / DIFFUSION2ONE_CONFIG,
+            *(repo_root / DIFFUSION2ONE_CONFIG.parent).glob("*.toml"),
+        }
+        diffusion2one_configs = [
+            load_lingbot_config(path, repo_root=repo_root)
+            for path in sorted(diffusion2one_paths)
+        ]
         system_paths = {
             teleop_config.system.path,
             lingbot_config.system.path,
             pi05_config.system.path,
             tfp_config.system.path,
-            diffusion2one_config.system.path,
+            *(config.system.path for config in diffusion2one_configs),
         }
+        if teleop_config.system.eef_ik.backend == "trac_ik":
+            from galaxea_a1_runtime.hardware.trac_ik import verify_trac_ik_build
+
+            receipt = verify_trac_ik_build(teleop_config.system)
+            add("trac_ik_build", True, str(receipt))
         add(
             "tracked_config_graph",
             len(system_paths) == 1,

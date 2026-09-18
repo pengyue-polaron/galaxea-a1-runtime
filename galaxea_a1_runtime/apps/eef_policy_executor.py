@@ -110,6 +110,7 @@ def close_policy_resources(
     *,
     policy_label: str,
     executor: EefPolicyExecutor,
+    ik_solver: Any,
     timer: Any | None,
     cameras: Any | None,
     client: Any | None,
@@ -119,6 +120,7 @@ def close_policy_resources(
     operations = [executor.disable_motion]
     if timer is not None:
         operations.append(timer.shutdown)
+    operations.append(ik_solver.close)
     if cameras is not None:
         operations.append(cameras.close)
     if client is not None:

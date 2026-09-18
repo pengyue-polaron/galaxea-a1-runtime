@@ -73,6 +73,16 @@ class LingBotPolicyServerConfig:
 
 
 @dataclass(frozen=True)
+class LingBotSettleConfig:
+    enabled: bool
+    min_wait_s: float
+    stable_window_s: float
+    timeout_s: float
+    joint_range_rad: float
+    gripper_range: float
+
+
+@dataclass(frozen=True)
 class LingBotExecutionConfig:
     execute: bool
     step_mode: bool
@@ -80,6 +90,7 @@ class LingBotExecutionConfig:
     max_model_calls: int
     ik_replan_max_attempts: int
     ik_subgoal: IkSubgoalConfig
+    settle: LingBotSettleConfig
     execute_frames: int
     kv_observations_per_frame: int
     exec_rate: float

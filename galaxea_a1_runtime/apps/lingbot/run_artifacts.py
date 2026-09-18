@@ -120,6 +120,7 @@ def prepare_lingbot_run(
         paths.final_dir,
         paths.log_staging_dir,
         video_staging_dir,
+        artifacts_root / f".{identity}.motion",
     )
     existing = [str(path) for path in occupied if path.exists()]
     if existing:
@@ -292,6 +293,9 @@ def finalize_lingbot_run(
         expected_videos=video_filenames,
     )
     video_staging_dir = paths.output_root / f".{run_id}.staging"
+    motion_staging_dir = paths.output_root / f".{run_id}.motion"
+    if motion_staging_dir.is_dir():
+        motion_staging_dir.rename(paths.final_dir / "motion")
     run_metadata = {
         key: value for key, value in context.items() if key != "schema_version"
     } | {
@@ -322,6 +326,9 @@ def finalize_lingbot_run(
                 ),
                 "runtime_log": "runtime.log",
                 "policy_server_log": "policy_server.log",
+                "motion_recording": (
+                    "motion" if (paths.final_dir / "motion").is_dir() else None
+                ),
                 "incomplete_video_staging": video_staging_dir.exists(),
             },
         }

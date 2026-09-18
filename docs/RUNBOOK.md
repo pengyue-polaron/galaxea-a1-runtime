@@ -2,6 +2,61 @@
 
 ## Diffusion2One / Distill-WAM
 
+### A1 teacher
+
+The teacher is registered independently as
+`diffusion2one/a1_fruit_blocks_teacher_eef`, step 1000, from
+`SeanZheng/Distill-WAM` revision `d1fa5b95b41fa96408be5c37cfae2ce900d1c615`
+(`galaxea-a1-teacher/`). It was imported from Torch
+`/scratch/yp2841/models/Distill-WAM/galaxea-a1-teacher/` through Globus; its
+registered manifest pins the published release contents. Import receipts belong
+under `outputs/model_imports/`.
+
+`configs/inference/backends/diffusion2one_teacher.toml` owns the teacher's
+20 video steps, 50 action steps, video guidance 5, and action guidance 1.
+It shares the pinned Diffusion2One checkout/environment and registered LingBot
+foundation components. Its independent backend identity prevents selection by
+the single-step student deployment. Teacher inference is considerably slower
+than the student and is intended for quality comparison.
+
+```bash
+just diffusion2one-teacher verify       # hashes, environment, release semantics
+just diffusion2one-teacher smoke        # two synthetic inferences and KV replay
+just diffusion2one-teacher              # model server only, 127.0.0.1:1117
+just diffusion2one-teacher server-logs
+just diffusion2one-teacher server-stop  # stops only the shared policy-server owner
+```
+
+These commands do not open cameras, ROS, or robot hardware. The default command
+starts only the model server. `smoke` leaves that server available afterward;
+use `server-stop` when finished. The teacher and student retain the existing
+exclusive LingBot-family server owner and cannot run together.
+
+The teacher deployment is
+`configs/deployments/diffusion2one/fruit_blocks_teacher_eef.toml`, with
+`execution.execute = true` and `execute_frames = 2` (8 actions per replan).
+The `run` and `batch` actions execute on the real arm through the staged tracker
+and relay. `configs/runs/lingbot/diffusion2one_teacher_banana.toml` runs one
+banana-to-red-plate attempt with a reset before inference. Use `server` or
+`smoke` for offline work.
+
+Reusable Diffusion2One batch plans live under `configs/runs/lingbot/` because
+they use the shared LingBot batch runner. These plans **MOVE HARDWARE**:
+
+| Plan | Task | Attempts |
+| --- | --- | --- |
+| `diffusion2one_student_banana.toml` | `banana_to_red_plate` | 1 |
+| `diffusion2one_student_banana_20.toml` | `banana_to_red_plate` | 20 |
+| `diffusion2one_student_red_block.toml` | `red_block_to_red_plate` | 1 |
+| `diffusion2one_teacher_banana.toml` | `banana_to_red_plate` | 1 |
+| `diffusion2one_teacher_red_block.toml` | `red_block_to_red_plate` | 1 |
+
+Each plan references its current deployment; rollout cadence is owned by that
+deployment, not the plan name. Dated experiment snapshots and one-off variants
+belong under ignored `outputs/`, while reusable plans remain tracked.
+
+### A1 student
+
 The registered A1 student is `SeanZheng/Distill-WAM` at immutable revision
 `66d5902432d9715af8d6d4104943b5bb30f42d89`, using the `galaxea-a1/` files only.
 Its source is the repository's `galaxea-a1` branch pinned at
@@ -628,6 +683,58 @@ stopped.
 
 ## 7. Policy deployment
 
+### EEF IK backend
+
+`configs/system/a1.toml` owns `eef_ik.backend` (`dls`, `trac_ik`, or `constrained`). All keep
+the complete EEF pose, fresh measured joint bounds, System joint/delta limits, and FK
+acceptance gates. Model chunk size, recovery, reset, tracker, and relay behavior
+are independent of this selection. The selected TRAC-IK backend uses upstream
+Distance mode. The experimental constrained backend is disabled.
+
+The optional experimental `constrained` backend uses pinned SciPy L-BFGS-B for numerical initialization
+and SLSQP for endpoint selection. Position and orientation norm tolerances are
+separate hard constraints. Its soft cost prefers proximity to measured joints
+and clearance inside `eef_ik.constrained.limit_margin_rad`; this margin is a
+preference, not a guaranteed clearance. The previous staged target supplies a
+numerical initial guess projected into bounds anchored to fresh feedback.
+Feedback itself and completed solutions are never clipped. A hold/reset replaces
+that guess with measured joints; no cross-episode solver state is retained.
+
+`eef_ik.constrained` owns the clearance cost, numerical tolerance reserve,
+optimizer accuracy and total solve timeout. `max_iterations` bounds each
+optimization phase. The final FK check uses the unchanged System tolerances;
+posture optimization status is recorded even when its optimality criterion is
+not met but the endpoint passes all independent constraints. Deadline expiry
+rejects the target. There is no automatic fallback to another backend.
+The bridge rechecks fresh feedback and displacement after solving, before staging.
+
+Run `uv sync --locked --inexact` and `just check` after installing this backend.
+It computes one joint endpoint; the tracker still executes motion. It does not
+implement differential velocity control, impose trajectory speed/acceleration
+bounds, prove collision clearance, or take over model retraction. Keep those
+distinctions when interpreting offline successes. The student deployment keeps
+`execute_frames=2` (eight actions per chunk).
+
+Before selecting `trac_ik`, build its numerical adapter without hardware:
+
+```bash
+just trac-ik-setup
+just check
+```
+
+The build uses the System runtime image's installed `ros-noetic-trac-ik-lib`.
+The cache receipt records the immutable image and source/binary hashes; stale
+or missing builds fail preflight when TRAC-IK is selected. Rebuild after changing
+the native adapter or runtime image. `eef_ik.trac_ik` owns the base/tip links,
+native epsilon, solve budget, and worker deadlines. DLS damping, orientation
+weight and iteration-step settings apply only to `dls`. Solve failures remain bounded IK rejections;
+worker failures stop the application. Recorded IK solutions name the backend;
+TRAC-IK has `iterations=null` and `solve_time_s` instead of an invented iteration
+count. Use saved EEF/joint recordings for an offline comparison before a live
+trial: an additional IK solution can still require an undesirable branch change.
+
+### Model setup
+
 Set up either pinned EEF-policy backend and its immutable Hugging Face artifact,
 then exercise the complete model-service protocol without ROS, cameras, or arm
 I/O:
@@ -786,6 +893,29 @@ deployment/System/model configuration, model and Git revisions, timestamps,
 exit status, and artifact names to that run. The final absolute run directory
 and video frame count are printed after finalization.
 
+LingBot and Diffusion2One rollouts also always save a read-only `motion/` journal,
+independently of the camera-video switch. It starts when the policy bridge opens
+(after the batch reset) and closes after motion is disabled. `events.jsonl`
+retains measured joint position/velocity/effort and names, EEF and gripper
+feedback, named joint targets, tracker staged commands, relay forwarded commands
+and status, model targets, exact IK input joints, solutions/rejections, and
+recovery origins. It records delivered messages without periodic sampling. Each event has a
+contiguous journal sequence, host monotonic/wall timestamps, and original ROS
+header stamps. Divide `monotonic_ns` by 1e9 to align receipt times with the
+camera timeline's source monotonic clock; source capture and callback receipt
+times are distinct. `robot.urdf`, `system.toml`, and `deployment.toml` snapshot
+the reconstruction inputs with SHA-256 receipts. Journal metadata reports
+written stream counts and completion; `source_sequence_stats` separately flags
+source sequence discontinuities (upstream/ROS receive loss or publisher restarts).
+Completion means received events were drained to disk, not guaranteed delivery
+of every source publication. Same-process ROS subscribers share the control
+subscriber's existing receive policy. Callbacks use a bounded asynchronous
+writer, and overflow/write failures stop the rollout at the next recording
+health check. An absent completion manifest indicates an interrupted recorder,
+not a complete trajectory. This journal does not include the preceding reset.
+While running it is in `.<run_id>.motion/`; finalization moves it into the run
+directory. It creates no ROS command publishers and changes no IK limits.
+
 For an Enter-gated sequence of multiple prompts and repeated trials:
 
 ```bash
@@ -889,3 +1019,26 @@ manual stop both lock the relay, finalize AgentView recording, and end
 successfully. A
 genuine feedback or safety failure remains a nonzero error and identifies the
 stale feedback source.
+
+### Settled observations for LingBot / Diffusion2One
+
+Each deployment requires `[execution.settle]`: `enabled`, `min_wait_s`,
+`stable_window_s`, `timeout_s`, `joint_range_rad`, and normalized
+`gripper_range`. Both Student and Teacher deployments currently enable this experiment.
+After the last action of each chunk, it retains the staged target, checks fresh
+joint/gripper feedback and relay health, waits at least `min_wait_s`, and requires
+measured joint and gripper ranges within the configured bounds for a continuous
+stable window. This detects stillness, not target arrival or grasp success.
+Timeout or invalid feedback stops the rollout through normal cleanup.
+
+The final history image is captured from both cameras strictly after the
+stillness gate, preserving the earlier history images and requested-action
+cache shape. Only then is `compute_kv_cache` called. The upstream service encodes
+ordinary query images only on the initial call, so sleeping after cache update
+does not provide a settled image to later predictions. No extra temporal token
+or fabricated repeated frame is inserted. The changed final sampling interval
+is an experimental deployment cadence and is not equivalent to training timing.
+Motion events `settle_start`, `settle_complete`, and
+`settled_history_observation` retain duration, measured ranges, endpoint tracking
+error and the camera capture lower bound. Full paired video and feedback remain
+recorded. Disable this feature using the deployment's `enabled = false`.

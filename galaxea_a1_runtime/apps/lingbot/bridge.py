@@ -48,6 +48,7 @@ from galaxea_a1_runtime.apps.lingbot.run_loop import (
     run_lingbot_rollout,
 )
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
+from galaxea_a1_runtime.apps.lingbot.motion_recording import MotionRecording
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
 from embodied_ops import TaskPrompt
 from galaxea_a1_runtime.console import (
@@ -100,6 +101,7 @@ class A1LingBotEEBridge:
         self.target_keepalive_timer = None
         self.cameras = None
         self.client = None
+        self.motion_recording = None
         self.live_status = LiveStatusLine()
         self.panel_progress_phase = ""
         self.actions_executed = 0
@@ -178,6 +180,32 @@ class A1LingBotEEBridge:
         )
         rospy.Subscriber(topics.relay_status, String, self.relay.callback, queue_size=1)
         try:
+            self.motion_recording = MotionRecording(
+                config.recording.output_root / f".{run_id}.motion",
+                run_id=run_id,
+                joint_names=self.system.joint_safety.names,
+            )
+            self.motion_recording.snapshot(self.system.eef_ik.urdf, "robot.urdf")
+            self.motion_recording.snapshot(self.system.path, "system.toml")
+            self.motion_recording.snapshot(config.path, "deployment.toml")
+            if self.system.eef_ik.backend == "trac_ik":
+                self.motion_recording.snapshot(
+                    self.system.eef_ik.trac_ik.binary.with_suffix(".json"),
+                    "trac_ik_build.json",
+                )
+            for topic, message_type, kind in (
+                (topics.joint_states, JointState, "measured_joints"),
+                (topics.joint_target, JointState, "joint_target"),
+                (topics.staged_command, arm_control, "staged_command"),
+                (topics.host_command, arm_control, "forwarded_command"),
+                (topics.eef_pose, PoseStamped, "measured_eef"),
+                (topics.gripper_feedback, JointState, "measured_gripper"),
+                (topics.gripper_target, gripper_position_control, "gripper_target"),
+                (topics.relay_status, String, "relay_status"),
+            ):
+                self.motion_recording.subscribe(rospy, topic, message_type, kind)
+            self.commander.event_sink = self.motion_recording.record
+            info(f"Motion recording armed: {self.motion_recording.directory}")
             self.target_keepalive_timer = rospy.Timer(
                 rospy.Duration(0.05), self.executor.publish_active_target
             )
@@ -284,6 +312,9 @@ class A1LingBotEEBridge:
     def _recover_ik_rejection(self) -> None:
         if self.client is None:
             raise RuntimeError("LingBot client is closed")
+        self.motion_recording.record(
+            "recovery_started", {"episode_origin": self.state.episode_origin.tolist()}
+        )
         reset_after_ik_rejection(
             executor=self.executor,
             state=self.state,
@@ -295,11 +326,17 @@ class A1LingBotEEBridge:
             "IK replan: current-joint hold established; temporal cache reset; "
             f"new episode origin={self.state.episode_origin.tolist()}"
         )
+        self.motion_recording.record(
+            "recovery_completed", {"episode_origin": self.state.episode_origin.tolist()}
+        )
 
     def _prepare_execution(self) -> None:
         if not self.execution.execute:
             return
         self._wait_for_fresh_feedback()
+        self.motion_recording.require_streams(
+            ("measured_joints", "staged_command", "measured_eef")
+        )
         if self._ensure_episode_origin() is None:
             raise RuntimeError("Cannot establish the episode EEF origin")
         self.executor.activate_current_hold()
@@ -335,6 +372,7 @@ class A1LingBotEEBridge:
     ) -> LingBotActionChunk | None:
         if self.client is None:
             raise RuntimeError("LingBot client is closed")
+        self.motion_recording.check()
         observation = None
         while observation is None and not rospy.is_shutdown():
             observation = self._read_lingbot_obs()
@@ -377,6 +415,22 @@ class A1LingBotEEBridge:
         cache_eligible = True
         for frame_index, step_index, cache_frame_index, raw_action in chunk.steps():
             validated_action = self.state.validate(raw_action)
+            self.motion_recording.record(
+                "policy_target",
+                {
+                    "call_index": call_index,
+                    "frame_index": frame_index,
+                    "step_index": step_index,
+                    "actions_executed": self.actions_executed,
+                    "model_action": raw_action.tolist(),
+                    "absolute_action": validated_action.tolist(),
+                    "episode_origin": (
+                        None
+                        if self.state.episode_origin is None
+                        else self.state.episode_origin.tolist()
+                    ),
+                },
+            )
             chunk.cache_state[:, cache_frame_index, step_index] = (
                 self.state.absolute_to_model(validated_action)
             )
@@ -422,13 +476,117 @@ class A1LingBotEEBridge:
                 )
             time.sleep(1.0 / self.execution.exec_rate)
             if chunk.needs_observation_after(step_index):
-                observation = self._read_lingbot_obs()
+                final_step = (
+                    frame_index == chunk.end_frame - 1
+                    and step_index == chunk.values.shape[2] - 1
+                )
+                if (
+                    self.execution.execute
+                    and self.execution.settle.enabled
+                    and final_step
+                ):
+                    observation = self._settled_observation(call_index, executed)
+                else:
+                    observation = self._read_lingbot_obs()
                 if observation is None:
                     raise RuntimeError(
                         "Camera frame unavailable during KV-cache collection"
                     )
                 key_frames.extend(observation["obs"])
         return False, key_frames, cache_eligible
+
+    def _settled_observation(self, call_index: int, target: np.ndarray) -> dict:
+        """Wait on measured stillness, then capture the final KV history frame."""
+        config = self.execution.settle
+        started = time.monotonic()
+        deadline = started + config.timeout_s
+        stable_since = None
+        low = high = None
+        previous_stamps = (started, started)
+        self._update_live_status(call_index, phase="SETTLE", force=True)
+        self.motion_recording.record("settle_start", {"call_index": call_index})
+        while not rospy.is_shutdown() and time.monotonic() < deadline:
+            self.executor.enable_motion()
+            self.motion_recording.check()
+            _, joint_stamp = self.joints.cache.snapshot()
+            _, gripper_stamp = self.state.gripper_feedback.snapshot()
+            joints = self.joints.positions(
+                max_age_s=self.system.joint_safety.max_feedback_age_s
+            )
+            actual = self.state.current_absolute_action()
+            if joints is None or actual is None:
+                raise RuntimeError(
+                    "Feedback became stale while waiting for settled observation"
+                )
+            if np.any(joints < self.ik_solver.lower_limits) or np.any(
+                joints > self.ik_solver.upper_limits
+            ):
+                raise RuntimeError(
+                    "Joint limits exceeded while waiting for settled observation"
+                )
+            if (
+                joint_stamp is not None
+                and gripper_stamp is not None
+                and joint_stamp > previous_stamps[0]
+                and gripper_stamp > previous_stamps[1]
+            ):
+                previous_stamps = (joint_stamp, gripper_stamp)
+                now = time.monotonic()
+                values = np.r_[joints, actual[7]]
+                if low is None:
+                    low = high = values.copy()
+                    stable_since = now
+                next_low, next_high = np.minimum(low, values), np.maximum(high, values)
+                span = next_high - next_low
+                if (
+                    np.max(span[:-1]) > config.joint_range_rad
+                    or span[-1] > config.gripper_range
+                ):
+                    low = high = values.copy()
+                    stable_since = now
+                else:
+                    low, high = next_low, next_high
+                if (
+                    now - started >= config.min_wait_s
+                    and now - stable_since >= config.stable_window_s
+                ):
+                    # Camera Bridge timestamps use perf_counter, feedback uses monotonic.
+                    barrier = time.perf_counter()
+                    self.motion_recording.record(
+                        "settle_complete",
+                        {
+                            "call_index": call_index,
+                            "elapsed_s": now - started,
+                            "stable_s": now - stable_since,
+                            "joint_range_rad": float(np.max((high - low)[:-1])),
+                            "gripper_range": float((high - low)[-1]),
+                            "actual_action": actual.tolist(),
+                            "target_action": target.tolist(),
+                            "position_error_m": float(
+                                np.linalg.norm(actual[:3] - target[:3])
+                            ),
+                            "camera_after_perf_counter_s": barrier,
+                        },
+                    )
+                    if self.cameras is None:
+                        raise RuntimeError("Cameras closed during settle")
+                    while not rospy.is_shutdown() and time.monotonic() < deadline:
+                        self.executor.enable_motion()
+                        obs = self.cameras.read_observation(after_monotonic_s=barrier)
+                        if obs is not None:
+                            self.motion_recording.record(
+                                "settled_history_observation",
+                                {
+                                    "call_index": call_index,
+                                    "camera_after_perf_counter_s": barrier,
+                                    "elapsed_s": time.monotonic() - started,
+                                },
+                            )
+                            return {"obs": [obs], "prompt": self.task.prompt}
+                        time.sleep(1.0 / self.execution.exec_rate)
+                    break
+            time.sleep(1.0 / self.execution.exec_rate)
+        raise RuntimeError("Settled history observation timed out or was interrupted")
 
     def _try_ik_subgoal(self, requested: np.ndarray) -> None:
         config = self.execution.ik_subgoal
@@ -473,6 +631,14 @@ class A1LingBotEEBridge:
                 warning(f"IK subgoal {attempt}/{config.max_attempts} rejected: {exc}")
                 continue
             published_at = time.monotonic()
+            self.motion_recording.record(
+                "subgoal_published",
+                {
+                    "fraction": fraction,
+                    "candidate": candidate.tolist(),
+                    "requested": requested.tolist(),
+                },
+            )
             info(
                 f"IK subgoal published: fraction={fraction:.5f} "
                 f"translation_m={distance:.5f} rotation_rad={rotation:.5f} "
@@ -481,6 +647,9 @@ class A1LingBotEEBridge:
             )
             self.actions_executed += 1
             self._wait_for_subgoal_feedback(candidate, start, requested, published_at)
+            self.motion_recording.record(
+                "subgoal_confirmed", {"candidate": candidate.tolist()}
+            )
             raise IkSubgoalExecuted(
                 "intermediate pose reached; discarding the remaining chunk and cache"
             )
@@ -639,11 +808,14 @@ class A1LingBotEEBridge:
             close_policy_resources(
                 policy_label="LingBot",
                 executor=self.executor,
+                ik_solver=self.ik_solver,
                 timer=timer,
                 cameras=cameras,
                 client=client,
             )
         finally:
+            if self.motion_recording is not None:
+                self.motion_recording.close()
             result = None if cameras is None else cameras.recording_result
             if result is not None:
                 success(

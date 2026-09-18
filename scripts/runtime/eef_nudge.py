@@ -213,6 +213,7 @@ class EefNudge:
     def close(self) -> None:
         self.commander.publish_motion_enable(False)
         self.keepalive.shutdown()
+        self.commander.solver.close()
 
 
 def sequence(step_m: float) -> tuple[tuple[str, np.ndarray], ...]:

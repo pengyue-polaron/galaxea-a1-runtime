@@ -1,1 +1,1 @@
-"""Diffusion2One's Galaxea A1 student on the shared LingBot EEF rollout."""
+"""Diffusion2One's Galaxea A1 teacher and student on the shared EEF rollout."""

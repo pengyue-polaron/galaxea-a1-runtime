@@ -1,0 +1,11 @@
+[deployment]
+config = "configs/deployments/diffusion2one/fruit_blocks_eef.toml"
+
+[reset]
+pose = "configs/poses/a1_collection_start.toml"
+
+[batch]
+schema_version = 1
+id = "diffusion2one-student-banana"
+retries_per_prompt = 0
+task_ids = ["banana_to_red_plate"]

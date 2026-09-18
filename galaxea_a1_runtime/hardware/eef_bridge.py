@@ -3,14 +3,19 @@
 from __future__ import annotations
 
 import threading
+import time
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import Any
 
 import numpy as np
 
 from galaxea_a1_runtime.console import info
-from galaxea_a1_runtime.hardware.eef_ik import A1EefIkSolver, IkSolution
+from galaxea_a1_runtime.hardware.eef_ik import (
+    A1EefIkSolver,
+    A1EefIkTargetRejected,
+    IkSolution,
+)
 
 __all__ = [
     "EefIkCommandPublisher",
@@ -60,6 +65,7 @@ class EefIkCommandPublisher:
     gripper_to_stroke: Callable[[float], float]
     execute: bool
     log_solutions: bool = True
+    event_sink: Callable[[str, dict], None] | None = None
     active_joint_target: Any | None = None
     active_target_lock: threading.Lock = field(default_factory=threading.Lock)
 
@@ -87,15 +93,68 @@ class EefIkCommandPublisher:
         current = self.current_joint_positions()
         if current is None:
             raise RuntimeError("Cannot solve EEF IK without fresh joint feedback")
-        solution = self.solver.solve(
-            current, action[:3], action[3:7], max_joint_delta_rad=max_joint_delta_rad
-        )
-        if validate_solution is not None:
-            validate_solution(solution)
+        with self.active_target_lock:
+            previous = (
+                None
+                if self.active_joint_target is None
+                else list(self.active_joint_target.position)
+            )
+        request = {
+            "started_monotonic_ns": time.monotonic_ns(),
+            "joint_names": list(self.joint_names),
+            "current_joint_positions": list(current),
+            "absolute_action": action.tolist(),
+            "max_joint_delta_rad": max_joint_delta_rad,
+            "previous_joint_target": previous,
+        }
+        if self.event_sink is not None:
+            self.event_sink("ik_request", request)
+        try:
+            solution = self.solver.solve(
+                current,
+                action[:3],
+                action[3:7],
+                max_joint_delta_rad=max_joint_delta_rad,
+                previous_joint_target=previous,
+            )
+            # Optimization may take longer than a feedback period. Recheck the
+            # displacement against fresh measured joints before staging output.
+            latest = self.current_joint_positions()
+            if latest is None:
+                raise RuntimeError("Joint feedback became stale during EEF IK")
+            latest = np.asarray(latest, dtype=np.float64)
+            if (
+                latest.shape != (len(self.joint_names),)
+                or not np.isfinite(latest).all()
+                or np.any(latest < self.solver.lower_limits)
+                or np.any(latest > self.solver.upper_limits)
+            ):
+                raise RuntimeError("Invalid joint feedback after EEF IK")
+            bound = self.solver.max_solution_delta_rad
+            if max_joint_delta_rad is not None:
+                bound = min(bound, max_joint_delta_rad)
+            measured_delta = float(
+                np.max(abs(np.asarray(solution.joint_positions) - latest))
+            )
+            if measured_delta > bound:
+                raise A1EefIkTargetRejected(
+                    "IK solution exceeds displacement from updated feedback"
+                )
+            solution = replace(solution, max_joint_delta_rad=measured_delta)
+            request["checked_joint_positions"] = latest.tolist()
+            if validate_solution is not None:
+                validate_solution(solution)
+        except Exception as exc:
+            if self.event_sink is not None:
+                self.event_sink("ik_rejected", request | {"error": str(exc)})
+            raise
+        if self.event_sink is not None:
+            self.event_sink("ik_solution", request | {"solution": asdict(solution)})
         self._set_active_joint_target(solution.joint_positions)
         if self.log_solutions:
             info(
                 "EEF IK solved: "
+                f"backend={solution.backend} "
                 f"iterations={solution.iterations} "
                 f"position_error_mm={solution.position_error_m * 1000.0:.3f} "
                 f"orientation_error_deg="

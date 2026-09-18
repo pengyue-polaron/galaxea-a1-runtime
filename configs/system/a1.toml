@@ -64,6 +64,7 @@ max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
 
 [eef_ik]
+backend = "trac_ik"
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
 max_iterations = 400
 damping = 0.01
@@ -72,6 +73,25 @@ max_iteration_step_rad = 0.08
 position_tolerance_m = 0.003
 orientation_tolerance_rad = 0.02
 max_solution_delta_rad = 1.70
+
+[eef_ik.trac_ik]
+# Distance mode; isolated upstream library, no ROS node or hardware access.
+binary = ".cache/trac_ik/a1_trac_ik"
+base_link = "base_link"
+tip_link = "arm_seg6"
+timeout_s = 0.01
+epsilon = 0.00001
+rpc_timeout_s = 1.0
+startup_timeout_s = 10.0
+
+[eef_ik.constrained]
+# Hard Cartesian norm constraints; soft preference for joint-limit clearance.
+limit_margin_rad = 0.25
+limit_weight = 0.1
+# Numerical reserve inside the unchanged System arrival tolerances.
+tolerance_scale = 0.99
+optimizer_tolerance = 0.000000001
+timeout_s = 0.5
 
 [eef_test]
 step_m = 0.03

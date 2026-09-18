@@ -192,13 +192,16 @@ def build_safety_settings(
             name="eef_policy_ik",
             path=f"{SYSTEM_CONFIG} [eef_ik] -> {topics.joint_target}",
             default=(
+                f"backend={system.eef_ik.backend}, "
                 f"position_tolerance={system.eef_ik.position_tolerance_m:g}m, "
                 f"orientation_tolerance={system.eef_ik.orientation_tolerance_rad:g}rad, "
                 f"max_joint_delta={system.eef_ik.max_solution_delta_rad:g}rad"
             ),
             behavior=(
-                "The first-party URDF IK rejects non-convergence, non-finite values, "
+                "The configured URDF IK adapter rejects non-convergence, non-finite values, "
                 "joint-limit violations, and solutions beyond the configured joint delta."
+                " Constrained IK prefers joint-limit clearance within separate hard pose "
+                "tolerances; it computes endpoints, not a velocity-limited trajectory."
             ),
             visibility=(
                 "Verbose deployment logging reports IK iterations, Cartesian/orientation "

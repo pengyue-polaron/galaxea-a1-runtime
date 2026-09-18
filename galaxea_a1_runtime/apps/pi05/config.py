@@ -217,6 +217,10 @@ def _load_model_contract(model: ModelArtifactConfig) -> Pi05ModelContract:
 
 
 def validate_pi05_config(config: Pi05Config) -> None:
+    if config.system.eef_ik.backend == "trac_ik":
+        from galaxea_a1_runtime.hardware.trac_ik import verify_trac_ik_build
+
+        verify_trac_ik_build(config.system)
     if not 1 <= config.server.port <= 65535:
         raise ValueError("pi0.5 server.port must be in [1, 65535]")
     if (

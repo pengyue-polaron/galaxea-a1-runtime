@@ -16,10 +16,15 @@ from galaxea_a1_runtime.configuration.system import SystemConfig
 @dataclass(frozen=True)
 class IkSolution:
     joint_positions: tuple[float, ...]
-    iterations: int
+    iterations: int | None
     position_error_m: float
     orientation_error_rad: float
     max_joint_delta_rad: float
+    backend: str = "dls"
+    solve_time_s: float | None = None
+    minimum_joint_margin_rad: float | None = None
+    seed_source: str | None = None
+    optimization_status: str | None = None
 
 
 class A1EefIkTargetRejected(RuntimeError):
@@ -82,6 +87,9 @@ class A1EefIkSolver:
         transform, _, _ = self._kinematics(joint_positions)
         return transform[:3, 3].copy(), _matrix_to_quat(transform[:3, :3])
 
+    def close(self) -> None:
+        """Release backend resources (the pure DLS backend has none)."""
+
     def solve(
         self,
         current_joint_positions: Sequence[float],
@@ -89,6 +97,7 @@ class A1EefIkSolver:
         target_quat_xyzw: Sequence[float],
         *,
         max_joint_delta_rad: float | None = None,
+        previous_joint_target: Sequence[float] | None = None,
     ) -> IkSolution:
         delta_limit = self.max_solution_delta_rad
         if max_joint_delta_rad is not None:
@@ -196,7 +205,20 @@ class A1EefIkSolver:
 def build_eef_ik_solver(system: SystemConfig) -> A1EefIkSolver:
     config = system.eef_ik
     joints = system.joint_safety
-    return A1EefIkSolver(
+    solver_type = A1EefIkSolver
+    extra = {}
+    if config.backend == "trac_ik":
+        from galaxea_a1_runtime.hardware.trac_ik import TracIkSolver
+
+        solver_type = TracIkSolver
+        extra = {"system": system}
+    elif config.backend == "constrained":
+        from galaxea_a1_runtime.hardware.constrained_ik import ConstrainedIkSolver
+
+        solver_type = ConstrainedIkSolver
+        extra = {"config": config.constrained}
+    return solver_type(
+        **extra,
         urdf_path=config.urdf,
         joint_names=joints.names,
         lower_limits=joints.lower_limits,

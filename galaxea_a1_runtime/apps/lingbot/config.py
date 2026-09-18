@@ -19,6 +19,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import (
     LingBotPolicyServerConfig,
     LingBotRecordingConfig,
     LingBotServerConfig,
+    LingBotSettleConfig,
     PoseMode,
     TextEncoderDevice,
 )
@@ -140,10 +141,10 @@ def load_lingbot_config(
     contract = _load_model_contract(model)
     if backend.adapter == "diffusion2one":
         from galaxea_a1_runtime.apps.diffusion2one.contract import (
-            validate_student_config,
+            validate_model_config,
         )
 
-        validate_student_config(backend, engine, contract)
+        validate_model_config(backend, engine, contract)
     task_catalog = load_task_catalog(
         referenced_config(data, repo_root, key="tasks"), repo_root=repo_root
     )
@@ -187,6 +188,7 @@ def load_lingbot_config(
             "max_model_calls",
             "ik_replan_max_attempts",
             "ik_subgoal",
+            "settle",
             "execute_frames",
             "kv_observations_per_frame",
             "exec_rate",
@@ -196,6 +198,19 @@ def load_lingbot_config(
         label="execution",
     )
     subgoal = required_table(execution, "ik_subgoal")
+    settle = required_table(execution, "settle")
+    require_exact_keys(
+        settle,
+        required={
+            "enabled",
+            "min_wait_s",
+            "stable_window_s",
+            "timeout_s",
+            "joint_range_rad",
+            "gripper_range",
+        },
+        label="execution.settle",
+    )
     require_exact_keys(
         subgoal,
         required={
@@ -278,6 +293,14 @@ def load_lingbot_config(
             model_subdirectory=contract.model_subdirectory,
         ),
         execution=LingBotExecutionConfig(
+            settle=LingBotSettleConfig(
+                enabled=boolean(settle, "enabled"),
+                min_wait_s=floating(settle, "min_wait_s"),
+                stable_window_s=floating(settle, "stable_window_s"),
+                timeout_s=floating(settle, "timeout_s"),
+                joint_range_rad=floating(settle, "joint_range_rad"),
+                gripper_range=floating(settle, "gripper_range"),
+            ),
             execute=boolean(execution, "execute"),
             step_mode=boolean(execution, "step_mode"),
             step_actions=boolean(execution, "step_actions"),
@@ -375,14 +398,14 @@ def _parse_engine(engine_data: dict[str, Any]) -> _EngineConfig:
 def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
     _, _, data = load_toml(model.contract, repo_root=model.repo_root)
     expected_tables = {"lingbot", "normalization"}
-    if model.backend == "diffusion2one":
+    if model.backend in {"diffusion2one", "diffusion2one_teacher"}:
         expected_tables.add("components")
     require_exact_keys(
         data, required=expected_tables, label="LingBot-family model contract"
     )
     base_model = None
     model_subdirectory = ""
-    if model.backend == "diffusion2one":
+    if model.backend in {"diffusion2one", "diffusion2one_teacher"}:
         components = required_table(data, "components")
         require_exact_keys(
             components,
@@ -394,9 +417,14 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
             repo_root=model.repo_root,
         )
         model_subdirectory = string(components, "model_subdirectory")
-        if model_subdirectory != "galaxea-a1":
+        expected_subdirectory = (
+            "galaxea-a1-teacher"
+            if model.backend == "diffusion2one_teacher"
+            else "galaxea-a1"
+        )
+        if model_subdirectory != expected_subdirectory:
             raise ValueError(
-                "Diffusion2One requires the galaxea-a1 checkpoint subdirectory"
+                f"{model.backend} requires the {expected_subdirectory} checkpoint subdirectory"
             )
     lingbot = required_table(data, "lingbot")
     normalization = required_table(data, "normalization")
@@ -442,6 +470,10 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
 
 
 def validate_lingbot_config(config: LingBotConfig) -> None:
+    if config.system.eef_ik.backend == "trac_ik":
+        from galaxea_a1_runtime.hardware.trac_ik import verify_trac_ik_build
+
+        verify_trac_ik_build(config.system)
     if not 1 <= config.server.port <= 65535:
         raise ValueError("server.port must be in [1, 65535]")
     if min(config.server.connect_timeout_s, config.server.close_timeout_s) <= 0:
@@ -550,6 +582,15 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError(
             "LingBot execution rate must be positive and deadband non-negative"
         )
+    settle = config.execution.settle
+    if (
+        settle.min_wait_s < 0
+        or min(settle.stable_window_s, settle.joint_range_rad, settle.gripper_range)
+        <= 0
+        or settle.gripper_range > 1
+        or settle.timeout_s <= max(settle.min_wait_s, settle.stable_window_s)
+    ):
+        raise ValueError("Invalid execution.settle bounds or timeout")
     if config.execution.execute and not policy.deployment_ready:
         raise ValueError("execution.execute requires deployment.ready=true")
     if config.system.cameras.front.backend != "realsense":

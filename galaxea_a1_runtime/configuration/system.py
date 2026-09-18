@@ -187,7 +187,30 @@ class SystemEefConfig:
 
 
 @dataclass(frozen=True)
+class TracIkConfig:
+    binary: Path
+    base_link: str
+    tip_link: str
+    timeout_s: float
+    epsilon: float
+    rpc_timeout_s: float
+    startup_timeout_s: float
+
+
+@dataclass(frozen=True)
+class ConstrainedIkConfig:
+    limit_margin_rad: float
+    limit_weight: float
+    tolerance_scale: float
+    optimizer_tolerance: float
+    timeout_s: float
+
+
+@dataclass(frozen=True)
 class SystemEefIkConfig:
+    backend: str
+    trac_ik: TracIkConfig
+    constrained: ConstrainedIkConfig
     urdf: Path
     max_iterations: int
     damping: float
@@ -385,6 +408,9 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             feedback_wait_timeout_s=floating(eef, "feedback_wait_timeout_s"),
         ),
         eef_ik=SystemEefIkConfig(
+            backend=string(eef_ik, "backend"),
+            trac_ik=_parse_trac_ik(required_table(eef_ik, "trac_ik"), repo_root),
+            constrained=_parse_constrained_ik(required_table(eef_ik, "constrained")),
             urdf=repo_path(repo_root, string(eef_ik, "urdf")),
             max_iterations=integer(eef_ik, "max_iterations"),
             damping=floating(eef_ik, "damping"),
@@ -458,7 +484,70 @@ def _validate_robot_service_endpoint(endpoint: str) -> None:
         raise ValueError("robot_service.endpoint is too long for portable AF_UNIX use")
 
 
+def _parse_trac_ik(data: dict, repo_root: Path) -> TracIkConfig:
+    require_exact_keys(
+        data, required=set(TracIkConfig.__annotations__), label="eef_ik.trac_ik"
+    )
+    config = TracIkConfig(
+        binary=repo_path(repo_root, string(data, "binary")),
+        base_link=string(data, "base_link"),
+        tip_link=string(data, "tip_link"),
+        timeout_s=floating(data, "timeout_s"),
+        epsilon=floating(data, "epsilon"),
+        rpc_timeout_s=floating(data, "rpc_timeout_s"),
+        startup_timeout_s=floating(data, "startup_timeout_s"),
+    )
+    if (
+        min(
+            config.timeout_s,
+            config.epsilon,
+            config.rpc_timeout_s,
+            config.startup_timeout_s,
+        )
+        <= 0
+    ):
+        raise ValueError("eef_ik.trac_ik numerical settings must be positive")
+    if config.rpc_timeout_s <= config.timeout_s:
+        raise ValueError("TRAC-IK RPC timeout must exceed solver timeout")
+    return config
+
+
+def _parse_constrained_ik(data: dict) -> ConstrainedIkConfig:
+    require_exact_keys(
+        data,
+        required=set(ConstrainedIkConfig.__annotations__),
+        label="eef_ik.constrained",
+    )
+    config = ConstrainedIkConfig(
+        **{key: floating(data, key) for key in ConstrainedIkConfig.__annotations__}
+    )
+    if any(value <= 0 for value in vars(config).values()):
+        raise ValueError("eef_ik.constrained settings must be positive")
+    if not 0 < config.tolerance_scale < 1:
+        raise ValueError(
+            "Constrained IK tolerance_scale must be strictly between 0 and 1"
+        )
+    return config
+
+
 def validate_system_config(config: SystemConfig) -> None:
+    if config.eef_ik.backend not in {"dls", "trac_ik", "constrained"}:
+        raise ValueError("eef_ik.backend must be dls, trac_ik or constrained")
+    if config.eef_ik.constrained.limit_margin_rad * 2 >= min(
+        high - low
+        for low, high in zip(
+            config.joint_safety.lower_limits,
+            config.joint_safety.upper_limits,
+            strict=True,
+        )
+    ):
+        raise ValueError(
+            "Constrained IK limit margin must fit inside every joint range"
+        )
+    if config.eef_ik.trac_ik.epsilon >= min(
+        config.eef_ik.position_tolerance_m, config.eef_ik.orientation_tolerance_rad
+    ):
+        raise ValueError("TRAC-IK epsilon must fit inside Cartesian norm tolerances")
     try:
         IPv4Address(config.operator_panel.bind)
     except AddressValueError as exc:

@@ -87,6 +87,10 @@ ros-python-check:
 models:
     {{vpy}} {{repo}}/scripts/models/model_store.py doctor --repo-root "{{repo}}"
 
+# Build the isolated upstream TRAC-IK adapter without hardware access.
+trac-ik-setup:
+    {{vpy}} -m galaxea_a1_runtime.apps.trac_ik_setup
+
 model-fetch config:
     {{vpy}} {{repo}}/scripts/models/model_store.py fetch \
         --repo-root "{{repo}}" "{{config}}"
@@ -195,6 +199,10 @@ diffusion2one-smoke:
 
 diffusion2one *args:
     scripts/apps/diffusion2one/a1_diffusion2one_runtime.sh run {{args}}
+
+# Teacher defaults to the model server only; smoke uses synthetic observations.
+diffusion2one-teacher action="server" *args:
+    scripts/apps/diffusion2one/a1_diffusion2one_teacher_runtime.sh {{action}} {{args}}
 
 tfp-verify:
     scripts/apps/tfp/a1_tfp_runtime.sh verify

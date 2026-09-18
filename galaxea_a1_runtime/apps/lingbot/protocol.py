@@ -119,7 +119,11 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
             "revision": policy.base_model.source.revision,
             "manifest_sha256": policy.base_model.manifest.sha256,
         }
-        contract["architecture"] = "mot-euler-video-action-student"
+        contract["architecture"] = (
+            "mot-euler-video-action-teacher"
+            if policy.backend.backend_id == "diffusion2one_teacher"
+            else "mot-euler-video-action-student"
+        )
         contract["attention_capture"] = {"supported": False}
     return add_contract_digest(contract)
 

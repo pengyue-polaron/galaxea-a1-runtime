@@ -46,7 +46,9 @@ class PolicyCameraSession:
             self.close()
             raise
 
-    def read_pair(self) -> tuple[np.ndarray, np.ndarray] | None:
+    def read_pair(
+        self, *, after_monotonic_s: float | None = None
+    ) -> tuple[np.ndarray, np.ndarray] | None:
         front_reader, wrist_reader = self._readers()
         if self.camera_recorder is not None:
             recording_error = self.camera_recorder.exception()
@@ -69,6 +71,11 @@ class PolicyCameraSession:
         ):
             return None
         skew_s = abs(front.monotonic_s - wrist.monotonic_s)
+        if (
+            after_monotonic_s is not None
+            and min(front.monotonic_s, wrist.monotonic_s) <= after_monotonic_s
+        ):
+            return None
         if skew_s > self.system.cameras.max_pair_skew_s:
             return None
         frameset = front.value
@@ -97,8 +104,10 @@ class PolicyCameraSession:
             time.sleep(0.02)
         raise RuntimeError("No fresh camera pair within timeout")
 
-    def read_observation(self) -> dict[str, np.ndarray] | None:
-        pair = self.read_pair()
+    def read_observation(
+        self, *, after_monotonic_s: float | None = None
+    ) -> dict[str, np.ndarray] | None:
+        pair = self.read_pair(after_monotonic_s=after_monotonic_s)
         if pair is None:
             return None
         front_bgr, wrist_bgr = pair

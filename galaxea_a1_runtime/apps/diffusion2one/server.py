@@ -1,4 +1,4 @@
-"""Bind the released Euler student to immutable foundation components."""
+"""Bind the released Euler models to immutable foundation components."""
 
 from __future__ import annotations
 
@@ -35,11 +35,11 @@ def prepare_optional_imports() -> None:
     sys.modules[module.__name__] = module
 
 
-def student_job(*, dtype: Any) -> SimpleNamespace:
+def diffusion_job(*, dtype: Any) -> SimpleNamespace:
     """Construct the released algorithm without importing environment overrides.
 
-    This checkpoint is the Euler video/action student, not the unrelated
-    non-diffusion action head or consistency sampler in the upstream repository.
+    Teacher and student use Euler video/action diffusion. Neither uses the
+    unrelated non-diffusion action head or consistency sampler upstream.
     Sampling counts, guidance, normalization and dimensions are assigned from
     the validated deployment by the shared server adapter.
     """

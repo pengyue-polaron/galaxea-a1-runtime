@@ -57,6 +57,15 @@ max_rotation_rad = 0.05
 max_joint_delta_rad = 0.05
 feedback_timeout_s = 2.0
 
+# Wait before collecting the final history image of each executed chunk.
+[execution.settle]
+enabled = false
+min_wait_s = 4.0
+stable_window_s = 0.3
+timeout_s = 8.0
+joint_range_rad = 0.01
+gripper_range = 0.02
+
 [recording]
 camera_videos_enabled = true
 output_root = "outputs/inference/lingbot-fruit-placement-eef/recordings"

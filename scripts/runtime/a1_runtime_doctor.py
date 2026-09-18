@@ -7,6 +7,8 @@ import os
 import sys
 from pathlib import Path
 
+from embodied_ops import finish_checks
+
 from galaxea_a1_runtime.configuration.system import (
     SYSTEM_CONFIG,
     load_system_config,
@@ -18,7 +20,6 @@ from galaxea_a1_runtime.runtime.health_checks import (
     RosDoctorContext,
     add_check,
     arm_control_result,
-    finish_checks,
     relay_status_result,
 )
 

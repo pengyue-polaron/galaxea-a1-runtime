@@ -55,6 +55,25 @@ Heavy dependencies are loaded only at hardware or model boundaries. Static
 configuration validation and pure tests do not require ROS, cameras, serial
 devices, Torch, or a model checkout.
 
+`apps/lingbot/motion_recording.py` owns the per-rollout read-only motion journal
+for LingBot and Diffusion2One. ROS subscriptions preserve measured/target/staged/
+forwarded messages; the EEF command adapter's optional event sink adds the exact
+IK seed, requested pose, and solution or rejection before staging a target.
+The journal writes asynchronously, retains source clocks and URDF/config
+snapshots, and is finalized alongside the existing video/log artifacts.
+Recording errors are surfaced to the foreground bridge; telemetry never owns
+a command publisher or alters a solved target.
+
+`hardware/constrained_ik.py` is a ROS-free endpoint adapter over pinned SciPy
+optimizers, selected through the System IK factory. System owns all of its
+behavioral settings. The previous staged joint target is supplied by the command
+adapter as a numerical initial guess; the solver retains no trajectory or
+episode state. Pose constraints, joint limits and displacement from current
+feedback are independently verified before returning an `IkSolution`.
+Motion journals include numerical seed source, joint-limit margin and optimizer
+status. The command adapter checks fresh feedback again before replacing its
+active staged target. This does not change tracker or relay ownership.
+
 ## Reusable workflow boundary
 
 `embodied-ops` is deliberately an operator-workflow standard, not an
@@ -167,7 +186,7 @@ gates remain authoritative.
 Every managed motion path has four roles: an app publishes a named joint target,
 the isolated jointTracker produces a staged driver command, the relay validates
 it, and the A1 driver owns the hardware. EEF-policy apps first solve their
-Cartesian target through the pure, bounded, System-configured URDF IK adapter.
+Cartesian target through the bounded, System-configured URDF IK adapter.
 Exact topics and relay gates are defined in [Safety](SAFETY.md).
 
 The relay starts locked. An app enables it only after its own inputs and the
@@ -534,7 +553,18 @@ the service handshake covers both manifests and revisions. The release's
 normalization, EEF semantics, URDF identity, camera geometry, and gripper mapping
 must match the A1 contract before inference. The MoT attention layout is distinct;
 the adapter explicitly rejects attention-capture requests until that diagnostic
-has its own verified implementation. The initial deployment disables execution.
+has its own verified implementation.
+
+The released A1 teacher has a separate `diffusion2one_teacher` backend identity
+using the same Diffusion2One adapter, checkout, environment, and foundation
+components. Its model contract requires the `galaxea-a1-teacher/` release prefix;
+the student requires `galaxea-a1/`. The teacher backend owns multi-step diffusion
+and video classifier-free guidance; the student's single-step/no-guidance gate
+remains enforced. Both use the Euler video/action algorithm. Their handshake
+distinguishes teacher/student architecture, sampling settings, and immutable
+model manifests. The teacher's registered deployment enables guarded action
+execution for `run` and `batch`; its default CLI entrypoint starts only the
+model server.
 
 Diffusion2One shares LingBot's exclusive managed policy-server lifecycle. This
 is still a host-managed service: the standard supervisor checks and launches the
@@ -542,12 +572,30 @@ local backend, and does not yet manage a remote inference host.
 
 LingBot and OpenPI pi0.5 predict EEF targets through a shared first-party IK
 adapter and the staged joint runtime.
-The IK solver projects each candidate into the intersection of System absolute
+`eef_ik.backend` selects the in-process DLS solver or upstream TRAC-IK Distance.
+DLS projects each candidate; TRAC-IK receives the intersection of System absolute
 joint limits and the configured solution-delta interval around fresh feedback.
-It rechecks Cartesian convergence after projection and retains final rejection
-checks. The bounds constrain numerical search, not measured feedback, trajectory
+Both retain independent Runtime FK and final rejection checks. The bounds
+constrain numerical search, not measured feedback, trajectory
 speed, or collision clearance; a rejected candidate follows the deployment's
 existing bounded replan policy.
+TRAC-IK uses the installed library in the System runtime image, through a small
+C++ stdin/stdout adapter in `hardware/native/`. `just trac-ik-setup` builds it
+without network or device access and records source/binary SHA-256, immutable
+image ID, and library version. One private, network-disabled, read-only worker
+container belongs to each solver instance; no ROS node or publisher is created.
+The bridge closes it after disabling motion; the managed-container shutdown
+fallback also owns it. Pipe timeout, worker failure, or FK model mismatch is an
+infrastructure failure, never an automatic fallback to another solver.
+TRAC-IK uses fresh measured joints as its Distance seed. Its Cartesian axis
+search bounds enclose the System norm tolerances. Native candidates are filtered
+by those norm gates before choosing the nearest seed-distance solution; Runtime
+independently rechecks the original position/orientation norm thresholds.
+DLS numerical parameters remain DLS-only; common acceptance limits
+apply to both. TRAC-IK reports a null iteration count and measured solve time;
+it does not expose comparable DLS iterations. Motion recordings include the
+backend, results, and TRAC-IK build receipt. No planner or automatic return-home
+behavior is introduced; the complete model EEF sequence still owns the motion.
 Both reuse the System camera, gripper, topic, and safety contracts and refuse
 startup until their deployment is explicitly marked ready. Execution remains
 independently owned in each deployment config. The reviewed fruit-placement
@@ -647,3 +695,11 @@ There is no local training-output root. First-party code must not create
 - No Raw v3 migration or collection intermediate is provided.
 - No deployment is enabled until its checkpoint contract is registered and
   reviewed.
+
+
+The LingBot bridge owns optional chunk-end settling under `execution.settle`.
+It gates final KV history-image capture on fresh measured joint/gripper stillness
+and obtains both images after that gate through PolicyCameraSession's timestamp
+lower bound. Earlier history and requested-action encoding retain their order
+and shape. This is deployment cadence, not an IK change or arrival guarantee;
+failures use normal fail-closed rollout cleanup.

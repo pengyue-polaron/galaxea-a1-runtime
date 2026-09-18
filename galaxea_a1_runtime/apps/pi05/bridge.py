@@ -323,6 +323,7 @@ class A1Pi05EEBridge:
         close_policy_resources(
             policy_label="pi0.5",
             executor=self.executor,
+            ik_solver=self.ik_solver,
             timer=timer,
             cameras=cameras,
             client=client,

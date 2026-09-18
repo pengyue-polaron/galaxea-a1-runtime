@@ -2,26 +2,26 @@
 config = "configs/system/a1.toml"
 
 [backend]
-config = "configs/inference/backends/lingbot_va.toml"
+config = "configs/inference/backends/diffusion2one_teacher.toml"
 
 [model]
-config = "configs/models/lingbot/plug_insertion_eef.toml"
+config = "configs/models/diffusion2one/fruit_blocks_teacher_eef.toml"
 
 [tasks]
-config = "configs/tasks/lingbot/plug_insertion_step500/catalog.json"
+config = "configs/tasks/diffusion2one/fruit_blocks/catalog.json"
 
 [deployment]
-id = "lingbot-plug-insertion-eef"
+id = "diffusion2one-fruit-blocks-teacher-eef"
 ready = true
 
 [session]
-master_port = 29501
+master_port = 29512
 startup_timeout_s = 300.0
 shutdown_timeout_s = 10.0
 
 [server]
 host = "127.0.0.1"
-port = 1106
+port = 1117
 connect_timeout_s = 2.0
 close_timeout_s = 10.0
 
@@ -41,16 +41,17 @@ capture_layers = [
 execute = true
 step_mode = false
 step_actions = false
-max_model_calls = 286
-ik_replan_max_attempts = 0
-execute_frames = 1
+max_model_calls = 132
+# Consecutive retries; a completed chunk replenishes the budget.
+ik_replan_max_attempts = 3
+execute_frames = 2
 kv_observations_per_frame = 4
 exec_rate = 30.0
 print_actions = false
 review_deadband_m = 0.001
 
 [execution.ik_subgoal]
-enabled = false
+enabled = true
 max_attempts = 5
 max_translation_m = 0.01
 max_rotation_rad = 0.05
@@ -59,7 +60,7 @@ feedback_timeout_s = 2.0
 
 # Wait before collecting the final history image of each executed chunk.
 [execution.settle]
-enabled = false
+enabled = true
 min_wait_s = 4.0
 stable_window_s = 0.3
 timeout_s = 8.0
@@ -68,4 +69,4 @@ gripper_range = 0.02
 
 [recording]
 camera_videos_enabled = true
-output_root = "outputs/inference/lingbot-plug-insertion-eef/recordings"
+output_root = "outputs/inference/diffusion2one-fruit-blocks-teacher-eef/recordings"

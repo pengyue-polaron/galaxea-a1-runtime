@@ -102,6 +102,16 @@ Current managed models are:
 | LingBot VA mango placement EEF | `step-200` | 200 | selectable as `mango_placement_eef`; tracked full-catalog batch plan available |
 | LingBot VA plug insertion EEF | `step-500` | 500 | dedicated first-socket deployment and three-attempt batch plan available |
 | OpenPI pi0.5 fruit placement EEF | `step-14999` | 14999 | live, finite closed-loop rollout after task selection |
+| Distill-WAM A1 fruit/blocks student | `galaxea-a1-ema-step-1000` | 1000 | single-step, live guarded rollout |
+| Distill-WAM A1 fruit/blocks teacher | `galaxea-a1-posttrain-step-1000` | 1000 | `just diffusion2one-teacher` starts model server only; `run` and `batch` execute guarded motion |
+
+The teacher is registered as `diffusion2one/a1_fruit_blocks_teacher_eef` at
+`d1fa5b95b41fa96408be5c37cfae2ce900d1c615`, with a dedicated multi-step backend
+and `galaxea-a1-teacher/` artifact prefix. Its imported Torch files are checked
+against the release manifest before being published under `models/artifacts/`.
+The existing student backend cannot select this teacher. See the
+[teacher runbook](../docs/RUNBOOK.md#a1-teacher) for hardware-free verification
+and inference commands.
 
 Do not commit weights and do not add Git LFS. Do not delete artifacts or staging
 directories without explicit review and authorization.
