@@ -11,6 +11,12 @@ apply; report and diagnose actual startup or hardware failures.
 
 ## Managed control paths
 
+The ROS 2 camera container owns only configured camera devices, never the A1
+serial bus. ROS 2 camera migration does not change the ROS 1 driver/tracker/relay
+control path below. Live consumers reject stale or invalid synchronized pairs;
+source clock steps stop the synchronizer. Offline MCAP playback must run in an
+isolated network/domain and must not publish into the live camera graph.
+
 Normal EEF-policy applications solve their reviewed Cartesian target into a
 named joint target through the tracked URDF IK adapter, then
 publish only:

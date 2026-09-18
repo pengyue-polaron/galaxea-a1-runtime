@@ -200,15 +200,38 @@ touching unrelated user processes. LingBot runs its bridge in the invoking
 terminal and uses a marked host process group only for its background policy
 server.
 
-Each physical resource has one owner. A marked persistent Camera Bridge owns
-both cameras and the read-only Web endpoint for its complete lifetime. It reads
-each physical device once and publishes exact raw BGR/depth pairs, source
-sequence numbers, and source monotonic timestamps over a per-user local socket.
+Each physical resource has one owner. The marked `a1-ros2-cameras` container
+runs the official ROS 2 RealSense drivers and one `message_filters`
+ApproximateTimeSynchronizer. System camera settings are translated into driver
+parameters; D405 color uses `depth_module`, while D455 uses `rgb_camera`.
+The drivers publish source-stamped images and camera metadata in the configured
+ROS domain. Global-time mapping is enabled; this is software timestamp matching,
+not cross-camera hardware exposure synchronization. Reliable image publishers
+support raw MCAP capture, while the live synchronizer subscribes with sensor QoS.
+
+The synchronizer rejects stale, future, repeated and backwards timestamps before
+matching. Its bounded queue covers at most one configured freshness window. It
+rejects expired matches and fails closed on a system clock step larger than the
+pair tolerance. The paired cache is updated atomically. Source ROS timestamps
+are retained separately from the mapped host-monotonic time used by live guards.
+
+Camera Bridge protocol v3 exposes these already-synchronized BGR/depth pairs,
+pair sequence numbers, source ROS timestamps and mapped monotonic timestamps
+over a per-user local socket. This is the environment boundary for ROS 1 and
+isolated model environments, not another driver or synchronizer.
 Inference and collection attach as raw consumers; they never reopen a device or
 take over the HTTP port. A separate latest-frame branch encodes the minimal Web
 preview at its configured lower rate. Slow browsers or JPEG encoding may drop
 preview frames but cannot queue work in, rewrite, or block the raw observation
 contract. Web JPEGs are never fed back into policy, recording, or collection.
+
+Collection, policy inference and video recording read the complete atomic pair.
+The existing ROS 1 telemetry adapter preserves each image's source stamp when
+publishing Foxglove previews. The A1 vendor driver, trackers, safety relay,
+robot feedback and operator-service/Foxglove control plane remain ROS 1. Robot
+state/action history is not yet interpolated to camera time; migrating camera
+transport does not establish that stronger dataset contract. See
+[ROS 2 migration](ROS2.md) for the implemented boundary and validation results.
 
 Foxglove observability is a side branch of that runtime. Its only control path
 terminates at the existing Operator Session rather than at ROS command topics:

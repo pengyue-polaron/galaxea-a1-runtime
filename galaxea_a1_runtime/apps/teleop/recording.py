@@ -53,6 +53,7 @@ class CapturedFrame:
 class _FrameRecorder:
     front_reader: CameraReader
     wrist_reader: CameraReader
+    read_pair: Callable[[], tuple[CameraSample, CameraSample] | None]
     ros_state: RosTeleopState
     task: str
     depth_enabled: bool
@@ -68,12 +69,15 @@ class _FrameRecorder:
             min_seq=last_camera_seq,
             timeout_s=self.max_camera_age_s,
         )
+        pair = self.read_pair()
+        if pair is None:
+            raise RuntimeError("synchronized camera pair unavailable")
         now = time.perf_counter()
-        front_sample = _fresh_camera_sample(
-            self.front_reader, now_s=now, max_age_s=self.max_camera_age_s
-        )
-        wrist_sample = _fresh_camera_sample(
-            self.wrist_reader, now_s=now, max_age_s=self.max_camera_age_s
+        front_sample, wrist_sample = (
+            require_fresh_sample(
+                sample, label=label, now_s=now, max_age_s=self.max_camera_age_s
+            )
+            for sample, label in zip(pair, ("front", "wrist"), strict=True)
         )
         require_pair_skew(
             front_sample,
@@ -130,6 +134,7 @@ def record_episode(
     task: str,
     front_reader: CameraReader,
     wrist_reader: CameraReader,
+    read_pair: Callable[[], tuple[CameraSample, CameraSample] | None],
     ros_state: RosTeleopState,
     fps: float,
     max_duration_s: float,
@@ -160,6 +165,7 @@ def record_episode(
     recorder = _FrameRecorder(
         front_reader=front_reader,
         wrist_reader=wrist_reader,
+        read_pair=read_pair,
         ros_state=ros_state,
         task=task,
         depth_enabled=depth_enabled,
@@ -251,17 +257,6 @@ def wait_for_new_camera_samples(
     )
     raise RuntimeError(
         f"camera readers did not produce fresh frames within {timeout_s:.1f}s ({details})"
-    )
-
-
-def _fresh_camera_sample(
-    reader: CameraReader, *, now_s: float, max_age_s: float
-) -> CameraSample:
-    return require_fresh_sample(
-        reader.latest(),
-        label=f"{reader.name} camera",
-        now_s=now_s,
-        max_age_s=max_age_s,
     )
 
 

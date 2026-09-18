@@ -77,9 +77,10 @@ stroke_min_mm = 0.0
 stroke_max_mm = 104.0
 
 [cameras]
+ros_domain_id = 42
 warmup_frames = 20
 max_age_s = 0.5
-max_pair_skew_s = 0.1
+max_pair_skew_s = 0.02
 
 [cameras.front]
 backend = "realsense"

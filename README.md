@@ -22,7 +22,7 @@ are kept in independent packages.
 
 - Teleoperate the A1 with a modified six-axis SO-101 leader and continuous
   gripper control.
-- Record synchronized joint, EEF, action, gripper, and paired-camera samples
+- Record joint, EEF, action and gripper values alongside synchronized camera pairs
   directly as an atomically committed LeRobotDataset v3.0 dataset.
 - Derive Joint or EEF LeRobotDataset v2.1 outputs, or an EEF v3.0 output,
   directly from the canonical dataset.
@@ -42,6 +42,7 @@ are kept in independent packages.
 | OpenPI backend | Python 3.11, isolated from the main environment |
 | Robot framework | LeRobot 0.6 |
 | ROS runtime | ROS 1 Noetic in an Ubuntu 20.04 container |
+| Camera runtime | ROS 2 Jazzy / official RealSense driver in an Ubuntu 24.04 container |
 | Canonical recording | LeRobotDataset v3.0 |
 | Training derivatives | Joint v2.1, EEF v2.1, or EEF v3.0 |
 
@@ -53,6 +54,7 @@ strict tracked configuration, not per-run flags.
 ```bash
 git submodule update --init --recursive
 just setup
+just ros2-setup
 docker compose -f docker-compose.a1-noetic.yml build a1-noetic
 just check
 ```
@@ -164,7 +166,7 @@ camera.
 | `galaxea_a1_runtime/` | Runtime, hardware, collection, policy, and conversion modules |
 | `scripts/` | Thin application and lifecycle entrypoints |
 | `configs/` | System, data, backend, model, and deployment contracts |
-| `docker/` | ROS Noetic execution environment |
+| `docker/` | ROS 1 control and ROS 2 camera execution environments |
 | `external/` | Pinned SDK and LeRobot plugin submodules |
 | `third_party/` | Pinned vendor snapshots; no A1-specific behavior |
 | `assets/` | Setup images and mechanical files |

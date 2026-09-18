@@ -60,8 +60,9 @@ class PolicyCameraSession:
             exc = reader.exception()
             if exc is not None:
                 raise RuntimeError(f"{reader.name} camera reader failed") from exc
-        front = front_reader.latest()
-        wrist = wrist_reader.latest()
+        assert self.camera_bridge is not None
+        pair = self.camera_bridge.latest_pair()
+        front, wrist = pair if pair is not None else (None, None)
         now = time.perf_counter()
         if (
             front is None

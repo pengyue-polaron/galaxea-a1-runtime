@@ -287,6 +287,37 @@ command publisher, start the combined persistent observation stack:
 just cameras start
 ```
 
+The physical camera pipeline now runs in ROS 2 Jazzy. Build its environment
+once before starting cameras on a new checkout:
+
+```bash
+just ros2-setup
+just cameras start
+just ros2 status
+just ros2 record 10
+just ros2 info outputs/ros2/<capture-directory>
+```
+
+`record` runs a bounded raw-camera MCAP capture (the duration includes recorder
+startup/discovery) without opening devices again or recording command topics.
+It stores original image headers, camera calibration, driver metadata and sync
+status under `outputs/ros2/`. Use the standard rosbag2 tools for offline replay
+in an isolated domain/network; never replay recorded camera topics into the live
+observation domain. Existing collection still commits canonical LeRobot v3
+episodes directly; MCAP is a separate diagnostic/replay artifact.
+
+`cameras.ros_domain_id` owns the ROS 2 domain. Normal launch uses local-host
+discovery, with no ambient domain override. The tracked pair tolerance is 20 ms;
+source freshness remains 500 ms. Clock steps fail closed and require a camera
+restart. After changing camera configuration, stop/start `just cameras` so both
+the ROS 2 owner and ROS 1 telemetry consumers reload the same contract.
+`just stop` preserves the persistent camera/observation stack; `just cameras stop`
+also stops its ROS 2 container. `just camera-check` remains an exclusive direct
+SDK diagnostic: it stops the regular owner first and restores it afterwards.
+
+The current A1 driver, guarded motion services and Foxglove endpoint remain ROS 1.
+See [ROS 2 migration](ROS2.md) for verified coverage and remaining work.
+
 In Foxglove, add a **Foxglove WebSocket** connection to
 `ws://127.0.0.1:8766` (or the host's trusted-LAN address), then import
 [`foxglove/layouts/a1_observability.json`](../foxglove/layouts/a1_observability.json).

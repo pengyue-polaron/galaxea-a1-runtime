@@ -81,6 +81,7 @@ class TeleopEpisodeSession:
                     task=self.task,
                     front_reader=front_reader,
                     wrist_reader=wrist_reader,
+                    read_pair=self.cameras.camera_bridge.latest_pair,
                     ros_state=self.ros_state,
                     fps=self.config.collection.fps,
                     max_duration_s=self.config.collection.max_duration_s,

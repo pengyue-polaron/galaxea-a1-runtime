@@ -74,14 +74,23 @@ wait_for_viewer() {
   return 1
 }
 
+stop_ros2_owner() {
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" "${VIEWER_SCRIPT}" \
+    --config "${SYSTEM_CONFIG_PATH}" --stop
+}
+
 stop_viewer() {
   load_camera_config
   require_command curl
   if ! a1_process_is_running "${PROCESS_NAME}" && viewer_endpoint_present; then
-    a1_fail "Camera Web endpoint is owned by an unmanaged process."
-    return 2
+    stop_ros2_owner || return
+    if viewer_endpoint_present; then
+      a1_fail "Camera Web endpoint is owned by an unmanaged process."
+      return 2
+    fi
   fi
   a1_process_stop "${PROCESS_NAME}" "${WEB_PREVIEW_SHUTDOWN_TIMEOUT_S}"
+  stop_ros2_owner || return
   rm -f "${CONFIG_STATE_FILE}"
   a1_success "Persistent camera monitor stopped."
 }
@@ -105,6 +114,7 @@ ensure_viewer() {
     fi
     a1_warn "Marked camera monitor is unhealthy; restarting it."
     a1_process_stop "${PROCESS_NAME}" "${WEB_PREVIEW_SHUTDOWN_TIMEOUT_S}" || return
+    stop_ros2_owner || return
     rm -f "${CONFIG_STATE_FILE}"
   elif ss -H -ltn "sport = :${WEB_PREVIEW_PORT}" | grep -q .; then
     if viewer_endpoint_present; then
@@ -133,6 +143,7 @@ ensure_viewer() {
   if ! wait_for_viewer; then
     tail -n 120 "${LOG_FILE}" >&2 || true
     a1_process_stop "${PROCESS_NAME}" "${WEB_PREVIEW_SHUTDOWN_TIMEOUT_S}" || true
+    stop_ros2_owner || true
     rm -f "${CONFIG_STATE_FILE}"
     a1_fail "Persistent Camera Bridge did not become healthy within ${WEB_PREVIEW_STARTUP_TIMEOUT_S}s."
     return 2

@@ -50,6 +50,7 @@ class SystemV4l2CameraConfig(SystemCameraDeviceConfig):
 
 @dataclass(frozen=True)
 class SystemCamerasConfig:
+    ros_domain_id: int
     warmup_frames: int
     max_age_s: float
     max_pair_skew_s: float
@@ -62,7 +63,14 @@ def parse_system_cameras(data: dict[str, Any]) -> SystemCamerasConfig:
 
     require_exact_keys(
         data,
-        required={"warmup_frames", "max_age_s", "max_pair_skew_s", "front", "wrist"},
+        required={
+            "ros_domain_id",
+            "warmup_frames",
+            "max_age_s",
+            "max_pair_skew_s",
+            "front",
+            "wrist",
+        },
         label="cameras",
     )
     front = required_table(data, "front")
@@ -70,6 +78,7 @@ def parse_system_cameras(data: dict[str, Any]) -> SystemCamerasConfig:
     _require_camera_keys(front, allow_depth=True, label="cameras.front")
     _require_camera_keys(wrist, allow_depth=False, label="cameras.wrist")
     config = SystemCamerasConfig(
+        ros_domain_id=integer(data, "ros_domain_id"),
         warmup_frames=integer(data, "warmup_frames"),
         max_age_s=floating(data, "max_age_s"),
         max_pair_skew_s=floating(data, "max_pair_skew_s"),
@@ -81,6 +90,15 @@ def parse_system_cameras(data: dict[str, Any]) -> SystemCamerasConfig:
 
 
 def validate_system_cameras(config: SystemCamerasConfig) -> None:
+    if not 0 <= config.ros_domain_id <= 101:
+        raise ValueError("cameras.ros_domain_id must be in 0..101")
+    if not all(
+        isinstance(camera, SystemRealSenseCameraConfig)
+        for camera in (config.front, config.wrist)
+    ):
+        raise ValueError("the ROS 2 camera pipeline requires two RealSense cameras")
+    if config.front.serial == config.wrist.serial:
+        raise ValueError("front and wrist must identify different RealSense devices")
     if config.warmup_frames < 0:
         raise ValueError("cameras.warmup_frames must be non-negative")
     if config.max_age_s <= 0:

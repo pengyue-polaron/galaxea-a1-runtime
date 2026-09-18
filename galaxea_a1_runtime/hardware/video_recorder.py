@@ -335,6 +335,9 @@ class PairedCameraVideoRecorder:
                         {
                             "frame_index": self._frames,
                             "front_seq": front_sample.seq,
+                            "front_source_stamp_ns": front_sample.source_stamp_ns,
+                            "wrist_source_stamp_ns": wrist_sample.source_stamp_ns,
+                            "source_clock": front_sample.source_clock,
                             "front_monotonic_s": front_sample.monotonic_s,
                             "wrist_seq": wrist_sample.seq,
                             "wrist_monotonic_s": wrist_sample.monotonic_s,

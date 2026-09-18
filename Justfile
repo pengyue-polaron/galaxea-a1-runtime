@@ -87,6 +87,14 @@ ros-python-check:
 models:
     {{vpy}} {{repo}}/scripts/models/model_store.py doctor --repo-root "{{repo}}"
 
+# Build the official ROS 2 camera, synchronization and recording environment.
+ros2-setup:
+    docker build -t galaxea-a1-runtime/ros2-jazzy:local -f {{repo}}/docker/ros2/Dockerfile {{repo}}
+
+# Inspect native ROS 2 camera topics or record a bounded raw MCAP capture.
+ros2 *args:
+    {{vpy}} -m galaxea_a1_runtime.apps.cameras.ros2_tools {{args}}
+
 # Build the isolated upstream TRAC-IK adapter without hardware access.
 trac-ik-setup:
     {{vpy}} -m galaxea_a1_runtime.apps.trac_ik_setup

@@ -9,6 +9,7 @@ import socketserver
 import threading
 import time
 from contextlib import suppress
+from collections.abc import Callable
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
@@ -28,7 +29,7 @@ from galaxea_a1_runtime.runtime.local_ipc import (
     send_packet,
 )
 
-_PROTOCOL_VERSION = 2
+_PROTOCOL_VERSION = 3
 _MAX_REQUEST_BYTES = 64 * 1024
 _MAX_RESPONSE_BYTES = 128 * 1024 * 1024
 _REQUEST_WAIT_S = 0.25
@@ -73,6 +74,7 @@ class CameraBridgeServer:
         front_source: str,
         wrist_source: str,
         front_usb_type: str,
+        read_pair: Callable[[], tuple[CameraSample, CameraSample] | None],
         socket_path: Path | None = None,
     ) -> None:
         if front_reader.name != "front" or wrist_reader.name != "wrist":
@@ -80,6 +82,7 @@ class CameraBridgeServer:
         self.config = config
         self.front_reader = front_reader
         self.wrist_reader = wrist_reader
+        self.read_pair = read_pair
         self.socket_path = socket_path or camera_bridge_socket_path()
         self.metadata = CameraBridgeMetadata(
             contract_digest=camera_contract_digest(config),
@@ -158,8 +161,8 @@ class CameraBridgeServer:
         deadline = time.perf_counter() + _REQUEST_WAIT_S
         while True:
             self._raise_reader_errors()
-            front = self.front_reader.latest()
-            wrist = self.wrist_reader.latest()
+            pair = self.read_pair()
+            front, wrist = pair if pair is not None else (None, None)
             if (
                 front is not None
                 and wrist is not None
@@ -214,6 +217,8 @@ class CameraBridgeServer:
         return {
             "seq": sample.seq,
             "monotonic_s": sample.monotonic_s,
+            "source_stamp_ns": sample.source_stamp_ns,
+            "source_clock": sample.source_clock,
             "color_bgr": color,
             "depth_mm": depth,
         }
@@ -223,6 +228,8 @@ class CameraBridgeServer:
         return {
             "seq": sample.seq,
             "monotonic_s": sample.monotonic_s,
+            "source_stamp_ns": sample.source_stamp_ns,
+            "source_clock": sample.source_clock,
             "color_bgr": _encode_array(
                 sample.value,
                 shape=(wrist.height, wrist.width, 3),
@@ -370,6 +377,21 @@ class CameraBridgeReaders:
                     continue
                 front = _decode_front(response.get("front"), self.config)
                 wrist = _decode_wrist(response.get("wrist"), self.config)
+                if (
+                    front.seq != wrist.seq
+                    or front.seq <= after["front"]
+                    or wrist.seq <= after["wrist"]
+                ):
+                    raise ValueError(
+                        "camera bridge pair sequence is inconsistent or replayed"
+                    )
+                if (
+                    abs(front.source_stamp_ns - wrist.source_stamp_ns) / 1e9
+                    > self.config.max_pair_skew_s
+                ):
+                    raise ValueError(
+                        "camera bridge source timestamps exceed pair tolerance"
+                    )
                 with self._lock:
                     self._metadata = metadata
                     self._latest["front"] = front
@@ -549,6 +571,8 @@ def _decode_front(value: Any, config: SystemCamerasConfig) -> CameraSample:
             payload.get("monotonic_s"), label="front.monotonic_s"
         ),
         value=RealSenseFrameSet(color_bgr=color, depth_mm=depth),
+        source_stamp_ns=_source_stamp(payload),
+        source_clock="ros_system_time",
     )
 
 
@@ -567,7 +591,18 @@ def _decode_wrist(value: Any, config: SystemCamerasConfig) -> CameraSample:
             payload.get("monotonic_s"), label="wrist.monotonic_s"
         ),
         value=color,
+        source_stamp_ns=_source_stamp(payload),
+        source_clock="ros_system_time",
     )
+
+
+def _source_stamp(payload: dict[str, Any]) -> int:
+    stamp = _plain_int(payload.get("source_stamp_ns"), label="source_stamp_ns")
+    if stamp <= 0 or payload.get("source_clock") != "ros_system_time":
+        raise ValueError(
+            "camera sample must retain a positive ROS system source timestamp"
+        )
+    return stamp
 
 
 def _sample_payload(value: Any, *, label: str) -> dict[str, Any]:

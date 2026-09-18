@@ -12,6 +12,7 @@ container_exclusions=()
 if [[ "${1:-}" == "--keep-camera-monitor" ]]; then
   process_exclusions+=("a1-camera-web")
   container_exclusions+=(
+    "a1-ros2-cameras"
     "${A1_OBSERVABILITY_ROSCORE_CONTAINER}"
     "${A1_OBSERVABILITY_TELEMETRY_CONTAINER}"
     "${A1_OBSERVABILITY_FOXGLOVE_CONTAINER}"

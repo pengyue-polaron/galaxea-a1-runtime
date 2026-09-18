@@ -14,6 +14,8 @@ class CameraSample:
     seq: int
     monotonic_s: float
     value: Any
+    source_stamp_ns: int | None = None
+    source_clock: str = "host_monotonic"
 
 
 class CameraReader(Protocol):

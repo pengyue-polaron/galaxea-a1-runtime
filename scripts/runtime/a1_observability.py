@@ -330,16 +330,21 @@ class A1ObservabilityNode:
             if isinstance(front.value, RealSenseFrameSet)
             else front.value
         )
-        stamp = rospy.Time.now()
         try:
             front_message = _compressed_image(
                 front_bgr,
-                stamp=stamp,
+                stamp=rospy.Time(
+                    front.source_stamp_ns // 1_000_000_000,
+                    front.source_stamp_ns % 1_000_000_000,
+                ),
                 jpeg_quality=self.system.observability.jpeg_quality,
             )
             wrist_message = _compressed_image(
                 wrist.value,
-                stamp=stamp,
+                stamp=rospy.Time(
+                    wrist.source_stamp_ns // 1_000_000_000,
+                    wrist.source_stamp_ns % 1_000_000_000,
+                ),
                 jpeg_quality=self.system.observability.jpeg_quality,
             )
         except (TypeError, ValueError, RuntimeError) as exc:
