@@ -32,7 +32,6 @@ TRAC-IK Distance is the sole endpoint solver. It searches within the intersectio
 of absolute joint limits and `current_joint +/- eef_ik.max_solution_delta_rad`,
 anchored to fresh feedback. Native Cartesian norm checks and independent Runtime
 FK acceptance remain mandatory. Worker failure or timeout stops the app.
-The OpenRAL gateway uses the same solver with its narrower joint envelope.
 After every solve, the bridge requires fresh valid feedback and rechecks endpoint
 displacement before staging it. Search bounds and seed-distance preference do not
 provide trajectory velocity/acceleration or swept-path collision guarantees.

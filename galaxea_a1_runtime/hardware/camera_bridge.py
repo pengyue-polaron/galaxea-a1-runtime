@@ -144,14 +144,7 @@ class CameraBridgeServer:
             raise ValueError("camera bridge request must be a map")
         if request.get("version") != _PROTOCOL_VERSION:
             raise ValueError("camera bridge protocol version mismatch")
-        operation = request.get("op")
-        if operation == "describe":
-            return {
-                "ok": True,
-                "version": _PROTOCOL_VERSION,
-                "metadata": asdict(self.metadata),
-            }
-        if operation != "next_pair":
+        if request.get("op") != "next_pair":
             raise ValueError("unsupported camera bridge operation")
         if request.get("contract_digest") != self.metadata.contract_digest:
             raise ValueError(

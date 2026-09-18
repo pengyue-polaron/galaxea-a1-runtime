@@ -66,8 +66,7 @@ a command publisher or alters a solved target.
 
 `hardware/trac_ik.py` is the sole IK adapter. The native worker uses TRAC-IK
 Distance, while `hardware/eef_ik.py` independently verifies URDF forward
-kinematics. The OpenRAL gateway uses the same adapter with its narrower named
-joint envelope. No alternative numerical solver or previous-target seed exists.
+kinematics. No alternative numerical solver or previous-target seed exists.
 
 ## Reusable workflow boundary
 
@@ -285,17 +284,6 @@ existing tracked reset branch, which continues to use the staged tracker and
 locked relay contract. Save-without-reset commits the episode identically to
 Save but returns directly to the next ready gate; it never suppresses a discard
 Reset.
-
-External OpenRAL deployment uses two versioned, private local-service
-boundaries. Camera Bridge protocol `describe` exposes its exact digest and raw
-frame shapes before streaming. The LingBot OpenRAL policy gateway loads the
-authoritative Runtime deployment/model contract, owns episode-relative EEF
-transforms, temporal-cache replay, and bounded URDF IK, and returns only six
-absolute joint proposals plus one normalized gripper proposal. The gateway has
-no ROS imports, hardware handle, or command publisher. OpenRAL supplies its
-narrower ordered joint envelope during handshake, then remains the sole
-candidate-action safety and HAL execution owner. Neither side imports the
-other repository's source tree.
 
 The generic Operator Panel is a separate control plane. The A1 instance binds
 its System-owned endpoint on the trusted LAN; it has request-integrity tokens
