@@ -55,6 +55,21 @@ def verify_trac_ik_build(system: SystemConfig) -> dict:
         raise RuntimeError(
             "TRAC-IK build missing/stale; run just trac-ik-setup"
         ) from exc
+    image_id = receipt.get("image_id")
+    if not isinstance(image_id, str) or not image_id.startswith("sha256:"):
+        raise RuntimeError("TRAC-IK image receipt invalid; run just trac-ik-setup")
+    try:
+        subprocess.run(
+            ["docker", "image", "inspect", image_id],
+            check=True,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+            timeout=STARTUP_TIMEOUT_S,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        raise RuntimeError(
+            "TRAC-IK build image unavailable; check Docker and run just trac-ik-setup"
+        ) from exc
     return receipt
 
 

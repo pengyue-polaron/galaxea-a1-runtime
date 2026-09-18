@@ -152,6 +152,39 @@ sides of the bridge before declaring readiness.
 These are observation/transport checks, not live collection, policy inference,
 physical motion or hardware exposure-synchronization acceptance.
 
+## Powered hardware smoke check on 2026-09-18
+
+With operator authorization and power on, the runtime doctor received all seven
+named joints, EEF feedback and motor state. Real robot joint feedback also
+arrived on ROS 2 `/joint_states_host`. The relay was initially locked.
+
+The first motion attempt stopped before enabling motion: the TRAC-IK build
+receipt referenced a deleted Docker image. After stopping the execution stack,
+`just trac-ik-setup` rebuilt the worker. Build verification now checks that the
+receipt's exact image is accessible, in addition to source and binary hashes.
+An ad hoc check confirmed actionable rejection of Docker inspection failure,
+timeout and missing executable; the real rebuilt image passed verification.
+
+The existing guarded EEF nudge workflow then completed all six 3 cm targets
+through TRAC-IK, the staged tracker and the fail-closed relay. Measured movement
+along the requested axis after the script's one-second wait was:
+
+| Direction | Measured displacement (cm) |
+| --- | ---: |
+| x+ | 2.55 |
+| x- | -2.77 |
+| y+ | 2.42 |
+| y- | -2.64 |
+| z+ | 3.00 |
+| z- | -2.96 |
+
+These feedback measurements establish a working motion path, not external
+metrology or settled tracking accuracy. The workflow exited successfully and
+`just stop` removed the driver, tracker and command relay while preserving
+cameras and observation services. Final `just check` and `git diff --check`
+passed. This check did not exercise gripper motion, an end-to-end collection
+episode, policy inference or camera/robot historical timestamp alignment.
+
 ## Remaining migration
 
 This is not complete removal of ROS 1. The checked-in vendor `signal_arm`
