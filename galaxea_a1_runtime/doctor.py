@@ -90,11 +90,6 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
             tfp_config.system.path,
             *(config.system.path for config in diffusion2one_configs),
         }
-        if teleop_config.system.eef_ik.backend == "trac_ik":
-            from galaxea_a1_runtime.hardware.trac_ik import verify_trac_ik_build
-
-            receipt = verify_trac_ik_build(teleop_config.system)
-            add("trac_ik_build", True, str(receipt))
         add(
             "tracked_config_graph",
             len(system_paths) == 1,

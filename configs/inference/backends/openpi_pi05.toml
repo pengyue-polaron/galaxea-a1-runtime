@@ -16,7 +16,5 @@ lock = "external/openpi-galaxea-a1/uv.lock"
 lock_sha256 = "793488b5a55bb87200db90a61fd0af51922b686d94e1da4f4c587ab119b37d74"
 
 [engine]
-jax_platform = "cuda"
 xla_memory_fraction = 0.90
-seed = 0
 sampling_steps = 10

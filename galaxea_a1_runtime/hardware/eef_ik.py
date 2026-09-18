@@ -1,4 +1,4 @@
-"""Pure URDF forward/inverse kinematics for the Galaxea A1 arm."""
+"""URDF forward kinematics and the single TRAC-IK execution factory."""
 
 from __future__ import annotations
 
@@ -7,24 +7,25 @@ import xml.etree.ElementTree as ET
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import numpy as np
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
 
 
+if TYPE_CHECKING:
+    from galaxea_a1_runtime.hardware.trac_ik import TracIkSolver
+
+
 @dataclass(frozen=True)
 class IkSolution:
     joint_positions: tuple[float, ...]
-    iterations: int | None
     position_error_m: float
     orientation_error_rad: float
     max_joint_delta_rad: float
-    backend: str = "dls"
-    solve_time_s: float | None = None
-    minimum_joint_margin_rad: float | None = None
-    seed_source: str | None = None
-    optimization_status: str | None = None
+    solve_time_s: float
+    backend: str = "trac_ik_distance"
 
 
 class A1EefIkTargetRejected(RuntimeError):
@@ -37,8 +38,8 @@ class _RevoluteJoint:
     axis: np.ndarray
 
 
-class A1EefIkSolver:
-    """Solve bounded six-DOF EEF targets from the tracked A1 URDF."""
+class A1EefKinematics:
+    """Independently verify TRAC-IK endpoints against the tracked A1 URDF."""
 
     def __init__(
         self,
@@ -47,10 +48,6 @@ class A1EefIkSolver:
         joint_names: Sequence[str],
         lower_limits: Sequence[float],
         upper_limits: Sequence[float],
-        max_iterations: int,
-        damping: float,
-        orientation_weight: float,
-        max_iteration_step_rad: float,
         position_tolerance_m: float,
         orientation_tolerance_rad: float,
         max_solution_delta_rad: float,
@@ -60,22 +57,13 @@ class A1EefIkSolver:
         self.upper_limits = _finite_vector(upper_limits, len(self.joint_names), "upper")
         if np.any(self.lower_limits >= self.upper_limits):
             raise ValueError("IK lower joint limits must be below upper limits")
-        if isinstance(max_iterations, bool) or max_iterations <= 0:
-            raise ValueError("IK max_iterations must be a positive integer")
         numeric = {
-            "damping": damping,
-            "orientation_weight": orientation_weight,
-            "max_iteration_step_rad": max_iteration_step_rad,
             "position_tolerance_m": position_tolerance_m,
             "orientation_tolerance_rad": orientation_tolerance_rad,
             "max_solution_delta_rad": max_solution_delta_rad,
         }
         if any(not math.isfinite(value) or value <= 0 for value in numeric.values()):
             raise ValueError(f"IK settings must be finite and positive: {numeric}")
-        self.max_iterations = max_iterations
-        self.damping = float(damping)
-        self.orientation_weight = float(orientation_weight)
-        self.max_iteration_step_rad = float(max_iteration_step_rad)
         self.position_tolerance_m = float(position_tolerance_m)
         self.orientation_tolerance_rad = float(orientation_tolerance_rad)
         self.max_solution_delta_rad = float(max_solution_delta_rad)
@@ -84,149 +72,31 @@ class A1EefIkSolver:
     def forward(
         self, joint_positions: Sequence[float]
     ) -> tuple[np.ndarray, np.ndarray]:
-        transform, _, _ = self._kinematics(joint_positions)
+        transform = self._kinematics(joint_positions)
         return transform[:3, 3].copy(), _matrix_to_quat(transform[:3, :3])
 
-    def close(self) -> None:
-        """Release backend resources (the pure DLS backend has none)."""
-
-    def solve(
-        self,
-        current_joint_positions: Sequence[float],
-        target_xyz: Sequence[float],
-        target_quat_xyzw: Sequence[float],
-        *,
-        max_joint_delta_rad: float | None = None,
-        previous_joint_target: Sequence[float] | None = None,
-    ) -> IkSolution:
-        delta_limit = self.max_solution_delta_rad
-        if max_joint_delta_rad is not None:
-            if not math.isfinite(max_joint_delta_rad) or max_joint_delta_rad <= 0:
-                raise ValueError(
-                    "IK joint delta restriction must be finite and positive"
-                )
-            delta_limit = min(delta_limit, max_joint_delta_rad)
-        start = _finite_vector(
-            current_joint_positions, len(self.joints), "current joint positions"
-        )
-        if np.any(start < self.lower_limits) or np.any(start > self.upper_limits):
-            raise ValueError("current joint positions violate tracked limits")
-        target_position = _finite_vector(target_xyz, 3, "target xyz")
-        target_rotation = _quat_to_matrix(target_quat_xyzw)
-        # Search only within both absolute limits and the permitted displacement
-        # from fresh feedback. Clipping a completed IK solution would invalidate
-        # its Cartesian pose; all projected candidates still need convergence.
-        search_lower = np.maximum(self.lower_limits, start - delta_limit)
-        search_upper = np.minimum(self.upper_limits, start + delta_limit)
-        joints = start.copy()
-        position_error = float("inf")
-        orientation_error = float("inf")
-
-        for iteration in range(1, self.max_iterations + 1):
-            transform, origins, axes = self._kinematics(joints)
-            position_delta = target_position - transform[:3, 3]
-            orientation_delta = _rotation_vector(target_rotation @ transform[:3, :3].T)
-            position_error = float(np.linalg.norm(position_delta))
-            orientation_error = float(np.linalg.norm(orientation_delta))
-            if (
-                position_error <= self.position_tolerance_m
-                and orientation_error <= self.orientation_tolerance_rad
-            ):
-                break
-
-            jacobian = np.empty((6, len(self.joints)), dtype=np.float64)
-            for index, (origin, axis) in enumerate(zip(origins, axes, strict=True)):
-                jacobian[:3, index] = np.cross(axis, transform[:3, 3] - origin)
-                jacobian[3:, index] = axis
-            weighted = jacobian.copy()
-            weighted[3:] *= self.orientation_weight
-            error = np.concatenate(
-                [position_delta, self.orientation_weight * orientation_delta]
-            )
-            normal = weighted @ weighted.T
-            normal += (self.damping**2) * np.eye(6, dtype=np.float64)
-            delta = weighted.T @ np.linalg.solve(normal, error)
-            largest = float(np.max(np.abs(delta)))
-            if largest > self.max_iteration_step_rad:
-                delta *= self.max_iteration_step_rad / largest
-            joints = np.clip(
-                joints + delta,
-                search_lower,
-                search_upper,
-            )
-        else:
-            iteration = self.max_iterations
-
-        transform, _, _ = self._kinematics(joints)
-        position_error = float(np.linalg.norm(target_position - transform[:3, 3]))
-        orientation_error = float(
-            np.linalg.norm(_rotation_vector(target_rotation @ transform[:3, :3].T))
-        )
-        if (
-            position_error > self.position_tolerance_m
-            or orientation_error > self.orientation_tolerance_rad
-        ):
-            raise A1EefIkTargetRejected(
-                "A1 EEF IK did not converge within joint and solution-delta bounds: "
-                f"iterations={iteration} position_error_m={position_error:.6f} "
-                f"orientation_error_rad={orientation_error:.6f}"
-            )
-        max_delta = float(np.max(np.abs(joints - start)))
-        if max_delta > delta_limit:
-            raise A1EefIkTargetRejected(
-                "A1 EEF IK solution exceeds the configured joint delta: "
-                f"{max_delta:.6f} > {delta_limit:.6f} rad"
-            )
-        return IkSolution(
-            joint_positions=tuple(float(value) for value in joints),
-            iterations=iteration,
-            position_error_m=position_error,
-            orientation_error_rad=orientation_error,
-            max_joint_delta_rad=max_delta,
-        )
-
-    def _kinematics(
-        self, joint_positions: Sequence[float]
-    ) -> tuple[np.ndarray, tuple[np.ndarray, ...], tuple[np.ndarray, ...]]:
+    def _kinematics(self, joint_positions: Sequence[float]) -> np.ndarray:
         values = _finite_vector(joint_positions, len(self.joints), "joint positions")
         transform = np.eye(4, dtype=np.float64)
-        origins: list[np.ndarray] = []
-        axes: list[np.ndarray] = []
         for joint, angle in zip(self.joints, values, strict=True):
             transform = transform @ joint.origin
-            origins.append(transform[:3, 3].copy())
-            axes.append(transform[:3, :3] @ joint.axis)
             rotation = np.eye(4, dtype=np.float64)
             rotation[:3, :3] = _axis_angle_matrix(joint.axis, float(angle))
             transform = transform @ rotation
-        return transform, tuple(origins), tuple(axes)
+        return transform
 
 
-def build_eef_ik_solver(system: SystemConfig) -> A1EefIkSolver:
+def build_eef_ik_solver(system: SystemConfig) -> TracIkSolver:
+    from galaxea_a1_runtime.hardware.trac_ik import TracIkSolver
+
     config = system.eef_ik
     joints = system.joint_safety
-    solver_type = A1EefIkSolver
-    extra = {}
-    if config.backend == "trac_ik":
-        from galaxea_a1_runtime.hardware.trac_ik import TracIkSolver
-
-        solver_type = TracIkSolver
-        extra = {"system": system}
-    elif config.backend == "constrained":
-        from galaxea_a1_runtime.hardware.constrained_ik import ConstrainedIkSolver
-
-        solver_type = ConstrainedIkSolver
-        extra = {"config": config.constrained}
-    return solver_type(
-        **extra,
+    return TracIkSolver(
+        system=system,
         urdf_path=config.urdf,
         joint_names=joints.names,
         lower_limits=joints.lower_limits,
         upper_limits=joints.upper_limits,
-        max_iterations=config.max_iterations,
-        damping=config.damping,
-        orientation_weight=config.orientation_weight,
-        max_iteration_step_rad=config.max_iteration_step_rad,
         position_tolerance_m=config.position_tolerance_m,
         orientation_tolerance_rad=config.orientation_tolerance_rad,
         max_solution_delta_rad=config.max_solution_delta_rad,

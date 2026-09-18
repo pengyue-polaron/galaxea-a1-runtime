@@ -11,8 +11,8 @@ from typing import Any
 import numpy as np
 
 from galaxea_a1_runtime.console import info
+from galaxea_a1_runtime.hardware.trac_ik import TracIkSolver
 from galaxea_a1_runtime.hardware.eef_ik import (
-    A1EefIkSolver,
     A1EefIkTargetRejected,
     IkSolution,
 )
@@ -61,7 +61,7 @@ class EefIkCommandPublisher:
     gripper_msg_type: Any
     joint_names: tuple[str, ...]
     current_joint_positions: Callable[[], Sequence[float] | None]
-    solver: A1EefIkSolver
+    solver: TracIkSolver
     gripper_to_stroke: Callable[[float], float]
     execute: bool
     log_solutions: bool = True
@@ -115,7 +115,6 @@ class EefIkCommandPublisher:
                 action[:3],
                 action[3:7],
                 max_joint_delta_rad=max_joint_delta_rad,
-                previous_joint_target=previous,
             )
             # Optimization may take longer than a feedback period. Recheck the
             # displacement against fresh measured joints before staging output.
@@ -155,7 +154,7 @@ class EefIkCommandPublisher:
             info(
                 "EEF IK solved: "
                 f"backend={solution.backend} "
-                f"iterations={solution.iterations} "
+                f"solve_time_s={solution.solve_time_s:.4f} "
                 f"position_error_mm={solution.position_error_m * 1000.0:.3f} "
                 f"orientation_error_deg="
                 f"{np.degrees(solution.orientation_error_rad):.3f} "

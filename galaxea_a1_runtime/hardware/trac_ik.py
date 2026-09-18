@@ -15,8 +15,9 @@ import weakref
 import numpy as np
 
 from galaxea_a1_runtime.configuration.system import SystemConfig
+from galaxea_a1_runtime.configuration.base import discover_repo_root
 from galaxea_a1_runtime.hardware.eef_ik import (
-    A1EefIkSolver,
+    A1EefKinematics,
     A1EefIkTargetRejected,
     IkSolution,
     _finite_vector,
@@ -25,8 +26,25 @@ from galaxea_a1_runtime.hardware.eef_ik import (
 )
 
 
+# Adapter protocol/build details, fixed independently of deployment settings.
+TRAC_IK_EPSILON = 0.00001
+RPC_TIMEOUT_S = 1.0
+STARTUP_TIMEOUT_S = 10.0
+
+
+def trac_ik_binary(system: SystemConfig) -> Path:
+    return discover_repo_root(system.path) / ".cache/trac_ik/a1_trac_ik"
+
+
 def verify_trac_ik_build(system: SystemConfig) -> dict:
-    binary = system.eef_ik.trac_ik.binary
+    config = system.eef_ik
+    if config.timeout_s >= RPC_TIMEOUT_S:
+        raise ValueError("TRAC-IK solve timeout must be below the worker RPC timeout")
+    if TRAC_IK_EPSILON >= min(
+        config.position_tolerance_m, config.orientation_tolerance_rad
+    ):
+        raise ValueError("TRAC-IK acceptance tolerances must exceed solver epsilon")
+    binary = trac_ik_binary(system)
     source = Path(__file__).with_name("native") / "trac_ik_worker.cpp"
     try:
         receipt = json.loads(binary.with_suffix(".json").read_text())
@@ -70,16 +88,16 @@ def _close_worker(process: subprocess.Popen, name: str) -> None:
             process.stdout.close()
 
 
-class TracIkSolver(A1EefIkSolver):
+class TracIkSolver(A1EefKinematics):
     """Use fresh measured joints as the seed and independently validate FK."""
 
     def __init__(self, *, system: SystemConfig, **kwargs) -> None:
         super().__init__(**kwargs)
-        config = system.eef_ik.trac_ik
+        config = system.eef_ik
         receipt = verify_trac_ik_build(system)
         self.receipt = receipt
         self._lock = threading.Lock()
-        self._rpc_timeout = config.rpc_timeout_s
+        self._rpc_timeout = RPC_TIMEOUT_S
         self._sequence = 0
         self._replies = queue.Queue()
         name = "a1-ik-" + uuid.uuid4().hex
@@ -105,7 +123,7 @@ class TracIkSolver(A1EefIkSolver):
                 "--security-opt",
                 "no-new-privileges",
                 "--mount",
-                f"type=bind,source={config.binary},target=/a1_trac_ik,readonly",
+                f"type=bind,source={trac_ik_binary(system)},target=/a1_trac_ik,readonly",
                 "--env",
                 "LD_LIBRARY_PATH=/opt/ros/noetic/lib",
                 "--entrypoint",
@@ -134,7 +152,7 @@ class TracIkSolver(A1EefIkSolver):
                     "lower": self.lower_limits.tolist(),
                     "upper": self.upper_limits.tolist(),
                     "timeout_s": config.timeout_s,
-                    "epsilon": config.epsilon,
+                    "epsilon": TRAC_IK_EPSILON,
                     # Native per-axis search envelopes enclose the norm-accepted
                     # region. Filter candidates by norm before Distance selection.
                     "bounds": [self.position_tolerance_m] * 3
@@ -143,7 +161,7 @@ class TracIkSolver(A1EefIkSolver):
                     "orientation_tolerance": self.orientation_tolerance_rad,
                 }
             )
-            response = self._receive(config.startup_timeout_s)
+            response = self._receive(STARTUP_TIMEOUT_S)
             if response != {"ready": True, "joint_names": list(self.joint_names)}:
                 raise RuntimeError(f"Invalid TRAC-IK handshake: {response}")
         except BaseException:
@@ -175,7 +193,6 @@ class TracIkSolver(A1EefIkSolver):
         target_quat_xyzw,
         *,
         max_joint_delta_rad=None,
-        previous_joint_target=None,
     ) -> IkSolution:
         start = _finite_vector(current_joint_positions, len(self.joints), "IK seed")
         xyz = _finite_vector(target_xyz, 3, "target xyz")
@@ -223,7 +240,7 @@ class TracIkSolver(A1EefIkSolver):
             raise A1EefIkTargetRejected(
                 "TRAC-IK solution violates joint or solution-delta limits"
             )
-        transform, _, _ = self._kinematics(q)
+        transform = self._kinematics(q)
         position_error = float(np.linalg.norm(xyz - transform[:3, 3]))
         orientation_error = float(
             np.linalg.norm(_rotation_vector(rotation @ transform[:3, :3].T))
@@ -244,10 +261,8 @@ class TracIkSolver(A1EefIkSolver):
             raise RuntimeError("TRAC-IK and Runtime URDF FK disagree")
         return IkSolution(
             tuple(float(value) for value in q),
-            None,
             position_error,
             orientation_error,
             max_delta,
-            "trac_ik_distance",
             time.monotonic() - began,
         )

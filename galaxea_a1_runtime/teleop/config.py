@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 import sys
 from math import isfinite
 from pathlib import Path
@@ -36,8 +35,6 @@ from galaxea_a1_runtime.teleop.config_schema import (
     TeleopResetConfig,
 )
 
-RUNTIME_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,127}$")
-
 __all__ = ["bash_config", "load_teleop_config"]
 
 
@@ -70,8 +67,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
     require_exact_keys(
         runtime,
         required={
-            "prefix",
-            "run_dir",
             "bridge_startup_timeout_s",
             "bridge_stop_timeout_s",
         },
@@ -145,8 +140,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
         path=path,
         system=system,
         runtime=TeleopRuntimeConfig(
-            prefix=_string(runtime, "prefix"),
-            run_dir=_string(runtime, "run_dir"),
             bridge_startup_timeout_s=floating(runtime, "bridge_startup_timeout_s"),
             bridge_stop_timeout_s=floating(runtime, "bridge_stop_timeout_s"),
         ),
@@ -198,10 +191,6 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
 
 
 def validate_teleop_config(config: TeleopConfig) -> None:
-    if RUNTIME_NAME.fullmatch(config.runtime.prefix) is None:
-        raise ValueError("runtime.prefix must be a valid Docker resource prefix")
-    if not Path(config.runtime.run_dir).is_absolute():
-        raise ValueError("runtime.run_dir must be absolute")
     if config.runtime.bridge_startup_timeout_s < 1:
         raise ValueError("runtime.bridge_startup_timeout_s must be at least 1 second")
     if config.runtime.bridge_stop_timeout_s < 1:

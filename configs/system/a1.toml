@@ -58,50 +58,23 @@ max_feedback_age_s = 0.5
 # Operator-adjusted 2026-09-10; arm_seg6 in base_link, meters (X, Y, Z).
 xyz_min = [-0.3, -0.8, -0.2]
 xyz_max = [0.8, 0.8, 1]
-workspace_policy = "clip"
 min_quat_norm = 0.25
 max_feedback_age_s = 0.5
 feedback_wait_timeout_s = 5.0
 
 [eef_ik]
-backend = "trac_ik"
+# TRAC-IK Distance is the sole IK implementation.
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
-max_iterations = 400
-damping = 0.01
-orientation_weight = 0.2
-max_iteration_step_rad = 0.08
+base_link = "base_link"
+tip_link = "arm_seg6"
+timeout_s = 0.01
 position_tolerance_m = 0.003
 orientation_tolerance_rad = 0.02
 max_solution_delta_rad = 1.70
 
-[eef_ik.trac_ik]
-# Distance mode; isolated upstream library, no ROS node or hardware access.
-binary = ".cache/trac_ik/a1_trac_ik"
-base_link = "base_link"
-tip_link = "arm_seg6"
-timeout_s = 0.01
-epsilon = 0.00001
-rpc_timeout_s = 1.0
-startup_timeout_s = 10.0
-
-[eef_ik.constrained]
-# Hard Cartesian norm constraints; soft preference for joint-limit clearance.
-limit_margin_rad = 0.25
-limit_weight = 0.1
-# Numerical reserve inside the unchanged System arrival tolerances.
-tolerance_scale = 0.99
-optimizer_tolerance = 0.000000001
-timeout_s = 0.5
-
-[eef_test]
-step_m = 0.03
-settle_s = 1.0
-
 [gripper]
 stroke_min_mm = 0.0
 stroke_max_mm = 104.0
-# Absorbs the model quantile de-normalization endpoint roundoff.
-normalized_endpoint_tolerance = 0.000002
 
 [cameras]
 warmup_frames = 20
@@ -165,8 +138,6 @@ camera_connect_timeout_s = 1.0
 camera_retry_s = 2.0
 startup_timeout_s = 15.0
 shutdown_timeout_s = 5.0
-graph_update_ms = 1000
-send_buffer_limit_bytes = 10000000
 
 [observability.topics]
 front_image = "/a1/telemetry/cameras/front/image/compressed"

@@ -64,15 +64,10 @@ snapshots, and is finalized alongside the existing video/log artifacts.
 Recording errors are surfaced to the foreground bridge; telemetry never owns
 a command publisher or alters a solved target.
 
-`hardware/constrained_ik.py` is a ROS-free endpoint adapter over pinned SciPy
-optimizers, selected through the System IK factory. System owns all of its
-behavioral settings. The previous staged joint target is supplied by the command
-adapter as a numerical initial guess; the solver retains no trajectory or
-episode state. Pose constraints, joint limits and displacement from current
-feedback are independently verified before returning an `IkSolution`.
-Motion journals include numerical seed source, joint-limit margin and optimizer
-status. The command adapter checks fresh feedback again before replacing its
-active staged target. This does not change tracker or relay ownership.
+`hardware/trac_ik.py` is the sole IK adapter. The native worker uses TRAC-IK
+Distance, while `hardware/eef_ik.py` independently verifies URDF forward
+kinematics. The OpenRAL gateway uses the same adapter with its narrower named
+joint envelope. No alternative numerical solver or previous-target seed exists.
 
 ## Reusable workflow boundary
 
@@ -139,7 +134,17 @@ metadata records its full source revision. Batch resume and export require that
 exact model identity, so results from two checkpoints cannot fill each other's
 slots.
 
-Schemas require all behavior-affecting keys and reject unknown ones. Python
+Schemas require operator-owned behavioral keys and reject unknown ones.
+Inference runs continuously after task selection; per-call/per-action manual
+stepping is retired. LingBot-family serving is single-process; OpenPI uses its
+pinned CUDA/seed contract. These are implementation facts, not selectable keys.
+Implementation details (process names, cache layout, numerical roundoff and
+transport buffers) have one named code owner. Disabled features accept only
+`enabled = false`; their inactive parameters are not copied between deployments.
+Attention rollout uses all actual transformer blocks and has no layer-list knob;
+Diffusion2One advertises no attention-capture support.
+TFP checkpoint identity is owned by `configs/models/tfp/`; model cadence and
+horizon come from the loaded checkpoint, not redundant deployment fields. Python
 apps load typed owners directly; shell exports contain only values needed for
 process lifecycle. No app-specific config may mirror a physical value from the
 System config.
@@ -351,14 +356,12 @@ target rejection records `safety_stopped`; batch resume validates both videos, t
 timeline/sidecar, exact scene/plan slot, and durable operator count/discard
 decision before treating it as finished.
 
-System `[eef] workspace_policy` owns how finite absolute policy XYZ targets
-outside the box are handled: `clip` caps each coordinate to `xyz_min..xyz_max`,
-while `reject` raises a typed workspace rejection. Projection follows
-episode-relative composition and precedes IK. The shared action transform
-leaves observed feedback unchanged; LingBot writes the capped command back to
-its episode-relative KV state. Non-finite values, invalid orientation/gripper,
-IK failures, and relay faults still reject execution. Offline raw-action
-metrics continue to report the original prediction's workspace violations.
+Finite absolute policy XYZ targets are capped to the System `xyz_min..xyz_max`
+workspace after episode-relative composition and before IK. This is the fixed
+execution behavior. The transform leaves observed feedback unchanged; LingBot
+writes capped commands back to its episode-relative KV state. Non-finite values,
+invalid orientation/gripper, IK failures and relay faults still reject execution.
+Offline raw-action metrics report original prediction workspace violations.
 
 The ROS-free LingBot run loop owns the deployment's bounded IK replan counter.
 A typed rejection can call the executor's current-joint hold, reset the model,
@@ -572,30 +575,22 @@ local backend, and does not yet manage a remote inference host.
 
 LingBot and OpenPI pi0.5 predict EEF targets through a shared first-party IK
 adapter and the staged joint runtime.
-`eef_ik.backend` selects the in-process DLS solver or upstream TRAC-IK Distance.
-DLS projects each candidate; TRAC-IK receives the intersection of System absolute
-joint limits and the configured solution-delta interval around fresh feedback.
-Both retain independent Runtime FK and final rejection checks. The bounds
-constrain numerical search, not measured feedback, trajectory
-speed, or collision clearance; a rejected candidate follows the deployment's
-existing bounded replan policy.
-TRAC-IK uses the installed library in the System runtime image, through a small
-C++ stdin/stdout adapter in `hardware/native/`. `just trac-ik-setup` builds it
-without network or device access and records source/binary SHA-256, immutable
-image ID, and library version. One private, network-disabled, read-only worker
-container belongs to each solver instance; no ROS node or publisher is created.
-The bridge closes it after disabling motion; the managed-container shutdown
-fallback also owns it. Pipe timeout, worker failure, or FK model mismatch is an
-infrastructure failure, never an automatic fallback to another solver.
-TRAC-IK uses fresh measured joints as its Distance seed. Its Cartesian axis
-search bounds enclose the System norm tolerances. Native candidates are filtered
-by those norm gates before choosing the nearest seed-distance solution; Runtime
-independently rechecks the original position/orientation norm thresholds.
-DLS numerical parameters remain DLS-only; common acceptance limits
-apply to both. TRAC-IK reports a null iteration count and measured solve time;
-it does not expose comparable DLS iterations. Motion recordings include the
-backend, results, and TRAC-IK build receipt. No planner or automatic return-home
-behavior is introduced; the complete model EEF sequence still owns the motion.
+TRAC-IK Distance receives the intersection of System absolute joint limits and
+the displacement interval around fresh feedback. Runtime independently verifies
+FK and endpoint limits, then rechecks fresh feedback before staging the target.
+The bounds constrain numerical search, not trajectory speed or collision clearance.
+A rejected endpoint follows the deployment's bounded replan policy.
+
+The native C++ adapter is built against the runtime image's installed library.
+`just trac-ik-setup` records source/binary SHA-256, image identity and library
+version. Cache location and worker protocol parameters are implementation-owned.
+Each solver owns one network-disabled, read-only worker container with no robot
+or camera devices. Shutdown closes it; the managed-container fallback also owns
+it. No worker failure silently switches numerical implementations. Independent
+KDL/Runtime FK and Cartesian norm checks remain mandatory. Recordings include
+solve time and the build receipt. Static configuration parsing is independent
+of this local artifact; launch preflight and solver construction verify it.
+
 Both reuse the System camera, gripper, topic, and safety contracts and refuse
 startup until their deployment is explicitly marked ready. Execution remains
 independently owned in each deployment config. The reviewed fruit-placement

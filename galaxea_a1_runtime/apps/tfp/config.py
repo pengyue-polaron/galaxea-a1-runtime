@@ -7,19 +7,18 @@ from pathlib import Path
 
 from embodied_ops import load_task_catalog
 
+from galaxea_a1_runtime.apps.tfp.model_config import load_tfp_model_config
 from galaxea_a1_runtime.apps.tfp.config_schema import (
     TFPConfig,
     TFPDiagnosticsConfig,
     TFPEngineConfig,
     TFPExecutionConfig,
-    TFPModelConfig,
     TFPObservationConfig,
     TFPResetConfig,
 )
 from galaxea_a1_runtime.configuration.base import (
     boolean,
     floating,
-    hex_digest,
     identifier,
     integer,
     load_toml,
@@ -28,14 +27,12 @@ from galaxea_a1_runtime.configuration.base import (
     require_exact_keys,
     required_table,
     string,
-    string_tuple,
 )
 from galaxea_a1_runtime.configuration.paths import TFP_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.models.backend import CodeBackendConfig, parse_code_backend
 from galaxea_a1_runtime.schema import (
     FRONT_IMAGE_FEATURE_KEY,
-    JOINT_ACTION_NAMES_RAD,
     WRIST_IMAGE_FEATURE_KEY,
     camera_specs_from_system,
 )
@@ -70,33 +67,11 @@ def load_tfp_config(path: Path, *, repo_root: Path | None = None) -> TFPConfig:
         referenced_config(data, repo_root, key="tasks"), repo_root=repo_root
     )
 
-    model = required_table(data, "model")
     deployment = required_table(data, "deployment")
     observations = required_table(data, "observations")
     reset = required_table(data, "reset")
     execution = required_table(data, "execution")
     diagnostics = required_table(data, "diagnostics")
-    require_exact_keys(
-        model,
-        required={
-            "id",
-            "checkpoint",
-            "checkpoint_format",
-            "checkpoint_step",
-            "checkpoint_size",
-            "checkpoint_sha256",
-            "metadata",
-            "metadata_info_sha256",
-            "metadata_stats_sha256",
-            "dataset_repo_id",
-            "dataset_revision",
-            "action_names",
-            "action_horizon",
-            "actions_per_query",
-            "max_training_episode_actions",
-        },
-        label="TFP model",
-    )
     require_exact_keys(
         deployment,
         required={"id", "ready", "task_id"},
@@ -145,36 +120,8 @@ def load_tfp_config(path: Path, *, repo_root: Path | None = None) -> TFPConfig:
         backend=backend,
         engine=engine,
         task_catalog=task_catalog,
-        model=TFPModelConfig(
-            model_id=identifier(string(model, "id"), label="model.id"),
-            checkpoint=repo_path(repo_root, string(model, "checkpoint")),
-            checkpoint_format=string(model, "checkpoint_format"),
-            checkpoint_step=integer(model, "checkpoint_step"),
-            checkpoint_size=integer(model, "checkpoint_size"),
-            checkpoint_sha256=hex_digest(
-                string(model, "checkpoint_sha256"), 64, label="model.checkpoint_sha256"
-            ),
-            metadata=repo_path(repo_root, string(model, "metadata")),
-            metadata_info_sha256=hex_digest(
-                string(model, "metadata_info_sha256"),
-                64,
-                label="model.metadata_info_sha256",
-            ),
-            metadata_stats_sha256=hex_digest(
-                string(model, "metadata_stats_sha256"),
-                64,
-                label="model.metadata_stats_sha256",
-            ),
-            dataset_repo_id=string(model, "dataset_repo_id"),
-            dataset_revision=hex_digest(
-                string(model, "dataset_revision"), 40, label="model.dataset_revision"
-            ),
-            action_names=string_tuple(
-                model, "action_names", len(JOINT_ACTION_NAMES_RAD)
-            ),
-            action_horizon=integer(model, "action_horizon"),
-            actions_per_query=integer(model, "actions_per_query"),
-            max_training_episode_actions=integer(model, "max_training_episode_actions"),
+        model=load_tfp_model_config(
+            referenced_config(data, repo_root, key="model"), repo_root=repo_root
         ),
         observations=TFPObservationConfig(
             front_key=string(observations, "front_key"),
@@ -245,33 +192,8 @@ def validate_tfp_config(config: TFPConfig) -> None:
         raise ValueError("TFP engine.device must be 'cuda'")
     if config.engine.seed < 0:
         raise ValueError("TFP engine.seed must be non-negative")
-    if config.model.checkpoint_format != "training-state":
-        raise ValueError("TFP checkpoint_format must be 'training-state'")
-    if not config.model.checkpoint.is_relative_to(
-        (config.repo_root / "models/checkpoints").resolve()
-    ):
-        raise ValueError("TFP checkpoint must remain under models/checkpoints/")
     if not config.model.metadata.is_relative_to(config.backend.source.checkout):
         raise ValueError("TFP metadata must remain inside the pinned source checkout")
-    if config.model.action_names != JOINT_ACTION_NAMES_RAD:
-        raise ValueError(
-            "TFP action_names do not match the canonical A1 joint contract"
-        )
-    if (
-        min(
-            config.model.checkpoint_step,
-            config.model.checkpoint_size,
-            config.model.action_horizon,
-            config.model.actions_per_query,
-            config.model.max_training_episode_actions,
-        )
-        <= 0
-    ):
-        raise ValueError(
-            "TFP model dimensions, checkpoint identity, and budget must be positive"
-        )
-    if config.model.actions_per_query > config.model.action_horizon:
-        raise ValueError("TFP actions_per_query exceeds action_horizon")
     if config.execution.execute and not config.deployment_ready:
         raise ValueError("TFP execution.execute requires deployment.ready=true")
     if config.execution.max_actions < 0:

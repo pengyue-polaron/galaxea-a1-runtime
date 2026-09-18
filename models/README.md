@@ -115,3 +115,8 @@ and inference commands.
 
 Do not commit weights and do not add Git LFS. Do not delete artifacts or staging
 directories without explicit review and authorization.
+
+The transferred TFP checkpoint identity and metadata hashes live in
+`configs/models/tfp/press_button_joint.checkpoint.toml`; its deployment references that
+owner. TFP execution chunk length and horizon are read from the checkpoint by
+the pinned runner, and diagnostics report its actual `n_action_steps`.

@@ -33,7 +33,6 @@ class LingBotPolicyServerConfig:
     vendor_config: str
     save_root: Path
     master_port: int
-    world_size: int
     startup_timeout_s: float
     shutdown_timeout_s: float
     expected_weight_sha256: str
@@ -43,7 +42,6 @@ class LingBotPolicyServerConfig:
     text_encoder_device: TextEncoderDevice
     enable_offload: bool
     attention_mode: AttentionMode
-    attention_capture_layers: tuple[int, ...]
     seed: int
     height: int
     width: int
@@ -64,6 +62,10 @@ class LingBotPolicyServerConfig:
     model_subdirectory: str = ""
 
     @property
+    def world_size(self) -> int:
+        return 1
+
+    @property
     def transformer_root(self) -> Path:
         return self.model.artifact_root / self.model_subdirectory
 
@@ -74,7 +76,6 @@ class LingBotPolicyServerConfig:
 
 @dataclass(frozen=True)
 class LingBotSettleConfig:
-    enabled: bool
     min_wait_s: float
     stable_window_s: float
     timeout_s: float
@@ -85,12 +86,10 @@ class LingBotSettleConfig:
 @dataclass(frozen=True)
 class LingBotExecutionConfig:
     execute: bool
-    step_mode: bool
-    step_actions: bool
     max_model_calls: int
     ik_replan_max_attempts: int
-    ik_subgoal: IkSubgoalConfig
-    settle: LingBotSettleConfig
+    ik_subgoal: IkSubgoalConfig | None
+    settle: LingBotSettleConfig | None
     execute_frames: int
     kv_observations_per_frame: int
     exec_rate: float

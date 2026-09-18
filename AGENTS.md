@@ -37,8 +37,9 @@ Read the relevant document; tracked configuration and executable code are author
   `just prompt-catalog-create` as documented in RUNBOOK, preserving exact text and
   marking `train` only for checkpoint training prompts.
 - Create configs with `config template`, `config validate`, and `config create`.
-  Keep one owner per value, require behavior-affecting keys, and reject unknown
-  keys. Update affected loaders, consumers, and docs with contract changes;
+  Keep one owner per value, require operator-owned behavior keys, and reject
+  unknown keys. Fixed implementation details belong to named code constants;
+  disabled features carry no inactive tuning values. Update affected loaders, consumers, and docs with contract changes;
   do not shadow configuration with CLI/environment defaults or hidden clamps.
 - Ownership flows `scripts -> apps -> runtime/hardware/policies -> config/schema/safety`.
   Entrypoints are thin; state lives in `galaxea_a1_runtime/apps/`. Shared operations

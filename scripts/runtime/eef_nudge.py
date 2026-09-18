@@ -239,14 +239,19 @@ def parse_args() -> Namespace:
     return parser.parse_args()
 
 
+# Fixed acceptance-tool motion, independent of production System configuration.
+NUDGE_STEP_M = 0.03
+NUDGE_SETTLE_S = 1.0
+
+
 def main() -> int:
     args = parse_args()
     system = load_system_config(args.config, repo_root=ROOT_DIR)
     nudge = EefNudge(
         system,
         execute=args.execute,
-        step_m=system.eef_test.step_m,
-        settle_s=system.eef_test.settle_s,
+        step_m=NUDGE_STEP_M,
+        settle_s=NUDGE_SETTLE_S,
     )
     try:
         nudge.run()

@@ -2,8 +2,6 @@
 config = "configs/system/a1.toml"
 
 [runtime]
-prefix = "a1-teleop"
-run_dir = "/tmp/a1-teleop"
 bridge_startup_timeout_s = 65.0
 bridge_stop_timeout_s = 5.0
 

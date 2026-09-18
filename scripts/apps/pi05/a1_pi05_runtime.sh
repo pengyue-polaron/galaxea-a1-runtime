@@ -95,7 +95,13 @@ smoke_inference() {
     "${SMOKE_SCRIPT}" --repo-root "${ROOT}" --config "${CONFIG_PATH}"
 }
 
+check_ik_environment() {
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.trac_ik_setup --check --config "${SYSTEM_CONFIG_PATH}" >/dev/null
+}
+
 start_services() {
+  check_ik_environment
   "${BASE_RUNTIME}" services
 }
 
@@ -146,6 +152,7 @@ start_bridge() {
 }
 
 start_pipeline() {
+  check_ik_environment
   "${CAMERA_RUNTIME}" --config "${SYSTEM_CONFIG_PATH}"
   select_task
   cleanup_failed_pipeline() {

@@ -64,7 +64,6 @@ __all__ = [
     "SystemDoctorConfig",
     "SystemEefConfig",
     "SystemEefIkConfig",
-    "SystemEefTestConfig",
     "SystemRobotServiceConfig",
     "SystemGripperConfig",
     "SystemHostConfig",
@@ -180,58 +179,26 @@ class SystemJointSafetyConfig:
 class SystemEefConfig:
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
-    workspace_policy: str
     min_quat_norm: float
     max_feedback_age_s: float
     feedback_wait_timeout_s: float
 
 
 @dataclass(frozen=True)
-class TracIkConfig:
-    binary: Path
+class SystemEefIkConfig:
+    urdf: Path
     base_link: str
     tip_link: str
     timeout_s: float
-    epsilon: float
-    rpc_timeout_s: float
-    startup_timeout_s: float
-
-
-@dataclass(frozen=True)
-class ConstrainedIkConfig:
-    limit_margin_rad: float
-    limit_weight: float
-    tolerance_scale: float
-    optimizer_tolerance: float
-    timeout_s: float
-
-
-@dataclass(frozen=True)
-class SystemEefIkConfig:
-    backend: str
-    trac_ik: TracIkConfig
-    constrained: ConstrainedIkConfig
-    urdf: Path
-    max_iterations: int
-    damping: float
-    orientation_weight: float
-    max_iteration_step_rad: float
     position_tolerance_m: float
     orientation_tolerance_rad: float
     max_solution_delta_rad: float
 
 
 @dataclass(frozen=True)
-class SystemEefTestConfig:
-    step_m: float
-    settle_s: float
-
-
-@dataclass(frozen=True)
 class SystemGripperConfig:
     stroke_min_mm: float
     stroke_max_mm: float
-    normalized_endpoint_tolerance: float
 
 
 @dataclass(frozen=True)
@@ -246,7 +213,6 @@ class SystemConfig:
     joint_safety: SystemJointSafetyConfig
     eef: SystemEefConfig
     eef_ik: SystemEefIkConfig
-    eef_test: SystemEefTestConfig
     gripper: SystemGripperConfig
     cameras: SystemCamerasConfig
     camera_diagnostics: CameraDiagnosticsConfig
@@ -269,7 +235,6 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
             "joint_safety",
             "eef",
             "eef_ik",
-            "eef_test",
             "gripper",
             "cameras",
             "camera_diagnostics",
@@ -288,7 +253,6 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     joint = required_table(data, "joint_safety")
     eef = required_table(data, "eef")
     eef_ik = required_table(data, "eef_ik")
-    eef_test = required_table(data, "eef_test")
     gripper = required_table(data, "gripper")
     cameras = required_table(data, "cameras")
     operator_panel = required_table(data, "operator_panel")
@@ -319,9 +283,6 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     require_exact_keys(eef, required=set(SystemEefConfig.__annotations__), label="eef")
     require_exact_keys(
         eef_ik, required=set(SystemEefIkConfig.__annotations__), label="eef_ik"
-    )
-    require_exact_keys(
-        eef_test, required=set(SystemEefTestConfig.__annotations__), label="eef_test"
     )
     require_exact_keys(
         gripper, required=set(SystemGripperConfig.__annotations__), label="gripper"
@@ -402,34 +363,22 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         eef=SystemEefConfig(
             xyz_min=float_tuple(eef, "xyz_min", 3),
             xyz_max=float_tuple(eef, "xyz_max", 3),
-            workspace_policy=string(eef, "workspace_policy"),
             min_quat_norm=floating(eef, "min_quat_norm"),
             max_feedback_age_s=floating(eef, "max_feedback_age_s"),
             feedback_wait_timeout_s=floating(eef, "feedback_wait_timeout_s"),
         ),
         eef_ik=SystemEefIkConfig(
-            backend=string(eef_ik, "backend"),
-            trac_ik=_parse_trac_ik(required_table(eef_ik, "trac_ik"), repo_root),
-            constrained=_parse_constrained_ik(required_table(eef_ik, "constrained")),
             urdf=repo_path(repo_root, string(eef_ik, "urdf")),
-            max_iterations=integer(eef_ik, "max_iterations"),
-            damping=floating(eef_ik, "damping"),
-            orientation_weight=floating(eef_ik, "orientation_weight"),
-            max_iteration_step_rad=floating(eef_ik, "max_iteration_step_rad"),
+            base_link=string(eef_ik, "base_link"),
+            tip_link=string(eef_ik, "tip_link"),
+            timeout_s=floating(eef_ik, "timeout_s"),
             position_tolerance_m=floating(eef_ik, "position_tolerance_m"),
             orientation_tolerance_rad=floating(eef_ik, "orientation_tolerance_rad"),
             max_solution_delta_rad=floating(eef_ik, "max_solution_delta_rad"),
         ),
-        eef_test=SystemEefTestConfig(
-            step_m=floating(eef_test, "step_m"),
-            settle_s=floating(eef_test, "settle_s"),
-        ),
         gripper=SystemGripperConfig(
             stroke_min_mm=floating(gripper, "stroke_min_mm"),
             stroke_max_mm=floating(gripper, "stroke_max_mm"),
-            normalized_endpoint_tolerance=floating(
-                gripper, "normalized_endpoint_tolerance"
-            ),
         ),
         cameras=parse_system_cameras(cameras),
         camera_diagnostics=parse_camera_diagnostics_config(
@@ -484,70 +433,7 @@ def _validate_robot_service_endpoint(endpoint: str) -> None:
         raise ValueError("robot_service.endpoint is too long for portable AF_UNIX use")
 
 
-def _parse_trac_ik(data: dict, repo_root: Path) -> TracIkConfig:
-    require_exact_keys(
-        data, required=set(TracIkConfig.__annotations__), label="eef_ik.trac_ik"
-    )
-    config = TracIkConfig(
-        binary=repo_path(repo_root, string(data, "binary")),
-        base_link=string(data, "base_link"),
-        tip_link=string(data, "tip_link"),
-        timeout_s=floating(data, "timeout_s"),
-        epsilon=floating(data, "epsilon"),
-        rpc_timeout_s=floating(data, "rpc_timeout_s"),
-        startup_timeout_s=floating(data, "startup_timeout_s"),
-    )
-    if (
-        min(
-            config.timeout_s,
-            config.epsilon,
-            config.rpc_timeout_s,
-            config.startup_timeout_s,
-        )
-        <= 0
-    ):
-        raise ValueError("eef_ik.trac_ik numerical settings must be positive")
-    if config.rpc_timeout_s <= config.timeout_s:
-        raise ValueError("TRAC-IK RPC timeout must exceed solver timeout")
-    return config
-
-
-def _parse_constrained_ik(data: dict) -> ConstrainedIkConfig:
-    require_exact_keys(
-        data,
-        required=set(ConstrainedIkConfig.__annotations__),
-        label="eef_ik.constrained",
-    )
-    config = ConstrainedIkConfig(
-        **{key: floating(data, key) for key in ConstrainedIkConfig.__annotations__}
-    )
-    if any(value <= 0 for value in vars(config).values()):
-        raise ValueError("eef_ik.constrained settings must be positive")
-    if not 0 < config.tolerance_scale < 1:
-        raise ValueError(
-            "Constrained IK tolerance_scale must be strictly between 0 and 1"
-        )
-    return config
-
-
 def validate_system_config(config: SystemConfig) -> None:
-    if config.eef_ik.backend not in {"dls", "trac_ik", "constrained"}:
-        raise ValueError("eef_ik.backend must be dls, trac_ik or constrained")
-    if config.eef_ik.constrained.limit_margin_rad * 2 >= min(
-        high - low
-        for low, high in zip(
-            config.joint_safety.lower_limits,
-            config.joint_safety.upper_limits,
-            strict=True,
-        )
-    ):
-        raise ValueError(
-            "Constrained IK limit margin must fit inside every joint range"
-        )
-    if config.eef_ik.trac_ik.epsilon >= min(
-        config.eef_ik.position_tolerance_m, config.eef_ik.orientation_tolerance_rad
-    ):
-        raise ValueError("TRAC-IK epsilon must fit inside Cartesian norm tolerances")
     try:
         IPv4Address(config.operator_panel.bind)
     except AddressValueError as exc:
@@ -631,8 +517,6 @@ def validate_system_config(config: SystemConfig) -> None:
         lo >= hi for lo, hi in zip(config.eef.xyz_min, config.eef.xyz_max, strict=True)
     ):
         raise ValueError("eef.xyz_min must be below xyz_max")
-    if config.eef.workspace_policy not in {"reject", "clip"}:
-        raise ValueError("eef.workspace_policy must be 'reject' or 'clip'")
     if (
         min(
             config.eef.min_quat_norm,
@@ -644,13 +528,9 @@ def validate_system_config(config: SystemConfig) -> None:
         raise ValueError("eef quaternion and feedback limits must be positive")
     if not config.eef_ik.urdf.is_file():
         raise ValueError(f"eef_ik.urdf is missing: {config.eef_ik.urdf}")
-    if config.eef_ik.max_iterations <= 0:
-        raise ValueError("eef_ik.max_iterations must be positive")
     if (
         min(
-            config.eef_ik.damping,
-            config.eef_ik.orientation_weight,
-            config.eef_ik.max_iteration_step_rad,
+            config.eef_ik.timeout_s,
             config.eef_ik.position_tolerance_m,
             config.eef_ik.orientation_tolerance_rad,
             config.eef_ik.max_solution_delta_rad,
@@ -658,12 +538,8 @@ def validate_system_config(config: SystemConfig) -> None:
         <= 0
     ):
         raise ValueError("eef_ik numeric settings must be positive")
-    if config.eef_test.step_m <= 0 or config.eef_test.settle_s < 0:
-        raise ValueError("eef_test step must be positive and settle time non-negative")
     if config.gripper.stroke_max_mm <= config.gripper.stroke_min_mm:
         raise ValueError("gripper stroke range is invalid")
-    if not 0 <= config.gripper.normalized_endpoint_tolerance < 0.5:
-        raise ValueError("gripper.normalized_endpoint_tolerance must be in [0, 0.5)")
     if (
         min(
             config.relay.enable_timeout_s,

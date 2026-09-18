@@ -11,15 +11,17 @@ from galaxea_a1_runtime.configuration.system import SystemConfig
 from galaxea_a1_runtime.gripper import denormalize_stroke, normalize_stroke
 
 
+# Absorb floating point roundoff at normalized model gripper endpoints.
+GRIPPER_ENDPOINT_TOLERANCE = 0.000002
+
+
 @dataclass(frozen=True, kw_only=True)
 class EefActionTransformConfig:
     xyz_min: tuple[float, float, float]
     xyz_max: tuple[float, float, float]
-    workspace_policy: str
     min_quat_norm: float
     gripper_stroke_min: float
     gripper_stroke_max: float
-    gripper_normalized_endpoint_tolerance: float
 
 
 class EefPolicyWorkspaceRejected(ValueError):
@@ -58,13 +60,9 @@ def build_action_transform_config(
     return EefActionTransformConfig(
         xyz_min=system.eef.xyz_min,
         xyz_max=system.eef.xyz_max,
-        workspace_policy=system.eef.workspace_policy,
         min_quat_norm=system.eef.min_quat_norm,
         gripper_stroke_min=system.gripper.stroke_min_mm,
         gripper_stroke_max=system.gripper.stroke_max_mm,
-        gripper_normalized_endpoint_tolerance=(
-            system.gripper.normalized_endpoint_tolerance
-        ),
     )
 
 
@@ -77,9 +75,7 @@ def normalize_condition_action(
     action[3:7] = normalize_quat(
         action[3:7], min_norm=config.min_quat_norm, label="EE state condition"
     )
-    action[7] = _continuous_gripper(
-        action[7], tolerance=config.gripper_normalized_endpoint_tolerance
-    )
+    action[7] = _continuous_gripper(action[7], tolerance=GRIPPER_ENDPOINT_TOLERANCE)
     return action
 
 
@@ -90,17 +86,12 @@ def validate_policy_action(
     """Apply the tracked workspace policy to a finite absolute model action."""
 
     action = _as_action8(raw8, label="EEF policy action")
-    if config.workspace_policy == "clip":
-        action[:3] = np.clip(action[:3], config.xyz_min, config.xyz_max)
-    elif config.workspace_policy != "reject":
-        raise ValueError(f"Unknown EEF workspace policy: {config.workspace_policy}")
+    action[:3] = np.clip(action[:3], config.xyz_min, config.xyz_max)
     _validate_xyz(action[:3], config)
     action[3:7] = normalize_quat(
         action[3:7], min_norm=config.min_quat_norm, label="EEF policy action"
     )
-    action[7] = _continuous_gripper(
-        action[7], tolerance=config.gripper_normalized_endpoint_tolerance
-    )
+    action[7] = _continuous_gripper(action[7], tolerance=GRIPPER_ENDPOINT_TOLERANCE)
     return action
 
 

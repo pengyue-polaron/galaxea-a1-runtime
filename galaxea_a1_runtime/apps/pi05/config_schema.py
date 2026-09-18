@@ -17,10 +17,16 @@ PoseMode = Literal["absolute", "episode-relative"]
 
 @dataclass(frozen=True)
 class Pi05EngineConfig:
-    jax_platform: Literal["cuda"]
     xla_memory_fraction: float
-    seed: int
     sampling_steps: int
+
+    @property
+    def jax_platform(self) -> Literal["cuda"]:
+        return "cuda"
+
+    @property
+    def seed(self) -> int:
+        return 0
 
 
 @dataclass(frozen=True)
@@ -38,9 +44,15 @@ class Pi05ModelContract:
 
 @dataclass(frozen=True)
 class Pi05SessionConfig:
-    tmux: str
-    model_tmux: str
     startup_timeout_s: float
+
+    @property
+    def tmux(self) -> str:
+        return "pi05-a1"
+
+    @property
+    def model_tmux(self) -> str:
+        return "pi05-policy-server"
 
 
 @dataclass(frozen=True)
@@ -60,8 +72,6 @@ class Pi05ObservationConfig:
 @dataclass(frozen=True)
 class Pi05ExecutionConfig:
     execute: bool
-    step_mode: bool
-    step_actions: bool
     max_model_calls: int
     execute_actions_per_inference: int
     exec_rate: float

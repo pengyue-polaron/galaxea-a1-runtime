@@ -134,7 +134,6 @@ def main() -> int:
             return transformer
         patch_height, patch_width = job.patch_size[1:]
         capture = LingBotAttentionCapture(
-            layers=policy.attention_capture_layers,
             frame_chunk_size=policy.frame_chunk_size,
             action_query_tokens=(policy.frame_chunk_size * policy.action_per_frame),
             selected_action_query_tokens=(
@@ -339,7 +338,6 @@ def main() -> int:
         f"actions_per_frame={policy.action_per_frame} cameras={job.obs_cam_keys} "
         f"text_encoder={policy.text_encoder_device} "
         f"attention={policy.attention_mode} offload={policy.enable_offload} "
-        f"attention_capture_layers={policy.attention_capture_layers} "
         f"world_size={policy.world_size} fsdp=False "
         f"seed={policy.seed} contract={metadata['contract_sha256']}"
     )

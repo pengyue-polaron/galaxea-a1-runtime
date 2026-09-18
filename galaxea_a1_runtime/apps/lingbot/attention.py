@@ -227,7 +227,6 @@ class LingBotAttentionCapture:
     def __init__(
         self,
         *,
-        layers: tuple[int, ...],
         frame_chunk_size: int,
         action_query_tokens: int,
         selected_action_query_tokens: int,
@@ -238,8 +237,7 @@ class LingBotAttentionCapture:
         cache_name: str = "pos",
     ) -> None:
         if (
-            not layers
-            or frame_chunk_size <= 0
+            frame_chunk_size <= 0
             or action_query_tokens <= 0
             or not 0 < selected_action_query_tokens <= action_query_tokens
             or grid_height <= 0
@@ -248,7 +246,7 @@ class LingBotAttentionCapture:
             or action_forward_calls <= 0
         ):
             raise ValueError("LingBot attention capture dimensions must be positive")
-        self.layers = layers
+        self.layers: tuple[int, ...] = ()
         self.frame_chunk_size = frame_chunk_size
         self.action_query_tokens = action_query_tokens
         self.selected_action_query_tokens = selected_action_query_tokens
@@ -275,12 +273,9 @@ class LingBotAttentionCapture:
 
     def install(self, transformer: Any) -> None:
         blocks = transformer.blocks
-        expected_layers = tuple(range(len(blocks)))
-        if self.layers != expected_layers:
-            raise ValueError(
-                "attention.capture_layers must contain every transformer layer "
-                f"for rollout: configured={self.layers}, expected={expected_layers}"
-            )
+        self.layers = tuple(range(len(blocks)))
+        if not self.layers:
+            raise ValueError("Attention rollout requires transformer blocks")
         for layer in self.layers:
             attention = blocks[layer].attn1
             original = attention.attn_op

@@ -12,11 +12,16 @@ def registered_models(
     *,
     backend: str | None = None,
 ) -> tuple[ModelArtifactConfig, ...]:
-    """Load every tracked model descriptor, optionally for one backend."""
+    """Load downloadable model descriptors, optionally for one backend."""
 
     root = repo_root.resolve()
     paths = sorted((root / "configs/models").glob("**/*.toml"))
-    descriptors = [path for path in paths if not path.name.endswith(".contract.toml")]
+    # Transferred checkpoints have their own verifier, not a Hub download source.
+    descriptors = [
+        path
+        for path in paths
+        if not path.name.endswith((".contract.toml", ".checkpoint.toml"))
+    ]
     models = tuple(load_model_config(path, repo_root=root) for path in descriptors)
     identities: dict[tuple[str, str], Path] = {}
     for model in models:

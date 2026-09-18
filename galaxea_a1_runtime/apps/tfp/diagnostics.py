@@ -85,7 +85,7 @@ class TFPDiagnostics:
                 "deployment_id": config.deployment_id,
                 "task_id": config.task_id,
                 "checkpoint_step": config.model.checkpoint_step,
-                "actions_per_query": config.model.actions_per_query,
+                "actions_per_query": runner.policy.config.n_action_steps,
                 "belief_semantics": (
                     "continuous LTC hidden state; not an explicit event probability"
                 ),

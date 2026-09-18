@@ -29,7 +29,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.apps.lingbot.rollout import LingBotActionChunk
 from galaxea_a1_runtime.console import ArgumentParser, info, success
-from galaxea_a1_runtime.hardware.eef_ik import A1EefIkSolver
+from galaxea_a1_runtime.hardware.trac_ik import TracIkSolver
 from galaxea_a1_runtime.policies.eef_actions import (
     absolute_action_to_relative,
     build_action_transform_config,
@@ -104,7 +104,7 @@ class LingBotOpenRalPolicy:
             close_timeout_s=server.close_timeout_s,
             expected_metadata=server_metadata(config),
         )
-        self._solver: A1EefIkSolver | None = None
+        self._solver: TracIkSolver | None = None
         self._contract: OpenRalPolicyContract | None = None
         self._executor = ThreadPoolExecutor(
             max_workers=1,
@@ -191,16 +191,15 @@ class LingBotOpenRalPolicy:
             raise RuntimeError(
                 "OpenRAL policy gateway is already configured differently"
             )
+        if self._contract == contract:
+            return
         ik = self.config.system.eef_ik
-        self._solver = A1EefIkSolver(
+        self._solver = TracIkSolver(
+            system=self.config.system,
             urdf_path=ik.urdf,
             joint_names=names,
             lower_limits=lower,
             upper_limits=upper,
-            max_iterations=ik.max_iterations,
-            damping=ik.damping,
-            orientation_weight=ik.orientation_weight,
-            max_iteration_step_rad=ik.max_iteration_step_rad,
             position_tolerance_m=ik.position_tolerance_m,
             orientation_tolerance_rad=ik.orientation_tolerance_rad,
             max_solution_delta_rad=ik.max_solution_delta_rad,
@@ -276,8 +275,12 @@ class LingBotOpenRalPolicy:
     def close(self) -> None:
         """Close the inference connection and worker."""
 
-        self.client.close()
-        self._executor.shutdown(wait=True, cancel_futures=True)
+        try:
+            self.client.close()
+        finally:
+            self._executor.shutdown(wait=True, cancel_futures=True)
+            if self._solver is not None:
+                self._solver.close()
 
     def _infer_chunk(
         self,

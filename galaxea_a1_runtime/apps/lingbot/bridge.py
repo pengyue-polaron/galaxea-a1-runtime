@@ -24,7 +24,7 @@ import numpy as np
 
 import rospy
 
-from embodied_ops.operator_panel import announce_input, announce_progress
+from embodied_ops.operator_panel import announce_progress
 from galaxea_a1_runtime.hardware.eef_bridge import EefIkCommandPublisher
 from galaxea_a1_runtime.policies.eef_actions import (
     build_action_transform_config,
@@ -49,14 +49,12 @@ from galaxea_a1_runtime.apps.lingbot.run_loop import (
 )
 from galaxea_a1_runtime.apps.lingbot.protocol import server_metadata
 from galaxea_a1_runtime.apps.lingbot.motion_recording import MotionRecording
+from galaxea_a1_runtime.hardware.trac_ik import trac_ik_binary
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
 from embodied_ops import TaskPrompt
 from galaxea_a1_runtime.console import (
     LiveStatusLine,
-    Tone,
     info,
-    step,
-    style,
     success,
     warning,
 )
@@ -188,11 +186,9 @@ class A1LingBotEEBridge:
             self.motion_recording.snapshot(self.system.eef_ik.urdf, "robot.urdf")
             self.motion_recording.snapshot(self.system.path, "system.toml")
             self.motion_recording.snapshot(config.path, "deployment.toml")
-            if self.system.eef_ik.backend == "trac_ik":
-                self.motion_recording.snapshot(
-                    self.system.eef_ik.trac_ik.binary.with_suffix(".json"),
-                    "trac_ik_build.json",
-                )
+            self.motion_recording.snapshot(
+                trac_ik_binary(self.system).with_suffix(".json"), "trac_ik_build.json"
+            )
             for topic, message_type, kind in (
                 (topics.joint_states, JointState, "measured_joints"),
                 (topics.joint_target, JointState, "joint_target"),
@@ -296,14 +292,6 @@ class A1LingBotEEBridge:
             )
         return last_command
 
-    @staticmethod
-    def _ask_next(prompt: str) -> str:
-        announce_input(("enter", "quit"))
-        try:
-            return input(prompt).strip().lower()
-        except EOFError:
-            return "q"
-
     def run(self) -> None:
         if self.client is None or self.cameras is None:
             raise RuntimeError("LingBot bridge is closed")
@@ -341,31 +329,16 @@ class A1LingBotEEBridge:
             raise RuntimeError("Cannot establish the episode EEF origin")
         self.executor.activate_current_hold()
         info("Relay activated on a fresh current-joint hold.")
-        if self.execution.step_mode:
-            info("Holding the current EE pose while waiting for Enter.")
-            return
         info(
             "Continuous execution armed: "
             f"calls={self.execution.max_model_calls or 'unbounded'} "
             f"frames_per_call={self.execution.execute_frames} "
             f"rate={self.execution.exec_rate:.1f}Hz "
             f"ik_replan_max_attempts={self.execution.ik_replan_max_attempts} "
-            f"ik_subgoal_enabled={self.execution.ik_subgoal.enabled} "
+            f"ik_subgoal_enabled={(self.execution.ik_subgoal is not None)} "
             "cache_action_source=requested-action"
         )
         self._update_live_status(0, phase="READY", force=True)
-
-    def _wait_for_inference_request(self, call_index: int) -> bool:
-        if not self.execution.step_mode:
-            return True
-        step(f"Inference #{call_index + 1} ready. Enter=run one model call, q=quit.")
-        command = self._ask_next(
-            style(
-                f"Inference #{call_index + 1} > ",
-                Tone.STEP,
-            )
-        )
-        return command not in {"q", "quit", "exit"}
 
     def _infer_chunk(
         self, call_index: int, *, first: bool
@@ -403,16 +376,8 @@ class A1LingBotEEBridge:
         self,
         call_index: int,
         chunk: LingBotActionChunk,
-    ) -> tuple[bool, list, bool]:
-        if self.execution.step_actions:
-            info(
-                f"Execution #{call_index + 1}: "
-                f"This inference produced {chunk.total_steps} EE steps.\n"
-                f"The next {chunk.total_steps} Enter presses publish these existing steps; "
-                "they DO NOT run new inference."
-            )
+    ) -> list:
         key_frames: list = []
-        cache_eligible = True
         for frame_index, step_index, cache_frame_index, raw_action in chunk.steps():
             validated_action = self.state.validate(raw_action)
             self.motion_recording.record(
@@ -434,9 +399,7 @@ class A1LingBotEEBridge:
             chunk.cache_state[:, cache_frame_index, step_index] = (
                 self.state.absolute_to_model(validated_action)
             )
-            if self.execution.print_actions and (
-                step_index == 0 or self.execution.step_actions
-            ):
+            if self.execution.print_actions and step_index == 0:
                 self.reviewer.print_step(
                     call_index=call_index,
                     frame_index=frame_index,
@@ -444,15 +407,6 @@ class A1LingBotEEBridge:
                     model_action=raw_action,
                     validated_action=validated_action,
                 )
-            if self.execution.step_actions:
-                command = self._ask_next(
-                    "       Next=publish this EE step, s=skip, q=quit: "
-                )
-                if command in {"q", "quit", "exit"}:
-                    return True, key_frames, cache_eligible
-                if command in {"s", "skip"}:
-                    cache_eligible = False
-                    continue
             if self.execution.execute:
                 if not self.executor.motion_enabled:
                     self.live_status.break_line()
@@ -460,9 +414,8 @@ class A1LingBotEEBridge:
                     executed = self._publish_ee_action(validated_action)
                 except A1EefIkTargetRejected:
                     if (
-                        self.execution.ik_subgoal.enabled
-                        and call_index + 1 < self.execution.max_model_calls
-                    ):
+                        self.execution.ik_subgoal is not None
+                    ) and call_index + 1 < self.execution.max_model_calls:
                         self._try_ik_subgoal(validated_action)
                     raise
                 chunk.cache_state[:, cache_frame_index, step_index] = (
@@ -482,7 +435,7 @@ class A1LingBotEEBridge:
                 )
                 if (
                     self.execution.execute
-                    and self.execution.settle.enabled
+                    and (self.execution.settle is not None)
                     and final_step
                 ):
                     observation = self._settled_observation(call_index, executed)
@@ -493,11 +446,13 @@ class A1LingBotEEBridge:
                         "Camera frame unavailable during KV-cache collection"
                     )
                 key_frames.extend(observation["obs"])
-        return False, key_frames, cache_eligible
+        return key_frames
 
     def _settled_observation(self, call_index: int, target: np.ndarray) -> dict:
         """Wait on measured stillness, then capture the final KV history frame."""
         config = self.execution.settle
+        if config is None:
+            raise RuntimeError("Settling is disabled for this deployment")
         started = time.monotonic()
         deadline = started + config.timeout_s
         stable_since = None
@@ -590,6 +545,8 @@ class A1LingBotEEBridge:
 
     def _try_ik_subgoal(self, requested: np.ndarray) -> None:
         config = self.execution.ik_subgoal
+        if config is None:
+            raise RuntimeError("IK subgoals are disabled for this deployment")
         self.live_status.break_line()
         self.executor.hold_for_replan()
         self._wait_for_fresh_feedback()
@@ -713,11 +670,10 @@ class A1LingBotEEBridge:
         chunk: LingBotActionChunk,
         *,
         key_frames: list,
-        cache_eligible: bool,
     ) -> bool:
         if self.client is None:
             raise RuntimeError("LingBot client is closed")
-        if self.execution.execute and key_frames and cache_eligible:
+        if self.execution.execute and key_frames:
             try:
                 self._update_live_status(call_index, phase="CACHE")
                 self.client.infer(
@@ -735,9 +691,6 @@ class A1LingBotEEBridge:
                 warning(f"compute_kv_cache failed: {exc}")
                 self.client.reset(self.task.prompt)
                 info("Server reset after KV-cache failure.")
-        elif self.execution.execute and not cache_eligible:
-            self.client.reset(self.task.prompt)
-            info("Server reset because one or more actions were skipped.")
         return False
 
     def _expected_action_steps(self) -> int | None:

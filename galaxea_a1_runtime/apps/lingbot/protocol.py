@@ -11,7 +11,7 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 
 
-PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v5"
+PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v6"
 
 
 def project_gripper_quantile_latent(
@@ -82,7 +82,7 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
         "attention_mode": policy.attention_mode,
         "attention_capture": {
             "request_key": "capture_attention",
-            "layers": list(policy.attention_capture_layers),
+            "layers": "all",
             "map_kind": "wam_multistage_cache_aware_attention_rollout",
         },
         "enable_offload": policy.enable_offload,

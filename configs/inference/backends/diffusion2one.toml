@@ -29,4 +29,3 @@ video_inference_steps = 1
 action_inference_steps = 1
 snr_shift = 5.0
 action_snr_shift = 1.0
-world_size = 1

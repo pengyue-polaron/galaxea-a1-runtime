@@ -35,10 +35,16 @@ class JointMappingConfig:
 
 @dataclass(frozen=True)
 class TeleopRuntimeConfig:
-    prefix: str
-    run_dir: str
     bridge_startup_timeout_s: float
     bridge_stop_timeout_s: float
+
+    @property
+    def prefix(self) -> str:
+        return "a1-teleop"
+
+    @property
+    def run_dir(self) -> str:
+        return "/tmp/a1-teleop"
 
 
 @dataclass(frozen=True)

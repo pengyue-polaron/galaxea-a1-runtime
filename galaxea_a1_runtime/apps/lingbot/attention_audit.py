@@ -218,7 +218,7 @@ def run_attention_audit(
     )
     success(
         "LingBot attention audit saved: "
-        f"{output} (layers={policy.attention_capture_layers}, "
+        f"{output} (layers={attention['layers']}, "
         f"actual_anchors={actual_anchor_indices}, "
         f"future_frames={len(predicted_observations)}, "
         f"grid={expected_grid[0]}x{expected_grid[1]}, elapsed={elapsed:.3f}s)"

@@ -65,7 +65,6 @@ class _EngineConfig:
     action_inference_steps: int
     snr_shift: float
     action_snr_shift: float
-    world_size: int
 
 
 @dataclass(frozen=True)
@@ -105,7 +104,6 @@ def load_lingbot_config(
             "session",
             "server",
             "observations",
-            "attention",
             "execution",
             "recording",
         },
@@ -153,7 +151,6 @@ def load_lingbot_config(
     session = required_table(data, "session")
     server = required_table(data, "server")
     observations = required_table(data, "observations")
-    attention = required_table(data, "attention")
     execution = required_table(data, "execution")
     recording = required_table(data, "recording")
     require_exact_keys(deployment, required={"id", "ready"}, label="LingBot deployment")
@@ -175,16 +172,9 @@ def load_lingbot_config(
         observations, required={"front_key", "wrist_key"}, label="observations"
     )
     require_exact_keys(
-        attention,
-        required={"capture_layers"},
-        label="attention",
-    )
-    require_exact_keys(
         execution,
         required={
             "execute",
-            "step_mode",
-            "step_actions",
             "max_model_calls",
             "ik_replan_max_attempts",
             "ik_subgoal",
@@ -208,7 +198,9 @@ def load_lingbot_config(
             "timeout_s",
             "joint_range_rad",
             "gripper_range",
-        },
+        }
+        if boolean(settle, "enabled")
+        else {"enabled"},
         label="execution.settle",
     )
     require_exact_keys(
@@ -220,7 +212,9 @@ def load_lingbot_config(
             "max_rotation_rad",
             "max_joint_delta_rad",
             "feedback_timeout_s",
-        },
+        }
+        if boolean(subgoal, "enabled")
+        else {"enabled"},
         label="execution.ik_subgoal",
     )
     require_exact_keys(
@@ -260,7 +254,6 @@ def load_lingbot_config(
                 os.path.abspath(repo_root / "outputs" / "inference" / deployment_id)
             ),
             master_port=integer(session, "master_port"),
-            world_size=engine.world_size,
             startup_timeout_s=floating(session, "startup_timeout_s"),
             shutdown_timeout_s=floating(session, "shutdown_timeout_s"),
             expected_weight_sha256=transformer_weight.sha256,
@@ -270,9 +263,6 @@ def load_lingbot_config(
             text_encoder_device=engine.text_encoder_device,
             enable_offload=engine.enable_offload,
             attention_mode=engine.attention_mode,
-            attention_capture_layers=integer_tuple(
-                attention, "capture_layers", min_len=1
-            ),
             seed=engine.seed,
             height=engine.height,
             width=engine.width,
@@ -294,26 +284,26 @@ def load_lingbot_config(
         ),
         execution=LingBotExecutionConfig(
             settle=LingBotSettleConfig(
-                enabled=boolean(settle, "enabled"),
                 min_wait_s=floating(settle, "min_wait_s"),
                 stable_window_s=floating(settle, "stable_window_s"),
                 timeout_s=floating(settle, "timeout_s"),
                 joint_range_rad=floating(settle, "joint_range_rad"),
                 gripper_range=floating(settle, "gripper_range"),
-            ),
+            )
+            if boolean(settle, "enabled")
+            else None,
             execute=boolean(execution, "execute"),
-            step_mode=boolean(execution, "step_mode"),
-            step_actions=boolean(execution, "step_actions"),
             max_model_calls=integer(execution, "max_model_calls"),
             ik_replan_max_attempts=integer(execution, "ik_replan_max_attempts"),
             ik_subgoal=IkSubgoalConfig(
-                enabled=boolean(subgoal, "enabled"),
                 max_attempts=integer(subgoal, "max_attempts"),
                 max_translation_m=floating(subgoal, "max_translation_m"),
                 max_rotation_rad=floating(subgoal, "max_rotation_rad"),
                 max_joint_delta_rad=floating(subgoal, "max_joint_delta_rad"),
                 feedback_timeout_s=floating(subgoal, "feedback_timeout_s"),
-            ),
+            )
+            if boolean(subgoal, "enabled")
+            else None,
             execute_frames=integer(execution, "execute_frames"),
             kv_observations_per_frame=integer(execution, "kv_observations_per_frame"),
             exec_rate=floating(execution, "exec_rate"),
@@ -371,7 +361,6 @@ def _parse_engine(engine_data: dict[str, Any]) -> _EngineConfig:
             "action_inference_steps",
             "snr_shift",
             "action_snr_shift",
-            "world_size",
         },
         label="LingBot backend engine",
     )
@@ -391,7 +380,6 @@ def _parse_engine(engine_data: dict[str, Any]) -> _EngineConfig:
         action_inference_steps=integer(engine_data, "action_inference_steps"),
         snr_shift=floating(engine_data, "snr_shift"),
         action_snr_shift=floating(engine_data, "action_snr_shift"),
-        world_size=integer(engine_data, "world_size"),
     )
 
 
@@ -470,10 +458,6 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
 
 
 def validate_lingbot_config(config: LingBotConfig) -> None:
-    if config.system.eef_ik.backend == "trac_ik":
-        from galaxea_a1_runtime.hardware.trac_ik import verify_trac_ik_build
-
-        verify_trac_ik_build(config.system)
     if not 1 <= config.server.port <= 65535:
         raise ValueError("server.port must be in [1, 65535]")
     if min(config.server.connect_timeout_s, config.server.close_timeout_s) <= 0:
@@ -485,16 +469,6 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
     ):
         raise ValueError(
             "model master_port must be in [1, 65535] and process timeouts must be positive"
-        )
-    if policy.world_size != 1:
-        raise ValueError("LingBot backend world_size must be 1")
-    if (
-        tuple(sorted(set(policy.attention_capture_layers)))
-        != policy.attention_capture_layers
-        or policy.attention_capture_layers[0] < 0
-    ):
-        raise ValueError(
-            "attention.capture_layers must be unique, sorted, non-negative indices"
         )
     if (
         min(
@@ -547,21 +521,22 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
     if config.execution.ik_replan_max_attempts < 0:
         raise ValueError("execution.ik_replan_max_attempts must be >= 0")
     subgoal = config.execution.ik_subgoal
-    if (
-        subgoal.max_attempts <= 0
-        or min(
-            subgoal.max_translation_m,
-            subgoal.max_rotation_rad,
-            subgoal.max_joint_delta_rad,
-            subgoal.feedback_timeout_s,
-        )
-        <= 0
-    ):
-        raise ValueError("execution.ik_subgoal search bounds must be positive")
-    if subgoal.max_joint_delta_rad > config.system.eef_ik.max_solution_delta_rad:
-        raise ValueError("IK subgoal joint delta cannot exceed the System IK bound")
-    if subgoal.enabled and config.execution.max_model_calls <= 0:
-        raise ValueError("IK subgoals require a finite max_model_calls budget")
+    if subgoal is not None:
+        if (
+            subgoal.max_attempts <= 0
+            or min(
+                subgoal.max_translation_m,
+                subgoal.max_rotation_rad,
+                subgoal.max_joint_delta_rad,
+                subgoal.feedback_timeout_s,
+            )
+            <= 0
+        ):
+            raise ValueError("execution.ik_subgoal search bounds must be positive")
+        if subgoal.max_joint_delta_rad > config.system.eef_ik.max_solution_delta_rad:
+            raise ValueError("IK subgoal joint delta cannot exceed the System IK bound")
+        if config.execution.max_model_calls <= 0:
+            raise ValueError("IK subgoals require a finite max_model_calls budget")
     if (
         min(
             config.execution.execute_frames,
@@ -583,7 +558,7 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
             "LingBot execution rate must be positive and deadband non-negative"
         )
     settle = config.execution.settle
-    if (
+    if settle is not None and (
         settle.min_wait_s < 0
         or min(settle.stable_window_s, settle.joint_range_rad, settle.gripper_range)
         <= 0

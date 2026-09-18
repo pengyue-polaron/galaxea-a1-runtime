@@ -28,33 +28,14 @@ the relay alone validates the resulting fresh staged command against feedback.
 IK rejects
 non-convergence, joint-limit violations, non-finite results, and solutions whose
 maximum joint delta exceeds the System-owned limit.
-The DLS backend caps each iteration's candidate joints to the intersection of absolute joint
-limits and `current_joint +/- eef_ik.max_solution_delta_rad`, anchored to fresh
-feedback for that solve. Position and orientation convergence are checked after
-projection; an unreached pose remains a typed rejection eligible for the
-deployment's bounded replanning. Feedback is never clipped, and these numerical
-search bounds are not a trajectory velocity limit or collision check.
-The optional TRAC-IK Distance backend receives that same intersection as solver
-bounds and independently verifies its result with Runtime FK. It uses the exact
-model pose with the existing System position/orientation tolerances. Worker
-failure or timeout stops the app; there is no silent DLS fallback. It generates
-one joint solution per EEF target, not a trajectory or a scripted retraction.
-Finding a legal solution does not establish a continuous or collision-free path
-to that solution; Distance is a seed-distance preference, not a motion bound.
-
-The `constrained` endpoint backend separately constrains position and orientation
-error norms and prefers nearby joints with clearance from limits. The configured
-clearance is a soft cost, not a new mechanical limit or a guarantee of margin.
-It retains the full model quaternion, existing FK acceptance tolerances and
-feedback-anchored joint displacement bounds. Numerical initial guesses may be
-projected into search bounds; feedback and final endpoints are never clipped.
-Only independently valid endpoints can be staged, even if the optimizer stops
-before proving the best posture cost. Its status is recorded. Solve timeout
-rejects the target; there is no silent backend fallback.
-After every backend solve, the bridge requires fresh valid joint feedback again
-and rechecks endpoint displacement before staging it. This backend does not
-provide trajectory velocity/acceleration or swept-path collision guarantees;
-large accepted endpoint changes remain possible within System delta limits.
+TRAC-IK Distance is the sole endpoint solver. It searches within the intersection
+of absolute joint limits and `current_joint +/- eef_ik.max_solution_delta_rad`,
+anchored to fresh feedback. Native Cartesian norm checks and independent Runtime
+FK acceptance remain mandatory. Worker failure or timeout stops the app.
+The OpenRAL gateway uses the same solver with its narrower joint envelope.
+After every solve, the bridge requires fresh valid feedback and rechecks endpoint
+displacement before staging it. Search bounds and seed-distance preference do not
+provide trajectory velocity/acceleration or swept-path collision guarantees.
 
 Teleop publishes joint targets only:
 
@@ -116,13 +97,12 @@ The relay's stricter input-freshness checks remain independent of both RPC deadl
   `configs/system/a1.toml` holds the current bounds; the original measurement
   report is `outputs/calibration/workspace_boundary_20260910/xyz_extrema.json`.
   These values apply to every EEF consumer of that System config.
-  `eef.workspace_policy = "clip"` caps each finite absolute policy XYZ
-  coordinate to `xyz_min..xyz_max` before IK.
-  `"reject"` instead rejects an out-of-workspace target without publication.
+  The fixed policy action transform caps each finite absolute XYZ coordinate
+  to `xyz_min..xyz_max` before IK.
   Policy bridges log requested and capped XYZ, and LingBot conditions its next
   inference on the capped action. Observed poses and startup holds are not
   projected. Non-finite targets and invalid quaternions remain errors, and
-  normalized gripper bounds are enforced. The gripper endpoint projection is the tracked
+  normalized gripper bounds are enforced. The gripper endpoint projection uses the implementation-owned
   `2e-6` normalized gripper tolerance that absorbs LingBot's explicit `1e-6`
   quantile de-normalization offset; larger overshoots are rejected. No hidden
   tracking-error, speed, or action-step clamp is applied.

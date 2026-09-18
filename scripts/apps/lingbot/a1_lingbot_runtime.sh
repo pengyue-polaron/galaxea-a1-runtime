@@ -312,7 +312,13 @@ attention_audit() {
     --model "${MODEL_ID}"
 }
 
+check_ik_environment() {
+  PYTHONPATH="${ROOT}:${PYTHONPATH:-}" "${PYTHON_BIN}" \
+    -m galaxea_a1_runtime.apps.trac_ik_setup --check --config "${SYSTEM_CONFIG_PATH}" >/dev/null
+}
+
 start_services() {
+  check_ik_environment
   a1_info "Config: ${CONFIG_PATH}"
   "${BASE_RUNTIME}" services
 }
@@ -489,6 +495,7 @@ finalize_run_artifacts_on_exit() {
 }
 
 run_pipeline() {
+  check_ik_environment || return $?
   ensure_camera_monitor || return $?
   check_bridge_environment || return $?
   a1_info "LingBot model: ${MODEL_ID}"
@@ -637,9 +644,10 @@ decide_safety_stopped_attempt() {
 run_batch() {
   local batch_config="${1:-${ROOT}/configs/runs/lingbot/fruit_placement.toml}"
   local resume="${2:-false}"
+  load_batch_config "${batch_config}"
+  check_ik_environment
   ensure_camera_monitor
   check_bridge_environment
-  load_batch_config "${batch_config}"
   read_scene_note
   if [[ "${resume}" == "true" ]]; then
     load_batch_progress "${batch_config}"

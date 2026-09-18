@@ -15,8 +15,6 @@ id = "pi05-fruit-placement-eef"
 ready = true
 
 [session]
-tmux = "pi05-a1"
-model_tmux = "pi05-policy-server"
 startup_timeout_s = 300.0
 
 [server]
@@ -31,8 +29,6 @@ wrist_key = "observation/wrist_image"
 
 [execution]
 execute = true
-step_mode = false
-step_actions = false
 max_model_calls = 53
 execute_actions_per_inference = 10
 exec_rate = 30.0

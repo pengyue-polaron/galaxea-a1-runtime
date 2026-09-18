@@ -40,7 +40,7 @@ from galaxea_a1_runtime.apps.pi05.config_schema import Pi05Config
 from galaxea_a1_runtime.apps.pi05.protocol import server_metadata
 from galaxea_a1_runtime.apps.policy_camera import PolicyCameraSession
 from embodied_ops import TaskPrompt
-from galaxea_a1_runtime.console import Tone, info, step, style, success
+from galaxea_a1_runtime.console import info, step, success
 from galaxea_a1_runtime.hardware.eef_ik import build_eef_ik_solver
 from galaxea_a1_runtime.runtime.relay import RelayMonitor
 from galaxea_a1_runtime.runtime.ros_feedback import (
@@ -171,8 +171,6 @@ class A1Pi05EEBridge:
                     "the bridge will lock and stop the runtime."
                 )
                 return
-            if self.execution.step_mode and not self._wait_for_operator(call_index):
-                return
             observation = self._read_observation()
             step(f"Inference #{call_index + 1}: observation ready; pi0.5 running")
             started = time.monotonic()
@@ -182,8 +180,7 @@ class A1Pi05EEBridge:
                 f"Inference #{call_index + 1} done: "
                 f"infer={time.monotonic() - started:.3f}s action_shape={actions.shape}"
             )
-            if self._run_actions(call_index, actions):
-                return
+            self._run_actions(call_index, actions)
             call_index += 1
             if not self.execution.max_model_calls or (
                 call_index < self.execution.max_model_calls
@@ -200,13 +197,12 @@ class A1Pi05EEBridge:
         self._wait_for_feedback()
         self.executor.activate_current_hold()
         info("Relay activated on a fresh current-joint hold.")
-        if not self.execution.step_mode:
-            info(
-                "Continuous execution armed: "
-                f"calls={self.execution.max_model_calls or 'unbounded'} "
-                f"actions_per_call={self.execution.execute_actions_per_inference} "
-                f"rate={self.execution.exec_rate:.1f}Hz"
-            )
+        info(
+            "Continuous execution armed: "
+            f"calls={self.execution.max_model_calls or 'unbounded'} "
+            f"actions_per_call={self.execution.execute_actions_per_inference} "
+            f"rate={self.execution.exec_rate:.1f}Hz"
+        )
 
     def _read_observation(self) -> dict[str, object]:
         self._wait_for_feedback()
@@ -275,7 +271,7 @@ class A1Pi05EEBridge:
             )
         return actions
 
-    def _run_actions(self, call_index: int, actions: np.ndarray) -> bool:
+    def _run_actions(self, call_index: int, actions: np.ndarray) -> None:
         count = self.execution.execute_actions_per_inference
         for action_index, raw_action in enumerate(actions[:count]):
             validated_action = self.state.validate(raw_action)
@@ -287,34 +283,12 @@ class A1Pi05EEBridge:
                     model_action=raw_action,
                     validated_action=validated_action,
                 )
-            if self.execution.step_actions:
-                command = self._ask("Next=publish this EEF action, s=skip, q=quit: ")
-                if command in {"q", "quit", "exit"}:
-                    return True
-                if command in {"s", "skip"}:
-                    continue
             if self.execution.execute:
                 self._publish_ee_action(validated_action)
             time.sleep(1.0 / self.execution.exec_rate)
-        return False
 
     def _publish_ee_action(self, policy_action: np.ndarray) -> None:
         self.executor.publish(policy_action)
-
-    def _wait_for_operator(self, call_index: int) -> bool:
-        step(f"Inference #{call_index + 1} ready. Enter=run, q=quit.")
-        return self._ask(style(f"Inference #{call_index + 1} > ", Tone.STEP)) not in {
-            "q",
-            "quit",
-            "exit",
-        }
-
-    @staticmethod
-    def _ask(prompt: str) -> str:
-        try:
-            return input(prompt).strip().lower()
-        except EOFError:
-            return "q"
 
     def close(self) -> None:
         timer, self.target_keepalive_timer = self.target_keepalive_timer, None

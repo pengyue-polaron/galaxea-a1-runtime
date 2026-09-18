@@ -91,6 +91,10 @@ models:
 trac-ik-setup:
     {{vpy}} -m galaxea_a1_runtime.apps.trac_ik_setup
 
+# Hardware-free runtime readiness check, separate from static configuration validation.
+trac-ik-check:
+    {{vpy}} -m galaxea_a1_runtime.apps.trac_ik_setup --check
+
 model-fetch config:
     {{vpy}} {{repo}}/scripts/models/model_store.py fetch \
         --repo-root "{{repo}}" "{{config}}"
@@ -123,7 +127,7 @@ cameras action="start":
 foxglove action="start":
     scripts/runtime/a1_observability_runtime.sh "{{action}}"
 
-eef-test:
+eef-test: trac-ik-check
     scripts/runtime/a1_joint_runtime.sh services
     scripts/runtime/a1_joint_runtime.sh eef-nudge --execute
 

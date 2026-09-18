@@ -173,17 +173,15 @@ def build_safety_settings(
         ),
         SafetySetting(
             name="eef_policy_workspace_bounds",
-            path=f"{SYSTEM_CONFIG} [eef.xyz_min / eef.xyz_max / eef.workspace_policy]",
+            path=f"{SYSTEM_CONFIG} [eef.xyz_min / eef.xyz_max]",
             default=(
                 f"x=[{system.eef.xyz_min[0]:g},{system.eef.xyz_max[0]:g}], "
                 f"y=[{system.eef.xyz_min[1]:g},{system.eef.xyz_max[1]:g}], "
                 f"z=[{system.eef.xyz_min[2]:g},{system.eef.xyz_max[2]:g}], "
-                f"policy={system.eef.workspace_policy}"
+                "policy=clip"
             ),
             behavior=(
                 "Finite absolute EEF policy XYZ targets are clipped to the configured workspace before IK."
-                if system.eef.workspace_policy == "clip"
-                else "Absolute EEF policy targets outside the configured workspace are rejected without publication."
             ),
             visibility="Policy bridges log requested and capped XYZ when clipping occurs; rejection errors name the offending axes and bounds.",
             operator_note="Clipped targets still pass quaternion, gripper, IK, joint-limit, and relay checks; LingBot cache uses the capped action.",
@@ -192,19 +190,17 @@ def build_safety_settings(
             name="eef_policy_ik",
             path=f"{SYSTEM_CONFIG} [eef_ik] -> {topics.joint_target}",
             default=(
-                f"backend={system.eef_ik.backend}, "
+                "backend=trac_ik_distance, "
                 f"position_tolerance={system.eef_ik.position_tolerance_m:g}m, "
                 f"orientation_tolerance={system.eef_ik.orientation_tolerance_rad:g}rad, "
                 f"max_joint_delta={system.eef_ik.max_solution_delta_rad:g}rad"
             ),
             behavior=(
-                "The configured URDF IK adapter rejects non-convergence, non-finite values, "
+                "TRAC-IK Distance rejects non-convergence, non-finite values, "
                 "joint-limit violations, and solutions beyond the configured joint delta."
-                " Constrained IK prefers joint-limit clearance within separate hard pose "
-                "tolerances; it computes endpoints, not a velocity-limited trajectory."
             ),
             visibility=(
-                "Verbose deployment logging reports IK iterations, Cartesian/orientation "
+                "Verbose deployment logging reports IK solve time, Cartesian/orientation "
                 "residuals, and maximum joint delta when enabled."
             ),
             operator_note=(
@@ -238,12 +234,10 @@ def build_safety_settings(
             path=f"{LINGBOT_CONFIG} [execution]",
             default=(
                 f"execute={str(lingbot.execution.execute).lower()}, "
-                f"step_mode={str(lingbot.execution.step_mode).lower()}, "
-                f"step_actions={str(lingbot.execution.step_actions).lower()}, "
                 f"max_model_calls={lingbot.execution.max_model_calls}"
             ),
-            behavior="LingBot only enables the relay when execution is configured; step gates remain explicit deployment settings.",
-            visibility="LingBot startup prints dry-run/live and step-gate state.",
+            behavior="LingBot only enables the relay when execution is configured; rollout proceeds continuously after task selection.",
+            visibility="LingBot startup prints dry-run/live state and the model-call budget.",
             operator_note=(
                 "The deployment owns rollout cadence; execution continues until its "
                 "finite model-call cap is reached or the operator stops it."
@@ -254,12 +248,10 @@ def build_safety_settings(
             path=f"{PI05_CONFIG} [execution]",
             default=(
                 f"execute={str(pi05.execution.execute).lower()}, "
-                f"step_mode={str(pi05.execution.step_mode).lower()}, "
-                f"step_actions={str(pi05.execution.step_actions).lower()}, "
                 f"max_model_calls={pi05.execution.max_model_calls}"
             ),
-            behavior="Pi0.5 only enables the relay when execution is configured; inference and action-step gates remain explicit deployment settings.",
-            visibility="Pi0.5 startup prints dry-run/live and step-gate state.",
+            behavior="Pi0.5 only enables the relay when execution is configured; rollout proceeds continuously after task selection.",
+            visibility="Pi0.5 startup prints dry-run/live state and the model-call budget.",
             operator_note=(
                 "The deployment owns rollout cadence; execution continues until its "
                 "finite model-call cap is reached or the operator stops it."

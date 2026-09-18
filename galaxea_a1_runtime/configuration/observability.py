@@ -44,9 +44,15 @@ class ObservabilityConfig:
     camera_retry_s: float
     startup_timeout_s: float
     shutdown_timeout_s: float
-    graph_update_ms: int
-    send_buffer_limit_bytes: int
     topics: ObservabilityTopicsConfig
+
+    @property
+    def graph_update_ms(self) -> int:
+        return 1000
+
+    @property
+    def send_buffer_limit_bytes(self) -> int:
+        return 10_000_000
 
     def validate(self) -> None:
         try:
@@ -71,12 +77,6 @@ class ObservabilityConfig:
             raise ValueError("observability rates and timeouts must be positive")
         if not 1 <= self.jpeg_quality <= 100:
             raise ValueError("observability.jpeg_quality must be in [1, 100]")
-        if self.graph_update_ms <= 0:
-            raise ValueError("observability.graph_update_ms must be positive")
-        if self.send_buffer_limit_bytes < 1_000_000:
-            raise ValueError(
-                "observability.send_buffer_limit_bytes must be at least 1000000"
-            )
 
 
 def parse_observability_config(
@@ -98,8 +98,6 @@ def parse_observability_config(
             "camera_retry_s",
             "startup_timeout_s",
             "shutdown_timeout_s",
-            "graph_update_ms",
-            "send_buffer_limit_bytes",
             "topics",
         },
         label="observability",
@@ -123,8 +121,6 @@ def parse_observability_config(
         camera_retry_s=floating(data, "camera_retry_s"),
         startup_timeout_s=floating(data, "startup_timeout_s"),
         shutdown_timeout_s=floating(data, "shutdown_timeout_s"),
-        graph_update_ms=integer(data, "graph_update_ms"),
-        send_buffer_limit_bytes=integer(data, "send_buffer_limit_bytes"),
         topics=ObservabilityTopicsConfig(
             **{
                 name: string(topics, name)

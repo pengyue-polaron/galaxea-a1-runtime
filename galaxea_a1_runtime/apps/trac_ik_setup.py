@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import argparse
 import hashlib
 import json
 import os
@@ -9,12 +10,24 @@ from pathlib import Path
 import subprocess
 
 from galaxea_a1_runtime.configuration.system import load_system_config
+from galaxea_a1_runtime.hardware.trac_ik import trac_ik_binary, verify_trac_ik_build
 
 
 def main() -> None:
     root = Path(__file__).resolve().parents[2]
-    system = load_system_config(root / "configs/system/a1.toml", repo_root=root)
-    binary = system.eef_ik.trac_ik.binary
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", type=Path, default=root / "configs/system/a1.toml")
+    parser.add_argument(
+        "--check",
+        action="store_true",
+        help="Verify existing build without starting a container",
+    )
+    args = parser.parse_args()
+    system = load_system_config(args.config, repo_root=root)
+    if args.check:
+        print(json.dumps(verify_trac_ik_build(system), indent=2))
+        return
+    binary = trac_ik_binary(system)
     binary.parent.mkdir(parents=True, exist_ok=True)
     source = root / "galaxea_a1_runtime/hardware/native/trac_ik_worker.cpp"
     image_id = subprocess.check_output(

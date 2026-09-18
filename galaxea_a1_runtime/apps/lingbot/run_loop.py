@@ -26,13 +26,11 @@ def run_lingbot_rollout(bridge: Any, *, is_shutdown: Callable[[], bool]) -> None
                 "the bridge will lock and stop the runtime."
             )
             return
-        if not bridge._wait_for_inference_request(call_index):
-            return
         chunk = bridge._infer_chunk(call_index, first=first)
         if chunk is None:
             return
         try:
-            stop, key_frames, cache_eligible = bridge._execute_chunk(call_index, chunk)
+            key_frames = bridge._execute_chunk(call_index, chunk)
         except IkSubgoalExecuted as exc:
             bridge.live_status.break_line()
             warning(f"IK subgoal: {exc}")
@@ -63,14 +61,10 @@ def run_lingbot_rollout(bridge: Any, *, is_shutdown: Callable[[], bool]) -> None
             call_index += 1
             bridge._update_live_status(call_index, phase="REPLAN", force=True)
             continue
-        if stop:
-            return
-        cache_updated = bridge._sync_kv_cache(
-            call_index, chunk, key_frames=key_frames, cache_eligible=cache_eligible
-        )
+        cache_updated = bridge._sync_kv_cache(call_index, chunk, key_frames=key_frames)
         if execution.execute:
             first = not cache_updated
-        # Partial/skipped execution does not replenish the retry allowance.
+        # Only a completed chunk with synchronized cache replenishes the allowance.
         if cache_updated:
             consecutive_replans = 0
         call_index += 1

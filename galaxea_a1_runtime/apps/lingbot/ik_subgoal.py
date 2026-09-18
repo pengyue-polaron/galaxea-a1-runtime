@@ -11,7 +11,6 @@ import numpy as np
 
 @dataclass(frozen=True)
 class IkSubgoalConfig:
-    enabled: bool
     max_attempts: int
     max_translation_m: float
     max_rotation_rad: float

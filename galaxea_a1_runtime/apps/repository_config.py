@@ -12,6 +12,7 @@ from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_conf
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config, _load_backend
 from galaxea_a1_runtime.models.config import load_model_config
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
+from galaxea_a1_runtime.apps.tfp.model_config import load_tfp_model_config
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
 from galaxea_a1_runtime.configuration.system import load_system_config
 from galaxea_a1_runtime.teleop.config import load_teleop_config
@@ -22,6 +23,14 @@ def build_a1_document_store(repo_root: Path) -> RepositoryDocumentStore:
     return RepositoryDocumentStore(
         root,
         (
+            DocumentKind(
+                kind_id="tfp-model",
+                label="TFP transferred checkpoint",
+                directory=Path("configs/models/tfp"),
+                suffix=".checkpoint.toml",
+                language="TOML",
+                validate=lambda path: load_tfp_model_config(path, repo_root=root),
+            ),
             DocumentKind(
                 kind_id="inference-backend",
                 label="LingBot-family inference backend",

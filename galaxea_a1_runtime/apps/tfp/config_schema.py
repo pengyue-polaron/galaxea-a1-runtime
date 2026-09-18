@@ -32,9 +32,6 @@ class TFPModelConfig:
     dataset_repo_id: str
     dataset_revision: str
     action_names: tuple[str, ...]
-    action_horizon: int
-    actions_per_query: int
-    max_training_episode_actions: int
 
 
 @dataclass(frozen=True)

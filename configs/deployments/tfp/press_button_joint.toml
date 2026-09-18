@@ -8,21 +8,7 @@ config = "configs/inference/backends/tfp_ultra.toml"
 config = "configs/tasks/button_press/catalog.json"
 
 [model]
-id = "tfp-ultra-a1-press-button-joint"
-checkpoint = "models/checkpoints/tfp/press_button_5s/step_00001500/training_state.pt"
-checkpoint_format = "training-state"
-checkpoint_step = 1500
-checkpoint_size = 1097496143
-checkpoint_sha256 = "af5b273a1822fc799a963b9cbae61fe38b4cbcd8dea75deebacb131bca8b5bf4"
-metadata = "external/tfp-ultra/deployment/galaxea"
-metadata_info_sha256 = "068215d18848b5a0cf3edcba1b6e65db4cee939dc285a45f3071fdfa653a9900"
-metadata_stats_sha256 = "ea300f2fb5083a75865e6abdda34012cb25b8c8fca35438acc462a3937017900"
-dataset_repo_id = "pengyue-polaron/galaxea-a1-press_button_5s"
-dataset_revision = "170b7ca8888982e95ade26123783d362a44a98ab"
-action_names = ["joint_1_rad", "joint_2_rad", "joint_3_rad", "joint_4_rad", "joint_5_rad", "joint_6_rad", "gripper_normalized"]
-action_horizon = 64
-actions_per_query = 8
-max_training_episode_actions = 453
+config = "configs/models/tfp/press_button_joint.checkpoint.toml"
 
 [deployment]
 id = "tfp-press-button-joint"

@@ -83,7 +83,7 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
     require_exact_keys(deployment, required={"id", "ready"}, label="pi0.5 deployment")
     require_exact_keys(
         session,
-        required={"tmux", "model_tmux", "startup_timeout_s"},
+        required={"startup_timeout_s"},
         label="pi0.5 session",
     )
     require_exact_keys(
@@ -98,8 +98,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
         execution,
         required={
             "execute",
-            "step_mode",
-            "step_actions",
             "max_model_calls",
             "execute_actions_per_inference",
             "exec_rate",
@@ -119,8 +117,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
         model_contract=model_contract,
         task_catalog=task_catalog,
         session=Pi05SessionConfig(
-            tmux=string(session, "tmux"),
-            model_tmux=string(session, "model_tmux"),
             startup_timeout_s=floating(session, "startup_timeout_s"),
         ),
         server=Pi05ServerConfig(
@@ -135,8 +131,6 @@ def load_pi05_config(path: Path, *, repo_root: Path | None = None) -> Pi05Config
         ),
         execution=Pi05ExecutionConfig(
             execute=boolean(execution, "execute"),
-            step_mode=boolean(execution, "step_mode"),
-            step_actions=boolean(execution, "step_actions"),
             max_model_calls=integer(execution, "max_model_calls"),
             execute_actions_per_inference=integer(
                 execution, "execute_actions_per_inference"
@@ -168,16 +162,11 @@ def _load_backend(
     engine = required_table(data, "engine")
     require_exact_keys(
         engine,
-        required={"jax_platform", "xla_memory_fraction", "seed", "sampling_steps"},
+        required={"xla_memory_fraction", "sampling_steps"},
         label="pi0.5 engine",
     )
-    platform = string(engine, "jax_platform")
-    if platform != "cuda":
-        raise ValueError("pi0.5 engine.jax_platform must be 'cuda'")
     return backend, Pi05EngineConfig(
-        jax_platform=platform,
         xla_memory_fraction=floating(engine, "xla_memory_fraction"),
-        seed=integer(engine, "seed"),
         sampling_steps=integer(engine, "sampling_steps"),
     )
 
@@ -217,10 +206,6 @@ def _load_model_contract(model: ModelArtifactConfig) -> Pi05ModelContract:
 
 
 def validate_pi05_config(config: Pi05Config) -> None:
-    if config.system.eef_ik.backend == "trac_ik":
-        from galaxea_a1_runtime.hardware.trac_ik import verify_trac_ik_build
-
-        verify_trac_ik_build(config.system)
     if not 1 <= config.server.port <= 65535:
         raise ValueError("pi0.5 server.port must be in [1, 65535]")
     if (
@@ -234,8 +219,6 @@ def validate_pi05_config(config: Pi05Config) -> None:
         raise ValueError("pi0.5 server and startup timeouts must be positive")
     if not 0 < config.engine.xla_memory_fraction <= 1:
         raise ValueError("pi0.5 xla_memory_fraction must be in (0, 1]")
-    if config.engine.seed != 0:
-        raise ValueError("the pinned OpenPI policy constructor requires engine.seed=0")
     if config.engine.sampling_steps <= 0:
         raise ValueError("pi0.5 sampling_steps must be positive")
     contract = config.model_contract

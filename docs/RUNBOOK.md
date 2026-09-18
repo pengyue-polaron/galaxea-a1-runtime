@@ -36,24 +36,17 @@ The teacher deployment is
 `configs/deployments/diffusion2one/fruit_blocks_teacher_eef.toml`, with
 `execution.execute = true` and `execute_frames = 2` (8 actions per replan).
 The `run` and `batch` actions execute on the real arm through the staged tracker
-and relay. `configs/runs/lingbot/diffusion2one_teacher_banana.toml` runs one
-banana-to-red-plate attempt with a reset before inference. Use `server` or
-`smoke` for offline work.
+and relay. Select a registered task for a single attempt:
 
-Reusable Diffusion2One batch plans live under `configs/runs/lingbot/` because
-they use the shared LingBot batch runner. These plans **MOVE HARDWARE**:
+```bash
+just diffusion2one-teacher run --task banana_to_red_plate  # MOVES HARDWARE
+```
 
-| Plan | Task | Attempts |
-| --- | --- | --- |
-| `diffusion2one_student_banana.toml` | `banana_to_red_plate` | 1 |
-| `diffusion2one_student_banana_20.toml` | `banana_to_red_plate` | 20 |
-| `diffusion2one_student_red_block.toml` | `red_block_to_red_plate` | 1 |
-| `diffusion2one_teacher_banana.toml` | `banana_to_red_plate` | 1 |
-| `diffusion2one_teacher_red_block.toml` | `red_block_to_red_plate` | 1 |
-
-Each plan references its current deployment; rollout cadence is owned by that
-deployment, not the plan name. Dated experiment snapshots and one-off variants
-belong under ignored `outputs/`, while reusable plans remain tracked.
+Use `server` or `smoke` for offline work. Single-task/count combinations are
+run inputs, not permanent deployment files. Keep only deliberate multi-task
+or benchmark protocols under `configs/runs/`; one-off plans and resolved run
+records belong under `outputs/`. Create any new tracked batch plan with the
+configuration CLI.
 
 ### A1 student
 
@@ -101,12 +94,11 @@ rejected. The standard launcher manages the local service at port 1116 and
 shares LingBot's exclusive server owner. Remote-host lifecycle and MoT attention
 diagnostics are not part of this adapter.
 
-Finite absolute policy XYZ targets use System `[eef] workspace_policy = "clip"`:
+Finite absolute policy XYZ targets are capped to the System workspace:
 each coordinate is capped to its configured minimum/maximum before IK. This
 applies to all EEF policy bridges using that System
 config. `EEF workspace cap` logs show the original and capped targets; LingBot's
-temporal cache receives the capped action. Set the required policy to `"reject"`
-to stop on an out-of-workspace target instead. Non-finite values, invalid joint
+temporal cache receives the capped action. Non-finite values, invalid joint
 feedback, and relay faults still stop the run.
 
 Diffusion2One sets `[execution] ik_replan_max_attempts = 3`. A typed IK
@@ -206,12 +198,11 @@ runtime reads that file rather than the measurement report.
 .venv/bin/python -m galaxea_a1_runtime.cli safety-report
 ```
 
-IK candidate joints are capped at every iteration to both absolute joint
-limits and the System-owned displacement bound around fresh feedback. A capped
-candidate must still meet Cartesian position/orientation tolerances. Failure
-uses the bounded replan behavior above; no approximate clamped joint pose is
-published as though it reached the requested EEF pose. This displacement bound
-does not implement a time-based velocity or acceleration limiter.
+TRAC-IK searches within absolute joint limits intersected with the System-owned
+joint displacement bound around fresh feedback. Runtime independently checks
+joint limits, FK position/orientation error, and displacement before staging the
+endpoint. This displacement bound does not implement a time-based velocity or
+acceleration limiter.
 
 ## 1. Static preflight
 
@@ -683,55 +674,34 @@ stopped.
 
 ## 7. Policy deployment
 
-### EEF IK backend
+### EEF IK
 
-`configs/system/a1.toml` owns `eef_ik.backend` (`dls`, `trac_ik`, or `constrained`). All keep
-the complete EEF pose, fresh measured joint bounds, System joint/delta limits, and FK
-acceptance gates. Model chunk size, recovery, reset, tracker, and relay behavior
-are independent of this selection. The selected TRAC-IK backend uses upstream
-Distance mode. The experimental constrained backend is disabled.
+TRAC-IK Distance is the sole numerical IK implementation, including the OpenRAL
+gateway. `configs/system/a1.toml` keeps the URDF, base/tip links, solve timeout,
+Cartesian acceptance tolerances and joint displacement bound under `[eef_ik]`.
+The adapter owns its cache path, numerical epsilon and worker protocol deadlines.
+Model chunk size, recovery, reset, tracker and relay remain separate concerns.
 
-The optional experimental `constrained` backend uses pinned SciPy L-BFGS-B for numerical initialization
-and SLSQP for endpoint selection. Position and orientation norm tolerances are
-separate hard constraints. Its soft cost prefers proximity to measured joints
-and clearance inside `eef_ik.constrained.limit_margin_rad`; this margin is a
-preference, not a guaranteed clearance. The previous staged target supplies a
-numerical initial guess projected into bounds anchored to fresh feedback.
-Feedback itself and completed solutions are never clipped. A hold/reset replaces
-that guess with measured joints; no cross-episode solver state is retained.
-
-`eef_ik.constrained` owns the clearance cost, numerical tolerance reserve,
-optimizer accuracy and total solve timeout. `max_iterations` bounds each
-optimization phase. The final FK check uses the unchanged System tolerances;
-posture optimization status is recorded even when its optimality criterion is
-not met but the endpoint passes all independent constraints. Deadline expiry
-rejects the target. There is no automatic fallback to another backend.
-The bridge rechecks fresh feedback and displacement after solving, before staging.
-
-Run `uv sync --locked --inexact` and `just check` after installing this backend.
-It computes one joint endpoint; the tracker still executes motion. It does not
-implement differential velocity control, impose trajectory speed/acceleration
-bounds, prove collision clearance, or take over model retraction. Keep those
-distinctions when interpreting offline successes. The student deployment keeps
-`execute_frames=2` (eight actions per chunk).
-
-Before selecting `trac_ik`, build its numerical adapter without hardware:
+Build and check the numerical adapter without hardware:
 
 ```bash
 just trac-ik-setup
+just trac-ik-check
 just check
 ```
 
 The build uses the System runtime image's installed `ros-noetic-trac-ik-lib`.
-The cache receipt records the immutable image and source/binary hashes; stale
-or missing builds fail preflight when TRAC-IK is selected. Rebuild after changing
-the native adapter or runtime image. `eef_ik.trac_ik` owns the base/tip links,
-native epsilon, solve budget, and worker deadlines. DLS damping, orientation
-weight and iteration-step settings apply only to `dls`. Solve failures remain bounded IK rejections;
-worker failures stop the application. Recorded IK solutions name the backend;
-TRAC-IK has `iterations=null` and `solve_time_s` instead of an invented iteration
-count. Use saved EEF/joint recordings for an offline comparison before a live
-trial: an additional IK solution can still require an undesirable branch change.
+The cache receipt records the immutable image and source/binary hashes. Rebuild
+after changing the native adapter or runtime image. Static config parsing and
+`just check` do not require this local build. EEF run/batch launchers check it
+before opening cameras or robot services; the solver also verifies it before
+starting its private worker. Missing or stale builds stop execution.
+
+The solver uses fresh feedback and independently checks FK, absolute joint limits
+and displacement. Bridges recheck feedback after solving. Worker errors stop the
+application. Recordings include the fixed `trac_ik_distance` identity and solve
+time. The solver returns endpoints, not velocity-limited or collision-checked
+trajectories. The retired numerical backends are not fallback options.
 
 ### Model setup
 
@@ -936,9 +906,7 @@ starts the tracked A1-only reset and then inference, while `q` stops before the
 next reset. The SO leader is not opened. Every attempt gets its own paired
 videos, camera timeline, metadata, and logs. An IK target that does not converge
 or exceeds the tracked
-solution-delta bound, or a finite target outside the tracked EEF workspace
-when `workspace_policy = "reject"`,
-safely locks the arm without publishing the rejected target, finalizes the
+solution-delta bound safely locks the arm without publishing the rejected target, finalizes the
 attempt with `status=safety_stopped`, and asks for an evaluation decision.
 `Enter` counts it and advances, `d` records it as discarded and returns the same
 slot to the Enter/reset gate, and `q` stops with that slot pending. The decision
@@ -1022,9 +990,9 @@ stale feedback source.
 
 ### Settled observations for LingBot / Diffusion2One
 
-Each deployment requires `[execution.settle]`: `enabled`, `min_wait_s`,
-`stable_window_s`, `timeout_s`, `joint_range_rad`, and normalized
-`gripper_range`. Both Student and Teacher deployments currently enable this experiment.
+Each deployment declares `[execution.settle]`. Disabled settling contains only
+`enabled = false`; enabled settling requires `min_wait_s`, `stable_window_s`,
+`timeout_s`, `joint_range_rad`, and normalized `gripper_range`. Both Student and Teacher deployments currently enable this experiment.
 After the last action of each chunk, it retains the staged target, checks fresh
 joint/gripper feedback and relay health, waits at least `min_wait_s`, and requires
 measured joint and gripper ranges within the configured bounds for a continuous
@@ -1041,4 +1009,5 @@ is an experimental deployment cadence and is not equivalent to training timing.
 Motion events `settle_start`, `settle_complete`, and
 `settled_history_observation` retain duration, measured ranges, endpoint tracking
 error and the camera capture lower bound. Full paired video and feedback remain
-recorded. Disable this feature using the deployment's `enabled = false`.
+recorded. To disable it, replace the table with only `enabled = false`. The same
+enabled/disabled schema rule applies to `[execution.ik_subgoal]`.
