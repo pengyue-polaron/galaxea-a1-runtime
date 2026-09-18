@@ -34,9 +34,13 @@ def dataset_report(
     experiment = validate_experiment_name(experiment)
     identity = direct_dataset_identity(config, experiment)
     expected_task = normalize_collection_task(task) if task is not None else None
+    from galaxea_a1_runtime.apps.teleop.bag_export import export_provenance
+
     state = validate_direct_dataset_provenance(
         identity,
-        {"collection_lifecycle": collection_lifecycle_provenance(config)},
+        export_provenance(config, experiment)
+        if allow_absent
+        else {"collection_lifecycle": collection_lifecycle_provenance(config)},
         # Collection preflight must permit the first episode of a new prompt in
         # an existing multi-task dataset. Explicit doctor checks remain able to
         # require a task that is already present.

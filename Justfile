@@ -249,6 +249,10 @@ logs:
 
 # ── Dataset ─────────────────────────────────────────────────────────────────
 
+# Export a finalized raw collection episode without opening hardware.
+bag-export episode *args:
+    {{vpy}} -m galaxea_a1_runtime.apps.teleop.bag_export "{{episode}}" {{args}}
+
 # Validate a canonical dataset.
 dataset-doctor experiment *args:
     {{vpy}} -m galaxea_a1_runtime.cli dataset doctor \

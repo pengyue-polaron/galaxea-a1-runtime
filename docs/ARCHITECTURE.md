@@ -454,7 +454,7 @@ The default collection contract contains:
 - configured AgentView and wrist RGB observations, plus optional aligned depth;
 - EEF pose, six named A1 joints, and continuous gripper state;
 - six absolute joint targets and continuous gripper action;
-- camera sequence numbers and monotonic sample times;
+- original ROS source/receive timestamps and per-episode alignment provenance;
 - configuration, topic, camera, and control-path metadata.
 
 Application gripper state and action are continuous normalized `0..1`. The
@@ -474,9 +474,22 @@ System limit.
 
 ## Episode and dataset commit
 
-Formal collection writes `galaxea_a1_lerobot_dataset_v3_v3` directly under
-`data/datasets/EXPERIMENT/`. The standard LeRobot v3 contract is immediately
-usable by LeRobot readers:
+Formal collection records authoritative rosbag2 MCAP episodes under
+`data/recordings/EXPERIMENT/BAG_ID/`. A manifest preserves the exact task,
+configuration hashes/snapshots, operator boundaries and disposition. The
+read-only standard observation bridge includes named joint targets; recording
+never owns control publishers. Discard and failure preserve the raw episode.
+
+After Save, a network-isolated Jazzy reader decodes the original messages.
+The ROS-free alignment layer constructs an integer-nanosecond grid at collection
+FPS, selects bounded synchronized camera pairs, interpolates state (SLERP for
+quaternions) and holds the most recent valid command. It never compresses missing
+frames out of the time axis. Repeated image selection is recorded explicitly.
+Leading stillness removes only a prefix. All raw frames remain in the bag.
+
+The converter writes `galaxea_a1_lerobot_dataset_v3_v3` under
+`data/datasets/EXPERIMENT/` with capture contract `rosbag2_mcap_aligned_v1`.
+The standard LeRobot feature contract remains usable by existing readers:
 
 ```text
 observation.state = [EEF xyz+xyzw, joint_1_rad..joint_6_rad,
@@ -494,7 +507,22 @@ camera sources and crop, feature semantics, freshness limits, and gripper
 mapping. It supplements rather than forks LeRobot's `info.json`, tasks, episode
 metadata, stats, Parquet, and image/video layout.
 
-Each episode records into a hidden sibling snapshot of the complete dataset.
+Every derived episode includes `meta/timing/episode-NNNNNN.parquet` and a
+matching JSON source record. Integer source/receive clocks, message indices,
+interpolation endpoints, command hold times and camera reuse remain separate
+from LeRobot's nominal relative `timestamp`. A zero source stamp is retained;
+robot receive-time fallback is explicitly flagged, while unstamped cameras are
+rejected. Clock basis changes, reversals and excessive source/receive offsets
+fail conversion. This does not certify hardware exposure or sampling clocks.
+
+An export lock serializes dataset appends. Duplicate source bag IDs are rejected.
+The source record includes raw-file hashes, configuration snapshots and capture
+boundaries, allowing validation without requiring an absolute raw path to exist
+on the reader's machine. `dataset-doctor` validates timing row counts, contiguous
+grids and causal command provenance. Old datasets without the new capture
+contract remain readable; collection preflight rejects contract mixing.
+
+Each export writes into a hidden sibling snapshot of the complete dataset.
 Existing immutable `data/`, `videos/`, and `images/` payloads are hard-linked;
 the sibling transaction fails clearly if its filesystem cannot preserve those
 links instead of silently copying the complete dataset. Mutable metadata is
@@ -706,7 +734,7 @@ There is no local training-output root. First-party code must not create
 ## Deliberate limits
 
 - No standard MoveIt `move_group` path is provided.
-- No Raw v3 migration or collection intermediate is provided.
+- No legacy Raw v3 migration is provided. New collection originals are ROS 2 MCAP bags.
 - No deployment is enabled until its checkpoint contract is registered and
   reviewed.
 

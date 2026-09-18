@@ -346,6 +346,7 @@ def legacy_observation_topics(system: SystemConfig) -> tuple[tuple[str, str, str
     mirrors = system.observability.topics
     return (
         ("sensor_msgs/JointState", primary.joint_states, "volatile"),
+        ("sensor_msgs/JointState", primary.joint_target, "volatile"),
         ("geometry_msgs/PoseStamped", primary.eef_pose, "volatile"),
         ("std_msgs/String", primary.relay_status, "volatile"),
         ("tf2_msgs/TFMessage", "/tf", "volatile"),

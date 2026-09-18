@@ -262,6 +262,9 @@ additional gripper bit latches `FAULT`.
 - The A1-only Web/CLI reset validates System and pose before process creation,
   owns ROS master, driver, joint tracker, and relay startup for its lifetime,
   and stops those resources on success, failure, or interruption.
+- Collection records original streams with read-only rosbag2 subscriptions; offline
+  export runs with network disabled and never replays messages into the live graph.
+  Original bags are retained even on discard or failure.
 - Collection uses the same tracked reset path automatically after startup and
   before its first episode gate. Leading-stillness trimming changes only which
   already-validated frames enter the dataset; it never changes or publishes an

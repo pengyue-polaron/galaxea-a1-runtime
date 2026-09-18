@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
     dataset_repo_id,
@@ -29,14 +27,3 @@ def direct_dataset_identity(
         ),
         experiment=experiment,
     )
-
-
-def tracked_config_reference(config: TeleopConfig, *, repo_root: Path) -> str:
-    """Return a portable config identity before formal collection opens hardware."""
-
-    try:
-        return config.path.resolve().relative_to(repo_root.resolve()).as_posix()
-    except ValueError as exc:
-        raise ValueError(
-            "formal collection config must be tracked inside the repository"
-        ) from exc

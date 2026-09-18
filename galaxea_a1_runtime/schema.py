@@ -55,6 +55,7 @@ DEFAULT_RGB_IMAGE_KEYS = (
     FRONT_IMAGE_FEATURE_KEY,
     WRIST_IMAGE_FEATURE_KEY,
 )
+BAG_CAPTURE_CONTRACT = "rosbag2_mcap_aligned_v1"
 DIRECT_DATASET_SCHEMA_VERSION = "galaxea_a1_lerobot_dataset_v3_v3"
 
 

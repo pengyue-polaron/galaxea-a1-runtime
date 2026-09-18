@@ -1,237 +1,98 @@
-"""Fresh frame capture into a pending direct LeRobot episode."""
+"""Guarded raw-bag capture; training conversion occurs after finalization."""
 
 from __future__ import annotations
 
 import select
 import sys
 import time
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from pathlib import Path
+from typing import TYPE_CHECKING
 
-from embodied_ops.collection import (
-    LeadingStillnessConfig,
-    LeadingStillnessTrimmer,
-    require_fresh_sample,
-    require_pair_skew,
-)
+from embodied_ops.collection import require_fresh_sample, require_pair_skew
 from embodied_ops.operator_panel import announce_progress
-
+from galaxea_a1_runtime.apps.teleop.bag_capture import BagCapture
 from galaxea_a1_runtime.apps.teleop.interaction import (
     normalize_collection_recording_decision,
 )
 from galaxea_a1_runtime.collection import EpisodeDecision
-from galaxea_a1_runtime.collection.lerobot_frame import build_lerobot_frame
-from galaxea_a1_runtime.configuration.image import ImageRoi
-from galaxea_a1_runtime.hardware.image_geometry import crop_image
+from galaxea_a1_runtime.console import info
 
 if TYPE_CHECKING:
-    from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
-    from galaxea_a1_runtime.hardware.cameras import CameraReader, CameraSample
+    from galaxea_a1_runtime.hardware.cameras import CameraReader
 
 
 @dataclass(frozen=True)
 class RecordedEpisode:
-    frame_count: int
-    sampled_frame_count: int
-    trimmed_frame_count: int
+    bag_root: Path
     elapsed_s: float
-    effective_fps: float
     decision: EpisodeDecision
-    actions: tuple[tuple[float, ...], ...]
     reset_required_override: bool | None = None
 
 
-@dataclass(frozen=True)
-class CapturedFrame:
-    values: dict[str, Any]
-    action: tuple[float, ...]
-    camera_seq: dict[str, int]
-
-
-@dataclass(frozen=True)
-class _FrameRecorder:
-    front_reader: CameraReader
-    wrist_reader: CameraReader
-    read_pair: Callable[[], tuple[CameraSample, CameraSample] | None]
-    ros_state: RosTeleopState
-    task: str
-    depth_enabled: bool
-    front_crop: ImageRoi | None
-    max_camera_age_s: float
-    max_camera_pair_skew_s: float
-
-    def capture(self, last_camera_seq: dict[str, int]) -> CapturedFrame | None:
-        readers = (self.front_reader, self.wrist_reader)
-        _raise_camera_reader_errors(readers)
-        wait_for_new_camera_samples(
-            readers,
-            min_seq=last_camera_seq,
-            timeout_s=self.max_camera_age_s,
-        )
-        pair = self.read_pair()
-        if pair is None:
-            raise RuntimeError("synchronized camera pair unavailable")
-        now = time.perf_counter()
-        front_sample, wrist_sample = (
-            require_fresh_sample(
-                sample, label=label, now_s=now, max_age_s=self.max_camera_age_s
-            )
-            for sample, label in zip(pair, ("front", "wrist"), strict=True)
-        )
-        require_pair_skew(
-            front_sample,
-            wrist_sample,
-            left_label="front",
-            right_label="wrist",
-            max_skew_s=self.max_camera_pair_skew_s,
-        )
-        frameset = front_sample.value
-        wrist_image = wrist_sample.value
-        state_sample = self.ros_state.state_sample()
-        action = self.ros_state.action_values()
-        if frameset is None or wrist_image is None:
-            raise RuntimeError("camera reader returned an empty frame")
-        if state_sample is None or action is None:
-            raise RuntimeError(
-                "ROS joint/EEF/action/gripper data became stale or invalid while recording"
-            )
-        if self.depth_enabled and frameset.depth_mm is None:
-            return None
-
-        front_image = _crop_if_needed(
-            frameset.color_bgr, self.front_crop, label="AgentView color"
-        )
-        depth = None
-        if self.depth_enabled:
-            depth = _crop_if_needed(
-                frameset.depth_mm,
-                self.front_crop,
-                label="AgentView aligned depth",
-            )
-        values = build_lerobot_frame(
-            state=state_sample.values,
-            action=action,
-            front_bgr=front_image,
-            wrist_bgr=wrist_image,
-            task=self.task,
-            front_depth_mm=depth,
-        )
-        return CapturedFrame(
-            values=values,
-            action=tuple(float(value) for value in action),
-            camera_seq={
-                self.front_reader.name: front_sample.seq,
-                self.wrist_reader.name: wrist_sample.seq,
-            },
-        )
-
-
-def record_episode(
-    *,
-    episode_index: int,
-    dataset: Any,
-    task: str,
-    front_reader: CameraReader,
-    wrist_reader: CameraReader,
-    read_pair: Callable[[], tuple[CameraSample, CameraSample] | None],
-    ros_state: RosTeleopState,
-    fps: float,
-    max_duration_s: float,
-    depth_enabled: bool,
-    front_crop: ImageRoi | None,
-    camera_ready_timeout_s: float,
-    max_camera_age_s: float,
-    max_camera_pair_skew_s: float,
-    leading_stillness: LeadingStillnessConfig,
-    on_ready: Callable[[], None] = lambda: None,
-) -> RecordedEpisode:
+def record_episode(*, config, experiment, task, cameras, ros_state, on_ready):
     import rospy
 
-    stored_frames = 0
-    sampled_frames = 0
-    wait_for_new_camera_samples(
-        (front_reader, wrist_reader),
-        min_seq={
-            front_reader.name: front_reader.latest_seq(),
-            wrist_reader.name: wrist_reader.latest_seq(),
-        },
-        timeout_s=camera_ready_timeout_s,
-    )
-    on_ready()
-    t0 = time.perf_counter()
-    next_frame_t = t0
-    period = 1.0 / fps
-    recorder = _FrameRecorder(
-        front_reader=front_reader,
-        wrist_reader=wrist_reader,
-        read_pair=read_pair,
-        ros_state=ros_state,
-        task=task,
-        depth_enabled=depth_enabled,
-        front_crop=front_crop,
-        max_camera_age_s=max_camera_age_s,
-        max_camera_pair_skew_s=max_camera_pair_skew_s,
-    )
-    user_input: str | None = None
-    last_camera_seq = {front_reader.name: -1, wrist_reader.name: -1}
-    actions: list[tuple[float, ...]] = []
-    trimmer = LeadingStillnessTrimmer[CapturedFrame](leading_stillness)
-
-    while not rospy.is_shutdown():
-        loop_t = time.perf_counter()
-        user_input = _poll_stdin_line()
-        if user_input is not None:
-            break
-        if max_duration_s > 0 and loop_t - t0 >= max_duration_s:
-            break
-
-        captured = recorder.capture(last_camera_seq)
-        if captured is None:
-            time.sleep(0.005)
-            continue
-        sampled_frames += 1
-        last_camera_seq = captured.camera_seq
-        for ready in trimmer.push(captured, captured.action):
-            dataset.add_frame(ready.values)
-            actions.append(ready.action)
-            stored_frames += 1
-
-        elapsed_s = time.perf_counter() - t0
-        measured_fps = sampled_frames / elapsed_s if elapsed_s > 0 else 0.0
-        announce_progress(
-            "capture",
-            "Episode capture",
-            min(elapsed_s, max_duration_s) if max_duration_s > 0 else elapsed_s,
-            max_duration_s if max_duration_s > 0 else None,
-            phase="recording",
-            detail=(
-                f"Sampled {sampled_frames} · stored {stored_frames} · "
-                f"{measured_fps:.1f} FPS"
-            ),
-        )
-
-        next_frame_t += period
-        sleep_s = next_frame_t - time.perf_counter()
-        if sleep_s > 0:
-            time.sleep(sleep_s)
-
-    elapsed_s = time.perf_counter() - t0
-    disposition = normalize_collection_recording_decision(user_input)
+    capture = BagCapture(config, experiment=experiment, task=task)
+    decision = normalize_collection_recording_decision("q")
+    outcome = "interrupted"
+    try:
+        capture.start()
+        info(f"Raw episode: {capture.root}")
+        capture.begin()
+        on_ready()
+        start = time.monotonic()
+        while not rospy.is_shutdown():
+            capture.check()
+            now = time.perf_counter()
+            pair = cameras.camera_bridge.latest_pair()
+            if pair is None:
+                raise RuntimeError(
+                    "synchronized camera pair unavailable during raw recording"
+                )
+            front, wrist = (
+                require_fresh_sample(
+                    s, label=label, now_s=now, max_age_s=config.system.cameras.max_age_s
+                )
+                for s, label in zip(pair, ("front", "wrist"), strict=True)
+            )
+            require_pair_skew(
+                front,
+                wrist,
+                left_label="front",
+                right_label="wrist",
+                max_skew_s=config.system.cameras.max_pair_skew_s,
+            )
+            if ros_state.state_sample() is None or ros_state.action_values() is None:
+                raise RuntimeError(
+                    "robot state/action became stale during raw recording"
+                )
+            user_input = _poll_stdin_line()
+            elapsed = time.monotonic() - start
+            if user_input is not None or (
+                config.collection.max_duration_s > 0
+                and elapsed >= config.collection.max_duration_s
+            ):
+                decision = normalize_collection_recording_decision(user_input)
+                outcome = decision.decision
+                break
+            announce_progress(
+                "capture",
+                "Raw episode capture",
+                elapsed,
+                config.collection.max_duration_s or None,
+                phase="recording",
+                detail=f"Recording original camera and robot streams · {elapsed:.1f}s",
+            )
+            time.sleep(1.0 / config.collection.fps)
+    finally:
+        capture.stop(outcome)
     return RecordedEpisode(
-        frame_count=stored_frames,
-        sampled_frame_count=sampled_frames,
-        trimmed_frame_count=trimmer.result.trimmed_frames,
-        elapsed_s=elapsed_s,
-        effective_fps=sampled_frames / elapsed_s if elapsed_s > 0 else 0.0,
-        decision=disposition.decision,
-        actions=tuple(actions),
-        reset_required_override=disposition.reset_required_override,
+        capture.root,
+        (capture.manifest["end_ns"] - capture.manifest["start_ns"]) / 1e9,
+        decision.decision,
+        decision.reset_required_override,
     )
-
-
-def _crop_if_needed(image: Any, roi: ImageRoi | None, *, label: str) -> Any:
-    return image if roi is None else crop_image(image, roi, label=label)
 
 
 def wait_for_new_camera_samples(

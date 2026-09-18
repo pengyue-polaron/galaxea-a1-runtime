@@ -35,7 +35,6 @@ from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.collector_episode import TeleopEpisodeSession
 from galaxea_a1_runtime.apps.teleop.dataset_contract import (
     direct_dataset_identity,
-    tracked_config_reference,
 )
 from galaxea_a1_runtime.apps.teleop.collection_task import (
     normalize_collection_task,
@@ -46,7 +45,7 @@ from galaxea_a1_runtime.apps.teleop.interaction import (
     collection_ready_action_ids,
     normalize_collection_ready_action,
 )
-from galaxea_a1_runtime.apps.teleop.metadata import collection_lifecycle_provenance
+from galaxea_a1_runtime.apps.teleop.bag_export import export_provenance
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
@@ -79,10 +78,9 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     experiment = validate_experiment_name(experiment)
     front_crop = required_front_roi(config.system.cameras)
     identity = direct_dataset_identity(config, experiment)
-    config_reference = tracked_config_reference(config, repo_root=ROOT_DIR)
     existing = validate_direct_dataset_provenance(
         identity,
-        {"collection_lifecycle": collection_lifecycle_provenance(config)},
+        export_provenance(config, experiment),
     )
     task = load_or_prompt_task(existing.tasks, provided_task=task)
     episode_index = existing.total_episodes
@@ -121,10 +119,8 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
             config=config,
             identity=identity,
             task=task,
-            front_crop=front_crop,
             ros_state=ros_state,
             cameras=cameras,
-            config_reference=config_reference,
         )
         reset_after_save = config.collection.reset_policy.after_save
         while not rospy.is_shutdown():

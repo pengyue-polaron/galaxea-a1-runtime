@@ -174,6 +174,9 @@ def inspect_direct_dataset(
         total_frames=total_frames,
         expected_tasks=tasks,
     )
+    from galaxea_a1_runtime.lerobot.timing import validate_timing
+
+    validate_timing(target_root, info=info, provenance=provenance)
     return DirectDatasetState(total_episodes, total_frames, tasks)
 
 
@@ -247,9 +250,12 @@ class DirectLeRobotEpisode:
         self._dataset: Any | None = None
         self._finalized = False
         self._committed = False
+        self._timing = None
+        self._episode_index = 0
 
     def __enter__(self) -> DirectLeRobotEpisode:
         state = validate_direct_dataset_provenance(self.identity, self.provenance)
+        self._episode_index = state.total_episodes
         exists = state.total_episodes > 0
         transaction = OutputDirectoryTransaction(
             self.identity.target_root,
@@ -293,6 +299,12 @@ class DirectLeRobotEpisode:
             raise RuntimeError("direct episode transaction has not started")
         self._dataset.add_frame(frame)
 
+    def attach_timing(self, rows: list[dict], source: dict) -> None:
+        """Attach physical source clocks inside the same publication transaction."""
+        if self._dataset is None or self._committed or self._timing is not None:
+            raise RuntimeError("timing attachment is not allowed in this state")
+        self._timing = (rows, source)
+
     def commit(self) -> Path:
         if self._dataset is None or self._transaction is None:
             raise RuntimeError("direct episode transaction has not started")
@@ -321,6 +333,16 @@ class DirectLeRobotEpisode:
             self._transaction.path / PROVENANCE_PATH,
             json.dumps(payload, indent=2, sort_keys=True) + "\n",
         )
+        if self._timing is not None:
+            from galaxea_a1_runtime.lerobot.timing import write_timing
+
+            rows, source = self._timing
+            write_timing(
+                self._transaction.path,
+                episode=self._episode_index,
+                rows=rows,
+                source=source,
+            )
         inspect_direct_dataset(
             replace(self.identity, target_root=self._transaction.path),
             expected_task=self.task,

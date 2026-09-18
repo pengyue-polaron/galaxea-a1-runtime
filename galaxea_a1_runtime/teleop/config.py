@@ -237,6 +237,10 @@ def validate_teleop_config(config: TeleopConfig) -> None:
 def validate_collection_config(config: TeleopConfig) -> None:
     """Validate collection-only hardware contracts before any device startup."""
 
+    if not config.system.observability.enabled:
+        raise ValueError(
+            "bag-first collection requires observability.enabled for ROS 2 robot streams"
+        )
     if config.system.cameras.front.backend != "realsense":
         raise ValueError(
             "cameras.front.backend must be 'realsense' for canonical Teleop collection"

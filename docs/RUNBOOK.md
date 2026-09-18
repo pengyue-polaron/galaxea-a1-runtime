@@ -304,8 +304,8 @@ startup/discovery) without opening devices again or recording command topics.
 It stores original image headers, camera calibration, driver metadata and sync
 status under `outputs/ros2/`. Use the standard rosbag2 tools for offline replay
 in an isolated domain/network; never replay recorded camera topics into the live
-observation domain. Existing collection still commits canonical LeRobot v3
-episodes directly; MCAP is a separate diagnostic/replay artifact.
+observation domain. Formal collection uses its own bag-first workflow below;
+this camera-only diagnostic command does not produce a complete collection bag.
 
 `ros2.domain_id` owns the ROS 2 domain. Normal launch uses local-host
 discovery, with no ambient domain override. The tracked pair tolerance is 20 ms;
@@ -583,17 +583,50 @@ At the episode prompt:
 - `q` + `Enter`: quit without reset;
 - `Ctrl+C`: stop immediately.
 
-Every frame requires fresh joint, EEF, gripper, action, and paired-camera data.
-The collector buffers the stationary prefix and starts storing only after the
-tracked per-action thresholds report sustained motion, while retaining a short
-preroll. An episode with no detected motion remains empty and is discarded.
-Save validates continuity and finalizes a standard LeRobotDataset v3 episode in
-a hidden sibling snapshot, then atomically installs the complete dataset under
-`data/datasets/EXPERIMENT/`. A rejected save removes only its snapshot, reuses
-its index, and resets before retry when configured. A successful save resets
-before the next episode when configured. Leader reset keeps the tracked goal
-tolerance strict while making a bounded number of smooth corrective passes for
-servo lag or backlash; a final failure reports the offending joint errors.
+Collection first records original ROS 2 streams using the official rosbag2 MCAP
+recorder. `observability.enabled` must be true; collection preflight rejects a
+disabled observation bridge before opening hardware. Required subscriptions and actual message delivery must be ready before
+the recording gate opens; live camera/robot freshness remains monitored. The
+raw episode is retained at `data/recordings/EXPERIMENT/BAG_ID/`, including
+`episode.json`, exact task, configuration snapshots/hashes, operator boundaries,
+and `bag/`. Discard, interruption and conversion failure retain this original.
+Do not use validation-only bags as training demonstrations.
+
+Save finalizes the bag and automatically exports a canonical LeRobot v3 episode
+under `data/datasets/EXPERIMENT/`. Export builds a physical-time grid at the
+configured collection FPS, interpolates bounded state samples and holds causal
+commands. Camera reuse is explicit; source frames are never relabeled as new
+exposures. A stationary prefix is trimmed with configured preroll, and an entirely
+stationary recording creates no training episode. Timing and raw-source records
+commit atomically with images and numeric rows. Reset after save/discard retains
+the existing guarded policy; conversion failure stops collection for inspection.
+
+Retry a finalized, saved raw episode without ROS discovery or hardware access:
+
+```bash
+just bag-export data/recordings/EXPERIMENT/BAG_ID
+# Reproduce into a separate dataset instead of appending the same source twice:
+just bag-export data/recordings/EXPERIMENT/BAG_ID --experiment EXPERIMENT_REEXPORT
+```
+
+The exporter requires the recorded Teleop/System configuration hashes to match.
+Retain those configurations when collecting; restore the exact tracked versions
+before retrying an older bag. It rejects incomplete/discarded bags, duplicate bag
+IDs in a dataset, unknown clocks, missing required streams, excessive gaps,
+clock reversal and action discontinuities. Conversion uses a network-isolated
+Jazzy reader and needs temporary disk space for selected decoded images.
+
+`meta/timing/episode-NNNNNN.parquet` contains each output frame's integer
+nanosecond sampling time, camera source/receive times, image message indices and
+reuse flags, state interpolation endpoints, and causal command timestamps.
+The matching JSON file records the raw bag identity, location, file hashes and
+capture boundaries. LeRobot `timestamp` remains the relative fixed-FPS training
+clock; it now corresponds to a grid in real time. Unstamped legacy robot messages
+explicitly use receive time while retaining source timestamp zero. Such rows do
+not imply hardware sampling-time accuracy.
+
+Use a new experiment for this capture contract; existing pre-migration datasets
+remain inspectable but cannot be silently appended with bag-aligned episodes.
 
 The collector loads ROS1 from the tracked Python 3.12 overlay and A1 SDK without
 adding Ubuntu's system Python packages. This keeps LeRobot resume isolated from

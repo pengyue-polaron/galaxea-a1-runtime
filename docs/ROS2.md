@@ -185,6 +185,36 @@ cameras and observation services. Final `just check` and `git diff --check`
 passed. This check did not exercise gripper motion, an end-to-end collection
 episode, policy inference or camera/robot historical timestamp alignment.
 
+## Bag-first collection validation on 2026-09-18
+
+- Official rosbag2 reader/export validation used a network-isolated synthetic
+  MCAP containing 28 FPS cameras and 60 Hz robot streams. Four physical seconds
+  produced 120 grid samples; leading stillness retained 98 frames. Seven front
+  images were explicitly marked reused. The retained physical span was
+  3.233333333 seconds versus LeRobot's float32 3.233333349 seconds.
+- Numeric values, named-joint reordering, normalized gripper, RGB channel order,
+  video frame counts and zero-source-stamp receive fallback were checked.
+  Source clock reversal, missing camera stamps, long state gaps, non-finite
+  values, duplicate joint names and duplicate source imports were rejected.
+- An actual rosbag2 recorder and publisher in a separate network/IPC namespace
+  exercised readiness, delivery probing and graceful stop. Its bag exported
+  successfully. Discovery without message delivery was observed while the
+  validation containers used mismatched users; the production readiness path
+  now includes an actual delivery probe in the recorder's namespace/user.
+- The complete episode wrapper was exercised with an isolated synthetic DDS
+  publisher and simulated robot freshness. Its Save-without-Reset decision
+  committed 90 frames and returned no-reset, without starting robot control.
+- A new eight-second live-camera MCAP was combined offline with explicitly
+  synthetic robot streams. Original image source/receive timestamps were kept;
+  conversion generated 195 grid samples and committed 171 after prefix trim.
+  This checks real camera payloads, not real robot/camera alignment accuracy.
+- Timing attachments commit in the same transaction as LeRobot payloads.
+  Append, injected timing-write rollback and corruption checks are covered by
+  local validation receipts under `outputs/ros2/validation/bag_first/`.
+
+These are data-path checks. Full physical leader/arm/gripper collection and
+hardware sampling/exposure clock calibration remain unverified for this change.
+
 ## Remaining migration
 
 This is not complete removal of ROS 1. The checked-in vendor `signal_arm`
@@ -194,11 +224,17 @@ path. Native A1 driver support and ros2_control hardware interfaces require
 separate validation before replacing this boundary. The observation bridge is
 not a motion migration and must never gain a reverse command route.
 
-The collector still reads current robot state/action after selecting a camera
-pair. Historical state interpolation and action-time semantics remain work;
-MCAP camera timestamps do not automatically fix that alignment. Existing
-dataset provenance prevents silently resuming a dataset with a changed capture
-contract. Use a new experiment when the collector reports a provenance mismatch.
+Collection now records original camera, robot and command streams into MCAP
+before exporting LeRobot. `just bag-export` uses an isolated ROS 2 reader and
+physical-time alignment; per-episode timing sidecars retain original source and
+receive stamps, interpolation endpoints and image reuse. The named joint-target
+topic is included in the one-way bridge for recording, never reverse control.
+Existing datasets cannot silently resume with the new capture contract.
+
+Hardware timing acceptance remains separate: legacy messages with zero source
+stamps use explicitly flagged bag-receive time, not fabricated hardware time.
+Actual exposure synchronization, driver clock semantics and real teleoperation
+latency still require measurement. Raw timestamps alone do not establish them.
 
 ## Upstream references
 
