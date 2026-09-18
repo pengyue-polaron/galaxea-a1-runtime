@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import re
 import sys
 from collections.abc import Iterable
@@ -85,6 +84,11 @@ __all__ = [
 ROS_ABSOLUTE_NAME = re.compile(
     r"^/(?:[A-Za-z_][A-Za-z0-9_]*)(?:/[A-Za-z_][A-Za-z0-9_]*)*$"
 )
+
+
+@dataclass(frozen=True)
+class SystemRos2Config:
+    domain_id: int
 
 
 @dataclass(frozen=True)
@@ -205,6 +209,7 @@ class SystemGripperConfig:
 class SystemConfig:
     path: Path
     host: SystemHostConfig
+    ros2: SystemRos2Config
     topics: SystemTopicsConfig
     relay: SystemRelayConfig
     doctor: SystemDoctorConfig
@@ -227,6 +232,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         data,
         required={
             "host",
+            "ros2",
             "topics",
             "relay",
             "doctor",
@@ -244,6 +250,11 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
         },
         label="system config",
     )
+    ros2 = required_table(data, "ros2")
+    require_exact_keys(ros2, required={"domain_id"}, label="ros2")
+    domain_id = integer(ros2, "domain_id")
+    if not 0 <= domain_id <= 101:
+        raise ValueError("ros2.domain_id must be in 0..101")
     host = required_table(data, "host")
     topics = required_table(data, "topics")
     relay = required_table(data, "relay")
@@ -299,6 +310,7 @@ def load_system_config(path: Path, *, repo_root: Path | None = None) -> SystemCo
     )
     config = SystemConfig(
         path=path,
+        ros2=SystemRos2Config(domain_id=domain_id),
         host=SystemHostConfig(
             image=string(host, "image"), a1_serial=string(host, "a1_serial")
         ),
@@ -601,14 +613,6 @@ def validate_system_config(config: SystemConfig) -> None:
 def shell_values(config: SystemConfig) -> dict[str, str]:
     """Return the canonical system-to-shell lifecycle mapping."""
 
-    from galaxea_a1_runtime.observability import (
-        NO_MATCH_ALLOWLIST,
-        foxglove_asset_uri_allowlist,
-        foxglove_capabilities,
-        foxglove_service_whitelist,
-        foxglove_topic_whitelist,
-    )
-
     return {
         "SYSTEM_CONFIG_PATH": str(config.path),
         "IMAGE": config.host.image,
@@ -644,25 +648,6 @@ def shell_values(config: SystemConfig) -> dict[str, str]:
         "FOXGLOVE_PORT": str(config.observability.port),
         "FOXGLOVE_STARTUP_TIMEOUT_S": number(config.observability.startup_timeout_s),
         "FOXGLOVE_SHUTDOWN_TIMEOUT_S": number(config.observability.shutdown_timeout_s),
-        "FOXGLOVE_GRAPH_UPDATE_MS": str(config.observability.graph_update_ms),
-        "FOXGLOVE_SEND_BUFFER_LIMIT_BYTES": str(
-            config.observability.send_buffer_limit_bytes
-        ),
-        "FOXGLOVE_TOPIC_WHITELIST_YAML": json.dumps(
-            foxglove_topic_whitelist(config), separators=(",", ":")
-        ),
-        "FOXGLOVE_SERVICE_WHITELIST_YAML": json.dumps(
-            foxglove_service_whitelist(config), separators=(",", ":")
-        ),
-        "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML": json.dumps(
-            NO_MATCH_ALLOWLIST, separators=(",", ":")
-        ),
-        "FOXGLOVE_CAPABILITIES_YAML": json.dumps(
-            foxglove_capabilities(config), separators=(",", ":")
-        ),
-        "FOXGLOVE_ASSET_URI_ALLOWLIST_YAML": json.dumps(
-            foxglove_asset_uri_allowlist(config), separators=(",", ":")
-        ),
         "OBSERVABILITY_FRONT_IMAGE_TOPIC": config.observability.topics.front_image,
         "OBSERVABILITY_WRIST_IMAGE_TOPIC": config.observability.topics.wrist_image,
         "OBSERVABILITY_STAGED_JOINT_TOPIC": (
@@ -743,13 +728,6 @@ def bash_config(config: SystemConfig) -> str:
             "FOXGLOVE_PORT",
             "FOXGLOVE_STARTUP_TIMEOUT_S",
             "FOXGLOVE_SHUTDOWN_TIMEOUT_S",
-            "FOXGLOVE_GRAPH_UPDATE_MS",
-            "FOXGLOVE_SEND_BUFFER_LIMIT_BYTES",
-            "FOXGLOVE_TOPIC_WHITELIST_YAML",
-            "FOXGLOVE_SERVICE_WHITELIST_YAML",
-            "FOXGLOVE_NO_MATCH_ALLOWLIST_YAML",
-            "FOXGLOVE_CAPABILITIES_YAML",
-            "FOXGLOVE_ASSET_URI_ALLOWLIST_YAML",
             "OBSERVABILITY_FRONT_IMAGE_TOPIC",
             "OBSERVABILITY_WRIST_IMAGE_TOPIC",
             "OBSERVABILITY_STAGED_JOINT_TOPIC",

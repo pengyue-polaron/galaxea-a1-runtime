@@ -114,7 +114,7 @@ def main() -> int:
         "-e",
         f"A1_FRONT_USB_TYPE={devices[0].usb_type}",
         "-e",
-        f"ROS_DOMAIN_ID={system.cameras.ros_domain_id}",
+        f"ROS_DOMAIN_ID={system.ros2.domain_id}",
         "-e",
         "ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST",
         "-e",

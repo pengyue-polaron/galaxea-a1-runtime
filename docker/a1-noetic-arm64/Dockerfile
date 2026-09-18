@@ -66,21 +66,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     zlib1g-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# ROS 1 is EOL and its binary Foxglove package is outdated. Build the reviewed
-# maintenance revision from source for both amd64 development and A1 arm64.
-ARG FOXGLOVE_BRIDGE_REVISION=42c0ba4fffeec88dc6890dd98ea2590e20bd4370
-RUN mkdir -p /opt/foxglove_bridge_ws/src \
-    && git clone https://github.com/foxglove/ros-foxglove-bridge.git \
-      /opt/foxglove_bridge_ws/src/foxglove_bridge \
-    && git -C /opt/foxglove_bridge_ws/src/foxglove_bridge checkout \
-      "${FOXGLOVE_BRIDGE_REVISION}" \
-    && . /opt/ros/noetic/setup.sh \
-    && cd /opt/foxglove_bridge_ws \
-    && catkin_make install \
-      -DCMAKE_BUILD_TYPE=Release \
-      -DCATKIN_ENABLE_TESTING=OFF \
-    && rm -rf build devel src
-
 # Install Python 3.12 and the minimal image-encoding dependencies used by
 # repository ROS sidecars. Versions match the locked main environment.
 RUN curl -LsSf https://astral.sh/uv/install.sh | sh \

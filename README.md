@@ -6,6 +6,7 @@
 
 <p align="center">
   <a href="https://huggingface.co/docs/lerobot/v0.6.0/en/integrate_hardware"><img alt="LeRobot 0.6" src="https://img.shields.io/badge/LeRobot-0.6-FFD21E"></a>
+  <img alt="ROS 2 Jazzy" src="https://img.shields.io/badge/ROS_2-Jazzy-22314E?logo=ros&amp;logoColor=white">
   <img alt="ROS 1 Noetic" src="https://img.shields.io/badge/ROS_1-Noetic-22314E?logo=ros&amp;logoColor=white">
   <img alt="LeRobotDataset v2.1 and v3.0" src="https://img.shields.io/badge/LeRobotDataset-v2.1_%7C_v3.0-0A7BBC">
   <a href="https://arxiv.org/abs/2607.08283"><img alt="arXiv 2607.08283" src="https://img.shields.io/badge/arXiv-2607.08283-B31B1B?logo=arxiv&amp;logoColor=white"></a>
@@ -41,7 +42,8 @@ are kept in independent packages.
 | Host application | Python 3.12 |
 | OpenPI backend | Python 3.11, isolated from the main environment |
 | Robot framework | LeRobot 0.6 |
-| ROS runtime | ROS 1 Noetic in an Ubuntu 20.04 container |
+| Vendor control boundary | ROS 1 Noetic in an Ubuntu 20.04 container |
+| Observation / operator services | ROS 2 Jazzy, with a one-way Jazzy/ROS 1 state bridge |
 | Camera runtime | ROS 2 Jazzy / official RealSense driver in an Ubuntu 24.04 container |
 | Canonical recording | LeRobotDataset v3.0 |
 | Training derivatives | Joint v2.1, EEF v2.1, or EEF v3.0 |

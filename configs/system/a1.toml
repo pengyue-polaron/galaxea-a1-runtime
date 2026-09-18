@@ -1,3 +1,6 @@
+[ros2]
+domain_id = 42
+
 [host]
 image = "galaxea-a1-runtime/a1-noetic-arm64:local"
 a1_serial = "/dev/a1"
@@ -77,7 +80,6 @@ stroke_min_mm = 0.0
 stroke_max_mm = 104.0
 
 [cameras]
-ros_domain_id = 42
 warmup_frames = 20
 max_age_s = 0.5
 max_pair_skew_s = 0.02

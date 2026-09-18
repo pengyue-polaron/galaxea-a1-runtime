@@ -226,9 +226,13 @@ preview frames but cannot queue work in, rewrite, or block the raw observation
 contract. Web JPEGs are never fed back into policy, recording, or collection.
 
 Collection, policy inference and video recording read the complete atomic pair.
-The existing ROS 1 telemetry adapter preserves each image's source stamp when
-publishing Foxglove previews. The A1 vendor driver, trackers, safety relay,
-robot feedback and operator-service/Foxglove control plane remain ROS 1. Robot
+The native ROS 2 observability node preserves each image's source stamp when
+publishing Foxglove previews. The A1 vendor driver, trackers, safety relay and
+robot service remain ROS 1. An isolated Noble/Jazzy container composes upstream
+`ros1_bridge` factories in the ROS 1-to-ROS 2 direction only. Its exact topic
+plan contains measured state, TF, relay status and validated display mirrors;
+it never creates ROS 1 publishers or bridges services. `ros2.domain_id` is the
+single domain owner for cameras and observation services. Robot
 state/action history is not yet interpolated to camera time; migrating camera
 transport does not establish that stronger dataset contract. See
 [ROS 2 migration](ROS2.md) for the implemented boundary and validation results.
@@ -237,14 +241,16 @@ Foxglove observability is a side branch of that runtime. Its only control path
 terminates at the existing Operator Session rather than at ROS command topics:
 
 ```text
-existing ROS state/status/command topics + Camera Bridge raw consumer
-  -> validating A1 telemetry adapter
-  -> named JointState mirrors + CompressedImage + DiagnosticArray
-  -> scoped foxglove_bridge WebSocket
+ROS 1 state/status/command topics
+  -> validating vendor telemetry adapter -> upstream one-way ros1_bridge
+  -> ROS 2 JointState mirrors + robot diagnostics + measured state + TF
+Camera Bridge raw consumer + Operator Session
+  -> native ROS 2 previews / diagnostics / workflow status / gated services
+  -> scoped ROS 2 foxglove_bridge WebSocket
   -> Foxglove Desktop/Web
 
 Foxglove exact Trigger service
-  -> telemetry adapter phase/run/input-revision validation
+  -> native ROS 2 adapter phase/run/input-revision validation
   -> current-user Unix Operator Session
   -> embodied-ops one-shot input gate
   -> already-supervised collection child stdin
@@ -259,11 +265,13 @@ other services use a no-match allowlist. Its capabilities are
 `connectionGraph`, `assets`, and `services`; it deliberately omits
 `clientPublish`. The current layout therefore has no Publish panel. The
 configured URDF and each referenced mesh are the only remotely retrievable
-assets.
+assets. An ephemeral ament index resolves the vendor mesh package without
+sourcing ROS 1 libraries into Jazzy. Mirrors preserve original header stamps;
+zero stamps remain visibly zero rather than being replaced with forwarding time.
 
 The committed Foxglove layout is generated from System topic names, joint names,
-and the configured URDF, and a test rejects drift. ROS master, telemetry, and
-Foxglove are one shared persistent observation stack rather than per-application
+and the configured URDF, and static validation rejects drift. ROS master, vendor telemetry, one-way
+bridge, native observation services and Foxglove form one persistent stack rather than per-application
 sidecars. The public Camera lifecycle ensures that stack, and execution runtimes
 reuse it instead of opening a second port or ROS master. Normal execution
 shutdown preserves both Camera Bridge and observation stack so monitoring

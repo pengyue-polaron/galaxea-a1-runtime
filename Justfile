@@ -90,6 +90,7 @@ models:
 # Build the official ROS 2 camera, synchronization and recording environment.
 ros2-setup:
     docker build -t galaxea-a1-runtime/ros2-jazzy:local -f {{repo}}/docker/ros2/Dockerfile {{repo}}
+    docker build -t galaxea-a1-runtime/ros1-bridge:local -f {{repo}}/docker/ros1-bridge/Dockerfile {{repo}}
 
 # Inspect native ROS 2 camera topics or record a bounded raw MCAP capture.
 ros2 *args:

@@ -4,13 +4,15 @@
 
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/a1_console.sh"
 
-A1_ROS_PREFIX='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash" && source /opt/foxglove_bridge_ws/install/local_setup.bash && export ROS_PACKAGE_PATH="/opt/foxglove_bridge_ws/install/share:${ROS_PACKAGE_PATH}"'
+A1_ROS_PREFIX='source /opt/ros/noetic/setup.bash && source "${A1_SDK_ROOT}/install/setup.bash"'
 A1_MANAGED_CONTAINER_LABEL='io.galaxea.a1-runtime.managed=true'
 A1_CONTAINER_PYTHONPATH='/workspace:/workspace/external/embodied-ops/src'
 A1_OBSERVABILITY_PREFIX="${A1_OBSERVABILITY_PREFIX:-a1-observability}"
 A1_OBSERVABILITY_ROSCORE_CONTAINER="${A1_OBSERVABILITY_PREFIX}-roscore"
 A1_OBSERVABILITY_TELEMETRY_CONTAINER="${A1_OBSERVABILITY_PREFIX}-telemetry"
 A1_OBSERVABILITY_FOXGLOVE_CONTAINER="${A1_OBSERVABILITY_PREFIX}-foxglove"
+A1_OBSERVABILITY_BRIDGE_CONTAINER="${A1_OBSERVABILITY_PREFIX}-ros1-bridge"
+A1_OBSERVABILITY_NATIVE_CONTAINER="${A1_OBSERVABILITY_PREFIX}-native"
 
 a1_require_runtime_value() {
   local name="$1"
@@ -190,6 +192,8 @@ a1_observability_stack_is_ready() {
   local foxglove_container="$2"
   a1_container_is_running "${telemetry_container}" &&
     a1_container_is_running "${foxglove_container}" &&
+    a1_container_is_running "${A1_OBSERVABILITY_BRIDGE_CONTAINER}" &&
+    a1_container_is_running "${A1_OBSERVABILITY_NATIVE_CONTAINER}" &&
     a1_foxglove_port_is_listening
 }
 
@@ -202,7 +206,8 @@ a1_stop_observability_roscore_if_unused() {
   local active_name
   while IFS= read -r active_name; do
     [[ -z "${active_name}" ]] && continue
-    if [[ "${active_name}" != "${A1_OBSERVABILITY_ROSCORE_CONTAINER}" ]]; then
+    if [[ "${active_name}" != "${A1_OBSERVABILITY_ROSCORE_CONTAINER}" &&
+      "${active_name}" != "a1-ros2-cameras" ]]; then
       return 0
     fi
   done < <(
@@ -338,10 +343,6 @@ a1_start_observability() {
   fi
   for name in \
     SYSTEM_CONFIG_PATH ROOT FOXGLOVE_BIND FOXGLOVE_PORT FOXGLOVE_STARTUP_TIMEOUT_S \
-    FOXGLOVE_GRAPH_UPDATE_MS FOXGLOVE_SEND_BUFFER_LIMIT_BYTES \
-    FOXGLOVE_TOPIC_WHITELIST_YAML FOXGLOVE_SERVICE_WHITELIST_YAML \
-    FOXGLOVE_NO_MATCH_ALLOWLIST_YAML \
-    FOXGLOVE_CAPABILITIES_YAML FOXGLOVE_ASSET_URI_ALLOWLIST_YAML \
     OBSERVABILITY_DIAGNOSTICS_TOPIC; do
     a1_require_runtime_value "${name}" || return
   done
@@ -354,7 +355,8 @@ a1_start_observability() {
     a1_fail "Foxglove port ${FOXGLOVE_PORT} is owned by an unexpected or unhealthy service."
     return 2
   fi
-  a1_remove_runtime_containers "${foxglove_container}" "${telemetry_container}"
+  a1_remove_runtime_containers "${foxglove_container}" "${telemetry_container}" \
+    "${A1_OBSERVABILITY_BRIDGE_CONTAINER}" "${A1_OBSERVABILITY_NATIVE_CONTAINER}"
   local relative_config="${SYSTEM_CONFIG_PATH#${ROOT}/}"
   if [[ "${relative_config}" == "${SYSTEM_CONFIG_PATH}" ]]; then
     a1_fail "System config must be inside the repository for Docker: ${SYSTEM_CONFIG_PATH}"
@@ -362,31 +364,21 @@ a1_start_observability() {
   fi
   a1_container_run telemetry "${telemetry_container}" \
     "${A1_ROS_PREFIX} && exec python3.12 \
-      /workspace/scripts/runtime/a1_observability.py \
+      /workspace/scripts/apps/observability/legacy.py \
       --config '/workspace/${relative_config}'"
-  a1_wait_topic "${telemetry_container}" "${OBSERVABILITY_DIAGNOSTICS_TOPIC}"
-
-  local bind_q port_q topics_q services_q no_match_q capabilities_q assets_q update_q buffer_q
-  printf -v bind_q '%q' "${FOXGLOVE_BIND}"
-  printf -v port_q '%q' "${FOXGLOVE_PORT}"
-  printf -v topics_q '%q' "${FOXGLOVE_TOPIC_WHITELIST_YAML}"
-  printf -v services_q '%q' "${FOXGLOVE_SERVICE_WHITELIST_YAML}"
-  printf -v no_match_q '%q' "${FOXGLOVE_NO_MATCH_ALLOWLIST_YAML}"
-  printf -v capabilities_q '%q' "${FOXGLOVE_CAPABILITIES_YAML}"
-  printf -v assets_q '%q' "${FOXGLOVE_ASSET_URI_ALLOWLIST_YAML}"
-  printf -v update_q '%q' "${FOXGLOVE_GRAPH_UPDATE_MS}"
-  printf -v buffer_q '%q' "${FOXGLOVE_SEND_BUFFER_LIMIT_BYTES}"
-  a1_container_run core "${foxglove_container}" \
-    "${A1_ROS_PREFIX} && exec roslaunch --screen \
-      /workspace/scripts/runtime/foxglove_bridge_scoped.launch \
-      address:=${bind_q} port:=${port_q} topic_whitelist:=${topics_q} \
-      service_whitelist:=${services_q} \
-      no_match_allowlist:=${no_match_q} capabilities:=${capabilities_q} \
-      asset_uri_allowlist:=${assets_q} max_update_ms:=${update_q} \
-      send_buffer_limit:=${buffer_q}"
+  local python_bin="${ROOT}/.venv/bin/python"
+  PYTHONPATH="${ROOT}:${ROOT}/external/embodied-ops/src" "${python_bin}" \
+    "${ROOT}/scripts/apps/observability/runtime.py" \
+    --config "${SYSTEM_CONFIG_PATH}" \
+    --bridge-container "${A1_OBSERVABILITY_BRIDGE_CONTAINER}" \
+    --native-container "${A1_OBSERVABILITY_NATIVE_CONTAINER}" \
+    --foxglove-container "${foxglove_container}"
   local deadline=$((SECONDS + ${FOXGLOVE_STARTUP_TIMEOUT_S%.*}))
   while ! timeout 1 bash -c "</dev/tcp/127.0.0.1/${FOXGLOVE_PORT}" 2>/dev/null; do
-    if ! a1_require_running_container "${foxglove_container}" "Foxglove Bridge"; then
+    if ! a1_require_running_container "${foxglove_container}" "Foxglove Bridge" ||
+      ! a1_require_running_container "${A1_OBSERVABILITY_BRIDGE_CONTAINER}" "ROS 1 observation bridge" ||
+      ! a1_require_running_container "${A1_OBSERVABILITY_NATIVE_CONTAINER}" "ROS 2 observation services" ||
+      ! a1_require_running_container "${telemetry_container}" "vendor telemetry"; then
       return 1
     fi
     if (( SECONDS >= deadline )); then
@@ -395,4 +387,8 @@ a1_start_observability() {
     fi
     sleep 0.5
   done
+  docker exec "${A1_OBSERVABILITY_NATIVE_CONTAINER}" bash -lc \
+    "source /opt/ros/jazzy/setup.bash && exec python3 -m galaxea_a1_runtime.apps.observability.probe --config '/workspace/${relative_config}'"
+  a1_observability_stack_is_ready "${telemetry_container}" "${foxglove_container}"
+
 }

@@ -56,7 +56,7 @@ def foxglove_topic_whitelist(system: SystemConfig) -> tuple[str, ...]:
     """Return exact subscription-only topic regexes derived from tracked config."""
 
     topics = {
-        *system.topics.__dict__.values(),
+        *(topic for _, topic, _ in legacy_observation_topics(system)),
         *system.observability.topics.__dict__.values(),
         "/rosout",
         "/tf",
@@ -336,3 +336,29 @@ def _diagnostic_value(value: Any) -> str:
     if isinstance(value, (str, int, float, bool)):
         return str(value)
     return json.dumps(value, sort_keys=True, separators=(",", ":"))
+
+
+def legacy_observation_topics(system: SystemConfig) -> tuple[tuple[str, str, str], ...]:
+    """Exact one-way standard-message bridge plan, never a control route."""
+    from galaxea_a1_runtime.runtime.ros2 import LEGACY_DIAGNOSTICS_TOPIC
+
+    primary = system.topics
+    mirrors = system.observability.topics
+    return (
+        ("sensor_msgs/JointState", primary.joint_states, "volatile"),
+        ("geometry_msgs/PoseStamped", primary.eef_pose, "volatile"),
+        ("std_msgs/String", primary.relay_status, "volatile"),
+        ("tf2_msgs/TFMessage", "/tf", "volatile"),
+        ("tf2_msgs/TFMessage", "/tf_static", "retained"),
+        ("diagnostic_msgs/DiagnosticArray", LEGACY_DIAGNOSTICS_TOPIC, "volatile"),
+        *(
+            ("sensor_msgs/JointState", topic, "volatile")
+            for topic in (
+                mirrors.staged_joint_state,
+                mirrors.host_joint_state,
+                mirrors.gripper_feedback_state,
+                mirrors.gripper_target_state,
+                mirrors.gripper_command_state,
+            )
+        ),
+    )

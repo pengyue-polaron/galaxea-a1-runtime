@@ -46,14 +46,6 @@ class ObservabilityConfig:
     shutdown_timeout_s: float
     topics: ObservabilityTopicsConfig
 
-    @property
-    def graph_update_ms(self) -> int:
-        return 1000
-
-    @property
-    def send_buffer_limit_bytes(self) -> int:
-        return 10_000_000
-
     def validate(self) -> None:
         try:
             IPv4Address(self.bind)

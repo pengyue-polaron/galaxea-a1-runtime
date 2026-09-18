@@ -1,6 +1,8 @@
 FROM ros:jazzy-ros-base
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ros-jazzy-foxglove-bridge \
+    ros-jazzy-diagnostic-msgs \
     ros-jazzy-realsense2-camera \
     ros-jazzy-message-filters \
     ros-jazzy-cv-bridge \

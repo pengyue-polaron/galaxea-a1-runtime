@@ -29,7 +29,8 @@ from galaxea_a1_runtime.hardware.web_preview import (
     color_from_frameset,
 )
 
-ROS2_IMAGE = "galaxea-a1-runtime/ros2-jazzy:local"
+from galaxea_a1_runtime.runtime.ros2 import ROS2_IMAGE as ROS2_IMAGE
+
 ROS2_CAMERA_CONTAINER = "a1-ros2-cameras"
 CAMERA_NAMESPACE = "/a1/cameras"
 SYNC_DIAGNOSTICS_TOPIC = f"{CAMERA_NAMESPACE}/sync_status"

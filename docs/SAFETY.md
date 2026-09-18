@@ -84,6 +84,14 @@ attached. A cleanup failure terminates the service before another command owner 
 accepted. The local socket is current-user-only and a pre-existing path blocks startup.
 The relay's stricter input-freshness checks remain independent of both RPC deadlines.
 
+The ROS 1-to-ROS 2 observation bridge creates only ROS 1 subscribers and ROS 2
+publishers. Its compiled entrypoint uses upstream `create_bridge_from_1_to_2`
+with an exact generated standard-message topic list. It has no reverse bridge,
+service bridge, motor-device mount, motion-enable or raw host-command topic.
+Measured state and validated command mirrors in ROS 2 are display data, never
+control input to the ROS 1 relay. Synthetic state/TF/command validation must use
+an isolated ROS master and DDS network; never inject it into the live graph.
+
 ## Relay gates
 
 - The relay starts `LOCKED`; an app must explicitly enable
@@ -195,7 +203,7 @@ additional gripper bit latches `FAULT`.
 - The configuration-independent shutdown fallback may stop only marked
   repository-owned containers, host process groups, and tmux sessions. Normal
   `just stop` preserves the marked camera monitor and its shared
-  roscore/telemetry/Foxglove observation stack. Explicit `just cameras stop`
+  roscore/vendor telemetry/one-way bridge/native ROS 2/Foxglove observation stack. Explicit `just cameras stop`
   closes both display services; it does not stop an active execution runtime or
   remove the shared ROS master while another marked runtime still uses it.
 - The camera preview is read-only LAN HTTP/MJPEG. It has no authentication or
@@ -203,7 +211,7 @@ additional gripper bit latches `FAULT`.
 - Foxglove observability is also unauthenticated, unencrypted, and trusted-LAN
   only. The bridge may subscribe to configured target, staged, forwarded, and
   feedback topics for inspection. It may call only the eight exact collection
-  `std_srvs/Trigger` services from System config; client publication, parameters,
+  `std_srvs/srv/Trigger` services from System config; client publication, parameters,
   client-advertised topics, and every other service are denied by exact
   allowlists. Its layout contains no Publish panel. Topic visibility never
   grants command authority, and stopping or losing Foxglove must not affect the

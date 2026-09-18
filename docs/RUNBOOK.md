@@ -287,7 +287,8 @@ command publisher, start the combined persistent observation stack:
 just cameras start
 ```
 
-The physical camera pipeline now runs in ROS 2 Jazzy. Build its environment
+The cameras, Foxglove endpoint and guarded Operator Session services run in
+ROS 2 Jazzy. Build Jazzy and the isolated Jazzy/ROS 1 observation bridge
 once before starting cameras on a new checkout:
 
 ```bash
@@ -306,16 +307,22 @@ in an isolated domain/network; never replay recorded camera topics into the live
 observation domain. Existing collection still commits canonical LeRobot v3
 episodes directly; MCAP is a separate diagnostic/replay artifact.
 
-`cameras.ros_domain_id` owns the ROS 2 domain. Normal launch uses local-host
+`ros2.domain_id` owns the ROS 2 domain. Normal launch uses local-host
 discovery, with no ambient domain override. The tracked pair tolerance is 20 ms;
 source freshness remains 500 ms. Clock steps fail closed and require a camera
 restart. After changing camera configuration, stop/start `just cameras` so both
-the ROS 2 owner and ROS 1 telemetry consumers reload the same contract.
+the ROS 2 owner and its consumers reload the same contract.
 `just stop` preserves the persistent camera/observation stack; `just cameras stop`
 also stops its ROS 2 container. `just camera-check` remains an exclusive direct
 SDK diagnostic: it stops the regular owner first and restores it afterwards.
 
-The current A1 driver, guarded motion services and Foxglove endpoint remain ROS 1.
+The A1 driver, trackers, safety relay and robot service remain ROS 1.
+The observation bridge forwards only the exact standard-message state/mirror
+topics to ROS 2, with no reverse route or bridged services. Foxglove connects
+to the native Jazzy endpoint at its existing URL. `just foxglove restart`
+reloads the observation stack without opening the robot serial device.
+After upgrading from the camera-only migration, run `just cameras stop` then
+`just cameras start` to reload the moved domain configuration and IPC contract.
 See [ROS 2 migration](ROS2.md) for verified coverage and remaining work.
 
 In Foxglove, add a **Foxglove WebSocket** connection to
@@ -1025,3 +1032,8 @@ Motion events `settle_start`, `settle_complete`, and
 error and the camera capture lower bound. Full paired video and feedback remain
 recorded. To disable it, replace the table with only `enabled = false`. The same
 enabled/disabled schema rule applies to `[execution.ik_subgoal]`.
+
+The validated native Foxglove bridge is 3.5.0 and negotiates `foxglove.sdk.v1`.
+Use a Foxglove client supporting this protocol; clients that offer only the old
+`foxglove.websocket.v1` handshake receive HTTP 400. This is a local WebSocket
+connection, not an automatic upload to Foxglove cloud storage.

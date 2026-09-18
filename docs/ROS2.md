@@ -14,7 +14,7 @@ D455 / D405 -> official RealSense ROS 2 nodes
                            -> atomic source-stamped camera pair
                                -> model/collection IPC boundary
                                -> paired video recorder
-                               -> Web preview / ROS 1 Foxglove telemetry
+                               -> Web preview / native ROS 2 Foxglove telemetry
 ```
 
 One System configuration owns the serials, stream settings, crop, freshness,
@@ -31,7 +31,7 @@ prove synchronized exposure. Current runtime does not support simulated time.
 The Unix boundary keeps ROS packages out of model Python environments. It does
 not reopen devices, perform a second match or manufacture a common image stamp.
 Both members must carry the same increasing pair sequence. The HTTP preview
-and ROS 1 compressed-image mirrors are side branches, never inference inputs.
+and ROS 2 compressed-image previews are side branches, never inference inputs.
 
 ## Validation on 2026-09-18
 
@@ -70,14 +70,96 @@ Both streams successfully use 640x480 at 30 FPS with global-time mapping enabled
 Local raw captures, video and validation receipts live under `outputs/ros2/` and
 are not committed. No robot driver was started and no motion command was sent.
 
+## Native observation and operator plane
+
+The persistent Foxglove endpoint is now upstream `ros-jazzy-foxglove-bridge`.
+The URL and checked-in layout are unchanged. A native `rclpy` node owns camera
+previews, combined diagnostics, sanitized workflow status and the eight exact
+`std_srvs/srv/Trigger` collection services. Its callbacks retain the existing
+phase, declared-action, run-id and input-revision gates through Operator Session.
+No ROS 2 service publishes motion commands directly.
+
+```text
+Vendor ROS 1 state / command messages
+  -> read-only validating legacy adapter -> standard display messages
+  -> upstream ros1_bridge (ROS 1 -> ROS 2 only)
+  -> Jazzy diagnostics / Foxglove
+Atomic camera IPC + private Operator Session
+  -> native Jazzy previews / workflow heartbeat / gated services -> Foxglove
+```
+
+The bridge runs in Ubuntu 24.04/Jazzy with a separately source-built ROS 1 client stack.
+Noble has no supported ROS 1 binary distribution: the exact Noetic releases
+are listed in `docker/ros1-bridge/ros1.rosinstall` and built only inside this
+compatibility image. The ROS 2 side matches Jazzy throughout, avoiding the
+Humble/Jazzy graph-message ABI mismatch found during validation. Its upstream revision is
+pinned in `docker/ros1-bridge/Dockerfile`. A small C++ entrypoint composes only
+`create_bridge_from_1_to_2` factories using the exact System-derived topic list.
+No dynamic wildcard bridge, bidirectional parameter bridge, custom A1 message
+mapping, ROS 1 publisher, or service bridge is installed into the runtime path.
+It forwards measured joints, EEF pose, TF, relay status, validated command/gripper
+mirrors and legacy diagnostics. `/tf_static` uses transient-local ROS 2 durability.
+Native ROS 2 logs are visible; old vendor ROS 1 `/rosout` is not bridged.
+
+Original robot mirror header stamps are preserved, including zero if the vendor
+source is unstamped. Forwarding does not manufacture a sampling timestamp.
+Loss of the legacy diagnostics stream is displayed as an error; absent arm data
+is never synthesized. Preview images retain each member's source ROS timestamp.
+
+`ros2.domain_id` now owns the whole ROS 2 graph; the old camera-specific key is
+rejected. All managed ROS 2 processes use local-host discovery. The vendor mesh
+package is registered in an ephemeral ament index inside the Foxglove container;
+only the configured URDF and its exact mesh URIs are retrievable. No vendor code
+or libraries are sourced into Jazzy. Client publication and parameter access
+remain disabled and only the configured collection services are exposed.
+
+`just ros2-setup` builds both the Jazzy and bridge images. `just cameras start`
+ensures the whole observation stack. `just foxglove restart` restarts only
+observation services; `just stop` preserves them. `just cameras stop` closes the
+camera and all observation containers, retaining a shared ROS master if another
+managed runtime still uses it. Startup checks actual diagnostic delivery on both
+sides of the bridge before declaring readiness.
+
+## Observation validation on 2026-09-18
+
+- Built the Jazzy camera/Foxglove image, source-built Noetic client/Jazzy bridge,
+  and the vendor image with the obsolete ROS 1 Foxglove build removed.
+- A 20-second live subscription received 511/513 raw front/wrist images and
+  136 previews per camera. The compared preview stamps matched raw source
+  stamps exactly; maximum observed preview source age was 130.8 ms.
+- The actual Foxglove SDK WebSocket delivered both JPEG streams (640x480),
+  combined diagnostics and exactly eight collection services. Fetching the
+  configured URDF and all nine meshes succeeded (7,887,643 bytes total);
+  fetching an unlisted local file was rejected.
+  Native bridge 3.5.0 requires a client offering `foxglove.sdk.v1`.
+- An actual CDR Trigger call with no Operator Session returned `success=false`.
+  Hardware-free callback validation covered accepted run/revision forwarding,
+  consumed gates, inactive sessions, wrong workflow/phase and missing run IDs.
+- In a separate network namespace and ROS master, synthetic JointState values,
+  ordering and nanosecond source stamps survived the upstream bridge. A late
+  subscriber received retained static TF. The ROS 1 master reported zero
+  publishers owned by the one-way bridge.
+- Pausing the bridge produced a stale legacy-diagnostics error and unpausing
+  restored delivery. Pausing cameras produced stale-camera diagnostics and
+  unpausing restored fresh images. No robot driver or live command publisher
+  was started; synthetic messages were confined to the isolated graph.
+
+- A final six-second bounded MCAP run committed 165 front and 166 wrist raw
+  images. Normal stop preserved observation services; explicit camera stop
+  removed them and a clean restart passed both diagnostic delivery probes.
+- Final `just check`, ROS 1 Python readiness and `git diff --check` passed.
+
+These are observation/transport checks, not live collection, policy inference,
+physical motion or hardware exposure-synchronization acceptance.
+
 ## Remaining migration
 
-This is not a complete removal of ROS 1. The checked-in vendor `signal_arm`
+This is not complete removal of ROS 1. The checked-in vendor `signal_arm`
 package uses catkin/roscpp/rospy and vendor binaries. The SDK, trackers, safe
-relay, feedback adapters, operator services and existing Foxglove endpoint remain
-on the reviewed ROS 1 control path. Do not replace them with unchecked direct
-ROS 2 command publishers. Native A1 driver support and ros2_control hardware
-interfaces require separate validation before replacing this boundary.
+relay, feedback adapters and robot service retain the reviewed ROS 1 control
+path. Native A1 driver support and ros2_control hardware interfaces require
+separate validation before replacing this boundary. The observation bridge is
+not a motion migration and must never gain a reverse command route.
 
 The collector still reads current robot state/action after selecting a camera
 pair. Historical state interpolation and action-time semantics remain work;
@@ -85,15 +167,11 @@ MCAP camera timestamps do not automatically fix that alignment. Existing
 dataset provenance prevents silently resuming a dataset with a changed capture
 contract. Use a new experiment when the collector reports a provenance mismatch.
 
-Native ROS 2 Foxglove telemetry/operator services are also pending. A generic
-ros1_bridge is not assumed to work in the Jazzy container: official Ubuntu
-24.04 does not supply ROS 1 and A1 custom messages need build-time mappings.
-The existing read-only camera boundary provides a working transition without
-introducing a second physical camera owner.
-
 ## Upstream references
 
 - [RealSense ROS driver](https://github.com/realsenseai/realsense-ros)
 - [ROS 2 ApproximateTimeSynchronizer](https://docs.ros.org/en/ros2_packages/jazzy/api/message_filters/doc/Tutorials/Approximate-Synchronizer-Cpp.html)
 - [rosbag2](https://github.com/ros2/rosbag2)
 - [ROS 1 bridge platform constraints](https://index.ros.org/p/ros1_bridge/)
+- [ros1_bridge C++ API](https://github.com/ros2/ros1_bridge/blob/master/include/ros1_bridge/bridge.hpp)
+- [Foxglove ROS 2 bridge](https://github.com/foxglove/foxglove-sdk/tree/main/ros/src/foxglove_bridge)

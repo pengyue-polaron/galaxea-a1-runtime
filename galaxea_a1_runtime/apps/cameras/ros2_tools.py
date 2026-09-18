@@ -155,7 +155,7 @@ def main() -> int:
         "-v",
         f"{output_root}:/recordings",
         "-e",
-        f"ROS_DOMAIN_ID={system.cameras.ros_domain_id}",
+        f"ROS_DOMAIN_ID={system.ros2.domain_id}",
         "-e",
         "ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST",
         "-e",

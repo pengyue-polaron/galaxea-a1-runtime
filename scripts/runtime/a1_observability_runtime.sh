@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -eo pipefail
+set -Eeo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 source "${ROOT}/scripts/runtime/a1_config.sh"
@@ -25,7 +25,9 @@ FOXGLOVE_CONTAINER="${A1_OBSERVABILITY_FOXGLOVE_CONTAINER}"
 stop_observability() {
   a1_remove_runtime_containers \
     "${FOXGLOVE_CONTAINER}" \
-    "${OBSERVABILITY_CONTAINER}"
+    "${OBSERVABILITY_CONTAINER}" \
+    "${A1_OBSERVABILITY_NATIVE_CONTAINER}" \
+    "${A1_OBSERVABILITY_BRIDGE_CONTAINER}"
   a1_stop_observability_roscore_if_unused
   a1_success "Standalone scoped observability stopped."
 }
@@ -81,7 +83,7 @@ status_observability() {
 }
 
 logs_observability() {
-  for name in "${OBSERVABILITY_CONTAINER}" "${FOXGLOVE_CONTAINER}" "${ROSCORE_CONTAINER}"; do
+  for name in "${OBSERVABILITY_CONTAINER}" "${A1_OBSERVABILITY_BRIDGE_CONTAINER}" "${A1_OBSERVABILITY_NATIVE_CONTAINER}" "${FOXGLOVE_CONTAINER}" "${ROSCORE_CONTAINER}"; do
     a1_info "Logs: ${name}"
     docker logs --tail "${A1_LOG_TAIL:-120}" "${name}" 2>&1 || true
   done
