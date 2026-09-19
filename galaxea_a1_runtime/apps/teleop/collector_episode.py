@@ -14,6 +14,11 @@ from embodied_ops import (
 from embodied_ops.artifacts import PublishedOutputCleanupError
 from embodied_ops.operator_panel import announce_progress
 
+from galaxea_a1_runtime.apps.teleop.bag_retention import (
+    announce_removals,
+    enforce_raw_retention,
+    remove_raw_episode,
+)
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
 from galaxea_a1_runtime.apps.teleop.interaction import (
     collection_recording_notice,
@@ -103,6 +108,15 @@ class TeleopEpisodeSession:
                 decision=decision,
                 frame_count=frames,
                 dataset_root=str(self.identity.target_root) if frames else None,
+            )
+            if decision != EpisodeDecision.SAVE:
+                remove_raw_episode(
+                    self.config,
+                    recording.bag_root,
+                    reason="discarded episode",
+                )
+            announce_removals(
+                enforce_raw_retention(self.config, keep=recording.bag_root)
             )
             return EpisodeCompletion(
                 decision,

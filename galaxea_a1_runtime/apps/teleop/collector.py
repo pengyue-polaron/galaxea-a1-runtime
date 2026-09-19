@@ -46,6 +46,11 @@ from galaxea_a1_runtime.apps.teleop.interaction import (
     normalize_collection_ready_action,
 )
 from galaxea_a1_runtime.apps.teleop.bag_export import export_provenance
+from galaxea_a1_runtime.apps.teleop.bag_retention import (
+    announce_removals,
+    enforce_raw_retention,
+    raw_recordings_usage,
+)
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
@@ -101,6 +106,11 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     step("Waiting for ROS state")
     ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
     success("ROS state ready.")
+    announce_removals(enforce_raw_retention(config))
+    usage = raw_recordings_usage(config)
+    if usage is not None:
+        used, cap = usage
+        info(f"Raw recordings: {used / 1e9:.1f} GB / cap {cap / 1e9:.1f} GB")
 
     saved = 0
     discarded = 0

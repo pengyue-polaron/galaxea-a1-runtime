@@ -44,3 +44,9 @@ action_thresholds = [0.02, 0.02, 0.02, 0.02, 0.02, 0.02, 0.02]
 reference_frames = 3
 motion_frames = 3
 preroll_frames = 6
+
+[collection.raw_retention]
+enabled = true
+# Global cap for raw MCAP bags under data/recordings; discarded episodes are
+# deleted and the oldest finalized bags rotate out past this size.
+max_bytes = 53687091200

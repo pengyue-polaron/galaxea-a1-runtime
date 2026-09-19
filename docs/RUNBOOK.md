@@ -604,10 +604,16 @@ Collection first records original ROS 2 streams using the official rosbag2 MCAP
 recorder. `observability.enabled` must be true; collection preflight rejects a
 disabled observation bridge before opening hardware. Required subscriptions and actual message delivery must be ready before
 the recording gate opens; live camera/robot freshness remains monitored. The
-raw episode is retained at `data/recordings/EXPERIMENT/BAG_ID/`, including
+raw episode is written at `data/recordings/EXPERIMENT/BAG_ID/`, including
 `episode.json`, exact task, configuration snapshots/hashes, operator boundaries,
-and `bag/`. Discard, interruption and conversion failure retain this original.
-Do not use validation-only bags as training demonstrations.
+and `bag/`; MCAP chunks use lossless zstd compression.
+
+`[collection.raw_retention]` owns raw-bag retention. When enabled, a discarded
+or quit episode deletes its raw bag, and the oldest finalized bags rotate out
+when `data/recordings` exceeds `max_bytes`; rotation never targets the episode
+just produced and never touches `data/datasets`. Session start logs the current
+usage against the cap. Interruption and conversion failure retain the original
+for inspection. Do not use validation-only bags as training demonstrations.
 
 Save finalizes the bag and automatically exports a canonical LeRobot v3 episode
 under `data/datasets/EXPERIMENT/`. Export builds a physical-time grid at the
@@ -632,6 +638,10 @@ before retrying an older bag. It rejects incomplete/discarded bags, duplicate ba
 IDs in a dataset, unknown clocks, missing required streams, excessive gaps,
 clock reversal and action discontinuities. Conversion uses a network-isolated
 Jazzy reader and needs temporary disk space for selected decoded images.
+
+Raw-bag retention can rotate an older bag away before a retry. The already
+committed canonical dataset is unaffected, but that bag can no longer be
+re-exported.
 
 `meta/timing/episode-NNNNNN.parquet` contains each output frame's integer
 nanosecond sampling time, camera source/receive times, image message indices and

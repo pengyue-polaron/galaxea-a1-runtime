@@ -29,8 +29,9 @@ Read the relevant document; tracked configuration and executable code are author
 - Publish configured staged targets through the fail-closed relay. Preserve its
   freshness, finite-value, status, alignment, limit, and ownership gates.
   Direct host-topic debugging requires an explicit request and `just stop`.
-- Never delete datasets, recordings, checkpoints, weights, or user files without
-  explicit authorization.
+- Never delete datasets, checkpoints, weights, or user files without explicit
+  authorization; raw recordings are removed only by the tracked
+  `[collection.raw_retention]` policy.
 
 ## Repository maintenance
 

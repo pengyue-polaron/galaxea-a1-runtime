@@ -21,6 +21,9 @@ from galaxea_a1_runtime.observability import legacy_observation_topics
 from galaxea_a1_runtime.runtime.ros2 import ROS2_IMAGE
 
 FINALIZE_TIMEOUT_S = 30
+STORAGE_CONFIG_NAME = "storage-config.yaml"
+# Lossless MCAP chunk compression; measured ~2x on recorded raw camera streams.
+STORAGE_CONFIG = "compression: Zstd\ncompressionLevel: Fastest\n"
 
 
 class BagCapture:
@@ -62,6 +65,7 @@ class BagCapture:
 
     def start(self):
         self.root.mkdir(parents=True, exist_ok=False)
+        atomic_write_text(self.root / STORAGE_CONFIG_NAME, STORAGE_CONFIG)
         self._write_manifest()
         repo = Path(__file__).resolve().parents[3]
         required = source_topics(self.config.system)
@@ -103,6 +107,8 @@ class BagCapture:
                 "record",
                 "--storage",
                 "mcap",
+                "--storage-config-file",
+                f"/recordings/{STORAGE_CONFIG_NAME}",
                 "--output",
                 "/recordings/bag",
                 "--disable-keyboard-controls",

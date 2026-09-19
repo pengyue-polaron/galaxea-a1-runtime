@@ -26,6 +26,7 @@ from galaxea_a1_runtime.configuration.paths import TELEOP_CONFIG
 from galaxea_a1_runtime.teleop.config_runtime import bash_config
 from galaxea_a1_runtime.teleop.config_schema import (
     JointMappingConfig,
+    RawRetentionConfig,
     TeleopBridgeConfig,
     TeleopCollectionConfig,
     TeleopConfig,
@@ -110,6 +111,7 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "auto_reset_after_save",
             "auto_reset_after_discard",
             "leading_stillness",
+            "raw_retention",
             "ready_timeout_s",
         },
         label="collection",
@@ -125,6 +127,14 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
             "preroll_frames",
         },
         label="collection.leading_stillness",
+    )
+    raw_retention = _required_table(collection, "raw_retention")
+    require_exact_keys(
+        raw_retention,
+        required={"enabled", "max_bytes"}
+        if boolean(raw_retention, "enabled")
+        else {"enabled"},
+        label="collection.raw_retention",
     )
     dof = len(system.joint_safety.names)
     mapping = JointMappingConfig(
@@ -183,6 +193,11 @@ def load_teleop_config(path: Path, *, repo_root: Path | None = None) -> TeleopCo
                 motion_frames=integer(leading_stillness, "motion_frames"),
                 preroll_frames=integer(leading_stillness, "preroll_frames"),
             ),
+            raw_retention=RawRetentionConfig(
+                max_bytes=integer(raw_retention, "max_bytes"),
+            )
+            if boolean(raw_retention, "enabled")
+            else None,
             ready_timeout_s=floating(collection, "ready_timeout_s"),
         ),
     )
@@ -232,6 +247,11 @@ def validate_teleop_config(config: TeleopConfig) -> None:
         )
     if config.collection.ready_timeout_s <= 0:
         raise ValueError("collection.ready_timeout_s must be positive")
+    if (
+        config.collection.raw_retention is not None
+        and config.collection.raw_retention.max_bytes <= 0
+    ):
+        raise ValueError("collection.raw_retention.max_bytes must be positive")
 
 
 def validate_collection_config(config: TeleopConfig) -> None:

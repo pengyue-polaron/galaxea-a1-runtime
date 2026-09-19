@@ -75,6 +75,13 @@ class TeleopGripperConfig:
 
 
 @dataclass(frozen=True)
+class RawRetentionConfig:
+    """Global size cap for raw collection bags under data/recordings."""
+
+    max_bytes: int
+
+
+@dataclass(frozen=True)
 class TeleopCollectionConfig:
     dataset_root: Path
     repo_id_prefix: str
@@ -82,6 +89,7 @@ class TeleopCollectionConfig:
     max_duration_s: float
     reset_policy: CollectionResetPolicy
     leading_stillness: LeadingStillnessConfig
+    raw_retention: RawRetentionConfig | None
     ready_timeout_s: float
 
 
