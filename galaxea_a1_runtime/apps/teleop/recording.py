@@ -173,21 +173,25 @@ def _require_stationary_start(ros_state, initial: tuple[float, ...] | None) -> N
     current = _position_vector(ros_state)
     if before is None or current is None:
         raise RuntimeError("joint feedback became unavailable before recording start")
-    drift = max(
-        abs(value - origin) for value, origin in zip(current, initial, strict=True)
-    )
-    speed = (
-        max(
-            abs(value - previous)
-            for value, previous in zip(current, before, strict=True)
-        )
-        / PREPARATION_STILLNESS_WINDOW_S
-    )
+    labels = (*[f"joint {index}" for index in range(1, 7)], "gripper")
+    drift = [value - origin for value, origin in zip(current, initial, strict=True)]
+    speed = [
+        (value - previous) / PREPARATION_STILLNESS_WINDOW_S
+        for value, previous in zip(current, before, strict=True)
+    ]
+    worst_drift = max(range(len(drift)), key=lambda index: abs(drift[index]))
+    worst_speed = max(range(len(speed)), key=lambda index: abs(speed[index]))
     if (
-        drift > PREPARATION_MAX_JOINT_DRIFT_RAD
-        or speed > PREPARATION_MAX_JOINT_SPEED_RAD_S
+        abs(drift[worst_drift]) > PREPARATION_MAX_JOINT_DRIFT_RAD
+        or abs(speed[worst_speed]) > PREPARATION_MAX_JOINT_SPEED_RAD_S
     ):
+        reasons = []
+        if abs(drift[worst_drift]) > PREPARATION_MAX_JOINT_DRIFT_RAD:
+            reasons.append(f"{labels[worst_drift]} drift {drift[worst_drift]:+.2f}")
+        if abs(speed[worst_speed]) > PREPARATION_MAX_JOINT_SPEED_RAD_S:
+            reasons.append(f"{labels[worst_speed]} speed {speed[worst_speed]:+.2f}/s")
         raise PreparationMotionError(
-            "The A1 moved while recording was preparing, so the episode was not "
-            "started. Keep the arm still until the console shows Recording."
+            "The A1 moved while recording was preparing "
+            f"({', '.join(reasons)}), so the episode was not started. Keep the arm "
+            "still until the console shows Recording."
         )
