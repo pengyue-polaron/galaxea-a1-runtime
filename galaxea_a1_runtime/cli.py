@@ -138,6 +138,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     collect.add_argument("experiment")
     collect.add_argument("--task", required=True)
+    collect.add_argument(
+        "--cli",
+        action="store_true",
+        help="enable terminal episode controls; by default Foxglove controls them",
+    )
     collect.add_argument("--config", type=Path, default=TELEOP_CONFIG)
     collect.add_argument("--repo-root", type=Path, default=Path.cwd())
 
@@ -229,6 +234,7 @@ def main(argv: list[str] | None = None) -> int:
                 config=args.config,
                 experiment=args.experiment,
                 task=args.task,
+                cli_mode=args.cli,
             )
         except (OSError, RuntimeError, ValueError) as exc:
             failure(str(exc))

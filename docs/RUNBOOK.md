@@ -351,19 +351,29 @@ To open the session and select its prompt:
 just collect <experiment> "<exact prompt>"
 ```
 
-Keep that terminal command running. It owns or attaches to the single Operator
-Session, follows the child log, and prints the currently available terminal keys.
-In an interactive terminal, Enter starts an episode at Ready and stops/saves it
-at Recording; `n` + Enter saves without reset, `d` + Enter discards, and
-`q` + Enter ends the session. Save before quitting if the episode should be kept.
-Ctrl+C interrupts the session. Redirected/non-TTY stdin is display-only and
-cannot start recording.
+The command only starts the backend: tracked services, cameras, and the single
+Operator Session, then follows the child log. Terminal input is ignored; operate
+the episode gates in Foxglove. Keep the command running; `Ctrl+C` stops the
+session through the same supervised boundary. To accept the episode keys in the
+terminal instead, use CLI mode:
 
-Running the same command (same configuration, experiment, and exact prompt) in
-another terminal attaches to the existing collection without resetting hardware.
-A different active workflow is rejected. Both terminal and Foxglove use the same
-run/revision-guarded input gate; typed or pasted input is not queued across phases.
-In Foxglove:
+```bash
+just collect-cli <experiment> "<exact prompt>"
+```
+
+CLI mode prints the currently available terminal keys at each gate. In an
+interactive terminal, Enter starts an episode at Ready and stops/saves it at
+Recording; `n` + Enter saves without reset, `o`/`f` + Enter toggle Reset after
+save, `d` + Enter discards, `r` + Enter resets, and `q` + Enter ends the
+session. Save before quitting if the episode should be kept. Redirected/non-TTY
+stdin is display-only and cannot start recording.
+
+Running the same configuration, experiment, and exact prompt in another
+terminal attaches to the existing collection without resetting hardware, and
+attaching with `collect-cli` adds terminal controls to that session. A different
+active workflow is rejected. Both terminal and Foxglove use the same
+run/revision-guarded input gate; typed or pasted input is not queued across
+phases. In Foxglove:
 
 - `Ready`: **Start recording**, **Reset position**, and **End session** are
   available.
@@ -571,9 +581,12 @@ just collect EXPERIMENT "put the fruit into the bowl"
 ```
 
 `collect` starts the tracked services and cameras, then automatically resets A1
-and the SO leader before exposing the first episode prompt. A separate
-`just reset` remains available for acceptance and recovery, but is not part of
-the normal collection sequence.
+and the SO leader before exposing the first episode prompt. Episode gates come
+from the Foxglove console by default; `just collect-cli EXPERIMENT
+"<exact prompt>"` enables the terminal keys instead. The Foxglove collection
+console section above describes both surfaces and the shared input gate. A
+separate `just reset` remains available for acceptance and recovery, but is not
+part of the normal collection sequence.
 
 Reuse the same `EXPERIMENT` for related prompts. For example, four socket
 positions belong to one `plug_insertion_v1` dataset:
@@ -586,13 +599,6 @@ just collect plug_insertion_v1 "pick up the charger and insert it into the secon
 Each invocation appends episodes to the same dataset while standard LeRobot
 task metadata keeps the prompts distinct. The panel's Collect task field offers
 tracked training prompts and still accepts an exact new prompt.
-
-At the episode prompt:
-
-- `Enter`: start recording; while recording, request save and validation;
-- `d` + `Enter`: discard, reset both devices, and retry the same index;
-- `q` + `Enter`: quit without reset;
-- `Ctrl+C`: stop immediately.
 
 Collection first records original ROS 2 streams using the official rosbag2 MCAP
 recorder. `observability.enabled` must be true; collection preflight rejects a

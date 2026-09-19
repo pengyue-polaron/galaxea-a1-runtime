@@ -100,19 +100,13 @@ terminal, then leave that command running:
 just collect <experiment> "<exact prompt>"
 ```
 
-The Foxglove console shows `Ready`, `Preparing`, `Recording`, `Saving`,
-`Discarding`, `Resetting`, `Completed`, or an explicit unavailable/error state.
-Its compact status includes the episode, exact prompt, saved count, and frame
-count; while recording it also shows sampled/stored frames and effective FPS.
-`Preparing` covers dataset staging and the fresh-camera barrier, so recording
-controls do not open early. In `Ready`, the console offers **Start recording**,
-**Reset position**, and **End session**. In `Recording`, it offers **Stop &
-save**, a **Reset after save** switch, **Discard episode**, and **End session**.
-Turn the switch off to save the current episode and enter the next `Ready` gate
-without moving A1; discarding still follows the tracked automatic Reset policy.
-Reset, discard, and session stop require confirmation in Foxglove. The terminal
-continues to show the child log but no longer needs to accept the episode
-decisions.
+The command only starts the backend; episode decisions come from the Foxglove
+Collection Console, which shows the live phase (`Ready`, `Preparing`,
+`Recording`, `Saving`, `Discarding`, `Resetting`, `Completed`, or an explicit
+unavailable/error state) and drives the same one-shot input gate. Reset,
+discard, and session stop require confirmation. Use
+`just collect-cli <experiment> "<exact prompt>"` when the terminal should accept
+the episode keys instead; the terminal otherwise shows the child log only.
 
 The trusted-LAN bridge exposes only the eight exact collection `Trigger`
 services generated from System config. It still denies client topic

@@ -140,9 +140,14 @@ eef-test: trac-ik-check
     scripts/runtime/a1_joint_runtime.sh services
     scripts/runtime/a1_joint_runtime.sh eef-nudge --execute
 
-# Reset and collect episodes into one experiment.
+# Reset and collect episodes into one experiment. Foxglove controls the gates.
 collect experiment task:
     {{vpy}} -m galaxea_a1_runtime.cli collect \
+        --repo-root "{{repo}}" --task "{{task}}" "{{experiment}}"
+
+# Reset and collect episodes with terminal Enter/d/q controls.
+collect-cli experiment task:
+    {{vpy}} -m galaxea_a1_runtime.cli collect --cli \
         --repo-root "{{repo}}" --task "{{task}}" "{{experiment}}"
 
 teleop-test:

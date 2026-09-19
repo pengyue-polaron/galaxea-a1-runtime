@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+import time
 from pathlib import Path
 from typing import Callable
 
@@ -46,6 +48,7 @@ def run_collection_session(
     config: Path,
     experiment: str,
     task: str,
+    cli_mode: bool = False,
 ) -> int:
     """Start collection through the one shared session and follow its logs."""
 
@@ -60,7 +63,7 @@ def run_collection_session(
     try:
         current = client.status()
     except OperatorSessionUnavailable:
-        return _run_owned_collection(adapter, values)
+        return _run_owned_collection(adapter, values, cli_mode=cli_mode)
 
     if current.get("active"):
         launch = adapter.build_launch("collect", values)
@@ -80,12 +83,15 @@ def run_collection_session(
         lambda run_id: client.stop(run_id=run_id),
         status,
         client.input,
+        cli_mode=cli_mode,
     )
 
 
 def _run_owned_collection(
     adapter: A1OperatorPanelAdapter,
     values: dict[str, str],
+    *,
+    cli_mode: bool,
 ) -> int:
     application = OperatorPanelApplication(adapter)
     session = OperatorSessionServer(application)
@@ -98,6 +104,7 @@ def _run_owned_collection(
             lambda run_id: application.workflow.stop(run_id=run_id),
             status,
             application.workflow.send,
+            cli_mode=cli_mode,
         )
     finally:
         errors: list[str] = []
@@ -120,11 +127,26 @@ def _follow_workflow(
     stop: Callable[[str], dict],
     initial: dict,
     send_input: Callable[..., dict],
+    *,
+    cli_mode: bool,
 ) -> int:
     run_id = initial["run_id"]
     previous_logs: list[str] = []
-    terminal = WorkflowTerminal(A1_COLLECTION_INTERACTION.input_actions)
-    info("Terminal and Foxglove share guarded controls; Ctrl+C stops the session.")
+    terminal = (
+        WorkflowTerminal(A1_COLLECTION_INTERACTION.input_actions) if cli_mode else None
+    )
+    if cli_mode:
+        info(
+            "CLI mode: terminal and Foxglove share guarded controls; "
+            "Ctrl+C stops the session."
+        )
+        if not sys.stdin.isatty():
+            info("stdin is not a TTY; terminal input stays disabled, use Foxglove.")
+    else:
+        info(
+            "Foxglove control mode: operate the episode gates in the Collection "
+            "Console; terminal input is ignored and Ctrl+C stops the session."
+        )
     try:
         while True:
             status = status_reader()
@@ -137,6 +159,9 @@ def _follow_workflow(
             if not status.get("active"):
                 exit_code = status.get("exit_code")
                 return exit_code if isinstance(exit_code, int) else 1
+            if terminal is None:
+                time.sleep(0.2)
+                continue
             action = terminal.poll(status, timeout=0.2)
             if action is not None:
                 try:

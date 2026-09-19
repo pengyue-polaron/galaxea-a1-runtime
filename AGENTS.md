@@ -20,7 +20,9 @@ Read the relevant document; tracked configuration and executable code are author
   standard workflow, including its documented startup/reset sequence. Proceed
   after preflight; do not ask again for power or workspace confirmation.
 - Use `just collect EXPERIMENT "EXACT PROMPT"` for collection and keep its terminal
-  open. Use the guarded Operator Session/Foxglove controls for recording actions.
+  open; it starts the backend and the guarded Operator Session/Foxglove controls
+  own the recording actions. Use `just collect-cli` when the terminal should
+  accept the episode keys instead.
   `just cameras start` starts cameras and observation services only.
 - One process owns each driver, tracker, camera, serial bus, and command publisher.
   After a partial startup failure, run `just stop` before retrying.
