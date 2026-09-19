@@ -45,6 +45,7 @@ from galaxea_a1_runtime.apps.teleop.interaction import (
     collection_ready_action_ids,
     normalize_collection_ready_action,
 )
+from galaxea_a1_runtime.apps.teleop.bag_capture import require_source_topics_delivered
 from galaxea_a1_runtime.apps.teleop.bag_export import (
     export_provenance,
     remove_stale_export_scratch,
@@ -118,6 +119,9 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     step("Waiting for ROS state")
     ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
     success("ROS state ready.")
+    step("Verifying robot telemetry delivery")
+    require_source_topics_delivered(config.system)
+    success("Robot telemetry streams are live.")
     announce_removals(enforce_raw_retention(config))
     usage = raw_recordings_usage(config)
     if usage is not None:

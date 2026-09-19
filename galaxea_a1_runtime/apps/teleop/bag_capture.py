@@ -6,6 +6,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import tempfile
 import time
 import uuid
 
@@ -24,6 +25,63 @@ FINALIZE_TIMEOUT_S = 30
 STORAGE_CONFIG_NAME = "storage-config.yaml"
 # Lossless MCAP chunk compression; measured ~2x on recorded raw camera streams.
 STORAGE_CONFIG = "compression: Zstd\ncompressionLevel: Fastest\n"
+PREFLIGHT_ATTEMPTS = 3
+PREFLIGHT_TIMEOUT_S = 6.0
+PREFLIGHT_RETRY_S = 3.0
+
+
+def require_source_topics_delivered(system) -> None:
+    """Fail before collection when ROS 2 robot telemetry is not being delivered."""
+
+    repo = Path(__file__).resolve().parents[3]
+    topics = source_topics(system)
+    details = "probe did not run"
+    for attempt in range(PREFLIGHT_ATTEMPTS):
+        with tempfile.TemporaryDirectory(prefix="a1-telemetry-preflight-") as scratch:
+            manifest = Path(scratch) / "preflight.json"
+            manifest.write_text(json.dumps({"topics": topics}))
+            result = subprocess.run(
+                [
+                    "docker",
+                    "run",
+                    "--rm",
+                    "--network",
+                    "host",
+                    "--ipc",
+                    "host",
+                    "--user",
+                    f"{os.getuid()}:{os.getgid()}",
+                    "-v",
+                    f"{scratch}:/check",
+                    "-v",
+                    f"{repo}:/workspace:ro",
+                    "-e",
+                    f"ROS_DOMAIN_ID={system.ros2.domain_id}",
+                    "-e",
+                    "ROS_AUTOMATIC_DISCOVERY_RANGE=LOCALHOST",
+                    "-e",
+                    "ROS_LOG_DIR=/tmp/ros-log",
+                    ROS2_IMAGE,
+                    "python3",
+                    "-m",
+                    "galaxea_a1_runtime.apps.teleop.bag_probe",
+                    "/check/preflight.json",
+                    str(PREFLIGHT_TIMEOUT_S),
+                ],
+                capture_output=True,
+                text=True,
+                timeout=PREFLIGHT_TIMEOUT_S + 30,
+            )
+        if result.returncode == 0:
+            return
+        output = (result.stderr or result.stdout).strip().splitlines()
+        details = output[-1] if output else f"probe exited {result.returncode}"
+        if attempt + 1 < PREFLIGHT_ATTEMPTS:
+            time.sleep(PREFLIGHT_RETRY_S)
+    raise RuntimeError(
+        "robot telemetry topics are not delivered to ROS 2; restart the observation "
+        f"stack (just cameras stop, then just cameras start) and retry ({details})"
+    )
 
 
 class BagCapture:
