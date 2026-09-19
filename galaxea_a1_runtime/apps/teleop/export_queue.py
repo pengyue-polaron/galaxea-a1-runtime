@@ -3,10 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
 from pathlib import Path
 import threading
 
 from galaxea_a1_runtime.apps.teleop.bag_export import ExportResult, export_bag
+
+_EXPORT_NICE = 5
 
 
 @dataclass(frozen=True)
@@ -96,6 +99,8 @@ class ExportQueue:
             self._condition.notify_all()
 
     def _run(self) -> None:
+        # Linux nice is per-thread; encoder workers inherit the lower priority.
+        os.nice(_EXPORT_NICE)
         while True:
             with self._condition:
                 while not self._pending and not self._stopping:

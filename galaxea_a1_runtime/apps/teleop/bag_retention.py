@@ -129,9 +129,10 @@ def _load_manifest(bag: Path) -> dict[str, object] | None:
 
 
 def _is_abandoned(manifest: dict[str, object]) -> bool:
-    return (
-        manifest.get("status") == "finalized" and manifest.get("disposition") != "save"
-    )
+    return manifest.get("status") == "finalized" and manifest.get("disposition") in {
+        "discard",
+        "quit",
+    }
 
 
 def _age_key(item: tuple[Path, dict[str, object]]) -> tuple[int, str]:

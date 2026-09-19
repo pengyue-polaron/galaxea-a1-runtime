@@ -7,7 +7,9 @@ from collections import defaultdict
 from dataclasses import dataclass
 import json
 from pathlib import Path
+import shutil
 import tempfile
+import time
 
 import numpy as np
 from embodied_ops.collection import LeadingStillnessTrimmer
@@ -44,6 +46,10 @@ from galaxea_a1_runtime.teleop.config import (
     load_teleop_config,
     validate_collection_config,
 )
+
+EXPORT_SCRATCH_PREFIX = "a1-bag-export-"
+# An interrupted export can leave multi-GB scratch directories behind.
+STALE_SCRATCH_AGE_S = 600.0
 
 
 @dataclass(frozen=True)
@@ -189,8 +195,8 @@ def _export_bag(
     }
     crop = required_front_roi(config.system.cameras)
     # Only scratch decoding is ephemeral; raw bags and committed datasets are immutable.
-    with tempfile.TemporaryDirectory(prefix="a1-bag-export-") as scratch:
-        scratch = Path(scratch)
+    scratch = Path(tempfile.mkdtemp(prefix=EXPORT_SCRATCH_PREFIX))
+    try:
         available = set()
         for item in read_bag(episode, images=True):
             key = item["role"], item["index"]
@@ -223,7 +229,27 @@ def _export_bag(
                 )
             writer.attach_timing([s.timing for s in samples], source)
             writer.commit()
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
     return result
+
+
+def remove_stale_export_scratch() -> list[Path]:
+    """Delete scratch directories left by interrupted exports."""
+
+    removed: list[Path] = []
+    root = Path(tempfile.gettempdir())
+    for entry in root.glob(f"{EXPORT_SCRATCH_PREFIX}*"):
+        if entry.is_symlink() or not entry.is_dir():
+            continue
+        try:
+            if time.time() - entry.stat().st_mtime < STALE_SCRATCH_AGE_S:
+                continue
+            shutil.rmtree(entry, ignore_errors=True)
+        except OSError:
+            continue
+        removed.append(entry)
+    return removed
 
 
 def main():

@@ -45,7 +45,10 @@ from galaxea_a1_runtime.apps.teleop.interaction import (
     collection_ready_action_ids,
     normalize_collection_ready_action,
 )
-from galaxea_a1_runtime.apps.teleop.bag_export import export_provenance
+from galaxea_a1_runtime.apps.teleop.bag_export import (
+    export_provenance,
+    remove_stale_export_scratch,
+)
 from galaxea_a1_runtime.apps.teleop.bag_retention import (
     announce_removals,
     enforce_raw_retention,
@@ -120,6 +123,8 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
     if usage is not None:
         used, cap = usage
         info(f"Raw recordings: {used / 1e9:.1f} GB / cap {cap / 1e9:.1f} GB")
+    for stale in remove_stale_export_scratch():
+        info(f"Removed stale export scratch: {stale}")
 
     discarded = 0
     interrupted = False
