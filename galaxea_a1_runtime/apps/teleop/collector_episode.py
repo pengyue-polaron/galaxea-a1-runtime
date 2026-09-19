@@ -30,7 +30,7 @@ from galaxea_a1_runtime.apps.teleop.recording import (
     record_episode,
 )
 from galaxea_a1_runtime.collection import EpisodeDecision
-from galaxea_a1_runtime.console import failure, info, warning
+from galaxea_a1_runtime.console import failure, success, warning
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
 )
@@ -173,7 +173,7 @@ class TeleopEpisodeSession:
         episode_index: int,
         callback: Callable[[], None],
     ) -> None:
-        info(f"Episode {episode_index} recording")
+        success(f"Recording started · episode {episode_index} · move now")
         callback()
 
     def _reset_required(
