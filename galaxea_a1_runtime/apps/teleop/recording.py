@@ -22,6 +22,15 @@ if TYPE_CHECKING:
     from galaxea_a1_runtime.hardware.cameras import CameraReader
 
 
+PREPARATION_STILLNESS_WINDOW_S = 0.3
+PREPARATION_MAX_JOINT_DRIFT_RAD = 0.15
+PREPARATION_MAX_JOINT_SPEED_RAD_S = 0.5
+
+
+class PreparationMotionError(RuntimeError):
+    """The A1 moved after recording was requested but before it began."""
+
+
 @dataclass(frozen=True)
 class RecordedEpisode:
     bag_root: Path
@@ -33,12 +42,18 @@ class RecordedEpisode:
 def record_episode(*, config, experiment, task, cameras, ros_state, on_ready):
     import rospy
 
+    initial = _position_vector(ros_state)
     capture = BagCapture(config, experiment=experiment, task=task)
     decision = normalize_collection_recording_decision("q")
     outcome = "interrupted"
     try:
         capture.start()
         info(f"Raw episode: {capture.root}")
+        try:
+            _require_stationary_start(ros_state, initial)
+        except PreparationMotionError:
+            outcome = "discard"
+            raise
         capture.begin()
         on_ready()
         start = time.monotonic()
@@ -82,7 +97,7 @@ def record_episode(*, config, experiment, task, cameras, ros_state, on_ready):
                 elapsed,
                 config.collection.max_duration_s or None,
                 phase="recording",
-                detail=f"Recording original camera and robot streams · {elapsed:.1f}s",
+                detail="",
             )
             time.sleep(1.0 / config.collection.fps)
     finally:
@@ -139,3 +154,40 @@ def _poll_stdin_line() -> str | None:
     if line == "":
         return "q"
     return line.strip().lower()
+
+
+def _position_vector(ros_state) -> tuple[float, ...] | None:
+    sample = ros_state.state_sample()
+    if sample is None:
+        return None
+    return tuple(sample.values[7:14])
+
+
+def _require_stationary_start(ros_state, initial: tuple[float, ...] | None) -> None:
+    """Reject a start when the operator already moved the A1 during preparation."""
+
+    if initial is None:
+        raise RuntimeError("joint feedback unavailable before recording start")
+    before = _position_vector(ros_state)
+    time.sleep(PREPARATION_STILLNESS_WINDOW_S)
+    current = _position_vector(ros_state)
+    if before is None or current is None:
+        raise RuntimeError("joint feedback became unavailable before recording start")
+    drift = max(
+        abs(value - origin) for value, origin in zip(current, initial, strict=True)
+    )
+    speed = (
+        max(
+            abs(value - previous)
+            for value, previous in zip(current, before, strict=True)
+        )
+        / PREPARATION_STILLNESS_WINDOW_S
+    )
+    if (
+        drift > PREPARATION_MAX_JOINT_DRIFT_RAD
+        or speed > PREPARATION_MAX_JOINT_SPEED_RAD_S
+    ):
+        raise PreparationMotionError(
+            "The A1 moved while recording was preparing, so the episode was not "
+            "started. Keep the arm still until the console shows Recording."
+        )

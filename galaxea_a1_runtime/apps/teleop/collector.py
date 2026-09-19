@@ -220,24 +220,25 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                 episode_index,
                 None,
                 phase="preparing",
-                detail=status_detail,
+                detail="Preparing · keep the arm still until Recording",
                 force=True,
             )
 
             def announce_recording_ready() -> None:
+                recording_detail = f"Recording · episode {episode_index}"
                 announce_progress(
                     "collection",
                     "Collection episode",
                     episode_index,
                     None,
                     phase="recording",
-                    detail=status_detail,
+                    detail=recording_detail,
                     force=True,
                 )
                 announce_input(
                     A1_COLLECTION_INTERACTION.recording_action_ids,
                     phase="recording",
-                    detail=status_detail,
+                    detail=recording_detail,
                 )
 
             completion = episodes.record(

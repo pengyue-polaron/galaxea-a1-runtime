@@ -378,7 +378,9 @@ phases. In Foxglove:
 - `Ready`: **Start recording**, **Reset position**, and **End session** are
   available.
 - `Preparing`: the dataset transaction is open and both cameras must produce a
-  new frame; episode controls remain disabled.
+  new frame; episode controls remain disabled. Keep the A1 still: this window
+  is not part of the episode, and motion during it aborts the start as a
+  discard.
 - `Recording`: **Stop & save**, **Reset after save**, **Discard episode**, and
   **End session** are available. The status shows sampled/stored frame counts
   and effective FPS. Turn **Reset after save** off to keep the current pose and
@@ -603,7 +605,11 @@ tracked training prompts and still accepts an exact new prompt.
 Collection first records original ROS 2 streams using the official rosbag2 MCAP
 recorder. `observability.enabled` must be true; collection preflight rejects a
 disabled observation bridge before opening hardware. Required subscriptions and actual message delivery must be ready before
-the recording gate opens; live camera/robot freshness remains monitored. The
+the recording gate opens; live camera/robot freshness remains monitored.
+Recording begins only when the child announces the recording gate; the
+preparation window before it is not part of the episode. Keep the A1 still until
+the console shows `Recording`: motion in that window aborts the start as a
+discard, so a partially recorded motion never enters the dataset. The
 raw episode is written at `data/recordings/EXPERIMENT/BAG_ID/`, including
 `episode.json`, exact task, configuration snapshots/hashes, operator boundaries,
 and `bag/`; MCAP chunks use lossless zstd compression.

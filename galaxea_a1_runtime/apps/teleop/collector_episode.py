@@ -23,13 +23,14 @@ from galaxea_a1_runtime.apps.teleop.export_queue import (
     ExportStats,
     QueuedExport,
 )
-from galaxea_a1_runtime.apps.teleop.interaction import (
-    collection_recording_notice,
-    reset_required_after_recording,
+from galaxea_a1_runtime.apps.teleop.interaction import reset_required_after_recording
+from galaxea_a1_runtime.apps.teleop.recording import (
+    PreparationMotionError,
+    RecordedEpisode,
+    record_episode,
 )
-from galaxea_a1_runtime.apps.teleop.recording import RecordedEpisode, record_episode
 from galaxea_a1_runtime.collection import EpisodeDecision
-from galaxea_a1_runtime.console import failure, warning
+from galaxea_a1_runtime.console import failure, info, warning
 from galaxea_a1_runtime.lerobot.direct_recording import (
     DirectDatasetIdentity,
 )
@@ -106,6 +107,14 @@ class TeleopEpisodeSession:
                     recording, decision, reset_after_save=reset_after_save
                 ),
             )
+        except PreparationMotionError as error:
+            warning(str(error))
+            return EpisodeCompletion(
+                EpisodeDecision.DISCARD,
+                reset_required=self.config.collection.reset_policy.required_after(
+                    EpisodeDecision.DISCARD
+                ),
+            )
         except BaseException:
             failure(
                 "Collection stopped; raw bag retained under data/recordings and previous committed dataset preserved"
@@ -164,7 +173,7 @@ class TeleopEpisodeSession:
         episode_index: int,
         callback: Callable[[], None],
     ) -> None:
-        warning(collection_recording_notice(episode_index))
+        info(f"Episode {episode_index} recording")
         callback()
 
     def _reset_required(

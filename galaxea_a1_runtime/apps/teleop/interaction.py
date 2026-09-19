@@ -103,20 +103,6 @@ def normalize_collection_recording_decision(
     raise ValueError(f"unknown collection recording decision: {text!r}")
 
 
-def collection_recording_notice(episode_index: int) -> str:
-    if (
-        not isinstance(episode_index, int)
-        or isinstance(episode_index, bool)
-        or episode_index < 0
-    ):
-        raise ValueError("episode index must be a non-negative integer")
-    return (
-        f"Episode {episode_index} recording · Enter=save with configured Reset, "
-        "y+Enter=save with Reset, n+Enter=save without Reset, "
-        "d+Enter=discard, q+Enter=quit"
-    )
-
-
 def reset_required_after_recording(
     decision: EpisodeDecision,
     *,
