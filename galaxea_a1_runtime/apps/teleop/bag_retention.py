@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import shutil
+from collections.abc import Iterable
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -22,7 +23,7 @@ def recordings_root(config) -> Path:
     return config.collection.dataset_root.parent / "recordings"
 
 
-def enforce_raw_retention(config, *, keep: Path | None = None) -> list[RemovedBag]:
+def enforce_raw_retention(config, *, protect: Iterable[Path] = ()) -> list[RemovedBag]:
     """Delete abandoned bags, then rotate oldest bags under the global cap."""
 
     policy = config.collection.raw_retention
@@ -31,7 +32,7 @@ def enforce_raw_retention(config, *, keep: Path | None = None) -> list[RemovedBa
     root = recordings_root(config).resolve()
     if not root.is_dir():
         return []
-    keep_path = keep.resolve() if keep is not None else None
+    protected = {path.resolve() for path in protect}
 
     removed: list[RemovedBag] = []
     retained: list[tuple[Path, dict[str, object]]] = []
@@ -49,7 +50,7 @@ def enforce_raw_retention(config, *, keep: Path | None = None) -> list[RemovedBa
             break
         if manifest.get("status") not in ("finalized", "incomplete"):
             continue
-        if keep_path is not None and bag.resolve() == keep_path:
+        if bag.resolve() in protected:
             continue
         item = _remove(bag, root=root, reason="raw retention cap")
         removed.append(item)

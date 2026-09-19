@@ -51,12 +51,21 @@ from galaxea_a1_runtime.apps.teleop.bag_retention import (
     enforce_raw_retention,
     raw_recordings_usage,
 )
+from galaxea_a1_runtime.apps.teleop.export_queue import ExportStats
 from galaxea_a1_runtime.apps.teleop.ros_state import RosTeleopState
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 from galaxea_a1_runtime.collection import (
     validate_experiment_name,
 )
-from galaxea_a1_runtime.console import Tone, failure, info, step, style, success
+from galaxea_a1_runtime.console import (
+    Tone,
+    failure,
+    info,
+    step,
+    style,
+    success,
+    warning,
+)
 from galaxea_a1_runtime.lerobot.direct_recording import (
     validate_direct_dataset_provenance,
 )
@@ -112,9 +121,8 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         used, cap = usage
         info(f"Raw recordings: {used / 1e9:.1f} GB / cap {cap / 1e9:.1f} GB")
 
-    saved = 0
     discarded = 0
-    saved_frames = 0
+    interrupted = False
     cameras = TeleopCameraSession(config)
     try:
         step("Starting cameras")
@@ -134,11 +142,13 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         )
         reset_after_save = config.collection.reset_policy.after_save
         while not rospy.is_shutdown():
+            episodes.poll_exports()
+            episodes.apply_retention()
+            _raise_export_failure(episodes)
             status_detail = _collection_status_detail(
                 episode_index=episode_index,
                 task=task,
-                saved=saved,
-                saved_frames=saved_frames,
+                stats=episodes.export_stats(),
             )
             announce_progress(
                 "collection",
@@ -192,6 +202,13 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                 reset_for_next_episode(config.path)
                 ros_state.wait_ready(timeout_s=config.collection.ready_timeout_s)
                 continue
+            episodes.poll_exports()
+            _raise_export_failure(episodes)
+            status_detail = _collection_status_detail(
+                episode_index=episode_index,
+                task=task,
+                stats=episodes.export_stats(),
+            )
             announce_progress(
                 "collection",
                 "Collection episode",
@@ -223,11 +240,10 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                 on_recording_ready=announce_recording_ready,
                 reset_after_save=reset_after_save,
             )
+            episodes.poll_exports()
             if completion.decision == EpisodeDecision.QUIT:
                 break
             if completion.decision == EpisodeDecision.SAVE:
-                saved += 1
-                saved_frames += completion.frame_count
                 episode_index += 1
             elif completion.decision == EpisodeDecision.DISCARD:
                 discarded += 1
@@ -241,20 +257,39 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                     detail=_collection_status_detail(
                         episode_index=episode_index,
                         task=task,
-                        saved=saved,
-                        saved_frames=saved_frames,
+                        stats=episodes.export_stats(),
                     ),
                     force=True,
                 )
                 reset_for_next_episode(config.path)
     except (KeyboardInterrupt, EOFError):
         print()
+        interrupted = True
     finally:
         cameras.close()
+    if not interrupted and not rospy.is_shutdown():
+        _raise_export_failure(episodes)
+        pending = episodes.drain_exports()
+        episodes.poll_exports()
+        stats = episodes.export_stats()
+        if pending:
+            warning(
+                f"{pending} dataset exports did not finish; "
+                "raw bags are retained for a later bag-export"
+            )
+        _raise_export_failure(episodes)
+    else:
+        stats = episodes.export_stats()
+        if stats.pending:
+            warning(
+                f"{stats.pending} dataset exports are still running; "
+                "raw bags are retained and can be exported later"
+            )
+    episodes.close_exports()
     announce_collection_summary(
-        saved=saved,
-        discarded=discarded,
-        saved_frames=saved_frames,
+        saved=stats.exported,
+        discarded=discarded + stats.rejected,
+        saved_frames=stats.stored_frames,
     )
     announce_progress(
         "collection",
@@ -262,16 +297,33 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
         episode_index,
         None,
         phase="completed",
-        detail=f"saved={saved} · discarded={discarded} · frames={saved_frames}",
+        detail=(
+            f"exported={stats.exported} · "
+            f"discarded={discarded + stats.rejected} · frames={stats.stored_frames}"
+        ),
         force=True,
     )
     return 0
 
 
+def _raise_export_failure(episodes: TeleopEpisodeSession) -> None:
+    exc = episodes.export_failure()
+    if exc is None:
+        return
+    raise RuntimeError(
+        "background dataset export failed; collection stopped for inspection "
+        f"(raw bag retained): {exc}"
+    )
+
+
 def _collection_status_detail(
-    *, episode_index: int, task: str, saved: int, saved_frames: int
+    *, episode_index: int, task: str, stats: ExportStats
 ) -> str:
-    return f"Episode {episode_index} · {saved} saved · {saved_frames} frames · {task}"
+    exporting = f" · {stats.pending} exporting" if stats.pending else ""
+    return (
+        f"Episode {episode_index} · {stats.exported} exported{exporting} · "
+        f"{stats.stored_frames} frames · {task}"
+    )
 
 
 def reset_for_next_episode(teleop_config: Path) -> None:

@@ -1,4 +1,4 @@
-"""Lifecycle for recording and committing one teleop episode."""
+"""Lifecycle for recording one teleop episode and queueing its export."""
 
 from __future__ import annotations
 
@@ -11,8 +11,6 @@ from embodied_ops import (
     announce_episode_capture,
     announce_episode_outcome,
 )
-from embodied_ops.artifacts import PublishedOutputCleanupError
-from embodied_ops.operator_panel import announce_progress
 
 from galaxea_a1_runtime.apps.teleop.bag_retention import (
     announce_removals,
@@ -20,6 +18,11 @@ from galaxea_a1_runtime.apps.teleop.bag_retention import (
     remove_raw_episode,
 )
 from galaxea_a1_runtime.apps.teleop.collector_camera import TeleopCameraSession
+from galaxea_a1_runtime.apps.teleop.export_queue import (
+    ExportQueue,
+    ExportStats,
+    QueuedExport,
+)
 from galaxea_a1_runtime.apps.teleop.interaction import (
     collection_recording_notice,
     reset_required_after_recording,
@@ -55,6 +58,7 @@ class TeleopEpisodeSession:
         self.task = task
         self.ros_state = ros_state
         self.cameras = cameras
+        self._exports = ExportQueue(config)
 
     def record(
         self,
@@ -63,8 +67,6 @@ class TeleopEpisodeSession:
         on_recording_ready: Callable[[], None],
         reset_after_save: bool,
     ) -> EpisodeCompletion:
-        from galaxea_a1_runtime.apps.teleop.bag_export import export_bag
-
         try:
             recording = record_episode(
                 config=self.config,
@@ -77,64 +79,85 @@ class TeleopEpisodeSession:
                 ),
             )
             decision = recording.decision
-            frames = 0
             if decision == EpisodeDecision.SAVE:
-                announce_progress(
-                    "collection",
-                    "Collection episode",
-                    episode_index,
-                    None,
-                    phase="saving",
-                    detail="Raw bag finalized; aligning and exporting dataset",
-                    force=True,
-                )
-                result = export_bag(recording.bag_root, config=self.config)
-                frames = result.stored_frames
-                if not frames:
-                    decision = EpisodeDecision.DISCARD
-                announce_episode_capture(
-                    EpisodeCaptureReport(
+                self._exports.submit(
+                    QueuedExport(
                         episode_index=episode_index,
-                        sampled_frames=result.sampled_frames,
-                        stored_frames=frames,
-                        trimmed_frames=result.trimmed_frames,
+                        bag_root=recording.bag_root,
                         elapsed_s=recording.elapsed_s,
-                        effective_fps=result.sampled_frames / recording.elapsed_s,
-                        decision=decision,
                     )
                 )
-            announce_episode_outcome(
-                episode_index=episode_index,
-                decision=decision,
-                frame_count=frames,
-                dataset_root=str(self.identity.target_root) if frames else None,
-            )
-            if decision != EpisodeDecision.SAVE:
+            else:
                 remove_raw_episode(
                     self.config,
                     recording.bag_root,
                     reason="discarded episode",
                 )
-            announce_removals(
-                enforce_raw_retention(self.config, keep=recording.bag_root)
-            )
+                announce_episode_outcome(
+                    episode_index=episode_index,
+                    decision=decision,
+                    frame_count=0,
+                    dataset_root=None,
+                )
             return EpisodeCompletion(
                 decision,
-                frame_count=frames,
+                frame_count=0,
                 reset_required=self._reset_required(
                     recording, decision, reset_after_save=reset_after_save
                 ),
             )
-        except PublishedOutputCleanupError as error:
-            warning(
-                f"Dataset saved at {error.target}; displaced backup retained at {error.backup}"
-            )
-            raise
         except BaseException:
             failure(
                 "Collection stopped; raw bag retained under data/recordings and previous committed dataset preserved"
             )
             raise
+
+    def poll_exports(self) -> None:
+        """Announce finished background exports on the main thread."""
+
+        for outcome in self._exports.take_outcomes():
+            decision = (
+                EpisodeDecision.SAVE
+                if outcome.stored_frames
+                else EpisodeDecision.DISCARD
+            )
+            effective_fps = (
+                outcome.sampled_frames / outcome.elapsed_s if outcome.elapsed_s else 0.0
+            )
+            announce_episode_capture(
+                EpisodeCaptureReport(
+                    episode_index=outcome.episode_index,
+                    sampled_frames=outcome.sampled_frames,
+                    stored_frames=outcome.stored_frames,
+                    trimmed_frames=outcome.trimmed_frames,
+                    elapsed_s=outcome.elapsed_s,
+                    effective_fps=effective_fps,
+                    decision=decision,
+                )
+            )
+            announce_episode_outcome(
+                episode_index=outcome.episode_index,
+                decision=decision,
+                frame_count=outcome.stored_frames,
+                dataset_root=outcome.dataset_root,
+            )
+
+    def apply_retention(self) -> None:
+        announce_removals(
+            enforce_raw_retention(self.config, protect=self._exports.protected_paths())
+        )
+
+    def export_failure(self) -> BaseException | None:
+        return self._exports.failure()
+
+    def export_stats(self) -> ExportStats:
+        return self._exports.stats()
+
+    def drain_exports(self) -> int:
+        return self._exports.drain()
+
+    def close_exports(self) -> None:
+        self._exports.close()
 
     @staticmethod
     def _announce_recording_ready(

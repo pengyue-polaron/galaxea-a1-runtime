@@ -615,14 +615,17 @@ just produced and never touches `data/datasets`. Session start logs the current
 usage against the cap. Interruption and conversion failure retain the original
 for inspection. Do not use validation-only bags as training demonstrations.
 
-Save finalizes the bag and automatically exports a canonical LeRobot v3 episode
-under `data/datasets/EXPERIMENT/`. Export builds a physical-time grid at the
-configured collection FPS, interpolates bounded state samples and holds causal
-commands. Camera reuse is explicit; source frames are never relabeled as new
-exposures. A stationary prefix is trimmed with configured preroll, and an entirely
-stationary recording creates no training episode. Timing and raw-source records
-commit atomically with images and numeric rows. Reset after save/discard retains
-the existing guarded policy; conversion failure stops collection for inspection.
+Save finalizes the bag and queues a canonical LeRobot v3 export that runs in the
+background while the next episode is recorded; the Ready detail shows exported
+and exporting counts. Export builds a physical-time grid at the configured
+collection FPS, interpolates bounded state samples and holds causal commands.
+Camera reuse is explicit; source frames are never relabeled as new exposures. A
+stationary prefix is trimmed with configured preroll, and an entirely stationary
+recording creates no training episode. Timing and raw-source records commit
+atomically with images and numeric rows. Reset after save/discard retains the
+existing guarded policy. A background export failure stops collection at the
+next gate for inspection; session end drains queued exports, and any unfinished
+export keeps its raw bag for a later `just bag-export`.
 
 Retry a finalized, saved raw episode without ROS discovery or hardware access:
 
