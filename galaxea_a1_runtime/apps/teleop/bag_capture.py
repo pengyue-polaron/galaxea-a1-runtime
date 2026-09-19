@@ -125,23 +125,30 @@ class BagCapture:
             if all(
                 f"Subscribed to topic '{topic}'" in log for topic in required.values()
             ):
-                subprocess.run(
-                    [
-                        "docker",
-                        "exec",
-                        self.container,
-                        "/ros_entrypoint.sh",
-                        "python3",
-                        "-m",
-                        "galaxea_a1_runtime.apps.teleop.bag_probe",
-                        "/recordings/episode.json",
-                        str(self.config.collection.ready_timeout_s),
-                    ],
-                    check=True,
-                    stdout=self.log,
-                    stderr=subprocess.STDOUT,
-                    timeout=self.config.collection.ready_timeout_s + 5,
-                )
+                try:
+                    subprocess.run(
+                        [
+                            "docker",
+                            "exec",
+                            self.container,
+                            "/ros_entrypoint.sh",
+                            "python3",
+                            "-m",
+                            "galaxea_a1_runtime.apps.teleop.bag_probe",
+                            "/recordings/episode.json",
+                            str(self.config.collection.ready_timeout_s),
+                        ],
+                        check=True,
+                        stdout=self.log,
+                        stderr=subprocess.STDOUT,
+                        timeout=self.config.collection.ready_timeout_s + 5,
+                    )
+                except subprocess.CalledProcessError as exc:
+                    raise RuntimeError(
+                        "robot telemetry topics are not being delivered to the recorder; "
+                        "restart the observation stack (just cameras stop, then "
+                        "just cameras start) and retry"
+                    ) from exc
                 time.sleep(
                     max(
                         self.config.system.cameras.max_age_s,

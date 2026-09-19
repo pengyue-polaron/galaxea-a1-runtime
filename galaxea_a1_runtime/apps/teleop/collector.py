@@ -220,12 +220,12 @@ def run(config: TeleopConfig, *, experiment: str, task: str | None = None) -> in
                 episode_index,
                 None,
                 phase="preparing",
-                detail="Preparing · hold still until Recording",
+                detail="PREPARING - HOLD STILL (wait for RECORDING)",
                 force=True,
             )
 
             def announce_recording_ready() -> None:
-                recording_detail = "Recording · move now"
+                recording_detail = "RECORDING - MOVE NOW"
                 announce_progress(
                     "collection",
                     "Collection episode",
