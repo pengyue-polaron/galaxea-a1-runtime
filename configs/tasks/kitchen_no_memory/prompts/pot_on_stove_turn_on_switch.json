@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 10,
+  "id": "pot_on_stove_turn_on_switch",
+  "prompt": "put the pot on the stove and turn on the switch",
+  "distribution": "train"
+}
