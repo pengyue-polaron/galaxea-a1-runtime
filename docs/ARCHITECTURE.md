@@ -329,6 +329,10 @@ independent versioned envelopes; each workflow run has a stable UUID, monotonic
 status and input-gate revisions, semantic input phase/detail, explicit lifecycle
 state, and UTC start/finish timestamps. Malformed, stale, replayed, cross-run,
 or undeclared events are rejected rather than silently changing available input.
+The shared terminal reader binds each input to the displayed run and input-gate
+revision, flushes buffered input on phase changes, and consumes at most one
+command per gate. The A1 collection follower supplies its existing action bindings
+and routes terminal input through the same guarded process/session API as Foxglove.
 Its minimal adapter owns only catalog values and workflow launch contracts;
 camera health and repository-maintenance providers are independent optional
 capabilities. Progress is display-only, retained by stable id as latest state,

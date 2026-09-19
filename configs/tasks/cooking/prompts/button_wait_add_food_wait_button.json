@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 10,
+  "id": "button_wait_add_food_wait_button",
+  "prompt": "Press the button, wait 3 seconds, put the food into the pot, wait another 3 seconds, then press the button again.",
+  "distribution": "ood"
+}

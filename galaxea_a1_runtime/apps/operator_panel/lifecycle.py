@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from pathlib import Path
 from typing import Callable
 
@@ -11,7 +10,10 @@ from embodied_ops.operator_panel import (
     serve_operator_panel_application,
 )
 
+from embodied_ops.operator_panel.terminal import WorkflowTerminal
+
 from galaxea_a1_runtime.console import info, success
+from galaxea_a1_runtime.apps.teleop.interaction import A1_COLLECTION_INTERACTION
 
 from .adapter import A1OperatorPanelAdapter
 from galaxea_a1_runtime.runtime.operator_session import (
@@ -56,16 +58,28 @@ def run_collection_session(
     }
     client = OperatorSessionClient(timeout_s=0.5)
     try:
-        client.status()
+        current = client.status()
     except OperatorSessionUnavailable:
         return _run_owned_collection(adapter, values)
 
-    status = client.start("collect", values)
-    success("Collection submitted to the active Operator Session.")
+    if current.get("active"):
+        launch = adapter.build_launch("collect", values)
+        if current.get("workflow") != "collect" or current.get("command") != list(
+            launch.command
+        ):
+            raise RuntimeError(
+                "A different workflow is active; stop it before starting collection"
+            )
+        status = current
+        success("Attached to the existing collection; hardware was not restarted.")
+    else:
+        status = client.start("collect", values)
+        success("Collection submitted to the active Operator Session.")
     return _follow_workflow(
         client.status,
         lambda run_id: client.stop(run_id=run_id),
         status,
+        client.input,
     )
 
 
@@ -83,6 +97,7 @@ def _run_owned_collection(
             application.workflow.snapshot,
             lambda run_id: application.workflow.stop(run_id=run_id),
             status,
+            application.workflow.send,
         )
     finally:
         errors: list[str] = []
@@ -104,10 +119,12 @@ def _follow_workflow(
     status_reader: Callable[[], dict],
     stop: Callable[[str], dict],
     initial: dict,
+    send_input: Callable[..., dict],
 ) -> int:
     run_id = initial["run_id"]
     previous_logs: list[str] = []
-    info("Use Embodied Ops Collection Console in Foxglove for guarded controls.")
+    terminal = WorkflowTerminal(A1_COLLECTION_INTERACTION.input_actions)
+    info("Terminal and Foxglove share guarded controls; Ctrl+C stops the session.")
     try:
         while True:
             status = status_reader()
@@ -120,7 +137,16 @@ def _follow_workflow(
             if not status.get("active"):
                 exit_code = status.get("exit_code")
                 return exit_code if isinstance(exit_code, int) else 1
-            time.sleep(0.2)
+            action = terminal.poll(status, timeout=0.2)
+            if action is not None:
+                try:
+                    send_input(
+                        action,
+                        run_id=run_id,
+                        input_revision=status["input_revision"],
+                    )
+                except (RuntimeError, ValueError) as exc:
+                    info(f"Terminal action rejected: {exc}")
     except KeyboardInterrupt:
         print()
         info("Interrupting the active collection through its Operator Session.")

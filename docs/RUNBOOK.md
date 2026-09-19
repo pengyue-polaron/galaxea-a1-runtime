@@ -352,7 +352,18 @@ just collect <experiment> "<exact prompt>"
 ```
 
 Keep that terminal command running. It owns or attaches to the single Operator
-Session and follows the child log. In Foxglove:
+Session, follows the child log, and prints the currently available terminal keys.
+In an interactive terminal, Enter starts an episode at Ready and stops/saves it
+at Recording; `n` + Enter saves without reset, `d` + Enter discards, and
+`q` + Enter ends the session. Save before quitting if the episode should be kept.
+Ctrl+C interrupts the session. Redirected/non-TTY stdin is display-only and
+cannot start recording.
+
+Running the same command (same configuration, experiment, and exact prompt) in
+another terminal attaches to the existing collection without resetting hardware.
+A different active workflow is rejected. Both terminal and Foxglove use the same
+run/revision-guarded input gate; typed or pasted input is not queued across phases.
+In Foxglove:
 
 - `Ready`: **Start recording**, **Reset position**, and **End session** are
   available.

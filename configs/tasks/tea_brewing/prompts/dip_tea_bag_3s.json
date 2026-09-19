@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 10,
+  "id": "dip_tea_bag_3s",
+  "prompt": "Dip the tea bag into the tea for 3 seconds, then take it out.",
+  "distribution": "ood"
+}
