@@ -647,6 +647,11 @@ before retrying an older bag. It rejects incomplete/discarded bags, duplicate ba
 IDs in a dataset, unknown clocks, missing required streams, excessive gaps,
 clock reversal and action discontinuities. Conversion uses a network-isolated
 Jazzy reader and needs temporary disk space for selected decoded images.
+Delivery-latency checks cover the operator recording interval plus each stream's
+configured freshness window on both sides, preserving boundary samples needed
+for alignment. Delayed messages farther away in preparation or teardown do not
+reject the recording; clock validity, output coverage and selected-sample
+freshness remain required.
 
 Raw-bag retention can rotate an older bag away before a retry. The already
 committed canonical dataset is unaffected, but that bag can no longer be

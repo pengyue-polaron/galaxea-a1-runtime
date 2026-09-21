@@ -23,7 +23,7 @@ class AlignedSample:
 
 
 class Timeline:
-    def __init__(self, records, *, role, max_age_s, values=None):
+    def __init__(self, records, *, role, max_age_s, start_ns, end_ns, values=None):
         if not records:
             raise ValueError(f"bag has no {role} samples")
         self.records = records
@@ -45,9 +45,17 @@ class Timeline:
                 raise ValueError(f"{role} changed timestamp basis within episode")
             clock = fallback
             effective = received if fallback else source
-            if abs(received - effective) > self.max_age_ns:
+            # Preparation/teardown messages outside this window cannot supply a
+            # bounded endpoint for any output frame. Keep full-stream clock and
+            # value validation, but do not reject an episode for their latency.
+            can_supply_frame = (
+                start_ns - self.max_age_ns <= effective < end_ns + self.max_age_ns
+            )
+            if can_supply_frame and abs(received - effective) > self.max_age_ns:
                 raise ValueError(
-                    f"{role} source and receive times exceed freshness bound"
+                    f"{role} source and receive times exceed freshness bound: "
+                    f"age={abs(received - effective) / NS_PER_SECOND:.3f}s, "
+                    f"max={max_age_s:.3f}s, index={item['index']}"
                 )
             if self.times and (
                 effective < self.times[-1]
@@ -123,6 +131,13 @@ def slerp(left, right, fraction):
 
 def align_records(records, *, config, start_ns, end_ns):
     """Sample a physical-time grid; gaps fail, camera reuse is explicit."""
+    # Preserve operator boundaries: never silently shorten missing coverage.
+    if (
+        not isinstance(start_ns, int)
+        or not isinstance(end_ns, int)
+        or end_ns <= start_ns
+    ):
+        raise ValueError("invalid episode boundaries")
     system = config.system
 
     def joint(item):
@@ -177,7 +192,14 @@ def align_records(records, *, config, start_ns, end_ns):
             if role.startswith("gripper")
             else joint
         )
-        timelines[role] = Timeline(samples, role=role, max_age_s=age, values=decoder)
+        timelines[role] = Timeline(
+            samples,
+            role=role,
+            max_age_s=age,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            values=decoder,
+        )
     front, wrist = timelines["front"], timelines["wrist"]
     skew_limit = round(system.cameras.max_pair_skew_s * NS_PER_SECOND)
     pairs = []
@@ -191,13 +213,6 @@ def align_records(records, *, config, start_ns, end_ns):
     if not pairs:
         raise ValueError("bag has no synchronized camera pairs")
     pair_times = [p[0] for p in pairs]
-    # Preserve operator boundaries: never silently shorten away missing coverage.
-    if (
-        not isinstance(start_ns, int)
-        or not isinstance(end_ns, int)
-        or end_ns <= start_ns
-    ):
-        raise ValueError("invalid episode boundaries")
     fps = int(config.collection.fps)
     previous = {}
     frame = 0

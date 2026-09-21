@@ -516,8 +516,14 @@ matching JSON source record. Integer source/receive clocks, message indices,
 interpolation endpoints, command hold times and camera reuse remain separate
 from LeRobot's nominal relative `timestamp`. A zero source stamp is retained;
 robot receive-time fallback is explicitly flagged, while unstamped cameras are
-rejected. Clock basis changes, reversals and excessive source/receive offsets
-fail conversion. This does not certify hardware exposure or sampling clocks.
+rejected. Clock basis changes and reversals fail conversion across the full raw
+stream. Source/receive freshness is checked for samples whose effective time is
+within one configured freshness window of the operator recording interval,
+including boundary interpolation/hold candidates. More distant preparation or
+teardown messages cannot supply output frames and their delivery latency does
+not reject an otherwise valid episode. Every selected sample still passes the
+existing freshness and gap checks. This does not certify hardware exposure or
+sampling clocks.
 
 An export lock serializes dataset appends. Duplicate source bag IDs are rejected.
 The source record includes raw-file hashes, configuration snapshots and capture
