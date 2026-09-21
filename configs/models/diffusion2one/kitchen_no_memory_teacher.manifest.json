@@ -1,0 +1,31 @@
+{
+  "files": {
+    "galaxea-a1-kitchen-no-memory-teacher/README.md": {
+      "sha256": "951708e6b3dbe4758a7864f7a009749b77023b63d240cc0a06124a9eab02fc86",
+      "size": 1449
+    },
+    "galaxea-a1-kitchen-no-memory-teacher/eef.json": {
+      "sha256": "b4f7a15b0e048090f59bc4bd7a0752fe196978c3ae12348cd96b888feebf7b44",
+      "size": 16997
+    },
+    "galaxea-a1-kitchen-no-memory-teacher/lingbot_norm_stat.json": {
+      "sha256": "faab7a5221eb1b19847bce65f4a5755a08c7d20c371a60a1b7b24c01853edc76",
+      "size": 470
+    },
+    "galaxea-a1-kitchen-no-memory-teacher/transformer/config.json": {
+      "sha256": "b96b15f6804628e7c7afc51882f061a8cd01263feacafbb133574e7ca97cf3f3",
+      "size": 450
+    },
+    "galaxea-a1-kitchen-no-memory-teacher/transformer/diffusion_pytorch_model.safetensors": {
+      "sha256": "c048b8e95b8fa06e7dc8e03d430f976b199d49e3e4fe3b95a5b67a4e7ca71dec",
+      "size": 19997351340
+    }
+  },
+  "model_id": "diffusion2one/a1_kitchen_no_memory_teacher_eef",
+  "schema_version": 1,
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "SeanZheng/Distill-WAM",
+    "revision": "0507667b5d4428c5c5478acefa6106389a61709b"
+  }
+}

@@ -112,6 +112,11 @@ model-verify config:
     {{vpy}} {{repo}}/scripts/models/model_store.py verify \
         --repo-root "{{repo}}" "{{config}}"
 
+# Register every model of a tracked release plan from verified content.
+model-register-release plan *args:
+    {{vpy}} {{repo}}/scripts/models/register_release.py \
+        --repo-root "{{repo}}" "{{plan}}" {{args}}
+
 # ── Hardware Workflow ────────────────────────────────────────────────────────
 
 # Check configured serial devices and cameras without moving the robot.

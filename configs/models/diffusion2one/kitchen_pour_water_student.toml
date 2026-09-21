@@ -1,0 +1,14 @@
+[model]
+schema_version = 1
+id = "diffusion2one/a1_kitchen_pour_water_eef"
+backend = "diffusion2one"
+artifact_format = "diffusers"
+checkpoint_step = 1000
+manifest = "configs/models/diffusion2one/kitchen_pour_water_student.manifest.json"
+contract = "configs/models/diffusion2one/kitchen_pour_water_student.contract.toml"
+
+[source]
+provider = "huggingface"
+repo_id = "SeanZheng/Distill-WAM"
+revision = "0507667b5d4428c5c5478acefa6106389a61709b"
+revision_label = "a1-kitchen-and-flashwam"

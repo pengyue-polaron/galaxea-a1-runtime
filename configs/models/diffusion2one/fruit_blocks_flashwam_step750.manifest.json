@@ -1,0 +1,31 @@
+{
+  "files": {
+    "galaxea-a1-flashwam/README.md": {
+      "sha256": "e2215663b63b2a09b43a80ec07f4b3a595e742774c438e02e520aafa4c4c95b3",
+      "size": 2193
+    },
+    "galaxea-a1-flashwam/eef.json": {
+      "sha256": "6ddcc7fc1bb2f617a73cf163e550daf9e451695a7f6f12a848e4880fe277796d",
+      "size": 2668
+    },
+    "galaxea-a1-flashwam/lingbot_norm_stat.json": {
+      "sha256": "2544ead77b49701eb710993c1d4518fde15dc94b19d9e5c49519d8003135c199",
+      "size": 457
+    },
+    "galaxea-a1-flashwam/transformer/config.json": {
+      "sha256": "b96b15f6804628e7c7afc51882f061a8cd01263feacafbb133574e7ca97cf3f3",
+      "size": 450
+    },
+    "galaxea-a1-flashwam/transformer/diffusion_pytorch_model.safetensors": {
+      "sha256": "0cf0a6ede4f2c6f838340f8a7044276bb6ec0036ed735e92970e9afe66cefb0e",
+      "size": 19997351340
+    }
+  },
+  "model_id": "diffusion2one/a1_fruit_blocks_flashwam_step750_eef",
+  "schema_version": 1,
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "SeanZheng/Distill-WAM",
+    "revision": "0507667b5d4428c5c5478acefa6106389a61709b"
+  }
+}

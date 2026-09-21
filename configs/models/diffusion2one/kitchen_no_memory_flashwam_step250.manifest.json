@@ -1,0 +1,31 @@
+{
+  "files": {
+    "galaxea-a1-kitchen-no-memory-flashwam-step250/README.md": {
+      "sha256": "c93f44dd061e2153056f482464047545d70bd86bcf66d5dac39130b9c8c89592",
+      "size": 2203
+    },
+    "galaxea-a1-kitchen-no-memory-flashwam-step250/eef.json": {
+      "sha256": "b4f7a15b0e048090f59bc4bd7a0752fe196978c3ae12348cd96b888feebf7b44",
+      "size": 16997
+    },
+    "galaxea-a1-kitchen-no-memory-flashwam-step250/lingbot_norm_stat.json": {
+      "sha256": "faab7a5221eb1b19847bce65f4a5755a08c7d20c371a60a1b7b24c01853edc76",
+      "size": 470
+    },
+    "galaxea-a1-kitchen-no-memory-flashwam-step250/transformer/config.json": {
+      "sha256": "b96b15f6804628e7c7afc51882f061a8cd01263feacafbb133574e7ca97cf3f3",
+      "size": 450
+    },
+    "galaxea-a1-kitchen-no-memory-flashwam-step250/transformer/diffusion_pytorch_model.safetensors": {
+      "sha256": "16f2b6a837bfdc3034eab08458f33128ed07d8d8643042732ddd1aa2bbf3aa35",
+      "size": 19997351340
+    }
+  },
+  "model_id": "diffusion2one/a1_kitchen_no_memory_flashwam_step250_eef",
+  "schema_version": 1,
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "SeanZheng/Distill-WAM",
+    "revision": "0507667b5d4428c5c5478acefa6106389a61709b"
+  }
+}

@@ -11,6 +11,7 @@ from embodied_ops.operator_panel import DocumentKind, RepositoryDocumentStore
 from galaxea_a1_runtime.apps.lingbot.batch_config import load_lingbot_batch_config
 from galaxea_a1_runtime.apps.lingbot.config import load_lingbot_config, _load_backend
 from galaxea_a1_runtime.models.config import load_model_config
+from galaxea_a1_runtime.models.release import load_model_release
 from galaxea_a1_runtime.apps.reset.config import load_a1_home_pose
 from galaxea_a1_runtime.apps.tfp.model_config import load_tfp_model_config
 from galaxea_a1_runtime.configuration.paths import SYSTEM_CONFIG
@@ -48,6 +49,14 @@ def build_a1_document_store(repo_root: Path) -> RepositoryDocumentStore:
                 language="TOML",
                 validate=lambda path: load_model_config(path, repo_root=root),
                 include=lambda path: not path.name.endswith(".contract.toml"),
+            ),
+            DocumentKind(
+                kind_id="model-release",
+                label="Multi-model release plan",
+                directory=Path("configs/releases"),
+                suffix=".toml",
+                language="TOML",
+                validate=lambda path: load_model_release(path, repo_root=root),
             ),
             DocumentKind(
                 kind_id="diffusion2one-deployment",

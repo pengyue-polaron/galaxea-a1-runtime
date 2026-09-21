@@ -1,0 +1,31 @@
+{
+  "files": {
+    "galaxea-a1-kitchen-pour-water-flashwam-step250/README.md": {
+      "sha256": "b57f187784c6078e0a215fa576a46ad0d6e29f407435f1f13982982cb2bcf090",
+      "size": 2204
+    },
+    "galaxea-a1-kitchen-pour-water-flashwam-step250/eef.json": {
+      "sha256": "51efbe1b7eb5bd38f929a18449e8f6426ced53f179dee5b1f23f443ea24aebea",
+      "size": 17151
+    },
+    "galaxea-a1-kitchen-pour-water-flashwam-step250/lingbot_norm_stat.json": {
+      "sha256": "f81aba4423ccc0932efba3fb47fb1b9b8c8d9bfd98c0bb544f300f4d63d6274f",
+      "size": 457
+    },
+    "galaxea-a1-kitchen-pour-water-flashwam-step250/transformer/config.json": {
+      "sha256": "b96b15f6804628e7c7afc51882f061a8cd01263feacafbb133574e7ca97cf3f3",
+      "size": 450
+    },
+    "galaxea-a1-kitchen-pour-water-flashwam-step250/transformer/diffusion_pytorch_model.safetensors": {
+      "sha256": "940a94ffb0331b2ceeb5f7a63bc368e382d0598ec2540637df1e872ec64da00a",
+      "size": 19997351340
+    }
+  },
+  "model_id": "diffusion2one/a1_kitchen_pour_water_flashwam_step250_eef",
+  "schema_version": 1,
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "SeanZheng/Distill-WAM",
+    "revision": "0507667b5d4428c5c5478acefa6106389a61709b"
+  }
+}

@@ -1,0 +1,31 @@
+{
+  "files": {
+    "galaxea-a1-kitchen-pour-water/README.md": {
+      "sha256": "689bcff487bfe09b07f6a6aee1dc8e75e33aed7be9bc758d9b0840e78e7483a5",
+      "size": 1488
+    },
+    "galaxea-a1-kitchen-pour-water/eef.json": {
+      "sha256": "51efbe1b7eb5bd38f929a18449e8f6426ced53f179dee5b1f23f443ea24aebea",
+      "size": 17151
+    },
+    "galaxea-a1-kitchen-pour-water/lingbot_norm_stat.json": {
+      "sha256": "f81aba4423ccc0932efba3fb47fb1b9b8c8d9bfd98c0bb544f300f4d63d6274f",
+      "size": 457
+    },
+    "galaxea-a1-kitchen-pour-water/transformer/config.json": {
+      "sha256": "b96b15f6804628e7c7afc51882f061a8cd01263feacafbb133574e7ca97cf3f3",
+      "size": 450
+    },
+    "galaxea-a1-kitchen-pour-water/transformer/diffusion_pytorch_model.safetensors": {
+      "sha256": "5846e8936f50c5de35759986ab3b6621a767ee03416d0e5dc4dd798b35685d4e",
+      "size": 19997351340
+    }
+  },
+  "model_id": "diffusion2one/a1_kitchen_pour_water_eef",
+  "schema_version": 1,
+  "source": {
+    "provider": "huggingface",
+    "repo_id": "SeanZheng/Distill-WAM",
+    "revision": "0507667b5d4428c5c5478acefa6106389a61709b"
+  }
+}

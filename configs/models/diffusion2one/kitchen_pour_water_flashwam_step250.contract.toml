@@ -1,0 +1,17 @@
+[lingbot]
+vendor_config = "galaxea_deploy"
+pose_mode = "episode-relative"
+frame_chunk_size = 4
+action_per_frame = 4
+model_action_dim = 30
+action_channel_ids = [0, 1, 2, 3, 4, 5, 6, 28]
+
+[normalization]
+method = "quantiles"
+gripper_latent_reject_limit = 1.5
+q01_source = [-0.009247658774256706, -0.181098473072052, -0.07066482901573182, -0.07562693506479264, -0.2255987286567688, -0.8810358047485352, 0.4575000166893005, 0.0531192272901535]
+q99_source = [0.34690300822257997, 0.011783935874700556, 0.12101232260465633, 0.24069927334785482, 0.13567693531513214, 0.21585226058959966, 0.9998489737510681, 1.0]
+
+[components]
+base_model = "configs/models/diffusion2one/foundation.toml"
+model_subdirectory = "galaxea-a1-kitchen-pour-water-flashwam-step250"

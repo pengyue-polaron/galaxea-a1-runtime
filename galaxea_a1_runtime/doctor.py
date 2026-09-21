@@ -99,6 +99,20 @@ def run_static_doctor(repo_root: Path) -> list[Check]:
     except Exception as exc:
         add("tracked_config_graph", False, repr(exc))
 
+    try:
+        from galaxea_a1_runtime.models.release import load_model_release
+
+        release_paths = sorted((repo_root / "configs" / "releases").glob("*.toml"))
+        for release_path in release_paths:
+            load_model_release(release_path, repo_root=repo_root)
+        add(
+            "model_release_plans",
+            True,
+            f"{len(release_paths)} plan(s) parsed" if release_paths else "none",
+        )
+    except Exception as exc:
+        add("model_release_plans", False, repr(exc))
+
     pyproject = repo_root / "pyproject.toml"
     try:
         data = tomllib.loads(pyproject.read_text())
