@@ -722,17 +722,17 @@ root = "data/datasets/EXPERIMENT"
 [outputs.joint_v21]
 target_root = "data/processed/EXPERIMENT_joint_v21"
 archive_path = "data/exports/EXPERIMENT_joint_v21.tar.gz"
-repo_id = "OWNER/EXPERIMENT-joint-v21"
+repo_id = "OWNER/EXPERIMENT"
 
 [outputs.eef_v3]
 target_root = "data/processed/EXPERIMENT_eef_v3"
 archive_path = "data/exports/EXPERIMENT_eef_v3.tar.gz"
-repo_id = "OWNER/EXPERIMENT-eef-v3"
+repo_id = "OWNER/EXPERIMENT"
 
 [outputs.eef_v21]
 target_root = "data/processed/EXPERIMENT_eef_v21"
 archive_path = "data/exports/EXPERIMENT_eef_v21.tar.gz"
-repo_id = "OWNER/EXPERIMENT-eef-v21"
+repo_id = "OWNER/EXPERIMENT"
 
 [kinematics]
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
@@ -754,6 +754,25 @@ The source repo ID and task are read from its committed provenance instead of
 being duplicated in the derivative config. Every final output derives from the
 canonical v3 root. Joint v2.1 exports directly; the temporary EEF v3 workspace
 used for EEF v2.1 export is removed.
+
+### Hugging Face task-collection repositories
+
+Use one repository per task collection, with exact prompts distinguished by
+`task_index`. Repository names describe the collection; action representation
+and storage format belong in branches, not `-eef-v21` or `-joint-v30` suffixes.
+Where available, `main` contains EEF LeRobot v2.1 and `v3` contains EEF LeRobot
+v3.0. Additional existing representations use explicit names such as
+`joint-v2.1`, `joint-v3`, or `raw-v3`. A legacy raw-v3 branch is not an EEF
+LeRobot v3 dataset. Joint-only or raw-only collections retain their actual
+representation on `main`; never relabel them as EEF without conversion.
+
+`just derive` builds local packages and does not upload or select a Hub branch.
+Its outputs share the collection `repo_id` while retaining separate local
+paths. Select the correct revision explicitly when publishing or loading a
+non-default format. Preserve existing visibility, exact prompts, curation,
+source mappings, media and numerical semantics during repository migrations.
+Record verified source and destination commits under `outputs/quality/` before
+removing superseded repositories with explicit user authorization.
 
 ## 6. Failure recovery
 

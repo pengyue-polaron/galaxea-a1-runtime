@@ -10,17 +10,17 @@ root = "data/datasets/plug_insertion_v1"
 [outputs.joint_v21]
 target_root = "data/processed/plug_insertion_joint_v21"
 archive_path = "data/exports/plug_insertion_joint_v21.tar.gz"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-plug-insertion-joint-v21"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-plug-insertion"
 
 [outputs.eef_v3]
 target_root = "data/processed/plug_insertion_eef_v3"
 archive_path = "data/exports/plug_insertion_eef_v3.tar.gz"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-plug-insertion-eef-v3"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-plug-insertion"
 
 [outputs.eef_v21]
 target_root = "data/processed/plug_insertion_eef_v21"
 archive_path = "data/exports/plug_insertion_eef_v21.tar.gz"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-plug-insertion-eef-v21"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-plug-insertion"
 
 [kinematics]
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"

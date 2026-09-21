@@ -10,17 +10,17 @@ root = "data/datasets/handover_whiteboard_eraser"
 [outputs.joint_v21]
 target_root = "data/processed/handover_whiteboard_eraser_joint_v21"
 archive_path = "data/exports/handover_whiteboard_eraser_joint_v21.tar.gz"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-whiteboard-eraser-joint-v21"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-whiteboard-eraser"
 
 [outputs.eef_v3]
 target_root = "data/processed/handover_whiteboard_eraser_eef_v3"
 archive_path = "data/exports/handover_whiteboard_eraser_eef_v3.tar.gz"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-whiteboard-eraser-eef-v3"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-whiteboard-eraser"
 
 [outputs.eef_v21]
 target_root = "data/processed/handover_whiteboard_eraser_eef_v21"
 archive_path = "data/exports/handover_whiteboard_eraser_eef_v21.tar.gz"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-whiteboard-eraser-eef-v21"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-handover-whiteboard-eraser"
 
 [kinematics]
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"

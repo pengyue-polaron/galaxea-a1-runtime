@@ -1,6 +1,6 @@
 [dataset]
 root = "data/processed/fruit_placement_eef_v21"
-repo_id = "pengyue-polaron/nyush-galaxea-a1-fruit-placement-eef-v21"
+repo_id = "pengyue-polaron/nyush-galaxea-a1-fruit-placement"
 
 [deployments]
 lingbot = "configs/deployments/lingbot/fruit_placement_eef.toml"
