@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 50,
+  "id": "place_teapot_left_of_cup",
+  "prompt": "place the teapot to the left of the cup",
+  "distribution": "ood"
+}

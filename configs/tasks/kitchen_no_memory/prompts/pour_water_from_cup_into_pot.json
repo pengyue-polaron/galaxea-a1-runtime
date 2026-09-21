@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 20,
+  "id": "pour_water_from_cup_into_pot",
+  "prompt": "pour the water from the cup into the pot",
+  "distribution": "ood"
+}

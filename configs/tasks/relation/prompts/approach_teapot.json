@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "order": 30,
+  "id": "approach_teapot",
+  "prompt": "approach the teapot",
+  "distribution": "ood"
+}
