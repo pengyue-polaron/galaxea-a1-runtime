@@ -108,6 +108,16 @@ def main(argv: list[str] | None = None) -> int:
     panel = subparsers.add_parser("panel", help="serve the tracked Web operator panel")
     panel.add_argument("--repo-root", type=Path, default=Path.cwd())
 
+    inference = subparsers.add_parser(
+        "inference",
+        help="MOVES HARDWARE: select and launch a registered LingBot-family model",
+    )
+    from galaxea_a1_runtime.apps.inference import (
+        add_arguments as add_inference_arguments,
+    )
+
+    add_inference_arguments(inference)
+
     hardware = subparsers.add_parser(
         "hardware", help="passively inspect configured serial and camera hardware"
     )
@@ -262,6 +272,11 @@ def main(argv: list[str] | None = None) -> int:
         except (OSError, ValueError) as exc:
             failure(str(exc))
             return 2
+
+    if args.command == "inference":
+        from galaxea_a1_runtime.apps.inference import run as run_inference
+
+        return run_inference(args)
 
     from galaxea_a1_runtime.apps.operator_panel import A1OperatorPanelAdapter
 

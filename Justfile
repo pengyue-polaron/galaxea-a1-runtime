@@ -227,6 +227,10 @@ diffusion2one *args:
 diffusion2one-teacher action="server" *args:
     scripts/apps/diffusion2one/a1_diffusion2one_teacher_runtime.sh {{action}} {{args}}
 
+# MOVES HARDWARE: select and launch a registered LingBot-family model.
+inference *args:
+    {{vpy}} -m galaxea_a1_runtime.cli inference --repo-root "{{repo}}" {{args}}
+
 tfp-verify:
     scripts/apps/tfp/a1_tfp_runtime.sh verify
 
