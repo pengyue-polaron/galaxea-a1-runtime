@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import sys
 from dataclasses import dataclass
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from galaxea_a1_runtime.apps.lingbot.config_runtime import bash_config
@@ -404,16 +404,11 @@ def _load_model_contract(model: ModelArtifactConfig) -> _ModelContract:
             repo_path(model.repo_root, string(components, "base_model")),
             repo_root=model.repo_root,
         )
-        model_subdirectory = string(components, "model_subdirectory")
-        expected_subdirectory = (
-            "galaxea-a1-teacher"
-            if model.backend == "diffusion2one_teacher"
-            else "galaxea-a1"
+        model_subdirectory = _model_subdirectory(
+            string(components, "model_subdirectory")
         )
-        if model_subdirectory != expected_subdirectory:
-            raise ValueError(
-                f"{model.backend} requires the {expected_subdirectory} checkpoint subdirectory"
-            )
+        for required in ("eef.json", "lingbot_norm_stat.json"):
+            _manifest_file(model, f"{model_subdirectory}/{required}")
     lingbot = required_table(data, "lingbot")
     normalization = required_table(data, "normalization")
     require_exact_keys(
@@ -577,6 +572,17 @@ def _manifest_file(model: ModelArtifactConfig, path: str):
         if item.path.as_posix() == path:
             return item
     raise ValueError(f"LingBot model manifest is missing required path: {path}")
+
+
+def _model_subdirectory(value: str) -> str:
+    if not value or "\\" in value:
+        raise ValueError("components.model_subdirectory must be a relative '/' path")
+    path = PurePosixPath(value)
+    if path.is_absolute() or any(part in {"", ".", ".."} for part in path.parts):
+        raise ValueError(
+            "components.model_subdirectory must be a safe relative release folder"
+        )
+    return value
 
 
 def _pose_mode(value: str) -> PoseMode:
