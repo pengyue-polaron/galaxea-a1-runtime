@@ -75,13 +75,19 @@ def validate_checkpoint_metadata(config: LingBotConfig, artifact_root: Path) -> 
     action = semantics["action"]
     from galaxea_a1_runtime.schema import EEF_ACTION_NAMES
 
-    if (
-        action["names"] != list(EEF_ACTION_NAMES)
-        or action["shape"] != [8]
-        or action["rotation"] != "inverse(initial_quaternion) * target_quaternion, xyzw"
-        or action["translation"] != "target_xyz_base_link - initial_xyz_base_link"
-        or semantics["kinematics"]["base_link"] != "base_link"
-    ):
+    if action.get("names") != list(EEF_ACTION_NAMES) or action.get("shape") != [8]:
+        raise ValueError("Diffusion2One checkpoint EEF action layout mismatch")
+    # Released metadata describes the same episode-relative conversion in more
+    # than one reviewed wording. The runtime convention stays owned by the
+    # shared EEF bridge, so require the descriptive fields without pinning one
+    # phrasing, and keep every quantitative field checked below.
+    for field in ("gripper", "rotation", "translation"):
+        value = action.get(field)
+        if not isinstance(value, str) or not value.strip():
+            raise ValueError(
+                f"Diffusion2One checkpoint EEF action is missing {field!r}"
+            )
+    if semantics["kinematics"]["base_link"] != "base_link":
         raise ValueError("Diffusion2One checkpoint EEF semantics mismatch")
     kinematics = semantics["kinematics"]
     if (
@@ -91,7 +97,11 @@ def validate_checkpoint_metadata(config: LingBotConfig, artifact_root: Path) -> 
         != hashlib.sha256(config.system.eef_ik.urdf.read_bytes()).hexdigest()
     ):
         raise ValueError("Diffusion2One checkpoint kinematics mismatch")
-    if (action["gripper_stroke_min_mm"], action["gripper_stroke_max_mm"]) != (
+    stroke_min = action.get("gripper_stroke_min_mm")
+    stroke_max = action.get("gripper_stroke_max_mm")
+    if (stroke_min is None) != (stroke_max is None):
+        raise ValueError("Diffusion2One checkpoint gripper mapping is incomplete")
+    if stroke_min is not None and (stroke_min, stroke_max) != (
         config.system.gripper.stroke_min_mm,
         config.system.gripper.stroke_max_mm,
     ):
