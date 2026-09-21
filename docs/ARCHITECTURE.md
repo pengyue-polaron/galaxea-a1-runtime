@@ -669,6 +669,17 @@ This checkout does not train models. Reviewed weights produced or downloaded
 elsewhere are registered through the local model registry described in
 [`models/README.md`](../models/README.md).
 
+Multi-model families register through a tracked release plan
+(`configs/releases/*.toml`) that pins one Hub revision and lists each model
+with its release folder, checkpoint step, runtime class, and task catalog.
+Registration proves every folder against the revision's tree metadata, hashes
+verified local content once, publishes the immutable artifact by atomic rename,
+and generates the descriptor, manifest, contract, and deployment as create-only
+configuration; generated files are validated after writing and are never
+replaced. The resulting deployments are selected through the inference target
+list, which resolves one tracked model and prompt set and hands off to the same
+guarded runtime.
+
 Managed model inference is a host-side GPU service separated from the ROS
 bridge. Configuration is composed from five exclusive owners:
 

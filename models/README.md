@@ -66,6 +66,77 @@ Validate every configured model:
 just models
 ```
 
+## Release families
+
+One pinned Hub revision often carries many checkpoints of the same
+architecture. A tracked release plan registers the whole family instead of
+hand-writing four files per model:
+
+```toml
+[release]
+schema_version = 1
+id = "distill-wam-a1-20260922"
+
+[source]
+provider = "huggingface"
+repo_id = "SeanZheng/Distill-WAM"
+revision = "0507667b5d4428c5c5478acefa6106389a61709b"
+revision_label = "a1-kitchen-and-flashwam"
+
+[ports]
+server = 1130
+master = 29600
+
+[[model]]
+key = "kitchen_pour_water_student"
+id = "diffusion2one/a1_kitchen_pour_water_eef"
+directory = "galaxea-a1-kitchen-pour-water"
+checkpoint_step = 1000
+kind = "student"
+catalog = "configs/tasks/kitchen_pour_water/catalog.json"
+```
+
+`kind` selects the reviewed runtime class (`student` → `diffusion2one` backend,
+`teacher` → `diffusion2one_teacher`) with its deployment and contract
+templates. Ports take the table value plus the model order and must stay free
+of other tracked deployments.
+
+```bash
+just model-register-release configs/releases/distill_wam_a1_20260922.toml \
+    --from-local models/Distill-WAM
+just model-register-release configs/releases/distill_wam_a1_20260922.toml \
+    --only kitchen_pour_water_student
+```
+
+The registrar requires every release folder to carry exactly the reviewed file
+set, proves each file against the pinned revision's Hub tree (LFS SHA-256, git
+blob hash for small metadata), hard-links verified local content into hidden
+staging, hashes it once, publishes the artifact by atomic rename, and generates
+the descriptor, manifest, contract, and deployment as create-only files. An
+edited generated file is a conflict, never an overwrite. Receipts are written
+under `outputs/model_registration/<release-id>_<timestamp>/`.
+
+The contract owns `components.model_subdirectory`; the loader resolves every
+required manifest path through it instead of pinning one folder name. Each
+release model references one task catalog, and a catalog holds one or more
+approved prompts, so a single-prompt model and a multi-prompt model use the
+same mechanism.
+
+## Selecting a registered model
+
+```bash
+just inference --list                            # deployments, models, prompts, artifact state
+just inference                                   # pick a target, then a prompt when needed
+just inference kitchen_pour_water_student        # one-prompt catalog starts directly
+just inference kitchen_no_memory_teacher --task pot_on_stove_turn_on_switch
+just inference kitchen_pour_water_flashwam_step250 --action smoke
+```
+
+Selection accepts a deployment id or path, a model id, or a descriptor name.
+Only a ready artifact, a registered model, and a tracked prompt can start.
+`--action server` and `--action smoke` are hardware-free; `run` is the guarded
+live rollout and may move the A1.
+
 ## Managed EEF policies
 
 The configured LingBot and OpenPI pi0.5 models use separate pinned source trees

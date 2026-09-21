@@ -834,6 +834,50 @@ application. Recordings include the fixed `trac_ik_distance` identity and solve
 time. The solver returns endpoints, not velocity-limited or collision-checked
 trajectories. The retired numerical backends are not fallback options.
 
+### One-shot model release registration
+
+A family of checkpoints from one pinned Hub revision is registered from one
+tracked release plan (`configs/releases/*.toml`): the source revision, one
+entry per model with its release folder, checkpoint step, runtime class, and
+task catalog, plus the deployment port bases.
+
+```bash
+just model-register-release configs/releases/distill_wam_a1_20260922.toml \
+    --from-local models/Distill-WAM
+# iterate on one model at a time
+just model-register-release configs/releases/distill_wam_a1_20260922.toml \
+    --only kitchen_pour_water_student
+```
+
+The registrar fetches the pinned revision's tree and requires every release
+folder to carry exactly the reviewed file set. Local content is hard-linked
+into hidden artifact staging and checked once against the release LFS SHA-256
+(git blob hash for small metadata files); a missing local folder downloads from
+the Hub instead. It then generates the model descriptor, manifest, contract,
+and deployment as create-only files, publishes the artifact by atomic rename,
+and validates the deployment and checkpoint metadata. An edited generated file
+is a conflict, not an overwrite. Receipts land under
+`outputs/model_registration/<release-id>_<timestamp>/`.
+
+Afterwards, `just model-verify configs/models/diffusion2one/<name>.toml`
+hash-checks one artifact, `just models` validates every registered artifact,
+and the static doctor parses every release plan.
+
+### Selecting a registered model
+
+```bash
+just inference --list       # deployments, models, prompts, and artifact state
+just inference              # numbered target selection, then prompt selection
+just inference <selector>   # deployment id or path, model id, or descriptor name
+```
+
+A catalog with one prompt starts directly; a multi-prompt catalog asks for the
+tracked task id, and `--task` makes that choice explicit. `--action server` and
+`--action smoke` stay hardware-free; `run` (the default) **MOVES HARDWARE**
+through the staged tracker and relay. `--dry-run` prints the exact runtime
+command and starts nothing. The equivalent explicit form is
+`just lingbot --config <deployment> --task <task>`.
+
 ### Model setup
 
 Set up either pinned EEF-policy backend and its immutable Hugging Face artifact,
