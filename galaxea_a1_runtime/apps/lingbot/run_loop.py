@@ -31,16 +31,7 @@ def run_lingbot_rollout(bridge: Any, *, is_shutdown: Callable[[], bool]) -> None
             return
         try:
             key_frames = bridge._execute_chunk(call_index, chunk)
-        except IkSubgoalExecuted as exc:
-            bridge.live_status.break_line()
-            warning(f"IK subgoal: {exc}")
-            bridge._recover_ik_rejection()
-            consecutive_replans = 0
-            first = True
-            call_index += 1
-            bridge._update_live_status(call_index, phase="REPLAN", force=True)
-            continue
-        except A1EefIkTargetRejected as exc:
+        except (IkSubgoalExecuted, A1EefIkTargetRejected) as exc:
             if (
                 not execution.execute
                 or consecutive_replans >= execution.ik_replan_max_attempts
@@ -49,11 +40,15 @@ def run_lingbot_rollout(bridge: Any, *, is_shutdown: Callable[[], bool]) -> None
                     and call_index + 1 >= execution.max_model_calls
                 )
             ):
+                if isinstance(exc, IkSubgoalExecuted):
+                    raise A1EefIkTargetRejected(
+                        "IK recovery reached its bounded replan allowance"
+                    ) from exc
                 raise
             consecutive_replans += 1
             bridge.live_status.break_line()
             warning(
-                "IK target rejected; discarding the remaining chunk and replanning "
+                "IK recovery: discarding the remaining chunk and replanning "
                 f"({consecutive_replans}/{execution.ik_replan_max_attempts}): {exc}"
             )
             bridge._recover_ik_rejection()

@@ -80,20 +80,30 @@ int main() {
       const KDL::Frame goal(KDL::Rotation::Quaternion(
           pose(3)/norm, pose(4)/norm, pose(5)/norm, pose(6)/norm),
           KDL::Vector(pose(0), pose(1), pose(2)));
-      int code = solver.CartToJnt(seed, goal, result, bounds);
+      const double search_scale = request.at("search_bounds_scale");
+      if (!std::isfinite(search_scale) || search_scale <= 0 || search_scale > 1)
+        throw std::runtime_error("Invalid Cartesian search scale");
+      KDL::Twist search_bounds = bounds;
+      for (size_t i = 0; i < 6; ++i) search_bounds(i) *= search_scale;
+      int code = solver.CartToJnt(seed, goal, result, search_bounds);
+      const int native_code = code;
+      size_t candidate_count = 0, norm_rejected = 0;
       if (code >= 0) {
         // TRAC-IK exposes axis bounds; Runtime's acceptance uses vector norms.
         // Choose the nearest native candidate that passes those same norm gates.
         std::vector<KDL::JntArray> candidates;
         solver.getSolutions(candidates);
+        candidate_count = candidates.size();
         double best = std::numeric_limits<double>::infinity();
         code = -3;
         for (const auto& candidate : candidates) {
           KDL::Frame frame;
           if (fk.JntToCart(candidate, frame) < 0) throw std::runtime_error("FK failure");
           const auto error = KDL::diff(frame, goal);
-          if (error.vel.Norm() > position_tolerance || error.rot.Norm() > orientation_tolerance)
+          if (error.vel.Norm() > position_tolerance || error.rot.Norm() > orientation_tolerance) {
+            ++norm_rejected;
             continue;
+          }
           bool within_limits = true;
           for (size_t i = 0; i < count; ++i)
             if (candidate(i) < lo(i) || candidate(i) > hi(i)) within_limits = false;
@@ -105,7 +115,9 @@ int main() {
           }
         }
       }
-      Json reply = {{"id", request.at("id")}, {"code", code}};
+      Json reply = {{"id", request.at("id")}, {"code", code},
+                    {"native_code", native_code}, {"candidate_count", candidate_count},
+                    {"norm_rejected_candidates", norm_rejected}};
       if (code >= 0) {
         reply["positions"] = std::vector<double>(result.data.data(), result.data.data() + count);
         KDL::Frame frame;

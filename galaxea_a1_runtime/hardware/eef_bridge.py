@@ -135,7 +135,10 @@ class EefIkCommandPublisher:
             measured_delta = float(
                 np.max(abs(np.asarray(solution.joint_positions) - latest))
             )
-            if measured_delta > bound:
+            # Match the solver's interval check without subtractive roundoff at
+            # an exactly representable endpoint; still use the latest feedback.
+            solved = np.asarray(solution.joint_positions)
+            if np.any(solved < latest - bound) or np.any(solved > latest + bound):
                 raise A1EefIkTargetRejected(
                     "IK solution exceeds displacement from updated feedback"
                 )

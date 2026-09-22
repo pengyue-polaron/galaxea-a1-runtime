@@ -34,6 +34,7 @@ execute = true
 max_model_calls = 132
 # Consecutive retries; a completed chunk replenishes the budget.
 ik_replan_max_attempts = 3
+ik_solve_max_attempts = 3
 # Four actions per model frame: re-observe after eight executed actions.
 execute_frames = 2
 kv_observations_per_frame = 4
@@ -44,19 +45,19 @@ review_deadband_m = 0.001
 [execution.ik_subgoal]
 enabled = true
 max_attempts = 5
-max_translation_m = 0.01
-max_rotation_rad = 0.05
+max_steps = 12
+max_translation_m = 0.03
+max_rotation_rad = 0.1
 max_joint_delta_rad = 0.05
 feedback_timeout_s = 2.0
+arrival_position_tolerance_m = 0.02
+arrival_orientation_tolerance_rad = 0.05
+min_translation_progress_m = 0.003
+min_rotation_progress_rad = 0.02
 
-# Wait before collecting the final history image of each executed chunk.
+# Execute each inferred chunk without an extra settling delay.
 [execution.settle]
-enabled = true
-min_wait_s = 4.0
-stable_window_s = 0.3
-timeout_s = 8.0
-joint_range_rad = 0.01
-gripper_range = 0.02
+enabled = false
 
 [recording]
 camera_videos_enabled = true

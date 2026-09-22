@@ -12,14 +12,19 @@ import numpy as np
 @dataclass(frozen=True)
 class IkSubgoalConfig:
     max_attempts: int
+    max_steps: int
     max_translation_m: float
     max_rotation_rad: float
     max_joint_delta_rad: float
     feedback_timeout_s: float
+    arrival_position_tolerance_m: float
+    arrival_orientation_tolerance_rad: float
+    min_translation_progress_m: float
+    min_rotation_progress_rad: float
 
 
 class IkSubgoalExecuted(Exception):
-    """A feedback-confirmed partial move requires a new episode and observation."""
+    """Bounded recovery reached the goal; its partial cache must be discarded."""
 
 
 def pose_distance(
@@ -64,6 +69,32 @@ def intermediate_targets(
         result[3:7] = intermediate_quat / np.linalg.norm(intermediate_quat)
         yield fraction, result
         fraction *= 0.5
+
+
+def subgoal_has_progress(
+    xyz: Sequence[float],
+    quat: Sequence[float],
+    start: Sequence[float],
+    requested: Sequence[float],
+    config: IkSubgoalConfig,
+) -> bool:
+    """Require measured movement and lower goal error independently of IK precision."""
+    moved = pose_distance(xyz, quat, start)
+    if (
+        moved[0] <= config.min_translation_progress_m
+        and moved[1] <= config.min_rotation_progress_rad
+    ):
+        return False
+    start_xyz, start_quat = _pose(start)
+    initial = pose_distance(start_xyz, start_quat, requested)
+    remaining = pose_distance(xyz, quat, requested)
+
+    def score(errors: tuple[float, float]) -> float:
+        return (errors[0] / config.min_translation_progress_m) ** 2 + (
+            errors[1] / config.min_rotation_progress_rad
+        ) ** 2
+
+    return score(remaining) < score(initial)
 
 
 def _pose(values: Sequence[float]) -> tuple[np.ndarray, np.ndarray]:

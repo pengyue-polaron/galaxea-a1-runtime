@@ -177,6 +177,7 @@ def load_lingbot_config(
             "execute",
             "max_model_calls",
             "ik_replan_max_attempts",
+            "ik_solve_max_attempts",
             "ik_subgoal",
             "settle",
             "execute_frames",
@@ -208,10 +209,15 @@ def load_lingbot_config(
         required={
             "enabled",
             "max_attempts",
+            "max_steps",
             "max_translation_m",
             "max_rotation_rad",
             "max_joint_delta_rad",
             "feedback_timeout_s",
+            "arrival_position_tolerance_m",
+            "arrival_orientation_tolerance_rad",
+            "min_translation_progress_m",
+            "min_rotation_progress_rad",
         }
         if boolean(subgoal, "enabled")
         else {"enabled"},
@@ -295,12 +301,26 @@ def load_lingbot_config(
             execute=boolean(execution, "execute"),
             max_model_calls=integer(execution, "max_model_calls"),
             ik_replan_max_attempts=integer(execution, "ik_replan_max_attempts"),
+            ik_solve_max_attempts=integer(execution, "ik_solve_max_attempts"),
             ik_subgoal=IkSubgoalConfig(
                 max_attempts=integer(subgoal, "max_attempts"),
+                max_steps=integer(subgoal, "max_steps"),
                 max_translation_m=floating(subgoal, "max_translation_m"),
                 max_rotation_rad=floating(subgoal, "max_rotation_rad"),
                 max_joint_delta_rad=floating(subgoal, "max_joint_delta_rad"),
                 feedback_timeout_s=floating(subgoal, "feedback_timeout_s"),
+                arrival_position_tolerance_m=floating(
+                    subgoal, "arrival_position_tolerance_m"
+                ),
+                arrival_orientation_tolerance_rad=floating(
+                    subgoal, "arrival_orientation_tolerance_rad"
+                ),
+                min_translation_progress_m=floating(
+                    subgoal, "min_translation_progress_m"
+                ),
+                min_rotation_progress_rad=floating(
+                    subgoal, "min_rotation_progress_rad"
+                ),
             )
             if boolean(subgoal, "enabled")
             else None,
@@ -515,19 +535,33 @@ def validate_lingbot_config(config: LingBotConfig) -> None:
         raise ValueError("execution.max_model_calls must be >= 0")
     if config.execution.ik_replan_max_attempts < 0:
         raise ValueError("execution.ik_replan_max_attempts must be >= 0")
+    if config.execution.ik_solve_max_attempts <= 0:
+        raise ValueError("execution.ik_solve_max_attempts must be > 0")
     subgoal = config.execution.ik_subgoal
     if subgoal is not None:
         if (
             subgoal.max_attempts <= 0
+            or subgoal.max_steps <= 0
             or min(
                 subgoal.max_translation_m,
                 subgoal.max_rotation_rad,
                 subgoal.max_joint_delta_rad,
                 subgoal.feedback_timeout_s,
+                subgoal.arrival_position_tolerance_m,
+                subgoal.arrival_orientation_tolerance_rad,
+                subgoal.min_translation_progress_m,
+                subgoal.min_rotation_progress_rad,
             )
             <= 0
         ):
             raise ValueError("execution.ik_subgoal search bounds must be positive")
+        if (
+            subgoal.min_translation_progress_m >= subgoal.max_translation_m
+            or subgoal.min_rotation_progress_rad >= subgoal.max_rotation_rad
+        ):
+            raise ValueError(
+                "IK subgoal progress thresholds must be below its step bounds"
+            )
         if subgoal.max_joint_delta_rad > config.system.eef_ik.max_solution_delta_rad:
             raise ValueError("IK subgoal joint delta cannot exceed the System IK bound")
         if config.execution.max_model_calls <= 0:

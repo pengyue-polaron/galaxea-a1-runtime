@@ -39,6 +39,7 @@ from galaxea_a1_runtime.apps.lingbot.ik_subgoal import (
     IkSubgoalExecuted,
     intermediate_targets,
     pose_distance,
+    subgoal_has_progress,
 )
 from galaxea_a1_runtime.apps.eef_policy_state import EefPolicyState
 from galaxea_a1_runtime.apps.eef_policy_review import EefActionReviewer
@@ -277,7 +278,31 @@ class A1LingBotEEBridge:
         return origin
 
     def _publish_ee_action(self, policy_action: np.ndarray) -> np.ndarray:
-        last_command = self.executor.publish(policy_action)
+        for attempt in range(1, self.execution.ik_solve_max_attempts + 1):
+            try:
+                last_command = self.executor.publish(policy_action)
+                break
+            except A1EefIkTargetRejected as exc:
+                if attempt >= self.execution.ik_solve_max_attempts:
+                    raise
+                # Keep the same model action/cache. Retry numerical search only,
+                # anchored to fresh feedback after replacing the preceding target.
+                if attempt == 1:
+                    self.executor.hold_for_replan()
+                self.motion_recording.record(
+                    "ik_solve_retry",
+                    {
+                        "attempt": attempt + 1,
+                        "max_attempts": self.execution.ik_solve_max_attempts,
+                        "requested": policy_action.tolist(),
+                        "reason": str(exc),
+                    },
+                )
+                self.live_status.break_line()
+                warning(
+                    f"IK numerical retry {attempt + 1}/"
+                    f"{self.execution.ik_solve_max_attempts}: same policy target"
+                )
 
         if self.execution.print_actions:
             grip_mm = gripper_stroke_from_norm(
@@ -322,12 +347,13 @@ class A1LingBotEEBridge:
         if not self.execution.execute:
             return
         self._wait_for_fresh_feedback()
+        self.executor.stage_current_hold()
         self.motion_recording.require_streams(
             ("measured_joints", "staged_command", "measured_eef")
         )
         if self._ensure_episode_origin() is None:
             raise RuntimeError("Cannot establish the episode EEF origin")
-        self.executor.activate_current_hold()
+        self.executor.enable_motion()
         info("Relay activated on a fresh current-joint hold.")
         info(
             "Continuous execution armed: "
@@ -550,6 +576,39 @@ class A1LingBotEEBridge:
         self.live_status.break_line()
         self.executor.hold_for_replan()
         self._wait_for_fresh_feedback()
+        for step in range(1, config.max_steps + 1):
+            actual = self._publish_ik_subgoal_step(requested)
+            if actual is None:
+                return
+            remaining = pose_distance(actual[:3], actual[3:7], requested)
+            self.motion_recording.record(
+                "subgoal_recovery_progress",
+                {
+                    "step": step,
+                    "max_steps": config.max_steps,
+                    "requested": requested.tolist(),
+                    "actual": actual.tolist(),
+                    "remaining_position_m": remaining[0],
+                    "remaining_orientation_rad": remaining[1],
+                },
+            )
+            if (
+                remaining[0] <= config.arrival_position_tolerance_m
+                and remaining[1] <= config.arrival_orientation_tolerance_rad
+            ):
+                raise IkSubgoalExecuted(
+                    "original pose reached within arrival tolerances; "
+                    "discarding the remaining chunk and cache"
+                )
+            info(
+                f"IK recovery {step}/{config.max_steps}: continuing toward "
+                f"the same goal; remaining_position_m={remaining[0]:.5f} "
+                f"remaining_orientation_rad={remaining[1]:.5f}"
+            )
+        warning("IK recovery step budget exhausted; holding and replanning")
+
+    def _publish_ik_subgoal_step(self, requested: np.ndarray) -> np.ndarray | None:
+        config = self.execution.ik_subgoal
         joints = self.joints.positions(
             max_age_s=self.system.joint_safety.max_feedback_age_s
         )
@@ -559,19 +618,25 @@ class A1LingBotEEBridge:
         start = np.concatenate([xyz, quat])
 
         def validate_solution(solution: IkSolution) -> None:
-            solved_xyz, _ = self.ik_solver.forward(solution.joint_positions)
+            solved_xyz, solved_quat = self.ik_solver.forward(solution.joint_positions)
             if np.any(solved_xyz < self.eef.xyz_min) or np.any(
                 solved_xyz > self.eef.xyz_max
             ):
                 raise A1EefIkTargetRejected("IK subgoal solution leaves the workspace")
+            if not subgoal_has_progress(
+                solved_xyz, solved_quat, start, requested, config
+            ):
+                raise A1EefIkTargetRejected(
+                    "IK subgoal solution makes no pose progress"
+                )
 
         for attempt, (fraction, candidate) in enumerate(
             intermediate_targets(xyz, quat, requested, config), start=1
         ):
             distance, rotation = pose_distance(xyz, quat, candidate)
             if (
-                distance <= self.ik_solver.position_tolerance_m
-                and rotation <= self.ik_solver.orientation_tolerance_rad
+                distance <= config.min_translation_progress_m
+                and rotation <= config.min_rotation_progress_rad
             ):
                 break  # A numerically successful hold is not progress.
             if np.any(candidate[:3] < self.eef.xyz_min) or np.any(
@@ -603,14 +668,15 @@ class A1LingBotEEBridge:
                 "gripper unchanged, awaiting measured progress"
             )
             self.actions_executed += 1
-            self._wait_for_subgoal_feedback(candidate, start, requested, published_at)
+            actual = self._wait_for_subgoal_feedback(
+                candidate, start, requested, published_at
+            )
             self.motion_recording.record(
                 "subgoal_confirmed", {"candidate": candidate.tolist()}
             )
-            raise IkSubgoalExecuted(
-                "intermediate pose reached; discarding the remaining chunk and cache"
-            )
+            return actual
         warning("No converged intermediate target with measurable progress; holding")
+        return None
 
     def _wait_for_subgoal_feedback(
         self,
@@ -618,15 +684,11 @@ class A1LingBotEEBridge:
         start: np.ndarray,
         requested: np.ndarray,
         published_at: float,
-    ) -> None:
-        deadline = published_at + self.execution.ik_subgoal.feedback_timeout_s
+    ) -> np.ndarray:
+        config = self.execution.ik_subgoal
+        deadline = published_at + config.feedback_timeout_s
         ik = self.ik_solver
-        initial_error = pose_distance(start[:3], start[3:7], requested)
-
-        def score(errors: tuple[float, float]) -> float:
-            return (errors[0] / ik.position_tolerance_m) ** 2 + (
-                errors[1] / ik.orientation_tolerance_rad
-            ) ** 2
+        last_feedback = None
 
         while not rospy.is_shutdown() and time.monotonic() < deadline:
             self.executor.enable_motion()
@@ -643,14 +705,20 @@ class A1LingBotEEBridge:
                 error = pose_distance(xyz, quat, candidate)
                 moved = pose_distance(xyz, quat, start)
                 remaining = pose_distance(xyz, quat, requested)
+                progressed = subgoal_has_progress(xyz, quat, start, requested, config)
+                last_feedback = {
+                    "position_error_m": error[0],
+                    "orientation_error_rad": error[1],
+                    "translation_m": moved[0],
+                    "rotation_rad": moved[1],
+                    "remaining_position_m": remaining[0],
+                    "remaining_orientation_rad": remaining[1],
+                    "progressed": progressed,
+                }
                 if (
-                    error[0] <= ik.position_tolerance_m
-                    and error[1] <= ik.orientation_tolerance_rad
-                    and (
-                        moved[0] > ik.position_tolerance_m
-                        or moved[1] > ik.orientation_tolerance_rad
-                    )
-                    and score(remaining) < score(initial_error)
+                    error[0] <= config.arrival_position_tolerance_m
+                    and error[1] <= config.arrival_orientation_tolerance_rad
+                    and progressed
                 ):
                     info(
                         "IK subgoal feedback confirmed: "
@@ -658,10 +726,25 @@ class A1LingBotEEBridge:
                         f"remaining_position_m={remaining[0]:.5f} "
                         f"remaining_orientation_rad={remaining[1]:.5f}"
                     )
-                    return
+                    return np.concatenate([xyz, quat])
             time.sleep(1.0 / self.execution.exec_rate)
+        self.motion_recording.record(
+            "subgoal_feedback_timeout",
+            {
+                "candidate": candidate.tolist(),
+                "requested": requested.tolist(),
+                "last_feedback": last_feedback,
+                "position_tolerance_m": config.arrival_position_tolerance_m,
+                "orientation_tolerance_rad": config.arrival_orientation_tolerance_rad,
+                "min_translation_progress_m": config.min_translation_progress_m,
+                "min_rotation_progress_rad": config.min_rotation_progress_rad,
+            },
+        )
         raise RuntimeError(
-            "IK subgoal did not produce confirmed progress before timeout"
+            "IK subgoal did not produce confirmed progress before timeout; "
+            f"last_feedback={last_feedback}; "
+            f"arrival_tolerance={config.arrival_position_tolerance_m:g}m/"
+            f"{config.arrival_orientation_tolerance_rad:g}rad"
         )
 
     def _sync_kv_cache(

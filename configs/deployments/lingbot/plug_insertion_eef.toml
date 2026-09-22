@@ -33,6 +33,7 @@ wrist_key = "observation.images.wrist"
 execute = true
 max_model_calls = 286
 ik_replan_max_attempts = 0
+ik_solve_max_attempts = 1
 execute_frames = 1
 kv_observations_per_frame = 4
 exec_rate = 30.0

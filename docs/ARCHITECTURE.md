@@ -766,3 +766,30 @@ and obtains both images after that gate through PolicyCameraSession's timestamp
 lower bound. Earlier history and requested-action encoding retain their order
 and shape. This is deployment cadence, not an IK change or arrival guarantee;
 failures use normal fail-closed rollout cleanup.
+Diffusion2One Student deployments and their release template disable settling;
+the model result executes at the configured action rate, followed by ordinary
+history-cache synchronization and the next inference. Teacher deployments retain
+their explicit settling configuration.
+
+Subgoal arrival uses deployment-owned position/orientation tolerances separately
+from System numerical IK precision, while deployment-owned minimum
+translation/rotation progress independently rejects numerical holds and movement
+away from the original goal. The bridge checks progress on the solved FK endpoint
+before publishing and again on fresh measured feedback before resetting history.
+
+IK subgoal recovery keeps its original absolute goal across a deployment-bounded
+number of feedback-confirmed steps (`execution.ik_subgoal.max_steps`). Model
+reset/reanchoring occurs after recovery, not between those steps. Every recovery
+reset consumes the consecutive replan allowance; only normal chunk completion
+with cache synchronization replenishes it. Goal arrival and minimum progress
+remain independent of System numerical IK tolerance.
+
+LingBot numerical retries are bounded by `execution.ik_solve_max_attempts`.
+They retain the same policy target and cache, with a fresh hold after the first
+rejection. Only exhausted typed rejections enter subgoal/model recovery; runtime
+and feedback faults propagate directly to teardown.
+
+The TRAC-IK adapter records native candidate/norm-rejection counts. Consecutive
+same-target norm-only failures diversify the per-axis search envelope inside the
+existing per-attempt timeout; the first attempt, successes, and changed targets
+use the full envelope. Independent norm/limit/FK acceptance remains unchanged.

@@ -37,7 +37,11 @@ maximum joint delta exceeds the System-owned limit.
 TRAC-IK Distance is the sole endpoint solver. It searches within the intersection
 of absolute joint limits and `current_joint +/- eef_ik.max_solution_delta_rad`,
 anchored to fresh feedback. Native Cartesian norm checks and independent Runtime
-FK acceptance remain mandatory. Worker failure or timeout stops the app.
+FK acceptance remain mandatory. Native axis-envelope candidates that all fail
+norm acceptance permit narrower search envelopes on subsequent same-target
+attempts (90%, then 80%); the first search always covers the full envelope.
+This changes numerical search only, not Cartesian norm or joint acceptance.
+Worker failure or timeout stops the app.
 After every solve, the bridge requires fresh valid feedback and rechecks endpoint
 displacement before staging it. Search bounds and seed-distance preference do not
 provide trajectory velocity/acceleration or swept-path collision guarantees.
@@ -127,7 +131,9 @@ an isolated ROS master and DDS network; never inject it into the live graph.
   are rejected. The Runtime still independently enforces the normalized
   physical gripper range and its narrow endpoint-roundoff tolerance.
 - Verbose action logging reports IK residuals and maximum joint deltas when
-  enabled by the deployment; the tracked Cartesian tolerance is 3 mm and the
+  enabled by the deployment; the operator-approved Cartesian tolerances are
+  20 mm and 0.05 rad, with a 100 ms search budget. These System values apply
+  to all EEF consumers. The
   maximum single-joint IK solution delta from fresh feedback is 1.70 rad.
 - Gripper forwarding occurs only while `ACTIVE` and healthy. State/action above
   hardware is continuous `0..1`, mapped exactly once to physical stroke;
@@ -150,6 +156,11 @@ an isolated ROS master and DDS network; never inject it into the live graph.
   exceptions remain failures. Workspace validation remains mandatory. After a
   batch safety stop, the operator explicitly counts the evaluation or discards
   it for a reset/retry; resume honors that durable decision.
+- `execution.ik_solve_max_attempts` bounds numerical attempts per policy target
+  (Diffusion2One: 3; existing LingBot: 1), each using the System search budget.
+  Only typed IK rejection is retried. Before retrying, the executor stages a fresh
+  current-joint hold; each solve and publication still validates live feedback
+  and relay health. Successful retries preserve the original action/cache.
 - The foreground LingBot bridge supports the deployment-owned
   `execution.ik_subgoal` recovery (enabled for Diffusion2One). Following a typed
   IK rejection, it first holds fresh current joints, then tries progressively
@@ -158,14 +169,23 @@ an isolated ROS master and DDS network; never inject it into the live graph.
   displacement, and checks both target and solved FK endpoint against the
   workspace. The complete original orientation determines interpolation;
   current orientation is not substituted for it. No gripper change accompanies
-  a subgoal. New joint feedback must confirm arrival and movement exceeding at
-  least one IK pose tolerance, with reduced normalized error to the original
-  goal. Only then may the bridge reset the model and reanchor to fresh feedback;
+  a subgoal. Both the solved FK endpoint before publication and new joint
+  feedback must exceed at least one deployment-owned progress threshold
+  (`min_translation_progress_m` or `min_rotation_progress_rad`) and reduce the
+  original goal error normalized by those thresholds. Measured arrival uses explicit deployment-owned
+  `arrival_position_tolerance_m` and `arrival_orientation_tolerance_rad`
+  (Diffusion2One: 20 mm / 0.05 rad). System numerical IK precision
+  is 20 mm / 0.05 rad. Arrival precision does not change the progress
+  thresholds or permit a numerical hold to count as a move. The bridge continues
+  toward the same original pose for at most deployment-owned `max_steps`
+  feedback-confirmed steps (currently 12). Only arrival at that original pose
+  completes recovery. It then resets the model and reanchors to fresh feedback;
   it never commits the rejected chunk's requested-action cache. Feedback timeout
-  or infrastructure faults stop execution. No-progress search failure uses the
-  existing bounded rejection retries. Successful subgoals consume the finite
-  model-call budget and replenish the rejection allowance. This adds no
-  collision or velocity guarantee, and never clears relay faults.
+  or infrastructure faults stop execution. No-progress search or exhausted step
+  budget uses the existing bounded rejection retries. Every recovery reset,
+  successful or otherwise, consumes the consecutive replan allowance and model
+  call budget; only a completed chunk with synchronized cache replenishes it.
+  This adds no collision or velocity guarantee, and never clears relay faults.
 - A scripted LingBot plan remains operator-gated: every attempt requires Enter,
   then moves A1 through the same tracked staged reset before inference. Reset or
   infrastructure failure aborts the plan; an IK safety stop returns to the next

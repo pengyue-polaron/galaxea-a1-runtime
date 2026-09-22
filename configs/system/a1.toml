@@ -70,9 +70,10 @@ feedback_wait_timeout_s = 5.0
 urdf = "third_party/A1_SDK/install/share/mobiman/urdf/A1/urdf/A1_URDF_0607_0028.urdf"
 base_link = "base_link"
 tip_link = "arm_seg6"
-timeout_s = 0.01
-position_tolerance_m = 0.003
-orientation_tolerance_rad = 0.02
+timeout_s = 0.1
+# Operator-approved 2026-09-22; replayed against the kitchen IK failure.
+position_tolerance_m = 0.02
+orientation_tolerance_rad = 0.05
 max_solution_delta_rad = 1.70
 
 [gripper]

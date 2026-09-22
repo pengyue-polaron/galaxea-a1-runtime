@@ -28,6 +28,10 @@ from galaxea_a1_runtime.hardware.eef_ik import (
 
 # Adapter protocol/build details, fixed independently of deployment settings.
 TRAC_IK_EPSILON = 0.00001
+# Diversify retries when axis-wise native solutions all fail Cartesian norm
+# acceptance. The first search always covers the complete acceptance region;
+# subsequent envelopes change search only, never Runtime's acceptance limits.
+TRAC_IK_NORM_RETRY_SCALES = (1.0, 0.9, 0.8)
 RPC_TIMEOUT_S = 1.0
 STARTUP_TIMEOUT_S = 10.0
 
@@ -114,6 +118,8 @@ class TracIkSolver(A1EefKinematics):
         self._lock = threading.Lock()
         self._rpc_timeout = RPC_TIMEOUT_S
         self._sequence = 0
+        self._norm_retry_target = None
+        self._norm_retry_count = 0
         self._replies = queue.Queue()
         name = "a1-ik-" + uuid.uuid4().hex
         # Private pipes isolate the Noetic C++ ABI from the Python/model environment.
@@ -226,6 +232,13 @@ class TracIkSolver(A1EefKinematics):
         began = time.monotonic()
         with self._lock:
             self._sequence += 1
+            target_key = (*xyz.tolist(), *quat.tolist(), delta)
+            retry_count = (
+                self._norm_retry_count if self._norm_retry_target == target_key else 0
+            )
+            search_scale = TRAC_IK_NORM_RETRY_SCALES[
+                min(retry_count, len(TRAC_IK_NORM_RETRY_SCALES) - 1)
+            ]
             try:
                 self._send(
                     {
@@ -233,25 +246,36 @@ class TracIkSolver(A1EefKinematics):
                         "seed": start.tolist(),
                         "pose": [*xyz.tolist(), *quat.tolist()],
                         "delta_limit": delta,
+                        "search_bounds_scale": search_scale,
                     }
                 )
                 response = self._receive(self._rpc_timeout)
                 if response["id"] != self._sequence:
                     raise RuntimeError("TRAC-IK response sequence mismatch")
+                if response["code"] < 0 and response["norm_rejected_candidates"] > 0:
+                    self._norm_retry_target = target_key
+                    self._norm_retry_count = retry_count + 1
+                else:
+                    self._norm_retry_target = None
+                    self._norm_retry_count = 0
             except BaseException:
                 self.close()
                 raise
         if response["code"] < 0:
             raise A1EefIkTargetRejected(
-                "TRAC-IK did not converge within joint and solution-delta bounds"
+                "TRAC-IK did not converge within joint and solution-delta bounds; "
+                f"native_code={response['native_code']} "
+                f"candidates={response['candidate_count']} "
+                f"norm_rejected={response['norm_rejected_candidates']} "
+                f"search_bounds_scale={search_scale:g}"
             )
         q = _finite_vector(response["positions"], len(self.joints), "TRAC-IK solution")
         max_delta = float(np.max(np.abs(q - start)))
-        if (
-            np.any(q < self.lower_limits)
-            or np.any(q > self.upper_limits)
-            or max_delta > delta
-        ):
+        # Compare the same representable endpoints used by the native worker.
+        # Subtracting a valid boundary solution can round abs(q - start) above delta.
+        search_lower = np.maximum(self.lower_limits, start - delta)
+        search_upper = np.minimum(self.upper_limits, start + delta)
+        if np.any(q < search_lower) or np.any(q > search_upper):
             raise A1EefIkTargetRejected(
                 "TRAC-IK solution violates joint or solution-delta limits"
             )

@@ -88,6 +88,7 @@ class LingBotExecutionConfig:
     execute: bool
     max_model_calls: int
     ik_replan_max_attempts: int
+    ik_solve_max_attempts: int
     ik_subgoal: IkSubgoalConfig | None
     settle: LingBotSettleConfig | None
     execute_frames: int

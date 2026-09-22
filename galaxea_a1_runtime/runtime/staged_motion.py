@@ -10,6 +10,9 @@ from typing import Any
 from galaxea_a1_runtime.console import success
 from galaxea_a1_runtime.runtime.ros_feedback import wait_for_staged_joint_alignment
 
+# Refresh interval for the hold target while waiting for the tracker to answer.
+HOLD_REFRESH_INTERVAL_S = 0.5
+
 
 class StagedMotionGate:
     """Activate motion only after a fresh current-joint hold is staged."""
@@ -66,14 +69,26 @@ class StagedMotionGate:
 
         self.commander.publish_active_target()
 
-    def activate_current_hold(self) -> None:
-        """Stage current named joints and activate the relay on that hold."""
+    def stage_current_hold(self) -> None:
+        """Publish the current-joint hold until jointTracker stages it.
+
+        The relay stays locked, so this only wakes the tracker: jointTracker
+        publishes no staged command until it receives a target, and it
+        subscribes a few seconds after the runtime reports the services ready.
+        """
 
         if self.motion_enabled:
-            self.enable_motion()
             return
         hold = self.commander.hold_current_target()
-        self.commander.publish_active_target()
+        refresh_due = 0.0
+
+        def refresh_hold() -> None:
+            nonlocal refresh_due
+            now = self.monotonic()
+            if now >= refresh_due:
+                self.commander.publish_active_target()
+                refresh_due = now + HOLD_REFRESH_INTERVAL_S
+
         wait_for_staged_joint_alignment(
             self.staged_monitor,
             hold,
@@ -84,7 +99,16 @@ class StagedMotionGate:
             is_shutdown=self.is_shutdown,
             sleep=self.sleep,
             monotonic=self.monotonic,
+            refresh=refresh_hold,
         )
+
+    def activate_current_hold(self) -> None:
+        """Stage current named joints and activate the relay on that hold."""
+
+        if self.motion_enabled:
+            self.enable_motion()
+            return
+        self.stage_current_hold()
         self.enable_motion()
 
     def enable_motion(self) -> None:

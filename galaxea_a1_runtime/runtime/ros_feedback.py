@@ -131,12 +131,20 @@ def wait_for_staged_joint_alignment(
     is_shutdown,
     sleep=time.sleep,
     monotonic=time.monotonic,
+    refresh=None,
 ) -> float:
-    """Wait until jointTracker has produced a fresh command aligned to a hold."""
+    """Wait until jointTracker has produced a fresh command aligned to a hold.
+
+    ``refresh`` is called once per poll so the caller can republish the target:
+    jointTracker emits no staged command until it has received one, and a freshly
+    started tracker subscribes only after the runtime reports services ready.
+    """
 
     deadline = monotonic() + timeout_s
     last_error: float | None = None
     while not is_shutdown() and monotonic() < deadline:
+        if refresh is not None:
+            refresh()
         last_error = monitor.max_error(target, dof, max_age_s=max_age_s)
         if last_error is not None and last_error <= tolerance_rad:
             return last_error

@@ -101,6 +101,14 @@ config. `EEF workspace cap` logs show the original and capped targets; LingBot's
 temporal cache receives the capped action. Non-finite values, invalid joint
 feedback, and relay faults still stop the run.
 
+Diffusion2One sets `[execution] ik_solve_max_attempts = 3`: each normal target
+gets at most three numerical searches, each with the System search budget.
+After a typed rejection it holds fresh current joints before retrying the same
+action, retaining the episode origin and cache. A successful retry continues the
+chunk. There is no fixed retry delay. Infrastructure and feedback failures are
+not retried. Existing LingBot deployments use one search. `ik_solve_retry`
+records each additional attempt. Exhausted searches use the recovery below.
+
 Diffusion2One sets `[execution] ik_replan_max_attempts = 3`. A typed IK
 non-convergence or solution-delta rejection discards the remaining chunk,
 stages fresh current joints as a hold on the already healthy ACTIVE relay,
@@ -115,24 +123,45 @@ deployments explicitly use `0`, preserving immediate IK safety stops.
 Diffusion2One also enables `[execution.ik_subgoal]` in its deployment. After an
 IK rejection it establishes a fresh hold and tries a short intermediate pose
 toward the requested position and shortest-arc orientation. The initial target
-step is at most 0.01 m / 0.05 rad; up to five attempts halve that step. Each solve
+step is at most 0.03 m / 0.1 rad; up to five attempts halve that step. Each solve
 tightens the joint displacement bound to 0.05 rad and retains the System IK
 convergence tolerances and absolute joint limits. Both the intermediate target
 and its solved FK endpoint must lie in the configured workspace. The gripper
-command is unchanged during this recovery move.
+command is unchanged during this recovery move. The candidate step exceeds the
+System numerical tolerance so the initial candidate does not always accept a hold.
 
-After publishing one intermediate target, the bridge waits up to 2 s for new
-joint feedback confirming arrival within the original IK tolerances and
-measurable progress toward the original pose. It then holds, discards all
-remaining chunk actions and partial KV state, and re-infers from new camera
-observations with a fresh episode origin. Confirmed progress replenishes the
-rejection retry allowance, but every inference consumes `max_model_calls`; no
-subgoal is attempted on the last call. If no intermediate target solves, the
-ordinary bounded hold/replan path applies. Stale feedback, relay faults, or a
-feedback timeout stop the run. This is bounded intermediate-target execution,
-not permission to publish a non-converged IK candidate. Existing LingBot
-deployments explicitly disable this feature. These endpoint and joint checks
-do not implement swept-path collision checking.
+Each enabled subgoal table requires `arrival_position_tolerance_m` and
+`arrival_orientation_tolerance_rad` for measured arrival. Diffusion2One
+deployments use 20 mm / 0.05 rad. Both values must be
+positive. System numerical IK uses 20 mm / 0.05 rad and a 100 ms search budget.
+Numerical acceptance and measured arrival remain separate checks.
+
+Each enabled subgoal table also requires `min_translation_progress_m` and
+`min_rotation_progress_rad`; both must be positive and below the respective
+maximum step. Current deployments use 3 mm / 0.02 rad to distinguish actual
+progress from a hold, independently of arrival tolerances. The solved
+FK endpoint must make progress toward the original pose before publication.
+
+After each intermediate target, the bridge waits up to 2 s for new joint
+feedback confirming arrival and measurable progress. It continues toward the
+same original target without resetting the model between steps. Enabled tables
+require a positive `max_steps` (currently 12), separate from `max_attempts`
+(currently five candidate sizes per step). Only measured arrival at the original
+pose within the deployment tolerances completes recovery. A numerical hold
+cannot complete a step, even when the arrival tolerance exceeds its size.
+
+Recovery then discards the remaining chunk and partial KV state and re-infers
+with fresh observations and origin. Every such reset consumes the consecutive
+replan allowance, including successful recovery; only a fully executed chunk
+with synchronized cache replenishes it. Each inference consumes
+`max_model_calls`; no subgoal is attempted on the last call. A failed search or
+exhausted step budget uses the same bounded hold/replan path. Stale feedback,
+relay faults, or feedback timeout stop the run. `subgoal_recovery_progress`
+records the original goal and remaining errors after every step;
+`subgoal_feedback_timeout` records arrival errors, motion, remaining errors,
+and thresholds. Existing LingBot deployments disable this feature. These
+endpoint and joint checks do not implement swept-path collision checking.
+
 
 This document is the operator procedure for setup, hardware acceptance, Teleop
 collection, dataset conversion, recovery, and policy deployment. Commands that
@@ -810,6 +839,22 @@ stopped.
 TRAC-IK Distance is the sole numerical IK implementation.
 `configs/system/a1.toml` keeps the URDF, base/tip links, solve timeout,
 Cartesian acceptance tolerances and joint displacement bound under `[eef_ik]`.
+The operator-approved 2026-09-22 settings are 20 mm position, 0.05 rad
+orientation, and 100 ms search time. The joint displacement bound remains
+1.70 rad. This widens numerical acceptance for all consumers of this System;
+measured subgoal arrival and minimum progress remain deployment-owned.
+A larger IK tolerance can admit a stationary solution for a nearby target;
+recovery independently rejects such holds. Offline replay validates endpoint
+solves, not live tracking or task completion.
+TRAC-IK uses per-axis search envelopes while acceptance uses Cartesian vector
+norms. If all native candidates fail those norm checks, a repeated request for
+the same pose/joint-delta bound searches 90%, then 80% axis envelopes. The first
+attempt always uses the full envelope, and every attempt retains the same
+System norm tolerances, absolute joint limits, displacement limit, and search
+time budget. Success, a changed target, or a rejection without norm candidates
+returns to the full envelope. This is numerical search diversification, not a
+relaxation of acceptance. Rejection diagnostics include the native return code,
+candidate count, norm-rejected count, and search scale.
 The adapter owns its cache path, numerical epsilon and worker protocol deadlines.
 Model chunk size, recovery, reset, tracker and relay remain separate concerns.
 
@@ -975,7 +1020,11 @@ just tfp
 
 `just lingbot` first requires a non-empty scene note, then starts a fresh marked
 policy-server process and the A1 services and runs the bridge directly in the
-invoking terminal. Its single `[RUN]` line
+invoking terminal. Before the first policy call the bridge stages a current-joint
+hold and waits for the staged tracker to answer it, because `jointTracker`
+publishes no staged command until it receives a target; the relay stays LOCKED
+until that hold is confirmed, so a single run needs no separate reset to produce
+staged commands. Its single `[RUN]` line
 updates in place with inference, execution, EEF, and paired-camera recording
 progress. `Ctrl+C` stops the foreground bridge, locks the relay, and tears down
 the policy server and A1 services. LingBot has no tmux attach/detach lifecycle.
@@ -1150,8 +1199,13 @@ stale feedback source.
 
 Each deployment declares `[execution.settle]`. Disabled settling contains only
 `enabled = false`; enabled settling requires `min_wait_s`, `stable_window_s`,
-`timeout_s`, `joint_range_rad`, and normalized `gripper_range`. Both Student and Teacher deployments currently enable this experiment.
-After the last action of each chunk, it retains the staged target, checks fresh
+`timeout_s`, `joint_range_rad`, and normalized `gripper_range`. Diffusion2One
+Student deployments (including Flash-WAM) disable settling: an inference result
+executes immediately at the configured action rate, then ordinary observed-history
+cache synchronization leads to the next inference without an added stillness
+delay. The Student release-registration template has the same setting.
+Teacher deployments retain the settling experiment. When enabled, after the
+last action of each chunk, the bridge retains the staged target, checks fresh
 joint/gripper feedback and relay health, waits at least `min_wait_s`, and requires
 measured joint and gripper ranges within the configured bounds for a continuous
 stable window. This detects stillness, not target arrival or grasp success.
