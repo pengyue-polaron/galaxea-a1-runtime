@@ -125,11 +125,12 @@ an isolated ROS master and DDS network; never inject it into the live graph.
   tracking-error, speed, or action-step clamp is applied.
 - The complete episode-relative model pose is always composed into the absolute
   IK target; its quaternion is never replaced with current feedback.
-- LingBot projects only its gripper diffusion latent from the model contract's
-  trained envelope (currently `[-1.5, 1.5]`) into the quantile interval
-  `[-1, 1]` before de-normalization. Non-finite or farther-out latent values
-  are rejected. The Runtime still independently enforces the normalized
-  physical gripper range and its narrow endpoint-roundoff tolerance.
+- LingBot and Diffusion2One reject non-finite gripper latents or values outside
+  the model contract's trained envelope (currently `[-1.5, 1.5]`). Valid tails
+  outside `[-1, 1]` are preserved through de-normalization. Only the resulting
+  gripper output is projected to physical normalized `0..1`, not to q01/q99.
+  The Runtime independently enforces the physical range and its narrow
+  endpoint-roundoff tolerance.
 - Verbose action logging reports IK residuals and maximum joint deltas when
   enabled by the deployment; the operator-approved Cartesian tolerances are
   20 mm and 0.05 rad, with a 100 ms search budget. These System values apply

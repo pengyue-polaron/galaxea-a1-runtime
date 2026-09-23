@@ -1228,3 +1228,12 @@ The validated native Foxglove bridge is 3.5.0 and negotiates `foxglove.sdk.v1`.
 Use a Foxglove client supporting this protocol; clients that offer only the old
 `foxglove.websocket.v1` handshake receive HTTP 400. This is a local WebSocket
 connection, not an automatic upload to Foxglove cloud storage.
+
+### EEF policy gripper output
+
+LingBot and Diffusion2One preserve valid gripper predictions outside q01/q99.
+The server checks the model contract's latent envelope, de-normalizes, then
+projects the gripper alone to physical normalized `0..1` (System stroke limits).
+The v7 LingBot / v3 Diffusion2One handshake rejects servers with the former
+quantile clipping behavior. Restart the policy server through its standard
+workflow before using this change; changing files does not update a running server.
