@@ -11,15 +11,15 @@ from galaxea_a1_runtime.apps.lingbot.config_schema import LingBotConfig
 from galaxea_a1_runtime.configuration.cameras import required_front_roi
 
 
-PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v7"
+PROTOCOL_VERSION = "galaxea_a1_lingbot_eef_v6"
 
 
-def validate_gripper_quantile_latent(
+def project_gripper_quantile_latent(
     values: object,
     *,
     reject_limit: float,
-) -> None:
-    """Reject invalid gripper latents without truncating valid quantile tails."""
+) -> np.ndarray:
+    """Project finite gripper latents to the quantile interval or reject them."""
 
     latent = np.asarray(values, dtype=np.float64)
     if latent.size == 0 or not np.isfinite(latent).all():
@@ -30,6 +30,7 @@ def validate_gripper_quantile_latent(
             "LingBot gripper latent exceeds the tracked training envelope: "
             f"max_abs={maximum:.17g}, limit={reject_limit:.17g}"
         )
+    return np.clip(latent, -1.0, 1.0)
 
 
 def server_metadata(config: LingBotConfig) -> dict[str, Any]:
@@ -73,9 +74,8 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
             "method": "quantiles",
             "q01_source": list(policy.q01_source),
             "q99_source": list(policy.q99_source),
-            "gripper_output_projection": {
-                "stage": "after-denormalization",
-                "physical_normalized_interval": [0.0, 1.0],
+            "gripper_latent_projection": {
+                "quantile_interval": [-1.0, 1.0],
                 "reject_limit": policy.gripper_latent_reject_limit,
             },
         },
@@ -112,7 +112,7 @@ def server_metadata(config: LingBotConfig) -> dict[str, Any]:
     }
     if policy.backend.adapter == "diffusion2one":
         assert policy.base_model is not None
-        contract["protocol"] = "galaxea_a1_diffusion2one_eef_v3"
+        contract["protocol"] = "galaxea_a1_diffusion2one_eef_v1"
         contract["model_subdirectory"] = policy.model_subdirectory
         contract["foundation"] = {
             "repo_id": policy.base_model.source.repo_id,

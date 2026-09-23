@@ -21,7 +21,7 @@ from galaxea_a1_runtime.apps.lingbot.attention import (
 )
 from galaxea_a1_runtime.console import ArgumentParser, info
 from galaxea_a1_runtime.apps.lingbot.protocol import (
-    validate_gripper_quantile_latent,
+    project_gripper_quantile_latent,
     server_metadata,
 )
 
@@ -192,19 +192,25 @@ def main() -> int:
     gripper_model_channel = policy.action_channel_ids[-1]
 
     def postprocess_protocol_action(self, action):
-        # Quantiles describe the data distribution, not physical endpoints.
-        # Preserve valid tails through de-normalization, then project only the
-        # physical gripper output; the Runtime independently checks commands.
+        # LingBot diffusion latents are unbounded even though the gripper is a
+        # bounded physical channel. Accept only the tracked training envelope,
+        # then project that one channel to the quantile interval before the
+        # vendor de-normalizer. The Runtime independently retains its strict
+        # normalized [0, 1] command validation.
         gripper = action[:, gripper_model_channel, ...]
-        validate_gripper_quantile_latent(
-            gripper.detach().float().cpu().numpy(),
+        gripper_numpy = gripper.detach().float().cpu().numpy()
+        projected = project_gripper_quantile_latent(
+            gripper_numpy,
             reject_limit=policy.gripper_latent_reject_limit,
         )
-        result = original_postprocess_action(self, action)
-        if not np.isfinite(result[-1]).all():
-            raise ValueError("De-normalized gripper output must be finite")
-        result[-1] = np.clip(result[-1], 0.0, 1.0)
-        return result
+        if not np.array_equal(projected, gripper_numpy):
+            action = action.clone()
+            action[:, gripper_model_channel, ...] = torch.as_tensor(
+                projected,
+                dtype=action.dtype,
+                device=action.device,
+            )
+        return original_postprocess_action(self, action)
 
     server_module.VA_Server.postprocess_action = postprocess_protocol_action
 

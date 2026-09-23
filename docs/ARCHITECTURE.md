@@ -464,10 +464,9 @@ The default collection contract contains:
 Application gripper state and action are continuous normalized `0..1`. The
 leader input maps to that interval, which maps exactly once to the System-owned
 physical A1 stroke. LingBot's model contract owns a gripper-only latent
-validation: non-finite values or values outside the tracked training envelope
-are rejected. Valid quantile tails are preserved through de-normalization; only
-the resulting gripper output is projected to the physical normalized `0..1`
-interval. Quantiles are not physical endpoints. The System-owned normalized endpoint tolerance then
+projection: values inside the tracked training envelope are projected to the
+quantile interval before de-normalization, while non-finite or farther-out
+outputs are rejected. The System-owned normalized endpoint tolerance then
 absorbs only quantile arithmetic roundoff before the physical mapping;
 material protocol-level overshoot remains invalid. `/gripper_stroke_host` is
 the only gripper feedback source.
